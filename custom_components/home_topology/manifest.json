@@ -1,0 +1,13 @@
+{
+  "domain": "home_topology",
+  "name": "Home Topology",
+  "codeowners": ["@mike"],
+  "config_flow": true,
+  "dependencies": ["frontend", "http", "websocket_api"],
+  "documentation": "https://github.com/mike/home-topology-ha",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/mike/home-topology-ha/issues",
+  "requirements": ["home-topology>=0.1.0"],
+  "version": "0.1.0"
+}
+
