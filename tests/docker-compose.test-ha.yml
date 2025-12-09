@@ -1,0 +1,36 @@
+version: "3.8"
+
+services:
+  test-ha:
+    image: homeassistant/home-assistant:latest
+    container_name: home-topology-test-ha
+    restart: unless-stopped
+    privileged: true
+    network_mode: host
+
+    volumes:
+      # Config directory for test HA
+      - ./test-ha-config:/config
+
+      # Mount the integration for testing
+      - ../custom_components/home_topology:/config/custom_components/home_topology:ro
+
+      # Mount core library if needed
+      - ../../home-topology:/workspace/home-topology:ro
+
+    environment:
+      - TZ=America/New_York
+
+    ports:
+      - "8124:8123" # Use port 8124 to avoid conflicts with main HA
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8123/api/"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+
+networks:
+  default:
+    name: home-topology-test

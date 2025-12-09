@@ -7,13 +7,13 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from homeassistant.const import (
+    EVENT_STATE_CHANGED,
     STATE_OFF,
     STATE_ON,
     STATE_PAUSED,
     STATE_PLAYING,
 )
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.event import async_track_state_change_event
 
 from home_topology import Event, EventBus, LocationManager
 
@@ -43,9 +43,8 @@ class EventBridge:
         _LOGGER.debug("Setting up event bridge")
 
         # Subscribe to all HA state changes
-        self._unsub = async_track_state_change_event(
-            self.hass,
-            None,  # Listen to all entities
+        self._unsub = self.hass.bus.async_listen(
+            EVENT_STATE_CHANGED,
             self._state_changed_listener,
         )
 
@@ -94,7 +93,7 @@ class EventBridge:
         # Publish to kernel
         try:
             self.bus.publish(kernel_event)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             _LOGGER.error(
                 "Error publishing event for %s: %s",
                 entity_id,

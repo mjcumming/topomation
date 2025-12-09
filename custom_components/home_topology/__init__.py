@@ -7,15 +7,10 @@ from typing import TYPE_CHECKING, Any
 
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP, Platform
 from homeassistant.core import Event, HomeAssistant, callback
-from homeassistant.helpers import (
-    area_registry as ar,
-)
-from homeassistant.helpers import (
-    entity_registry as er,
-)
 from homeassistant.helpers.storage import Store
 
 from home_topology import EventBus, LocationManager
+from home_topology.modules.ambient import AmbientLightModule
 from home_topology.modules.automation import AutomationModule
 from home_topology.modules.occupancy import OccupancyModule
 
@@ -24,6 +19,7 @@ from .coordinator import HomeTopologyCoordinator
 from .event_bridge import EventBridge
 from .panel import async_register_panel
 from .services import async_register_services
+from .sync_manager import SyncManager
 from .websocket_api import async_register_websocket_api
 
 if TYPE_CHECKING:
@@ -37,6 +33,43 @@ PLATFORMS: list[Platform] = [
 ]
 
 
+class HAPlatformAdapter:
+    """Platform adapter for AmbientLightModule to access HA state."""
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        """Initialize the platform adapter."""
+        self.hass = hass
+
+    def get_numeric_state(self, entity_id: str) -> float | None:
+        """Get numeric state value from HA entity."""
+        state = self.hass.states.get(entity_id)
+        if state and state.state not in ("unknown", "unavailable"):
+            try:
+                return float(state.state)
+            except ValueError:
+                return None
+        return None
+
+    def get_state(self, entity_id: str) -> str | None:
+        """Get state string from HA entity."""
+        state = self.hass.states.get(entity_id)
+        return state.state if state else None
+
+    def get_device_class(self, entity_id: str) -> str | None:
+        """Get device class from HA entity."""
+        state = self.hass.states.get(entity_id)
+        if state:
+            return state.attributes.get("device_class")
+        return None
+
+    def get_unit_of_measurement(self, entity_id: str) -> str | None:
+        """Get unit of measurement from HA entity."""
+        state = self.hass.states.get(entity_id)
+        if state:
+            return state.attributes.get("unit_of_measurement")
+        return None
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Home Topology from a config entry."""
     _LOGGER.info("Setting up Home Topology integration")
@@ -48,16 +81,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     bus = EventBus()
     bus.set_location_manager(loc_mgr)
 
-    # 2. Build topology from HA areas
-    await _build_topology_from_ha(hass, loc_mgr)
+    # 2. Create root location
+    try:
+        loc_mgr.create_location(
+            id="house",
+            name="House",
+            is_explicit_root=True,
+        )
+    except ValueError:
+        # Already exists (from saved config)
+        pass
 
     # 3. Load saved configuration
     await _load_configuration(hass, loc_mgr)
 
     # 4. Initialize modules
+    platform_adapter = HAPlatformAdapter(hass)
     modules = {
         "occupancy": OccupancyModule(),
         "automation": AutomationModule(),
+        "ambient": AmbientLightModule(platform_adapter=platform_adapter),
     }
 
     # 5. Attach modules to kernel
@@ -73,17 +116,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # 8. Create coordinator for timeout scheduling
     coordinator = HomeTopologyCoordinator(hass, modules)
 
-    # 9. Set up event bridge (HA → kernel)
+    # 9. Set up sync manager for bidirectional HA ↔ Topology sync
+    sync_manager = SyncManager(hass, loc_mgr, bus)
+    await sync_manager.async_setup()
+
+    # 10. Set up event bridge (HA → kernel)
     event_bridge = EventBridge(hass, bus, loc_mgr)
     await event_bridge.async_setup()
 
-    # 10. Store kernel in hass.data
+    # 11. Store kernel in hass.data
     hass.data[DOMAIN][entry.entry_id] = {
         "entry": entry,
         "location_manager": loc_mgr,
         "event_bus": bus,
         "modules": modules,
         "coordinator": coordinator,
+        "sync_manager": sync_manager,
         "event_bridge": event_bridge,
     }
 
@@ -129,6 +177,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
     if unload_ok:
+        # Clean up sync manager
+        sync_manager: SyncManager = kernel["sync_manager"]
+        await sync_manager.async_teardown()
+
         # Clean up event bridge
         event_bridge: EventBridge = kernel["event_bridge"]
         await event_bridge.async_teardown()
@@ -139,47 +191,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return unload_ok
 
 
-async def _build_topology_from_ha(hass: HomeAssistant, loc_mgr: LocationManager) -> None:
-    """Build location topology from Home Assistant areas."""
-    _LOGGER.info("Building topology from HA areas")
-
-    # Create root location (house)
-    try:
-        loc_mgr.create_location(
-            id="house",
-            name="House",
-            is_explicit_root=True,
-        )
-    except ValueError:
-        # Already exists (from saved config)
-        pass
-
-    # Import HA areas as locations
-    area_registry = ar.async_get(hass)
-    for area in area_registry.areas.values():
-        location_id = f"area_{area.id}"
-        try:
-            loc_mgr.create_location(
-                id=location_id,
-                name=area.name,
-                parent_id="house",
-                ha_area_id=area.id,
-                is_explicit_root=False,
-            )
-        except ValueError:
-            # Already exists
-            pass
-
-    # Map entities to locations based on HA area assignments
-    entity_registry = er.async_get(hass)
-    for entity in entity_registry.entities.values():
-        if entity.area_id:
-            location_id = f"area_{entity.area_id}"
-            try:
-                loc_mgr.add_entity_to_location(entity.entity_id, location_id)
-            except (ValueError, KeyError):
-                # Location or entity doesn't exist or already mapped
-                pass
+# NOTE: _build_topology_from_ha has been replaced by SyncManager
+# which handles initial import and live bidirectional sync
 
 
 def _setup_default_configs(loc_mgr: LocationManager, modules: dict[str, Any]) -> None:

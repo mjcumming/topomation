@@ -11,12 +11,18 @@ from homeassistant.core import HomeAssistant, callback
 
 from .const import (
     DOMAIN,
+    WS_TYPE_AMBIENT_AUTO_DISCOVER,
+    WS_TYPE_AMBIENT_GET_READING,
+    WS_TYPE_AMBIENT_SET_SENSOR,
     WS_TYPE_LOCATIONS_CREATE,
     WS_TYPE_LOCATIONS_DELETE,
     WS_TYPE_LOCATIONS_LIST,
     WS_TYPE_LOCATIONS_REORDER,
     WS_TYPE_LOCATIONS_SET_MODULE_CONFIG,
     WS_TYPE_LOCATIONS_UPDATE,
+    WS_TYPE_SYNC_ENABLE,
+    WS_TYPE_SYNC_IMPORT,
+    WS_TYPE_SYNC_STATUS,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -24,12 +30,23 @@ _LOGGER = logging.getLogger(__name__)
 
 def async_register_websocket_api(hass: HomeAssistant) -> None:
     """Register WebSocket API commands."""
+    # Location management
     websocket_api.async_register_command(hass, handle_locations_list)
     websocket_api.async_register_command(hass, handle_locations_create)
     websocket_api.async_register_command(hass, handle_locations_update)
     websocket_api.async_register_command(hass, handle_locations_delete)
     websocket_api.async_register_command(hass, handle_locations_reorder)
     websocket_api.async_register_command(hass, handle_locations_set_module_config)
+
+    # Ambient light module
+    websocket_api.async_register_command(hass, handle_ambient_get_reading)
+    websocket_api.async_register_command(hass, handle_ambient_set_sensor)
+    websocket_api.async_register_command(hass, handle_ambient_auto_discover)
+
+    # Sync manager
+    websocket_api.async_register_command(hass, handle_sync_import)
+    websocket_api.async_register_command(hass, handle_sync_status)
+    websocket_api.async_register_command(hass, handle_sync_enable)
 
     _LOGGER.debug("Home Topology WebSocket API registered")
 
@@ -296,3 +313,309 @@ def handle_locations_set_module_config(
         connection.send_result(msg["id"], {"success": True})
     except (ValueError, KeyError) as e:
         connection.send_error(msg["id"], "config_failed", str(e))
+
+
+# =============================================================================
+# Ambient Light Module Commands
+# =============================================================================
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): WS_TYPE_AMBIENT_GET_READING,
+        vol.Required("location_id"): str,
+        vol.Optional("dark_threshold"): vol.Coerce(float),
+        vol.Optional("bright_threshold"): vol.Coerce(float),
+    }
+)
+@callback
+def handle_ambient_get_reading(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Handle ambient/get_reading command."""
+    entry_ids = list(hass.data[DOMAIN].keys())
+    if not entry_ids:
+        connection.send_error(msg["id"], "not_loaded", "Integration not loaded")
+        return
+
+    kernel = hass.data[DOMAIN][entry_ids[0]]
+    modules = kernel["modules"]
+
+    if "ambient" not in modules:
+        connection.send_error(msg["id"], "module_not_loaded", "Ambient module not loaded")
+        return
+
+    ambient_module = modules["ambient"]
+    location_id = msg["location_id"]
+
+    try:
+        reading = ambient_module.get_ambient_light(
+            location_id,
+            dark_threshold=msg.get("dark_threshold"),
+            bright_threshold=msg.get("bright_threshold"),
+        )
+
+        connection.send_result(msg["id"], reading.to_dict())
+    except (ValueError, KeyError) as e:
+        connection.send_error(msg["id"], "read_failed", str(e))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): WS_TYPE_AMBIENT_SET_SENSOR,
+        vol.Required("location_id"): str,
+        vol.Required("entity_id"): str,
+    }
+)
+@callback
+def handle_ambient_set_sensor(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Handle ambient/set_sensor command."""
+    entry_ids = list(hass.data[DOMAIN].keys())
+    if not entry_ids:
+        connection.send_error(msg["id"], "not_loaded", "Integration not loaded")
+        return
+
+    kernel = hass.data[DOMAIN][entry_ids[0]]
+    modules = kernel["modules"]
+
+    if "ambient" not in modules:
+        connection.send_error(msg["id"], "module_not_loaded", "Ambient module not loaded")
+        return
+
+    ambient_module = modules["ambient"]
+    location_id = msg["location_id"]
+    entity_id = msg["entity_id"]
+
+    try:
+        ambient_module.set_lux_sensor(location_id, entity_id)
+        connection.send_result(msg["id"], {"success": True})
+    except (ValueError, KeyError) as e:
+        connection.send_error(msg["id"], "set_sensor_failed", str(e))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): WS_TYPE_AMBIENT_AUTO_DISCOVER,
+    }
+)
+@callback
+def handle_ambient_auto_discover(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Handle ambient/auto_discover command."""
+    entry_ids = list(hass.data[DOMAIN].keys())
+    if not entry_ids:
+        connection.send_error(msg["id"], "not_loaded", "Integration not loaded")
+        return
+
+    kernel = hass.data[DOMAIN][entry_ids[0]]
+    modules = kernel["modules"]
+
+    if "ambient" not in modules:
+        connection.send_error(msg["id"], "module_not_loaded", "Ambient module not loaded")
+        return
+
+    ambient_module = modules["ambient"]
+
+    try:
+        discovered = ambient_module.auto_discover_sensors()
+        connection.send_result(msg["id"], {"discovered": discovered})
+    except Exception as e:
+        connection.send_error(msg["id"], "discover_failed", str(e))
+
+
+# =============================================================================
+# Sync Manager Commands
+# =============================================================================
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): WS_TYPE_SYNC_IMPORT,
+        vol.Optional("force", default=False): bool,
+    }
+)
+@websocket_api.async_response
+async def handle_sync_import(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Handle sync/import command - force reimport from HA.
+
+    Payload:
+      - force: bool (optional) - Force reimport even if already imported
+    """
+    entry_ids = list(hass.data[DOMAIN].keys())
+    if not entry_ids:
+        connection.send_error(msg["id"], "not_loaded", "Integration not loaded")
+        return
+
+    kernel = hass.data[DOMAIN][entry_ids[0]]
+    sync_manager = kernel.get("sync_manager")
+
+    if not sync_manager:
+        connection.send_error(msg["id"], "sync_not_available", "Sync manager not available")
+        return
+
+    try:
+        # Re-import all areas and floors
+        await sync_manager.import_all_areas_and_floors()
+
+        # Get count of imported locations
+        loc_mgr = kernel["location_manager"]
+        location_count = len(loc_mgr.all_locations())
+
+        connection.send_result(
+            msg["id"],
+            {
+                "success": True,
+                "location_count": location_count,
+                "message": f"Imported {location_count} locations from Home Assistant",
+            },
+        )
+    except Exception as e:
+        _LOGGER.error("Sync import failed: %s", e, exc_info=True)
+        connection.send_error(msg["id"], "import_failed", str(e))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): WS_TYPE_SYNC_STATUS,
+        vol.Optional("location_id"): str,
+    }
+)
+@callback
+def handle_sync_status(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Handle sync/status command - get sync status.
+
+    Payload:
+      - location_id: str (optional) - Get status for specific location
+    """
+    entry_ids = list(hass.data[DOMAIN].keys())
+    if not entry_ids:
+        connection.send_error(msg["id"], "not_loaded", "Integration not loaded")
+        return
+
+    kernel = hass.data[DOMAIN][entry_ids[0]]
+    sync_manager = kernel.get("sync_manager")
+    loc_mgr = kernel["location_manager"]
+
+    if not sync_manager:
+        connection.send_error(msg["id"], "sync_not_available", "Sync manager not available")
+        return
+
+    location_id = msg.get("location_id")
+
+    if location_id:
+        # Get status for specific location
+        location = loc_mgr.get_location(location_id)
+        if not location:
+            connection.send_error(
+                msg["id"], "location_not_found", f"Location {location_id} not found"
+            )
+            return
+
+        meta = location.modules.get("_meta", {})
+        connection.send_result(
+            msg["id"],
+            {
+                "location_id": location_id,
+                "name": location.name,
+                "ha_area_id": meta.get("ha_area_id"),
+                "ha_floor_id": meta.get("ha_floor_id"),
+                "sync_source": meta.get("sync_source"),
+                "sync_enabled": meta.get("sync_enabled", True),
+                "last_synced": meta.get("last_synced"),
+                "type": meta.get("type"),
+            },
+        )
+    else:
+        # Get overall sync status
+        locations = loc_mgr.all_locations()
+        synced_count = 0
+        topology_only_count = 0
+
+        for loc in locations:
+            meta = loc.modules.get("_meta", {})
+            if meta.get("sync_source") == "homeassistant":
+                synced_count += 1
+            elif meta.get("sync_source") == "topology":
+                topology_only_count += 1
+
+        connection.send_result(
+            msg["id"],
+            {
+                "total_locations": len(locations),
+                "synced_from_ha": synced_count,
+                "topology_only": topology_only_count,
+                "sync_active": True,
+            },
+        )
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): WS_TYPE_SYNC_ENABLE,
+        vol.Required("location_id"): str,
+        vol.Required("enabled"): bool,
+    }
+)
+@callback
+def handle_sync_enable(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Handle sync/enable command - enable/disable sync for location.
+
+    Payload:
+      - location_id: str - Location to configure
+      - enabled: bool - Enable or disable sync
+    """
+    entry_ids = list(hass.data[DOMAIN].keys())
+    if not entry_ids:
+        connection.send_error(msg["id"], "not_loaded", "Integration not loaded")
+        return
+
+    kernel = hass.data[DOMAIN][entry_ids[0]]
+    loc_mgr = kernel["location_manager"]
+
+    location_id = msg["location_id"]
+    enabled = msg["enabled"]
+
+    location = loc_mgr.get_location(location_id)
+    if not location:
+        connection.send_error(msg["id"], "location_not_found", f"Location {location_id} not found")
+        return
+
+    try:
+        # Update metadata
+        meta = location.modules.get("_meta", {})
+        meta["sync_enabled"] = enabled
+        loc_mgr.set_module_config(location_id, "_meta", meta)
+
+        connection.send_result(
+            msg["id"],
+            {
+                "success": True,
+                "location_id": location_id,
+                "sync_enabled": enabled,
+                "message": f"Sync {'enabled' if enabled else 'disabled'} for {location.name}",
+            },
+        )
+    except Exception as e:
+        _LOGGER.error("Failed to update sync setting: %s", e, exc_info=True)
+        connection.send_error(msg["id"], "update_failed", str(e))

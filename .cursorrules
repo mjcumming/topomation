@@ -1,0 +1,210 @@
+# Cursor AI Rules for home-topology-ha
+
+> Essential context for AI pair programming. For detailed patterns and examples, see `docs/cursor-guide.md`.
+
+---
+
+## 1. Project Identity
+
+- **Name**: home-topology-ha
+- **Purpose**: Home Assistant integration for the home-topology kernel
+- **Core Library**: home-topology (platform-agnostic Python library)
+- **Technology Stack**: Python 3.11+, TypeScript/Lit (frontend), Home Assistant APIs
+- **Status**: v0.1.0-alpha (Initial development)
+
+---
+
+## 2. Architecture Principle
+
+### Core Responsibility
+
+This integration is a **thin adapter layer** between Home Assistant and the home-topology kernel.
+
+**Integration Owns**: Translation, routing, exposure
+
+- Platform → Kernel event translation
+- Kernel → Platform entity exposure
+- Timeout scheduling (coordinator pattern)
+- Frontend panel & WebSocket API
+- Configuration persistence
+
+**Kernel Owns**: All behavior logic (from home-topology library)
+
+- Location hierarchy (LocationManager)
+- Event routing (EventBus)
+- Module logic (Occupancy, Automation, Lighting)
+- State management
+
+### The Golden Rule
+
+**The integration NEVER implements behavior logic. It translates, routes, and exposes. All logic lives in the kernel.**
+
+---
+
+## 3. Documentation Strategy
+
+### Read Core Library Docs First
+
+Before working on integration features:
+
+- **Core Architecture**: `/workspaces/home-topology/docs/architecture.md`
+- **Integration Guide**: `/workspaces/home-topology/docs/integration/integration-guide.md`
+- **UI Design**: `/workspaces/home-topology/docs/integration/ui-design.md`
+
+### Study Existing Home Assistant Integrations
+
+**ALWAYS reference official HA integrations for patterns and best practices:**
+
+- **Core Integrations**: https://github.com/home-assistant/core/tree/dev/homeassistant/components/
+- **Study These First**:
+  - `zha` - Complex coordinator pattern, entity management
+  - `esphome` - Event translation, entity mapping
+  - `mqtt` - WebSocket API, config flow patterns
+  - `template` - Entity platform patterns
+  - `lovelace` - Frontend panel registration
+
+**When implementing a feature:**
+
+1. Find similar feature in official integrations
+2. Study their implementation patterns
+3. Adapt to our architecture (thin adapter principle)
+4. Follow their conventions (naming, error handling, logging)
+
+### Local Documentation
+
+- `docs/cursor-guide.md` - Detailed patterns and examples (detailed version of this file)
+- `docs/architecture.md` - Integration-specific architecture
+- `docs/coding-standards.md` - Python + TypeScript standards
+- `docs/adr-log.md` - Architectural decisions
+- `docs/work-tracking.md` - Project status
+
+---
+
+## 4. Coding Standards Summary
+
+### Python (Backend)
+
+- **Style**: PEP 8 via `ruff` and `black`
+- **Naming**: `snake_case` for files/functions
+- **Required**: Type hints on all functions
+- **Async**: Use async/await for all I/O operations
+- **Decorators**: Use `@callback` for sync event handlers
+
+**Import Order**:
+
+```python
+from __future__ import annotations  # 1. Future
+import logging                       # 2. Standard library
+from homeassistant.core import ...  # 3. Home Assistant
+from home_topology import ...        # 4. Kernel library
+from .const import DOMAIN            # 5. Local integration
+```
+
+### TypeScript/Lit (Frontend)
+
+- **Style**: Home Assistant Lit conventions
+- **Naming**: `kebab-case` for component files
+- **Components**: Use existing `ha-*` components where possible
+- **Required**: TypeScript strict mode
+- **Pattern**: LitElement with `@customElement` decorator
+
+---
+
+## 5. Common Pitfalls
+
+### ❌ DON'T
+
+- Implement behavior logic in the integration (use kernel modules)
+- Block the event loop (use async for I/O)
+- Create HA dependencies in core library imports
+- Use `time.sleep()` or blocking calls
+- Mutate HA state objects directly
+- Forget to handle missing entities/locations gracefully
+
+### ✅ DO
+
+- Translate events, don't process them
+- Use `@callback` for synchronous event handlers
+- Use `async_track_point_in_time()` for scheduling
+- Validate all user inputs
+- Handle errors gracefully (one bad location shouldn't crash)
+- Log liberally with appropriate levels
+
+---
+
+## 6. Key Integration Concepts
+
+### Event Translation
+
+- **Platform → Kernel** (`event_bridge.py`): HA `state_changed` → `Event(type="...")`
+- **Kernel → Platform** (`binary_sensor.py`): `occupancy.changed` → Update entity
+
+### Timeout Coordination
+
+The kernel is time-agnostic. Integration schedules timeout checks via `HomeTopologyCoordinator`.
+
+### Location Type Metadata
+
+The kernel is type-agnostic. Store type/icon metadata via `_meta` module config.
+
+**See `docs/cursor-guide.md` for code examples and detailed patterns.**
+
+---
+
+## 7. File Organization
+
+```
+home-topology-ha/
+├── custom_components/home_topology/
+│   ├── __init__.py          # Integration setup
+│   ├── config_flow.py       # Setup wizard
+│   ├── coordinator.py       # Timeout scheduling
+│   ├── event_bridge.py      # HA → kernel events
+│   ├── binary_sensor.py     # Occupancy entities
+│   ├── websocket_api.py     # WS API handlers
+│   └── frontend/            # Lit components (kebab-case)
+├── docs/
+│   ├── cursor-guide.md      # Detailed patterns & examples
+│   ├── architecture.md
+│   ├── coding-standards.md
+│   └── work-tracking.md
+├── tests/
+└── .cursorrules             # This file
+```
+
+---
+
+## 8. Golden Rules
+
+1. **ALWAYS study existing HA integrations before implementing features**
+2. **ALWAYS read core library docs before implementing features**
+3. **Integration translates, kernel implements**
+4. **Use async/await for all I/O operations**
+5. **Type hints are mandatory**
+6. **Log errors, don't crash**
+7. **Test event translation thoroughly**
+8. **Use 2025 for current dates (NOT 2024!)** ⚠️
+9. **Update `docs/work-tracking.md` as you work**
+10. **Reference existing code, don't duplicate patterns**
+11. **Leverage HA's components and conventions, don't reinvent**
+
+---
+
+## Quick Reference
+
+| Task               | Read First                                          |
+| ------------------ | --------------------------------------------------- |
+| Event translation  | Core: integration-guide.md, Local: cursor-guide.md  |
+| State exposure     | Core: integration-guide.md, HA: binary_sensor.py    |
+| Timeout scheduling | Core: integration-guide.md, HA: coordinator.py      |
+| UI components      | Core: ui-design.md, HA frontend patterns            |
+| WebSocket API      | Local: cursor-guide.md, HA: websocket_api.py        |
+| Location types     | Core: integration-guide.md (Location Types section) |
+
+---
+
+**This integration is a bridge, not a duplicate. The kernel does the work; we just wire it up.**
+
+For detailed code examples, patterns, and testing strategies, see `docs/cursor-guide.md`.
+
+Last Updated: 2025-12-09

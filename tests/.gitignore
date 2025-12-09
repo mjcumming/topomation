@@ -1,0 +1,19 @@
+# Test configuration (contains tokens)
+ha-config.env
+
+# Test HA config directory
+test-ha-config/
+
+# Python cache
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Coverage reports
+.coverage
+htmlcov/
+
+# Test artifacts
+*.log
+.test-artifacts/
+

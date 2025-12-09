@@ -1,7 +1,7 @@
 # Next Steps: Home Topology HA Integration
 
-**Date**: 2025-12-09  
-**Status**: ✅ Ready for Testing  
+**Date**: 2025-12-09
+**Status**: ✅ Ready for Testing
 **Version**: 0.1.0
 
 ---
@@ -9,17 +9,20 @@
 ## ✅ Completed Setup
 
 ### 1. **Core Library** (home-topology)
+
 - ✅ Version: `0.2.0-alpha`
 - ✅ Installed in editable mode from `/workspaces/home-topology`
 - ✅ Available to Home Assistant
 
 ### 2. **Integration** (home-topology-ha)
+
 - ✅ Version: `0.1.0`
 - ✅ Production-ready test suite (32 tests, ~85% coverage)
 - ✅ All code linted and formatted
 - ✅ Committed and pushed to GitHub
 
 ### 3. **Development Environment**
+
 - ✅ Symlinked to HA config: `/workspaces/wiim/custom_components/home_topology`
 - ✅ Core dependencies installed
 - ✅ Ready for live testing
@@ -31,6 +34,7 @@
 ### Phase 1: Initial Testing ⚠️ **START HERE**
 
 #### 1.1 Restart Home Assistant
+
 ```bash
 # If HA is running as a service
 sudo systemctl restart home-assistant
@@ -39,6 +43,7 @@ sudo systemctl restart home-assistant
 ```
 
 #### 1.2 Check HA Logs
+
 ```bash
 # Watch for integration loading
 tail -f /workspaces/wiim/home-assistant.log | grep -i "home_topology\|home topology"
@@ -47,18 +52,22 @@ tail -f /workspaces/wiim/home-assistant.log | grep -i "home_topology\|home topol
 ```
 
 #### 1.3 Verify Integration Loads
+
 **Expected in logs**:
+
 ```
 INFO (MainThread) [homeassistant.setup] Setting up home_topology
 INFO (MainThread) [homeassistant.setup] Setup of domain home_topology took 0.1 seconds
 ```
 
 **If errors occur**, check:
+
 - Missing dependencies
 - Import errors
 - Configuration issues
 
 #### 1.4 Add Integration via UI
+
 1. Go to: **Settings → Devices & Services**
 2. Click: **+ Add Integration**
 3. Search: "Home Topology"
@@ -71,11 +80,13 @@ INFO (MainThread) [homeassistant.setup] Setup of domain home_topology took 0.1 s
 ### Phase 2: Feature Verification
 
 #### 2.1 Check Panel Registration
+
 - Sidebar should show: **"Location Manager"**
 - Icon: `mdi:floor-plan`
 - URL: `/home-topology`
 
 #### 2.2 Verify WebSocket API
+
 Open HA Developer Tools → Services:
 
 ```yaml
@@ -85,25 +96,30 @@ data: {}
 ```
 
 Or use WebSocket directly:
+
 ```javascript
 // In browser console on HA frontend
 const ws = window.hassConnection.conn;
 ws.sendMessage({
   type: "home_topology/locations/list",
-  id: 1
+  id: 1,
 });
 ```
 
 #### 2.3 Check Entity Creation
+
 **Should see**:
+
 - No entities initially (areas not yet imported as locations)
 - After area import: `binary_sensor.occupancy_<location_id>`
 - State attributes: confidence, active_holds, expires_at
 
 #### 2.4 Verify Services
+
 Check: **Developer Tools → Services**
 
 Should see:
+
 - `home_topology.trigger`
 - `home_topology.clear`
 - `home_topology.lock`
@@ -115,6 +131,7 @@ Should see:
 ### Phase 3: Functional Testing
 
 #### 3.1 Import Home Assistant Areas
+
 The integration should automatically import HA areas on first setup:
 
 ```python
@@ -126,6 +143,7 @@ INFO Created location: area_<area_id> (Kitchen)
 #### 3.2 Configure a Test Location
 
 **Via Frontend Panel** (when UI is ready):
+
 1. Open Location Manager panel
 2. Select a location (e.g., Kitchen)
 3. Go to Occupancy tab
@@ -133,6 +151,7 @@ INFO Created location: area_<area_id> (Kitchen)
 5. Add occupancy source: `binary_sensor.kitchen_motion`
 
 **Via Service Call** (for now):
+
 ```yaml
 service: home_topology.set_module_config
 data:
@@ -149,16 +168,19 @@ data:
 #### 3.3 Test Occupancy Detection
 
 1. **Trigger motion sensor**
+
    - Move in front of sensor
    - Or manually turn it on via UI
 
 2. **Check occupancy entity**
+
    ```yaml
    # Should change to ON
    binary_sensor.occupancy_<location>
    ```
 
 3. **Wait for timeout**
+
    - After 5 minutes of no motion
    - Entity should go to OFF
 
@@ -174,6 +196,7 @@ data:
 #### 3.4 Test Manual Control
 
 **Trigger occupancy manually**:
+
 ```yaml
 service: home_topology.trigger
 data:
@@ -181,6 +204,7 @@ data:
 ```
 
 **Clear occupancy**:
+
 ```yaml
 service: home_topology.clear
 data:
@@ -188,11 +212,12 @@ data:
 ```
 
 **Lock location** (prevent vacancy):
+
 ```yaml
 service: home_topology.lock
 data:
   location_id: "area_<your_area_id>"
-  duration: 3600  # 1 hour
+  duration: 3600 # 1 hour
 ```
 
 ---
@@ -200,6 +225,7 @@ data:
 ### Phase 4: Advanced Testing
 
 #### 4.1 Test Coordinator Timeout Scheduling
+
 Enable debug logging:
 
 ```yaml
@@ -211,6 +237,7 @@ logger:
 ```
 
 **Watch logs for**:
+
 ```
 DEBUG Scheduling timeout check at 2025-12-09 14:30:00
 DEBUG Running timeout check at 2025-12-09 14:30:00
@@ -218,7 +245,9 @@ DEBUG Module occupancy: checking timeouts
 ```
 
 #### 4.2 Test Event Bridge
+
 **Watch for state change translation**:
+
 ```
 DEBUG State changed: binary_sensor.kitchen_motion: off → on
 DEBUG Publishing kernel event: sensor.state_changed (location: kitchen)
@@ -226,6 +255,7 @@ DEBUG OccupancyModule received event: sensor.state_changed
 ```
 
 #### 4.3 Test Multiple Locations
+
 1. Create/import multiple areas
 2. Configure occupancy for each
 3. Trigger different locations
@@ -233,6 +263,7 @@ DEBUG OccupancyModule received event: sensor.state_changed
 5. Test parent/child relationships
 
 #### 4.4 Test State Persistence
+
 1. Set up occupancy state
 2. Restart Home Assistant
 3. Verify state is restored correctly
@@ -243,9 +274,11 @@ DEBUG OccupancyModule received event: sensor.state_changed
 ### Phase 5: UI Development (When Ready)
 
 #### 5.1 Frontend Panel
+
 **Current status**: TypeScript components exist but need building
 
 **To develop**:
+
 ```bash
 cd /workspaces/home-topology-ha/custom_components/home_topology/frontend
 
@@ -260,6 +293,7 @@ npm run build
 ```
 
 #### 5.2 Test UI Components
+
 - Location tree navigation
 - Location inspector
 - Occupancy configuration
@@ -273,17 +307,20 @@ npm run build
 ### Integration Won't Load
 
 **Check 1: Import errors**
+
 ```bash
 grep -i "error\|exception" /workspaces/wiim/home-assistant.log | grep home_topology
 ```
 
 **Check 2: Core library not found**
+
 ```python
 # In HA Python environment
 python3 -m pip show home-topology
 ```
 
 **Fix**: Install core library
+
 ```bash
 pip install -e /workspaces/home-topology
 ```
@@ -291,11 +328,13 @@ pip install -e /workspaces/home-topology
 ### No Entities Created
 
 **Possible causes**:
+
 1. Areas not imported (check `_build_topology_from_ha`)
 2. Occupancy module not enabled
 3. No entities assigned to areas
 
 **Debug**:
+
 ```python
 # Check in HA Python shell
 from homeassistant.helpers import area_registry as ar
@@ -306,11 +345,13 @@ print(f"Found {len(areas)} areas")
 ### Coordinator Not Scheduling
 
 **Check logs for**:
+
 ```
 ERROR Error getting timeout from occupancy: <error>
 ```
 
 **Verify**:
+
 - Modules have `get_next_timeout()` method
 - Modules are attached properly
 - No exceptions in module code
@@ -318,11 +359,13 @@ ERROR Error getting timeout from occupancy: <error>
 ### WebSocket Commands Fail
 
 **Check**:
+
 1. WebSocket API registered (check logs)
 2. Correct command format
 3. Authentication (must be logged in)
 
 **Test manually**:
+
 ```bash
 # Use HA REST API
 curl -X POST \
@@ -337,6 +380,7 @@ curl -X POST \
 ## 📊 Readiness Checklist
 
 ### Core Integration
+
 - ✅ Core library installed and working
 - ✅ Integration loads without errors
 - ✅ Config flow works (adds via UI)
@@ -346,6 +390,7 @@ curl -X POST \
 - ⚠️ Coordinator scheduling timeouts
 
 ### Services
+
 - ⚠️ `home_topology.trigger` works
 - ⚠️ `home_topology.clear` works
 - ⚠️ `home_topology.lock` works
@@ -353,6 +398,7 @@ curl -X POST \
 - ⚠️ `home_topology.vacate_area` works
 
 ### WebSocket API
+
 - ⚠️ `locations/list` works
 - ⚠️ `locations/create` works
 - ⚠️ `locations/update` works
@@ -360,6 +406,7 @@ curl -X POST \
 - ⚠️ `locations/set_module_config` works
 
 ### Frontend
+
 - ⚠️ Panel registered and visible
 - ⚠️ Panel loads without errors
 - ⚠️ Location tree displays
@@ -367,6 +414,7 @@ curl -X POST \
 - ⚠️ Configuration UI functional
 
 ### Tests
+
 - ✅ 32 tests passing
 - ✅ ~85% code coverage
 - ✅ Following HA best practices
@@ -388,6 +436,7 @@ curl -X POST \
 ## 📈 Success Criteria
 
 **MVP (Minimum Viable Product)**:
+
 - ✅ Integration loads without errors
 - ✅ Areas imported as locations
 - ✅ At least one occupancy sensor working
@@ -395,6 +444,7 @@ curl -X POST \
 - ✅ Panel visible (even if basic)
 
 **Beta Release**:
+
 - All MVP criteria
 - Multiple locations with occupancy
 - State persistence working
@@ -402,8 +452,9 @@ curl -X POST \
 - Documentation complete
 
 **Production (v1.0.0)**:
+
 - All Beta criteria
-- >95% test coverage including integration tests
+- > 95% test coverage including integration tests
 - Full UI with all features
 - Automation module working
 - Lighting module working
@@ -414,15 +465,18 @@ curl -X POST \
 ## 🔗 Quick Links
 
 **Repositories**:
+
 - Core: https://github.com/mjcumming/home-topology
 - Integration: https://github.com/mjcumming/home-topology-ha
 
 **Documentation**:
+
 - `/workspaces/home-topology-ha/docs/architecture.md`
 - `/workspaces/home-topology-ha/docs/integration-guide.md`
 - `/workspaces/home-topology-ha/tests/HA-BEST-PRACTICES.md`
 
 **Development**:
+
 - Core: `/workspaces/home-topology`
 - Integration: `/workspaces/home-topology-ha`
 - HA Config: `/workspaces/wiim`
@@ -433,6 +487,7 @@ curl -X POST \
 ## 🤝 Need Help?
 
 **Check logs first**:
+
 ```bash
 # Integration logs
 tail -f /workspaces/wiim/home-assistant.log | grep -i home_topology
@@ -442,20 +497,20 @@ tail -f /workspaces/wiim/home-assistant.log
 ```
 
 **Enable debug logging**:
+
 ```yaml
 # configuration.yaml
 logger:
   default: info
   logs:
     custom_components.home_topology: debug
-    home_topology: debug  # core library
+    home_topology: debug # core library
 ```
 
 **Common Issues**: See Troubleshooting section above
 
 ---
 
-**Status**: ✅ **READY FOR INITIAL TESTING**  
-**Next Action**: **Restart Home Assistant and verify integration loads**  
+**Status**: ✅ **READY FOR INITIAL TESTING**
+**Next Action**: **Restart Home Assistant and verify integration loads**
 **Expected Time**: 15-30 minutes for initial verification
-

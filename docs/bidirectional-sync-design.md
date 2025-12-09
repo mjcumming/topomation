@@ -1,7 +1,7 @@
 # Bidirectional Sync Design: Home Assistant ↔ Home Topology
 
-**Date**: 2025-12-09  
-**Status**: 🚧 Design Phase  
+**Date**: 2025-12-09
+**Status**: 🚧 Design Phase
 **Implementation**: Pending
 
 ---
@@ -13,7 +13,7 @@ This document describes the bidirectional synchronization system between Home As
 ### Goals
 
 1. **Import**: HA areas/floors → Topology locations
-2. **Export**: Topology changes → HA area/floor updates  
+2. **Export**: Topology changes → HA area/floor updates
 3. **Sync**: Keep names and relationships in sync
 4. **Coexistence**: Allow topology-only locations (zones, virtual spaces)
 5. **Performance**: Efficient, non-blocking updates
@@ -106,6 +106,7 @@ location = {
 ### On Integration Setup
 
 1. **Get all HA floors** (if HA version supports it)
+
    ```python
    floors = area_registry.async_list_floors()
    for floor in floors:
@@ -113,6 +114,7 @@ location = {
    ```
 
 2. **Get all HA areas**
+
    ```python
    areas = area_registry.areas.values()
    for area in areas:
@@ -120,6 +122,7 @@ location = {
    ```
 
 3. **Build hierarchy**
+
    - Floor locations → children of root "house"
    - Areas with floor_id → children of that floor location
    - Areas without floor_id → children of root "house"
@@ -137,11 +140,11 @@ location = {
 
 ### Location ID Mapping
 
-| HA Object | Topology Location ID | Example |
-|-----------|---------------------|---------|
-| Floor     | `floor_{floor_id}`  | `floor_ground_floor` |
-| Area      | `area_{area_id}`    | `area_kitchen` |
-| Root      | `house`             | `house` |
+| HA Object | Topology Location ID | Example              |
+| --------- | -------------------- | -------------------- |
+| Floor     | `floor_{floor_id}`   | `floor_ground_floor` |
+| Area      | `area_{area_id}`     | `area_kitchen`       |
+| Root      | `house`              | `house`              |
 
 ---
 
@@ -155,7 +158,7 @@ def on_area_updated(event):
     """Handle area registry updates."""
     action = event.data["action"]  # "create", "update", "remove"
     area_id = event.data["area_id"]
-    
+
     if action == "create":
         sync_manager.import_area(area_id)
     elif action == "update":
@@ -179,11 +182,11 @@ def update_location_from_area(self, area_id: str):
     area = self.area_registry.async_get_area(area_id)
     location_id = f"area_{area_id}"
     location = self.loc_mgr.get_location(location_id)
-    
+
     if location and location.name != area.name:
         # Update location name
         self.loc_mgr.update_location(location_id, name=area.name)
-        
+
         # Update metadata
         self.loc_mgr.set_module_config(
             location_id,
@@ -202,12 +205,12 @@ def update_location_parent(self, area_id: str):
     """Update location parent when area floor changes."""
     area = self.area_registry.async_get_area(area_id)
     location_id = f"area_{area_id}"
-    
+
     new_parent = (
         f"floor_{area.floor_id}" if area.floor_id
         else "house"
     )
-    
+
     self.loc_mgr.update_location(location_id, parent_id=new_parent)
 ```
 
@@ -220,14 +223,14 @@ def on_entity_updated(event):
     entity_id = event.data["entity_id"]
     old_area = event.data.get("old_area_id")
     new_area = event.data.get("area_id")
-    
+
     if old_area:
         # Remove from old location
         loc_mgr.remove_entity_from_location(
             entity_id,
             f"area_{old_area}"
         )
-    
+
     if new_area:
         # Add to new location
         loc_mgr.add_entity_to_location(
@@ -255,7 +258,7 @@ class SyncManager:
             self.on_location_renamed,
             EventFilter(event_type="location.renamed")
         )
-        
+
         event_bus.subscribe(
             self.on_location_deleted,
             EventFilter(event_type="location.deleted")
@@ -273,24 +276,24 @@ def on_location_renamed(self, event: Event):
     location_id = event.location_id
     old_name = event.payload["old_name"]
     new_name = event.payload["new_name"]
-    
+
     location = self.loc_mgr.get_location(location_id)
     meta = location.modules.get("_meta", {})
-    
+
     # Only sync if this came from HA
     if meta.get("sync_source") != "homeassistant":
         return
-    
+
     # Only sync if bidirectional sync enabled
     if not meta.get("sync_enabled", True):
         return
-    
+
     # Update HA area
     if ha_area_id := meta.get("ha_area_id"):
         # Prevent circular updates
         if self._is_update_from_ha(location_id):
             return
-        
+
         self._mark_update_from_topology(location_id)
         self.area_registry.async_update(ha_area_id, name=new_name)
         self._clear_update_mark(location_id)
@@ -304,10 +307,10 @@ def on_location_deleted(self, event: Event):
     """Handle location deletion."""
     location_id = event.location_id
     meta = event.payload.get("metadata", {})
-    
+
     if not meta.get("sync_enabled", True):
         return
-    
+
     # Delete corresponding HA area (optional, configurable)
     if ha_area_id := meta.get("ha_area_id"):
         if self.config.get("delete_ha_areas_on_location_delete", False):
@@ -325,18 +328,18 @@ class SyncManager:
     def __init__(self):
         self._update_locks = {}  # location_id -> timestamp
         self._lock_timeout = 1.0  # 1 second
-    
+
     def _is_update_from_ha(self, location_id: str) -> bool:
         """Check if recent update came from HA."""
         lock_time = self._update_locks.get(f"ha_{location_id}")
         if lock_time and (time.time() - lock_time < self._lock_timeout):
             return True
         return False
-    
+
     def _mark_update_from_topology(self, location_id: str):
         """Mark that update is from topology to prevent loop."""
         self._update_locks[f"topo_{location_id}"] = time.time()
-    
+
     def _clear_update_mark(self, location_id: str):
         """Clear update mark after sync complete."""
         self._update_locks.pop(f"topo_{location_id}", None)
@@ -351,13 +354,13 @@ def resolve_conflict(self, location_id: str, ha_name: str, topo_name: str):
     """Resolve naming conflict."""
     location = self.loc_mgr.get_location(location_id)
     meta = location.modules["_meta"]
-    
+
     ha_area = self.area_registry.async_get_area(meta["ha_area_id"])
-    
+
     # Compare timestamps (if available)
     topo_updated = meta.get("last_updated")
     ha_updated = ha_area.modified_at
-    
+
     if topo_updated and ha_updated:
         if topo_updated > ha_updated:
             # Topology is newer, update HA
@@ -418,8 +421,8 @@ home_topology:
     enabled: true
     import_on_startup: true
     bidirectional: true
-    delete_ha_areas: false  # Don't delete HA areas when location deleted
-    conflict_resolution: "ha_wins"  # or "topology_wins", "last_write_wins"
+    delete_ha_areas: false # Don't delete HA areas when location deleted
+    conflict_resolution: "ha_wins" # or "topology_wins", "last_write_wins"
 ```
 
 ### Per-Location Config
@@ -501,22 +504,22 @@ Use the helper function to create test data:
 ```python
 class SyncManager:
     """Manages bidirectional sync between HA and topology."""
-    
+
     async def import_all_areas(self) -> None:
         """Import all HA areas as locations."""
-    
+
     async def import_area(self, area_id: str) -> Location:
         """Import single HA area."""
-    
+
     async def update_location_from_area(self, area_id: str) -> None:
         """Update location when HA area changes."""
-    
+
     async def update_area_from_location(self, location_id: str) -> None:
         """Update HA area when location changes."""
-    
+
     def get_location_for_area(self, area_id: str) -> Location | None:
         """Get topology location for HA area."""
-    
+
     def get_area_for_location(self, location_id: str) -> Area | None:
         """Get HA area for topology location."""
 ```
@@ -531,7 +534,7 @@ class SyncManager:
 async def import_all_areas(self):
     """Import all areas efficiently."""
     areas = self.area_registry.areas.values()
-    
+
     # Create all locations in single batch
     locations_to_create = [
         {
@@ -541,7 +544,7 @@ async def import_all_areas(self):
         }
         for area in areas
     ]
-    
+
     # Batch create (if supported by kernel)
     self.loc_mgr.create_locations_batch(locations_to_create)
 ```
@@ -553,18 +556,18 @@ class SyncManager:
     def __init__(self):
         self._pending_updates = {}
         self._debounce_delay = 0.5  # 500ms
-    
+
     async def debounced_update(self, location_id: str):
         """Debounce rapid updates."""
         # Cancel pending update
         if location_id in self._pending_updates:
             self._pending_updates[location_id].cancel()
-        
+
         # Schedule new update
         self._pending_updates[location_id] = asyncio.create_task(
             self._delayed_update(location_id)
         )
-    
+
     async def _delayed_update(self, location_id: str):
         """Execute update after delay."""
         await asyncio.sleep(self._debounce_delay)
@@ -595,7 +598,6 @@ class SyncManager:
 
 ---
 
-**Document Status**: 📋 Design  
-**Next Step**: Implement SyncManager class  
+**Document Status**: 📋 Design
+**Next Step**: Implement SyncManager class
 **Priority**: High (blocking bidirectional features)
-
