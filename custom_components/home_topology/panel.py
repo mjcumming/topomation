@@ -20,6 +20,7 @@ FRONTEND_URL = f"/api/{DOMAIN}/static"
 
 async def async_register_panel(hass: HomeAssistant) -> None:
     """Register the Home Topology panel."""
+    import time
 
     # Register static path for frontend assets
     await hass.http.async_register_static_paths(
@@ -31,6 +32,9 @@ async def async_register_panel(hass: HomeAssistant) -> None:
             )
         ]
     )
+
+    # Cache busting for development - add timestamp to module URL
+    cache_bust = int(time.time())
 
     # Register the panel in the sidebar
     frontend.async_register_built_in_panel(
@@ -45,7 +49,7 @@ async def async_register_panel(hass: HomeAssistant) -> None:
                 "name": "home-topology-panel",
                 "embed_iframe": False,
                 "trust_external": False,
-                "module_url": f"{FRONTEND_URL}/home-topology-panel.js",
+                "module_url": f"{FRONTEND_URL}/home-topology-panel.js?v={cache_bust}",
             }
         },
     )

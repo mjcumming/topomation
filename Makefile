@@ -108,13 +108,13 @@ symlink:
 	ln -sf $(PWD)/custom_components/home_topology $$HA_CONFIG/custom_components/home_topology && \
 	echo "✅ Symlink created: $$HA_CONFIG/custom_components/home_topology"
 
-# Frontend (when build system added)
+# Frontend
 frontend-install:
-	cd frontend && npm install
+	cd custom_components/home_topology/frontend && npm install
 
 frontend-build:
-	cd frontend && npm run build
+	cd custom_components/home_topology/frontend && npm run build
 
 frontend-watch:
-	cd frontend && npm run watch
+	cd custom_components/home_topology/frontend && npm run dev
 

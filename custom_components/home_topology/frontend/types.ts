@@ -41,6 +41,18 @@ export interface OccupancySource {
   off_trailing?: number | null;
 }
 
+export interface AutomationConfig extends ModuleConfig {
+  rules: AutomationRule[];
+}
+
+export interface AutomationRule {
+  id: string;
+  name: string;
+  trigger_type: "occupied" | "vacant";
+  action_entity_id: string;
+  action_service: string;
+}
+
 export interface LocationMeta {
   type: LocationType;
   category?: string;
@@ -76,4 +88,3 @@ export interface UpdateLocationData {
 export interface HomeTopologyPanelConfig {
   title?: string;
 }
-

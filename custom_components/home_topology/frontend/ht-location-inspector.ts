@@ -1,13 +1,15 @@
 import { LitElement, html, css } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import type { HomeAssistant, Location, OccupancyConfig } from "./types";
+import type { HomeAssistant, Location, OccupancyConfig, AutomationConfig } from "./types";
 import { sharedStyles } from "./styles";
+
+console.log("[ht-location-inspector] module loaded");
 
 /**
  * Location inspector panel
  * Shows details and configuration for selected location
  */
-@customElement("ht-location-inspector")
+// @customElement("ht-location-inspector")
 export class HtLocationInspector extends LitElement {
   @property({ attribute: false }) public hass!: HomeAssistant;
   @property({ attribute: false }) public location?: Location;
@@ -331,12 +333,83 @@ export class HtLocationInspector extends LitElement {
   }
 
   private _renderActionsTab() {
+    if (!this.location) return "";
+
+    const config = (this.location.modules.automation || {}) as AutomationConfig;
+    const rules = config.rules || [];
+
     return html`
-      <div class="empty-state">
-        <div class="empty-state-icon">🎬</div>
-        <div>Actions configuration coming soon</div>
+      <div>
+        <div class="section-header">AUTOMATION RULES</div>
+
+        <div class="actions">
+          <button class="button button-primary" @click=${this._handleAddRule}>
+            + Add Rule
+          </button>
+        </div>
+
+        <div class="rules-list" style="margin-top: var(--spacing-md);">
+          ${
+            rules.length === 0
+              ? html`
+                  <div class="empty-state">
+                    <div class="text-muted">No automation rules configured.</div>
+                  </div>
+                `
+              : rules.map(
+                  (rule) => html`
+                    <div class="source-item">
+                      <div class="source-icon">⚡</div>
+                      <div class="source-info">
+                        <div class="source-name">${rule.name}</div>
+                        <div class="source-details">
+                          When ${rule.trigger_type} → ${rule.action_service} (${rule.action_entity_id})
+                        </div>
+                      </div>
+                      <button class="icon-button" @click=${() => this._handleDeleteRule(rule.id)}>🗑️</button>
+                    </div>
+                  `
+                )
+          }
+        </div>
       </div>
     `;
+  }
+
+  private _handleAddRule() {
+    alert("Rule editor dialog coming in next iteration");
+  }
+
+  private async _handleDeleteRule(ruleId: string) {
+    if (!confirm("Are you sure you want to delete this rule?")) return;
+
+    // Logic to remove rule from config and save
+    if (!this.location) return;
+    const config = (this.location.modules.automation || {}) as AutomationConfig;
+    const rules = config.rules || [];
+    const newRules = rules.filter(r => r.id !== ruleId);
+
+    await this._updateModuleConfig("automation", { ...config, rules: newRules });
+  }
+
+  private async _updateModuleConfig(moduleId: string, config: any): Promise<void> {
+    if (!this.location) return;
+
+    try {
+      await this.hass.callWS({
+        type: "home_topology/locations/set_module_config",
+        location_id: this.location.id,
+        module_id: moduleId,
+        config,
+      });
+
+      // Update local state
+      this.location.modules[moduleId] = config;
+      this.requestUpdate();
+    } catch (err) {
+      console.error("Failed to update config:", err);
+      alert("Failed to update configuration");
+    }
   }
 
   private _getLocationIcon(type: string): string {
@@ -372,23 +445,16 @@ export class HtLocationInspector extends LitElement {
   }
 
   private async _updateConfig(config: OccupancyConfig): Promise<void> {
-    if (!this.location) return;
+    await this._updateModuleConfig("occupancy", config);
+  }
+}
 
-    try {
-      await this.hass.callWS({
-        type: "home_topology/locations/set_module_config",
-        location_id: this.location.id,
-        module_id: "occupancy",
-        config,
-      });
-
-      // Update local state
-      this.location.modules.occupancy = config;
-      this.requestUpdate();
-    } catch (err) {
-      console.error("Failed to update config:", err);
-      alert("Failed to update configuration");
-    }
+if (!customElements.get("ht-location-inspector")) {
+  try {
+    console.log("[ht-location-inspector] registering custom element");
+    customElements.define("ht-location-inspector", HtLocationInspector);
+  } catch (err) {
+    console.error("[ht-location-inspector] failed to define element", err);
   }
 }
 

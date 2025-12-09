@@ -7,11 +7,13 @@ import type {
 } from "./types";
 import { sharedStyles } from "./styles";
 
+console.log("[ht-location-tree] module loaded");
+
 /**
  * Location tree component
  * Displays hierarchical location structure with expand/collapse
  */
-@customElement("ht-location-tree")
+// @customElement("ht-location-tree")
 export class HtLocationTree extends LitElement {
   @property({ attribute: false }) public hass!: HomeAssistant;
   @property({ attribute: false }) public locations: Location[] = [];
@@ -228,6 +230,15 @@ export class HtLocationTree extends LitElement {
         composed: true,
       })
     );
+  }
+}
+
+if (!customElements.get("ht-location-tree")) {
+  try {
+    console.log("[ht-location-tree] registering custom element");
+    customElements.define("ht-location-tree", HtLocationTree);
+  } catch (err) {
+    console.error("[ht-location-tree] failed to define element", err);
   }
 }
 

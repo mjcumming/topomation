@@ -175,7 +175,9 @@ def handle_locations_update(
     try:
         location = loc_mgr.get_location(location_id)
         if not location:
-            connection.send_error(msg["id"], "not_found", f"Location {location_id} not found")
+            connection.send_error(
+                msg["id"], "not_found", f"Location {location_id} not found"
+            )
             return
 
         # Apply changes (name, parent_id)
@@ -344,7 +346,9 @@ def handle_ambient_get_reading(
     modules = kernel["modules"]
 
     if "ambient" not in modules:
-        connection.send_error(msg["id"], "module_not_loaded", "Ambient module not loaded")
+        connection.send_error(
+            msg["id"], "module_not_loaded", "Ambient module not loaded"
+        )
         return
 
     ambient_module = modules["ambient"]
@@ -385,7 +389,9 @@ def handle_ambient_set_sensor(
     modules = kernel["modules"]
 
     if "ambient" not in modules:
-        connection.send_error(msg["id"], "module_not_loaded", "Ambient module not loaded")
+        connection.send_error(
+            msg["id"], "module_not_loaded", "Ambient module not loaded"
+        )
         return
 
     ambient_module = modules["ambient"]
@@ -420,7 +426,9 @@ def handle_ambient_auto_discover(
     modules = kernel["modules"]
 
     if "ambient" not in modules:
-        connection.send_error(msg["id"], "module_not_loaded", "Ambient module not loaded")
+        connection.send_error(
+            msg["id"], "module_not_loaded", "Ambient module not loaded"
+        )
         return
 
     ambient_module = modules["ambient"]
@@ -463,7 +471,9 @@ async def handle_sync_import(
     sync_manager = kernel.get("sync_manager")
 
     if not sync_manager:
-        connection.send_error(msg["id"], "sync_not_available", "Sync manager not available")
+        connection.send_error(
+            msg["id"], "sync_not_available", "Sync manager not available"
+        )
         return
 
     try:
@@ -514,7 +524,9 @@ def handle_sync_status(
     loc_mgr = kernel["location_manager"]
 
     if not sync_manager:
-        connection.send_error(msg["id"], "sync_not_available", "Sync manager not available")
+        connection.send_error(
+            msg["id"], "sync_not_available", "Sync manager not available"
+        )
         return
 
     location_id = msg.get("location_id")
@@ -598,7 +610,9 @@ def handle_sync_enable(
 
     location = loc_mgr.get_location(location_id)
     if not location:
-        connection.send_error(msg["id"], "location_not_found", f"Location {location_id} not found")
+        connection.send_error(
+            msg["id"], "location_not_found", f"Location {location_id} not found"
+        )
         return
 
     try:

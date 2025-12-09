@@ -165,9 +165,9 @@ def print_test_separator(title: str) -> None:
     Args:
         title: Test section title
     """
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print(f"  {title}")
-    print(f"{'='*70}\n")
+    print(f"{'=' * 70}\n")
 
 
 class TestTimer:
@@ -199,7 +199,6 @@ class TestTimer:
 
 
 # Constants for common test values
-TEST_TIMEOUT_SHORT = 1.0    # 1 second for fast tests
-TEST_TIMEOUT_MEDIUM = 5.0   # 5 seconds for normal tests
-TEST_TIMEOUT_LONG = 10.0    # 10 seconds for slow tests
-
+TEST_TIMEOUT_SHORT = 1.0  # 1 second for fast tests
+TEST_TIMEOUT_MEDIUM = 5.0  # 5 seconds for normal tests
+TEST_TIMEOUT_LONG = 10.0  # 10 seconds for slow tests

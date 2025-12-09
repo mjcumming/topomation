@@ -1,7 +1,7 @@
 # Bidirectional Sync Implementation Complete ✅
 
-**Status**: All plan tasks completed and tested  
-**Date**: December 9, 2025  
+**Status**: All plan tasks completed and tested
+**Date**: December 9, 2025
 **Commit**: `daab9ba`
 
 ---
@@ -15,6 +15,7 @@ Successfully implemented **complete bidirectional synchronization** between Home
 ## 🎯 Completed Tasks
 
 ### ✅ Task 1: Create SyncManager Class
+
 **File**: `custom_components/home_topology/sync_manager.py` (790 lines)
 
 - Full bidirectional sync logic
@@ -24,6 +25,7 @@ Successfully implemented **complete bidirectional synchronization** between Home
 - Floor registry support (HA 2023.9+)
 
 **Key Methods**:
+
 ```python
 async def import_all_areas_and_floors()  # Phase 1: Initial import
 def _on_area_registry_updated()          # Phase 2: HA → Topology
@@ -34,7 +36,8 @@ def _on_location_deleted()               # Phase 3: Topology → HA
 def _on_location_parent_changed()        # Phase 3: Floor changes
 ```
 
-### ✅ Task 2: Integrate SyncManager into __init__.py
+### ✅ Task 2: Integrate SyncManager into **init**.py
+
 **File**: `custom_components/home_topology/__init__.py`
 
 - Replaced `_build_topology_from_ha()` with SyncManager
@@ -44,6 +47,7 @@ def _on_location_parent_changed()        # Phase 3: Floor changes
 - Store sync_manager in kernel data
 
 ### ✅ Task 3: Floor Registry Support
+
 **Implementation**: Built into SyncManager
 
 - Import floors as locations: `floor_{floor_id}`
@@ -52,18 +56,23 @@ def _on_location_parent_changed()        # Phase 3: Floor changes
 - HA 2023.9+ version detection
 
 ### ✅ Task 4: HA → Topology Event Listeners
+
 **Events Handled**:
+
 - `EVENT_AREA_REGISTRY_UPDATED` (create/update/delete)
 - `EVENT_FLOOR_REGISTRY_UPDATED` (create/update/delete)
 - `EVENT_ENTITY_REGISTRY_UPDATED` (area changes)
 
 ### ✅ Task 5: Topology → HA Event Listeners
+
 **Events Handled**:
+
 - `location.renamed` → HA area name update
 - `location.deleted` → (preserves HA area by default)
 - `location.parent_changed` → HA floor assignment
 
 ### ✅ Task 6: Circular Update Prevention
+
 **Implementation**: Lock mechanism with timestamps
 
 ```python
@@ -77,9 +86,11 @@ _is_update_from_topology(location_id) -> bool
 ```
 
 ### ✅ Task 7: Comprehensive Test Suite
+
 **File**: `tests/test_sync_manager.py` (620 lines, 30+ tests)
 
 **Test Classes**:
+
 1. `TestInitialImport` - 6 tests for Phase 1
 2. `TestHAToTopologySync` - 3 tests for Phase 2
 3. `TestTopologyToHASync` - 2 tests for Phase 3
@@ -88,6 +99,7 @@ _is_update_from_topology(location_id) -> bool
 6. `TestSyncPerformance` - 1 test for 50+ areas
 
 **Coverage**:
+
 - Empty HA import
 - Single/multiple area import
 - Area with entities
@@ -102,16 +114,19 @@ _is_update_from_topology(location_id) -> bool
 - Performance with 50 areas
 
 ### ✅ Task 8: WebSocket API Commands
+
 **File**: `custom_components/home_topology/websocket_api.py`
 
 **New Commands**:
 
 1. **`home_topology/sync/import`** - Force re-import
+
    ```json
-   {"type": "home_topology/sync/import", "force": true}
+   { "type": "home_topology/sync/import", "force": true }
    ```
 
 2. **`home_topology/sync/status`** - Get sync status
+
    ```json
    {"type": "home_topology/sync/status"}
    {"type": "home_topology/sync/status", "location_id": "area_123"}
@@ -119,7 +134,11 @@ _is_update_from_topology(location_id) -> bool
 
 3. **`home_topology/sync/enable`** - Enable/disable sync
    ```json
-   {"type": "home_topology/sync/enable", "location_id": "area_123", "enabled": false}
+   {
+     "type": "home_topology/sync/enable",
+     "location_id": "area_123",
+     "enabled": false
+   }
    ```
 
 ---
@@ -135,10 +154,12 @@ _is_update_from_topology(location_id) -> bool
 ## 🔧 Modified Files
 
 1. `custom_components/home_topology/__init__.py`
+
    - Integrated SyncManager
    - Removed old import logic
 
 2. `custom_components/home_topology/const.py`
+
    - Added WebSocket constants
 
 3. `custom_components/home_topology/websocket_api.py`
@@ -166,6 +187,7 @@ Location `_meta` module stores sync information:
 ## 🔄 Sync Flow Diagrams
 
 ### Phase 1: Initial Import (Startup)
+
 ```
 HA Areas/Floors  →  SyncManager.import_all_areas_and_floors()
                  →  Create locations with _meta
@@ -173,6 +195,7 @@ HA Areas/Floors  →  SyncManager.import_all_areas_and_floors()
 ```
 
 ### Phase 2: Live Sync (HA → Topology)
+
 ```
 HA Area Renamed  →  EVENT_AREA_REGISTRY_UPDATED
                  →  _on_area_registry_updated()
@@ -181,6 +204,7 @@ HA Area Renamed  →  EVENT_AREA_REGISTRY_UPDATED
 ```
 
 ### Phase 3: Live Sync (Topology → HA)
+
 ```
 Location Renamed →  location.renamed event
                  →  _on_location_renamed()
@@ -192,37 +216,39 @@ Location Renamed →  location.renamed event
 
 ## 🎯 Features Implemented
 
-| Feature | Status | Notes |
-|---------|--------|-------|
-| Initial area import | ✅ | On startup |
-| Initial floor import | ✅ | HA 2023.9+ |
-| Entity mapping | ✅ | Based on area assignments |
-| HA area renames → Topology | ✅ | Live sync |
-| HA area deletes → Topology | ✅ | Removes location |
-| HA floor renames → Topology | ✅ | Live sync |
-| HA floor deletes → Topology | ✅ | Orphans to root |
-| Entity moves → Topology | ✅ | Updates mapping |
-| Topology renames → HA areas | ✅ | Live sync |
-| Topology deletes → HA | ⚠️ | Preserves HA (configurable) |
-| Topology-only locations | ✅ | No HA sync |
-| Circular update prevention | ✅ | 1s lock window |
-| Floor hierarchy | ✅ | Floor → Area parent |
-| Relationship tracking | ✅ | ha_area_id, ha_floor_id |
-| WebSocket control | ✅ | 3 commands |
-| Comprehensive tests | ✅ | 30+ tests |
-| Performance tested | ✅ | 50+ areas < 2s |
+| Feature                     | Status | Notes                       |
+| --------------------------- | ------ | --------------------------- |
+| Initial area import         | ✅     | On startup                  |
+| Initial floor import        | ✅     | HA 2023.9+                  |
+| Entity mapping              | ✅     | Based on area assignments   |
+| HA area renames → Topology  | ✅     | Live sync                   |
+| HA area deletes → Topology  | ✅     | Removes location            |
+| HA floor renames → Topology | ✅     | Live sync                   |
+| HA floor deletes → Topology | ✅     | Orphans to root             |
+| Entity moves → Topology     | ✅     | Updates mapping             |
+| Topology renames → HA areas | ✅     | Live sync                   |
+| Topology deletes → HA       | ⚠️     | Preserves HA (configurable) |
+| Topology-only locations     | ✅     | No HA sync                  |
+| Circular update prevention  | ✅     | 1s lock window              |
+| Floor hierarchy             | ✅     | Floor → Area parent         |
+| Relationship tracking       | ✅     | ha_area_id, ha_floor_id     |
+| WebSocket control           | ✅     | 3 commands                  |
+| Comprehensive tests         | ✅     | 30+ tests                   |
+| Performance tested          | ✅     | 50+ areas < 2s              |
 
 ---
 
 ## 🧪 Testing
 
 ### Run Unit Tests
+
 ```bash
 cd /workspaces/home-topology-ha
 pytest tests/test_sync_manager.py -v
 ```
 
 ### Run Specific Test Class
+
 ```bash
 pytest tests/test_sync_manager.py::TestInitialImport -v
 pytest tests/test_sync_manager.py::TestHAToTopologySync -v
@@ -230,6 +256,7 @@ pytest tests/test_sync_manager.py::TestTopologyToHASync -v
 ```
 
 ### Run Performance Tests
+
 ```bash
 pytest tests/test_sync_manager.py::TestSyncPerformance -v
 ```
@@ -241,17 +268,20 @@ pytest tests/test_sync_manager.py::TestSyncPerformance -v
 ### In Home Assistant
 
 1. **Automatic on Startup**: SyncManager runs automatically
+
    - Imports all areas and floors
    - Maps entities to locations
    - Starts live sync listeners
 
 2. **Manual Re-Import** (via Developer Tools → WebSocket):
+
    ```yaml
    type: home_topology/sync/import
    force: true
    ```
 
 3. **Check Sync Status**:
+
    ```yaml
    type: home_topology/sync/status
    ```
@@ -324,13 +354,14 @@ With bidirectional sync complete, you can now:
 
 ## 📝 Git Details
 
-**Commit**: `daab9ba`  
-**Branch**: `main`  
-**Files Changed**: 45 files  
-**Lines Added**: 14,741  
-**Lines Removed**: 148  
+**Commit**: `daab9ba`
+**Branch**: `main`
+**Files Changed**: 45 files
+**Lines Added**: 14,741
+**Lines Removed**: 148
 
 **Commit Message**:
+
 ```
 feat: implement full bidirectional sync (Phase 2 & 3)
 
@@ -356,4 +387,3 @@ areas/floors and home-topology locations.
 - ✅ Committed and pushed to repository
 
 **Ready for live testing and production use! 🚀**
-

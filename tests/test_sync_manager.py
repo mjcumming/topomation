@@ -6,13 +6,19 @@ integration setup, making them faster and more focused.
 
 from __future__ import annotations
 
+import asyncio
+from datetime import UTC, datetime
+from unittest.mock import AsyncMock, Mock, patch
+
 import pytest
-from home_topology import EventBus, LocationManager
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import entity_registry as er
 
+from home_topology import EventBus, LocationManager
+
 from custom_components.home_topology.sync_manager import SyncManager
+
 
 # =============================================================================
 # Fixtures

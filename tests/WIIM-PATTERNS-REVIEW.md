@@ -89,6 +89,7 @@ def bypass_get_data_fixture(hass):
 ```
 
 **Key Learnings**:
+
 - ✅ Clear section organization with headers
 - ✅ `autouse` fixtures for common setup
 - ✅ Skip notifications to avoid test noise
@@ -117,6 +118,7 @@ addopts =
 ```
 
 **Key Learnings**:
+
 - ✅ `asyncio_mode = auto` - automatic async support
 - ✅ `asyncio_default_fixture_loop_scope = function` - clean loop per test
 - ✅ Coverage built into default pytest run
@@ -147,6 +149,7 @@ format         - Format code with ruff
 ```
 
 **Key Learnings**:
+
 - ✅ Separate targets for different test types
 - ✅ `test-quick` for fast development iteration
 - ✅ `test-smoke` for real HA testing (like our `test-live`)
@@ -185,6 +188,7 @@ class SmokeTestSuite:
 ```
 
 **Key Learnings**:
+
 - ✅ Uses HA REST API (not WebSocket) for simplicity
 - ✅ Safety limits (MAX_VOLUME for audio devices)
 - ✅ Structured test suite class
@@ -218,6 +222,7 @@ async-upnp-client==0.46.0
 ```
 
 **Key Learnings**:
+
 - ✅ Version pinning for stability
 - ✅ Comprehensive test tooling
 - ✅ `pytest-timeout` for hanging tests
@@ -255,6 +260,7 @@ def realistic_player_slave():
 ```
 
 **Key Learnings**:
+
 - ✅ Separate file for complex fixtures
 - ✅ Named scenarios (master, slave, solo)
 - ✅ All properties configured (not just MagicMock)
@@ -293,6 +299,7 @@ class TestIntegrationSetup:
 ```
 
 **Key Learnings**:
+
 - ✅ Test class organization
 - ✅ Mock `hass.http` to avoid errors
 - ✅ Test error states (SETUP_RETRY)
@@ -341,6 +348,7 @@ def bypass_get_data_fixture(hass):
 ```
 
 **Key Learnings**:
+
 - ✅ Comprehensive comment explaining why
 - ✅ Patch at multiple import locations
 - ✅ Avoid capability detection (slow!)
@@ -546,13 +554,13 @@ def wait_for_occupancy(hass, location_id: str, timeout: float = 1.0):
 
 ### Testing Implications
 
-| Aspect | WiiM | Home Topology |
-|--------|------|---------------|
-| **API mocking** | Extensive (avoid 100+ HTTP requests) | Minimal (kernel is lightweight) |
-| **Device fixtures** | Complex (50+ properties) | Simpler (areas/locations) |
-| **Network tests** | Real devices for smoke tests | HA registries for smoke tests |
-| **Speed concern** | Capability detection slow | Kernel operations fast |
-| **Live testing** | REST API to devices | REST API to HA |
+| Aspect              | WiiM                                 | Home Topology                   |
+| ------------------- | ------------------------------------ | ------------------------------- |
+| **API mocking**     | Extensive (avoid 100+ HTTP requests) | Minimal (kernel is lightweight) |
+| **Device fixtures** | Complex (50+ properties)             | Simpler (areas/locations)       |
+| **Network tests**   | Real devices for smoke tests         | HA registries for smoke tests   |
+| **Speed concern**   | Capability detection slow            | Kernel operations fast          |
+| **Live testing**    | REST API to devices                  | REST API to HA                  |
 
 ---
 
@@ -621,4 +629,3 @@ Our approach is **already strong** - we just need to adopt WiiM's organizational
 **Status**: Review complete, recommendations ready for implementation.
 
 **Next**: Apply high-priority recommendations to improve test suite.
-

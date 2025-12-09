@@ -245,7 +245,9 @@ async def _restore_module_state(hass: HomeAssistant, modules: dict[str, Any]) ->
                 module.restore_state(data[module_id])
                 _LOGGER.info("Restored state for %s", module_id)
             except Exception as e:
-                _LOGGER.error("Failed to restore state for %s: %s", module_id, e, exc_info=True)
+                _LOGGER.error(
+                    "Failed to restore state for %s: %s", module_id, e, exc_info=True
+                )
 
 
 async def _save_state(
@@ -263,7 +265,9 @@ async def _save_state(
         try:
             state_data[module_id] = module.dump_state()
         except Exception as e:
-            _LOGGER.error("Failed to dump state for %s: %s", module_id, e, exc_info=True)
+            _LOGGER.error(
+                "Failed to dump state for %s: %s", module_id, e, exc_info=True
+            )
 
     state_store = Store(hass, STORAGE_VERSION, STORAGE_KEY_STATE)
     await state_store.async_save(state_data)
