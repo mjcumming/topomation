@@ -1,4 +1,5 @@
 """Config flow for Home Topology integration."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -14,9 +15,7 @@ class HomeTopologyConfigFlow(ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
 
-    async def async_step_user(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Handle the initial step."""
         # Only allow one instance of this integration
         await self.async_set_unique_id(DOMAIN)
@@ -30,4 +29,3 @@ class HomeTopologyConfigFlow(ConfigFlow, domain=DOMAIN):
             data_schema=vol.Schema({}),
             description_placeholders={"name": NAME},
         )
-

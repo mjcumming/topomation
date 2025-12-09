@@ -1,4 +1,5 @@
 """Panel registration for Home Topology."""
+
 from __future__ import annotations
 
 import logging
@@ -19,7 +20,7 @@ FRONTEND_URL = f"/api/{DOMAIN}/static"
 
 async def async_register_panel(hass: HomeAssistant) -> None:
     """Register the Home Topology panel."""
-    
+
     # Register static path for frontend assets
     await hass.http.async_register_static_paths(
         [
@@ -30,7 +31,7 @@ async def async_register_panel(hass: HomeAssistant) -> None:
             )
         ]
     )
-    
+
     # Register the panel in the sidebar
     frontend.async_register_built_in_panel(
         hass,
@@ -48,6 +49,5 @@ async def async_register_panel(hass: HomeAssistant) -> None:
             }
         },
     )
-    
-    _LOGGER.debug("Home Topology panel registered at %s", PANEL_URL)
 
+    _LOGGER.debug("Home Topology panel registered at %s", PANEL_URL)

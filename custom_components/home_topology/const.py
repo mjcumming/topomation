@@ -4,6 +4,11 @@ DOMAIN = "home_topology"
 NAME = "Home Topology"
 VERSION = "0.1.0"
 
+# Storage
+STORAGE_VERSION = 1
+STORAGE_KEY_CONFIG = f"{DOMAIN}.config"
+STORAGE_KEY_STATE = f"{DOMAIN}.state"
+
 # Panel
 PANEL_URL = "/home-topology"
 PANEL_TITLE = "Location Manager"
@@ -16,4 +21,3 @@ WS_TYPE_LOCATIONS_UPDATE = f"{DOMAIN}/locations/update"
 WS_TYPE_LOCATIONS_DELETE = f"{DOMAIN}/locations/delete"
 WS_TYPE_LOCATIONS_REORDER = f"{DOMAIN}/locations/reorder"
 WS_TYPE_LOCATIONS_SET_MODULE_CONFIG = f"{DOMAIN}/locations/set_module_config"
-

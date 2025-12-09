@@ -1,4 +1,5 @@
 """WebSocket API for Home Topology."""
+
 from __future__ import annotations
 
 import logging
@@ -29,7 +30,7 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, handle_locations_delete)
     websocket_api.async_register_command(hass, handle_locations_reorder)
     websocket_api.async_register_command(hass, handle_locations_set_module_config)
-    
+
     _LOGGER.debug("Home Topology WebSocket API registered")
 
 
@@ -41,40 +42,30 @@ def handle_locations_list(
     msg: dict[str, Any],
 ) -> None:
     """Handle locations/list command."""
-    # TODO: Get locations from LocationManager
-    # location_manager = hass.data[DOMAIN][entry_id]["location_manager"]
-    # locations = location_manager.get_all_locations()
-    
-    # Mock response for now
-    locations = [
-        {
-            "id": "floor-1",
-            "name": "First Floor",
-            "parent_id": None,
-            "modules": {
-                "_meta": {"type": "floor"}
-            },
-        },
-        {
-            "id": "kitchen",
-            "name": "Kitchen",
-            "parent_id": "floor-1",
-            "modules": {
-                "_meta": {"type": "room", "category": "kitchen"},
-                "occupancy": {"enabled": True, "default_timeout": 600},
-            },
-        },
-        {
-            "id": "living-room",
-            "name": "Living Room",
-            "parent_id": "floor-1",
-            "modules": {
-                "_meta": {"type": "room", "category": "living"},
-                "occupancy": {"enabled": True, "default_timeout": 900},
-            },
-        },
-    ]
-    
+    # Get first entry (we only support one integration instance for now)
+    entry_ids = list(hass.data[DOMAIN].keys())
+    if not entry_ids:
+        connection.send_error(msg["id"], "not_loaded", "Integration not loaded")
+        return
+
+    kernel = hass.data[DOMAIN][entry_ids[0]]
+    loc_mgr = kernel["location_manager"]
+
+    # Get all locations and convert to dicts
+    locations = []
+    for loc in loc_mgr.all_locations():
+        locations.append(
+            {
+                "id": loc.id,
+                "name": loc.name,
+                "parent_id": loc.parent_id,
+                "is_explicit_root": loc.is_explicit_root,
+                "ha_area_id": loc.ha_area_id,
+                "entity_ids": loc.entity_ids,
+                "modules": loc.modules,
+            }
+        )
+
     connection.send_result(msg["id"], {"locations": locations})
 
 
@@ -93,24 +84,50 @@ def handle_locations_create(
     msg: dict[str, Any],
 ) -> None:
     """Handle locations/create command."""
+    entry_ids = list(hass.data[DOMAIN].keys())
+    if not entry_ids:
+        connection.send_error(msg["id"], "not_loaded", "Integration not loaded")
+        return
+
+    kernel = hass.data[DOMAIN][entry_ids[0]]
+    loc_mgr = kernel["location_manager"]
+
     name = msg["name"]
     parent_id = msg.get("parent_id")
     meta = msg.get("meta", {})
-    
-    # TODO: Create location via LocationManager
-    # location = location_manager.create_location(name, parent_id=parent_id)
-    # location_manager.set_module_config(location.id, "_meta", meta)
-    
-    # Mock response
-    location_id = name.lower().replace(" ", "-")
-    location = {
-        "id": location_id,
-        "name": name,
-        "parent_id": parent_id,
-        "modules": {"_meta": meta},
-    }
-    
-    connection.send_result(msg["id"], {"location": location})
+
+    # Generate ID from name
+    location_id = name.lower().replace(" ", "_")
+
+    try:
+        # Create location
+        loc_mgr.create_location(
+            id=location_id,
+            name=name,
+            parent_id=parent_id,
+            is_explicit_root=(parent_id is None),
+        )
+
+        # Set meta config if provided
+        if meta:
+            loc_mgr.set_module_config(location_id, "_meta", meta)
+
+        # Return created location
+        location = loc_mgr.get_location(location_id)
+        connection.send_result(
+            msg["id"],
+            {
+                "location": {
+                    "id": location.id,
+                    "name": location.name,
+                    "parent_id": location.parent_id,
+                    "is_explicit_root": location.is_explicit_root,
+                    "modules": location.modules,
+                }
+            },
+        )
+    except ValueError as e:
+        connection.send_error(msg["id"], "invalid_format", str(e))
 
 
 @websocket_api.websocket_command(
@@ -127,25 +144,61 @@ def handle_locations_update(
     msg: dict[str, Any],
 ) -> None:
     """Handle locations/update command."""
+    entry_ids = list(hass.data[DOMAIN].keys())
+    if not entry_ids:
+        connection.send_error(msg["id"], "not_loaded", "Integration not loaded")
+        return
+
+    kernel = hass.data[DOMAIN][entry_ids[0]]
+    loc_mgr = kernel["location_manager"]
+
     location_id = msg["location_id"]
     changes = msg["changes"]
-    
-    # TODO: Update location via LocationManager
-    # location = location_manager.get_location(location_id)
-    # if "name" in changes:
-    #     location_manager.rename_location(location_id, changes["name"])
-    # if "parent_id" in changes:
-    #     location_manager.move_location(location_id, changes["parent_id"])
-    
-    # Mock response
-    location = {
-        "id": location_id,
-        "name": changes.get("name", location_id),
-        "parent_id": changes.get("parent_id"),
-        "modules": {},
-    }
-    
-    connection.send_result(msg["id"], {"location": location})
+
+    try:
+        location = loc_mgr.get_location(location_id)
+        if not location:
+            connection.send_error(msg["id"], "not_found", f"Location {location_id} not found")
+            return
+
+        # Apply changes (name, parent_id)
+        if "name" in changes:
+            # Update name via recreating location
+            loc_mgr.delete_location(location_id)
+            loc_mgr.create_location(
+                id=location_id,
+                name=changes["name"],
+                parent_id=changes.get("parent_id", location.parent_id),
+                is_explicit_root=location.is_explicit_root,
+                ha_area_id=location.ha_area_id,
+            )
+        elif "parent_id" in changes:
+            # Update parent by recreating
+            loc_mgr.delete_location(location_id)
+            loc_mgr.create_location(
+                id=location_id,
+                name=location.name,
+                parent_id=changes["parent_id"],
+                is_explicit_root=location.is_explicit_root,
+                ha_area_id=location.ha_area_id,
+            )
+
+        # Return updated location
+        updated = loc_mgr.get_location(location_id)
+        connection.send_result(
+            msg["id"],
+            {
+                "location": {
+                    "id": updated.id,
+                    "name": updated.name,
+                    "parent_id": updated.parent_id,
+                    "is_explicit_root": updated.is_explicit_root,
+                    "modules": updated.modules,
+                }
+            },
+        )
+    except (ValueError, KeyError) as e:
+        connection.send_error(msg["id"], "update_failed", str(e))
 
 
 @websocket_api.websocket_command(
@@ -161,12 +214,21 @@ def handle_locations_delete(
     msg: dict[str, Any],
 ) -> None:
     """Handle locations/delete command."""
+    entry_ids = list(hass.data[DOMAIN].keys())
+    if not entry_ids:
+        connection.send_error(msg["id"], "not_loaded", "Integration not loaded")
+        return
+
+    kernel = hass.data[DOMAIN][entry_ids[0]]
+    loc_mgr = kernel["location_manager"]
+
     location_id = msg["location_id"]
-    
-    # TODO: Delete location via LocationManager
-    # location_manager.delete_location(location_id)
-    
-    connection.send_result(msg["id"], {"success": True})
+
+    try:
+        loc_mgr.delete_location(location_id)
+        connection.send_result(msg["id"], {"success": True})
+    except (ValueError, KeyError) as e:
+        connection.send_error(msg["id"], "delete_failed", str(e))
 
 
 @websocket_api.websocket_command(
@@ -184,13 +246,12 @@ def handle_locations_reorder(
     msg: dict[str, Any],
 ) -> None:
     """Handle locations/reorder command."""
-    location_id = msg["location_id"]
-    new_parent_id = msg["new_parent_id"]
-    new_index = msg["new_index"]
-    
     # TODO: Reorder location via LocationManager
+    # location_id = msg["location_id"]
+    # new_parent_id = msg["new_parent_id"]
+    # new_index = msg["new_index"]
     # location_manager.move_location(location_id, new_parent_id, index=new_index)
-    
+
     connection.send_result(msg["id"], {"success": True})
 
 
@@ -209,12 +270,29 @@ def handle_locations_set_module_config(
     msg: dict[str, Any],
 ) -> None:
     """Handle locations/set_module_config command."""
+    entry_ids = list(hass.data[DOMAIN].keys())
+    if not entry_ids:
+        connection.send_error(msg["id"], "not_loaded", "Integration not loaded")
+        return
+
+    kernel = hass.data[DOMAIN][entry_ids[0]]
+    loc_mgr = kernel["location_manager"]
+    modules = kernel["modules"]
+
     location_id = msg["location_id"]
     module_id = msg["module_id"]
     config = msg["config"]
-    
-    # TODO: Set module config via LocationManager
-    # location_manager.set_module_config(location_id, module_id, config)
-    
-    connection.send_result(msg["id"], {"success": True})
 
+    try:
+        # Set config in LocationManager
+        loc_mgr.set_module_config(location_id, module_id, config)
+
+        # Notify module of config change
+        if module_id in modules:
+            module = modules[module_id]
+            if hasattr(module, "on_location_config_changed"):
+                module.on_location_config_changed(location_id, config)
+
+        connection.send_result(msg["id"], {"success": True})
+    except (ValueError, KeyError) as e:
+        connection.send_error(msg["id"], "config_failed", str(e))
