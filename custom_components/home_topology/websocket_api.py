@@ -28,6 +28,40 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 
+def _get_kernel(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Resolve the integration runtime data for a WebSocket command."""
+    domain_data: dict[str, Any] = hass.data.get(DOMAIN, {})
+    if not domain_data:
+        connection.send_error(msg["id"], "not_loaded", "Integration not loaded")
+        return None
+
+    requested_entry_id = msg.get("entry_id")
+    if requested_entry_id is not None:
+        kernel = domain_data.get(requested_entry_id)
+        if kernel is None:
+            connection.send_error(
+                msg["id"],
+                "entry_not_found",
+                f"Config entry '{requested_entry_id}' not found",
+            )
+            return None
+        return kernel
+
+    if len(domain_data) == 1:
+        return next(iter(domain_data.values()))
+
+    connection.send_error(
+        msg["id"],
+        "entry_required",
+        "Multiple Home Topology entries loaded; include 'entry_id'",
+    )
+    return None
+
+
 def async_register_websocket_api(hass: HomeAssistant) -> None:
     """Register WebSocket API commands."""
     # Location management
@@ -51,7 +85,12 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
     _LOGGER.debug("Home Topology WebSocket API registered")
 
 
-@websocket_api.websocket_command({vol.Required("type"): WS_TYPE_LOCATIONS_LIST})
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): WS_TYPE_LOCATIONS_LIST,
+        vol.Optional("entry_id"): str,
+    }
+)
 @callback
 def handle_locations_list(
     hass: HomeAssistant,
@@ -59,13 +98,10 @@ def handle_locations_list(
     msg: dict[str, Any],
 ) -> None:
     """Handle locations/list command."""
-    # Get first entry (we only support one integration instance for now)
-    entry_ids = list(hass.data[DOMAIN].keys())
-    if not entry_ids:
-        connection.send_error(msg["id"], "not_loaded", "Integration not loaded")
+    kernel = _get_kernel(hass, connection, msg)
+    if kernel is None:
         return
 
-    kernel = hass.data[DOMAIN][entry_ids[0]]
     loc_mgr = kernel["location_manager"]
 
     # Get all locations and convert to dicts
@@ -92,6 +128,7 @@ def handle_locations_list(
         vol.Required("name"): str,
         vol.Optional("parent_id"): vol.Any(str, None),
         vol.Optional("meta"): dict,
+        vol.Optional("entry_id"): str,
     }
 )
 @callback
@@ -101,12 +138,10 @@ def handle_locations_create(
     msg: dict[str, Any],
 ) -> None:
     """Handle locations/create command."""
-    entry_ids = list(hass.data[DOMAIN].keys())
-    if not entry_ids:
-        connection.send_error(msg["id"], "not_loaded", "Integration not loaded")
+    kernel = _get_kernel(hass, connection, msg)
+    if kernel is None:
         return
 
-    kernel = hass.data[DOMAIN][entry_ids[0]]
     loc_mgr = kernel["location_manager"]
 
     name = msg["name"]
@@ -139,6 +174,8 @@ def handle_locations_create(
                     "name": location.name,
                     "parent_id": location.parent_id,
                     "is_explicit_root": location.is_explicit_root,
+                    "ha_area_id": location.ha_area_id,
+                    "entity_ids": location.entity_ids,
                     "modules": location.modules,
                 }
             },
@@ -152,6 +189,7 @@ def handle_locations_create(
         vol.Required("type"): WS_TYPE_LOCATIONS_UPDATE,
         vol.Required("location_id"): str,
         vol.Required("changes"): dict,
+        vol.Optional("entry_id"): str,
     }
 )
 @callback
@@ -161,12 +199,10 @@ def handle_locations_update(
     msg: dict[str, Any],
 ) -> None:
     """Handle locations/update command."""
-    entry_ids = list(hass.data[DOMAIN].keys())
-    if not entry_ids:
-        connection.send_error(msg["id"], "not_loaded", "Integration not loaded")
+    kernel = _get_kernel(hass, connection, msg)
+    if kernel is None:
         return
 
-    kernel = hass.data[DOMAIN][entry_ids[0]]
     loc_mgr = kernel["location_manager"]
 
     location_id = msg["location_id"]
@@ -175,35 +211,33 @@ def handle_locations_update(
     try:
         location = loc_mgr.get_location(location_id)
         if not location:
-            connection.send_error(
-                msg["id"], "not_found", f"Location {location_id} not found"
-            )
+            connection.send_error(msg["id"], "not_found", f"Location {location_id} not found")
             return
 
-        # Apply changes (name, parent_id)
+        # Extract update parameters
+        update_kwargs = {}
         if "name" in changes:
-            # Update name via recreating location
-            loc_mgr.delete_location(location_id)
-            loc_mgr.create_location(
-                id=location_id,
-                name=changes["name"],
-                parent_id=changes.get("parent_id", location.parent_id),
-                is_explicit_root=location.is_explicit_root,
-                ha_area_id=location.ha_area_id,
-            )
-        elif "parent_id" in changes:
-            # Update parent by recreating
-            loc_mgr.delete_location(location_id)
-            loc_mgr.create_location(
-                id=location_id,
-                name=location.name,
-                parent_id=changes["parent_id"],
-                is_explicit_root=location.is_explicit_root,
-                ha_area_id=location.ha_area_id,
-            )
+            update_kwargs["name"] = changes["name"]
+        if "parent_id" in changes:
+            update_kwargs["parent_id"] = changes["parent_id"]
+
+        # Update location using LocationManager.update_location()
+        if update_kwargs:
+            updated = loc_mgr.update_location(location_id, **update_kwargs)
+        else:
+            updated = location
+
+        # Handle meta updates (per ADR-HA-005)
+        if "meta" in changes:
+            meta = changes["meta"]
+            # Merge with existing meta
+            existing_meta = location.modules.get("_meta", {})
+            merged_meta = {**existing_meta, **meta}
+            loc_mgr.set_module_config(location_id, "_meta", merged_meta)
+            # Reload to get updated modules
+            updated = loc_mgr.get_location(location_id)
 
         # Return updated location
-        updated = loc_mgr.get_location(location_id)
         connection.send_result(
             msg["id"],
             {
@@ -212,6 +246,8 @@ def handle_locations_update(
                     "name": updated.name,
                     "parent_id": updated.parent_id,
                     "is_explicit_root": updated.is_explicit_root,
+                    "ha_area_id": updated.ha_area_id,
+                    "entity_ids": updated.entity_ids,
                     "modules": updated.modules,
                 }
             },
@@ -224,6 +260,7 @@ def handle_locations_update(
     {
         vol.Required("type"): WS_TYPE_LOCATIONS_DELETE,
         vol.Required("location_id"): str,
+        vol.Optional("entry_id"): str,
     }
 )
 @callback
@@ -233,12 +270,10 @@ def handle_locations_delete(
     msg: dict[str, Any],
 ) -> None:
     """Handle locations/delete command."""
-    entry_ids = list(hass.data[DOMAIN].keys())
-    if not entry_ids:
-        connection.send_error(msg["id"], "not_loaded", "Integration not loaded")
+    kernel = _get_kernel(hass, connection, msg)
+    if kernel is None:
         return
 
-    kernel = hass.data[DOMAIN][entry_ids[0]]
     loc_mgr = kernel["location_manager"]
 
     location_id = msg["location_id"]
@@ -256,6 +291,7 @@ def handle_locations_delete(
         vol.Required("location_id"): str,
         vol.Required("new_parent_id"): vol.Any(str, None),
         vol.Required("new_index"): int,
+        vol.Optional("entry_id"): str,
     }
 )
 @callback
@@ -265,13 +301,42 @@ def handle_locations_reorder(
     msg: dict[str, Any],
 ) -> None:
     """Handle locations/reorder command."""
-    # TODO: Reorder location via LocationManager
-    # location_id = msg["location_id"]
-    # new_parent_id = msg["new_parent_id"]
-    # new_index = msg["new_index"]
-    # location_manager.move_location(location_id, new_parent_id, index=new_index)
+    kernel = _get_kernel(hass, connection, msg)
+    if kernel is None:
+        return
 
-    connection.send_result(msg["id"], {"success": True})
+    loc_mgr = kernel["location_manager"]
+
+    location_id = msg["location_id"]
+    new_parent_id = msg["new_parent_id"]
+    new_index = msg["new_index"]
+
+    try:
+        location = loc_mgr.get_location(location_id)
+        if not location:
+            connection.send_error(msg["id"], "not_found", f"Location {location_id} not found")
+            return
+
+        if hasattr(loc_mgr, "reorder_location"):
+            updated = loc_mgr.reorder_location(location_id, new_parent_id, new_index)
+            resolved_parent_id = updated.parent_id
+        else:
+            # Fallback for older core versions (parent move only).
+            if location.parent_id != new_parent_id:
+                loc_mgr.update_location(location_id, parent_id=new_parent_id)
+            resolved_parent_id = new_parent_id
+
+        connection.send_result(
+            msg["id"],
+            {
+                "success": True,
+                "location_id": location_id,
+                "parent_id": resolved_parent_id,
+                "index": new_index,
+            },
+        )
+    except (ValueError, KeyError) as e:
+        connection.send_error(msg["id"], "reorder_failed", str(e))
 
 
 @websocket_api.websocket_command(
@@ -280,6 +345,7 @@ def handle_locations_reorder(
         vol.Required("location_id"): str,
         vol.Required("module_id"): str,
         vol.Required("config"): dict,
+        vol.Optional("entry_id"): str,
     }
 )
 @callback
@@ -289,12 +355,10 @@ def handle_locations_set_module_config(
     msg: dict[str, Any],
 ) -> None:
     """Handle locations/set_module_config command."""
-    entry_ids = list(hass.data[DOMAIN].keys())
-    if not entry_ids:
-        connection.send_error(msg["id"], "not_loaded", "Integration not loaded")
+    kernel = _get_kernel(hass, connection, msg)
+    if kernel is None:
         return
 
-    kernel = hass.data[DOMAIN][entry_ids[0]]
     loc_mgr = kernel["location_manager"]
     modules = kernel["modules"]
 
@@ -328,6 +392,7 @@ def handle_locations_set_module_config(
         vol.Required("location_id"): str,
         vol.Optional("dark_threshold"): vol.Coerce(float),
         vol.Optional("bright_threshold"): vol.Coerce(float),
+        vol.Optional("entry_id"): str,
     }
 )
 @callback
@@ -337,18 +402,14 @@ def handle_ambient_get_reading(
     msg: dict[str, Any],
 ) -> None:
     """Handle ambient/get_reading command."""
-    entry_ids = list(hass.data[DOMAIN].keys())
-    if not entry_ids:
-        connection.send_error(msg["id"], "not_loaded", "Integration not loaded")
+    kernel = _get_kernel(hass, connection, msg)
+    if kernel is None:
         return
 
-    kernel = hass.data[DOMAIN][entry_ids[0]]
     modules = kernel["modules"]
 
     if "ambient" not in modules:
-        connection.send_error(
-            msg["id"], "module_not_loaded", "Ambient module not loaded"
-        )
+        connection.send_error(msg["id"], "module_not_loaded", "Ambient module not loaded")
         return
 
     ambient_module = modules["ambient"]
@@ -371,6 +432,7 @@ def handle_ambient_get_reading(
         vol.Required("type"): WS_TYPE_AMBIENT_SET_SENSOR,
         vol.Required("location_id"): str,
         vol.Required("entity_id"): str,
+        vol.Optional("entry_id"): str,
     }
 )
 @callback
@@ -380,18 +442,14 @@ def handle_ambient_set_sensor(
     msg: dict[str, Any],
 ) -> None:
     """Handle ambient/set_sensor command."""
-    entry_ids = list(hass.data[DOMAIN].keys())
-    if not entry_ids:
-        connection.send_error(msg["id"], "not_loaded", "Integration not loaded")
+    kernel = _get_kernel(hass, connection, msg)
+    if kernel is None:
         return
 
-    kernel = hass.data[DOMAIN][entry_ids[0]]
     modules = kernel["modules"]
 
     if "ambient" not in modules:
-        connection.send_error(
-            msg["id"], "module_not_loaded", "Ambient module not loaded"
-        )
+        connection.send_error(msg["id"], "module_not_loaded", "Ambient module not loaded")
         return
 
     ambient_module = modules["ambient"]
@@ -408,6 +466,7 @@ def handle_ambient_set_sensor(
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_AMBIENT_AUTO_DISCOVER,
+        vol.Optional("entry_id"): str,
     }
 )
 @callback
@@ -417,18 +476,14 @@ def handle_ambient_auto_discover(
     msg: dict[str, Any],
 ) -> None:
     """Handle ambient/auto_discover command."""
-    entry_ids = list(hass.data[DOMAIN].keys())
-    if not entry_ids:
-        connection.send_error(msg["id"], "not_loaded", "Integration not loaded")
+    kernel = _get_kernel(hass, connection, msg)
+    if kernel is None:
         return
 
-    kernel = hass.data[DOMAIN][entry_ids[0]]
     modules = kernel["modules"]
 
     if "ambient" not in modules:
-        connection.send_error(
-            msg["id"], "module_not_loaded", "Ambient module not loaded"
-        )
+        connection.send_error(msg["id"], "module_not_loaded", "Ambient module not loaded")
         return
 
     ambient_module = modules["ambient"]
@@ -449,6 +504,7 @@ def handle_ambient_auto_discover(
     {
         vol.Required("type"): WS_TYPE_SYNC_IMPORT,
         vol.Optional("force", default=False): bool,
+        vol.Optional("entry_id"): str,
     }
 )
 @websocket_api.async_response
@@ -462,18 +518,14 @@ async def handle_sync_import(
     Payload:
       - force: bool (optional) - Force reimport even if already imported
     """
-    entry_ids = list(hass.data[DOMAIN].keys())
-    if not entry_ids:
-        connection.send_error(msg["id"], "not_loaded", "Integration not loaded")
+    kernel = _get_kernel(hass, connection, msg)
+    if kernel is None:
         return
 
-    kernel = hass.data[DOMAIN][entry_ids[0]]
     sync_manager = kernel.get("sync_manager")
 
     if not sync_manager:
-        connection.send_error(
-            msg["id"], "sync_not_available", "Sync manager not available"
-        )
+        connection.send_error(msg["id"], "sync_not_available", "Sync manager not available")
         return
 
     try:
@@ -501,6 +553,7 @@ async def handle_sync_import(
     {
         vol.Required("type"): WS_TYPE_SYNC_STATUS,
         vol.Optional("location_id"): str,
+        vol.Optional("entry_id"): str,
     }
 )
 @callback
@@ -514,19 +567,15 @@ def handle_sync_status(
     Payload:
       - location_id: str (optional) - Get status for specific location
     """
-    entry_ids = list(hass.data[DOMAIN].keys())
-    if not entry_ids:
-        connection.send_error(msg["id"], "not_loaded", "Integration not loaded")
+    kernel = _get_kernel(hass, connection, msg)
+    if kernel is None:
         return
 
-    kernel = hass.data[DOMAIN][entry_ids[0]]
     sync_manager = kernel.get("sync_manager")
     loc_mgr = kernel["location_manager"]
 
     if not sync_manager:
-        connection.send_error(
-            msg["id"], "sync_not_available", "Sync manager not available"
-        )
+        connection.send_error(msg["id"], "sync_not_available", "Sync manager not available")
         return
 
     location_id = msg.get("location_id")
@@ -583,6 +632,7 @@ def handle_sync_status(
         vol.Required("type"): WS_TYPE_SYNC_ENABLE,
         vol.Required("location_id"): str,
         vol.Required("enabled"): bool,
+        vol.Optional("entry_id"): str,
     }
 )
 @callback
@@ -597,12 +647,10 @@ def handle_sync_enable(
       - location_id: str - Location to configure
       - enabled: bool - Enable or disable sync
     """
-    entry_ids = list(hass.data[DOMAIN].keys())
-    if not entry_ids:
-        connection.send_error(msg["id"], "not_loaded", "Integration not loaded")
+    kernel = _get_kernel(hass, connection, msg)
+    if kernel is None:
         return
 
-    kernel = hass.data[DOMAIN][entry_ids[0]]
     loc_mgr = kernel["location_manager"]
 
     location_id = msg["location_id"]
@@ -610,9 +658,7 @@ def handle_sync_enable(
 
     location = loc_mgr.get_location(location_id)
     if not location:
-        connection.send_error(
-            msg["id"], "location_not_found", f"Location {location_id} not found"
-        )
+        connection.send_error(msg["id"], "location_not_found", f"Location {location_id} not found")
         return
 
     try:

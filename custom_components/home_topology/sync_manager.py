@@ -20,6 +20,7 @@ from home_topology import Event, EventBus, EventFilter, LocationManager
 
 if TYPE_CHECKING:
     from homeassistant.helpers.area_registry import AreaEntry
+
     from home_topology import Location
 
 _LOGGER = logging.getLogger(__name__)
@@ -47,6 +48,8 @@ class SyncManager:
         self.hass = hass
         self.loc_mgr = loc_mgr
         self.event_bus = event_bus
+        if hasattr(self.loc_mgr, "set_event_bus"):
+            self.loc_mgr.set_event_bus(event_bus)
 
         # Registries
         self.area_registry = ar.async_get(hass)
@@ -80,12 +83,14 @@ class SyncManager:
 
         # Unsubscribe from HA events
         for unsub in self._ha_unsubs:
-            unsub()
+            if callable(unsub):
+                unsub()
         self._ha_unsubs.clear()
 
         # Unsubscribe from topology events
         for unsub in self._topo_unsubs:
-            unsub()
+            if callable(unsub):
+                unsub()
         self._topo_unsubs.clear()
 
     # =========================================================================
@@ -220,34 +225,34 @@ class SyncManager:
         _LOGGER.debug("Setting up HA registry event listeners")
 
         # Listen for area registry changes
-        self._ha_unsubs.append(
-            self.hass.bus.async_listen(
-                ar.EVENT_AREA_REGISTRY_UPDATED,
-                self._on_area_registry_updated,
-            )
+        area_unsub = self.hass.bus.async_listen(
+            ar.EVENT_AREA_REGISTRY_UPDATED,
+            self._on_area_registry_updated,
         )
+        if callable(area_unsub):
+            self._ha_unsubs.append(area_unsub)
 
         # Listen for floor registry changes (if available)
         if hasattr(self.area_registry, "floors"):
             try:
                 from homeassistant.helpers import floor_registry as fr
 
-                self._ha_unsubs.append(
-                    self.hass.bus.async_listen(
-                        fr.EVENT_FLOOR_REGISTRY_UPDATED,
-                        self._on_floor_registry_updated,
-                    )
+                floor_unsub = self.hass.bus.async_listen(
+                    fr.EVENT_FLOOR_REGISTRY_UPDATED,
+                    self._on_floor_registry_updated,
                 )
+                if callable(floor_unsub):
+                    self._ha_unsubs.append(floor_unsub)
             except ImportError:
                 _LOGGER.debug("Floor registry events not available")
 
         # Listen for entity registry changes
-        self._ha_unsubs.append(
-            self.hass.bus.async_listen(
-                er.EVENT_ENTITY_REGISTRY_UPDATED,
-                self._on_entity_registry_updated,
-            )
+        entity_unsub = self.hass.bus.async_listen(
+            er.EVENT_ENTITY_REGISTRY_UPDATED,
+            self._on_entity_registry_updated,
         )
+        if callable(entity_unsub):
+            self._ha_unsubs.append(entity_unsub)
 
     @callback
     def _on_area_registry_updated(self, event: HAEvent) -> None:
@@ -286,18 +291,15 @@ class SyncManager:
         if not area:
             return
 
-            # Mark as HA update to prevent loop
-            location_id = f"area_{area_id}"
-            self._mark_update_from_ha(location_id)
+        # Mark as HA update to prevent loop
+        location_id = f"area_{area_id}"
+        self._mark_update_from_ha(location_id)
 
-            try:
-                # Import the new area (awaitable task scheduled for later)
-                import asyncio
-
-                _task = asyncio.create_task(self._import_area(area))
-                # Don't wait - complete async to avoid blocking event loop
-            finally:
-                self._clear_update_mark(location_id)
+        try:
+            # Schedule async import without blocking the event callback.
+            self.hass.async_create_task(self._import_area(area))
+        finally:
+            self._clear_update_mark(location_id)
 
     def _handle_area_updated(self, area_id: str) -> None:
         """Handle area updated in HA."""
@@ -306,6 +308,10 @@ class SyncManager:
         location = self.loc_mgr.get_location(location_id)
 
         if not area or not location:
+            return
+
+        if not self._can_sync_from_ha(location):
+            _LOGGER.debug("Skipping HA area update for location %s due to sync policy", location_id)
             return
 
         # Mark as HA update
@@ -348,6 +354,10 @@ class SyncManager:
         location = self.loc_mgr.get_location(location_id)
 
         if not location:
+            return
+
+        if not self._can_sync_from_ha(location):
+            _LOGGER.debug("Skipping HA area remove for location %s due to sync policy", location_id)
             return
 
         # Mark as HA update
@@ -437,6 +447,13 @@ class SyncManager:
         if not floor or not location:
             return
 
+        if not self._can_sync_from_ha(location):
+            _LOGGER.debug(
+                "Skipping HA floor update for location %s due to sync policy",
+                location_id,
+            )
+            return
+
         self._mark_update_from_ha(location_id)
 
         try:
@@ -459,6 +476,13 @@ class SyncManager:
         location = self.loc_mgr.get_location(location_id)
 
         if not location:
+            return
+
+        if not self._can_sync_from_ha(location):
+            _LOGGER.debug(
+                "Skipping HA floor remove for location %s due to sync policy",
+                location_id,
+            )
             return
 
         self._mark_update_from_ha(location_id)
@@ -506,9 +530,11 @@ class SyncManager:
         try:
             # Remove from old location
             if old_area_id:
-                old_location_id = f"area_{old_area_id}"
                 try:
-                    self.loc_mgr.remove_entity_from_location(entity_id, old_location_id)
+                    old_location_id = f"area_{old_area_id}"
+                    old_location = self.loc_mgr.get_location(old_location_id)
+                    if old_location and self._can_sync_from_ha(old_location):
+                        self.loc_mgr.remove_entities_from_location([entity_id])
                 except (ValueError, KeyError):
                     pass
 
@@ -516,12 +542,14 @@ class SyncManager:
             if new_area_id:
                 new_location_id = f"area_{new_area_id}"
                 try:
-                    self.loc_mgr.add_entity_to_location(entity_id, new_location_id)
-                    _LOGGER.info(
-                        "Moved entity %s to location %s",
-                        entity_id,
-                        new_location_id,
-                    )
+                    new_location = self.loc_mgr.get_location(new_location_id)
+                    if new_location and self._can_sync_from_ha(new_location):
+                        self.loc_mgr.add_entity_to_location(entity_id, new_location_id)
+                        _LOGGER.info(
+                            "Moved entity %s to location %s",
+                            entity_id,
+                            new_location_id,
+                        )
                 except (ValueError, KeyError) as e:
                     _LOGGER.warning(
                         "Could not add entity %s to location %s: %s",
@@ -550,21 +578,24 @@ class SyncManager:
             self._on_location_renamed,
             EventFilter(event_type="location.renamed"),
         )
-        self._topo_unsubs.append(unsub)
+        if callable(unsub):
+            self._topo_unsubs.append(unsub)
 
         # Listen for location deletions
         unsub = self.event_bus.subscribe(
             self._on_location_deleted,
             EventFilter(event_type="location.deleted"),
         )
-        self._topo_unsubs.append(unsub)
+        if callable(unsub):
+            self._topo_unsubs.append(unsub)
 
         # Listen for location parent changes
         unsub = self.event_bus.subscribe(
             self._on_location_parent_changed,
             EventFilter(event_type="location.parent_changed"),
         )
-        self._topo_unsubs.append(unsub)
+        if callable(unsub):
+            self._topo_unsubs.append(unsub)
 
     @callback
     def _on_location_renamed(self, event: Event) -> None:
@@ -594,14 +625,8 @@ class SyncManager:
 
         meta = location.modules.get("_meta", {})
 
-        # Only sync if enabled
-        if not meta.get("sync_enabled", True):
+        if not self._can_sync_to_ha(meta):
             _LOGGER.debug("Sync disabled for location: %s", location_id)
-            return
-
-        # Only sync if from HA source
-        if meta.get("sync_source") != "homeassistant":
-            _LOGGER.debug("Location is topology-only: %s", location_id)
             return
 
         # Mark as topology update
@@ -639,12 +664,7 @@ class SyncManager:
         if self._is_update_from_ha(location_id):
             return
 
-        # Only sync if enabled
-        if not metadata.get("sync_enabled", True):
-            return
-
-        # Only sync if from HA source
-        if metadata.get("sync_source") != "homeassistant":
+        if not self._can_sync_to_ha(metadata):
             return
 
         # Mark as topology update
@@ -689,10 +709,7 @@ class SyncManager:
 
         meta = location.modules.get("_meta", {})
 
-        # Only sync if enabled and from HA
-        if not meta.get("sync_enabled", True):
-            return
-        if meta.get("sync_source") != "homeassistant":
+        if not self._can_sync_to_ha(meta):
             return
 
         # Only handle area locations (not floors)
@@ -757,6 +774,16 @@ class SyncManager:
         """Clear update marks after sync complete."""
         self._update_locks.pop(f"ha_{location_id}", None)
         self._update_locks.pop(f"topo_{location_id}", None)
+
+    def _can_sync_to_ha(self, meta: dict) -> bool:
+        """Return True if topology changes may write back to Home Assistant."""
+        if not meta.get("sync_enabled", True):
+            return False
+        return meta.get("sync_source", "homeassistant") == "homeassistant"
+
+    def _can_sync_from_ha(self, location: Location) -> bool:
+        """Return True if Home Assistant changes may update this topology location."""
+        return self._can_sync_to_ha(location.modules.get("_meta", {}))
 
     # =========================================================================
     # Utility Methods

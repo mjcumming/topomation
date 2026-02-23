@@ -4,9 +4,9 @@
   "codeowners": ["@mike"],
   "config_flow": true,
   "dependencies": ["frontend", "http", "websocket_api"],
-  "documentation": "https://github.com/mike/home-topology-ha",
+  "documentation": "https://github.com/mjcumming/home-topology-ha",
   "iot_class": "local_push",
-  "issue_tracker": "https://github.com/mike/home-topology-ha/issues",
+  "issue_tracker": "https://github.com/mjcumming/home-topology-ha/issues",
   "requirements": [],
   "version": "0.1.0"
 }

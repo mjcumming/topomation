@@ -17,13 +17,11 @@ from collections.abc import Generator
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_ID
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.home_topology.const import DOMAIN
-
 
 # Make pytest-homeassistant-custom-component plugin available
 pytest_plugins = "pytest_homeassistant_custom_component"
@@ -32,12 +30,6 @@ pytest_plugins = "pytest_homeassistant_custom_component"
 # =============================================================================
 # Autouse Fixtures (applied to all tests automatically)
 # =============================================================================
-
-
-@pytest.fixture(autouse=True)
-def auto_enable_custom_integrations(enable_custom_integrations):  # noqa: PT004
-    """Enable custom integrations for all tests."""
-    yield
 
 
 @pytest.fixture(name="skip_notifications", autouse=True)

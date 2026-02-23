@@ -208,6 +208,10 @@ class HomeTopologyCoordinator:
 - `home_topology/locations/reorder` - Move location in hierarchy
 - `home_topology/locations/set_module_config` - Update module config
 
+`locations/reorder` is backed by core `LocationManager.reorder_location()`,
+which enforces canonical sibling ordering (`Location.order`) so tree order is
+stable across reloads and restarts.
+
 **Pattern**:
 
 ```python
@@ -337,6 +341,18 @@ class HAPlatformAdapter:
 7. Frontend: Receives success, updates UI
 ```
 
+### 4.4 Topology Rename Syncs Back to HA
+
+```
+1. User renames location in topology UI ("Kitchen" -> "Culinary Space")
+2. Frontend sends update/reorder command
+3. LocationManager emits Event(type="location.renamed", source="topology")
+4. SyncManager receives location.renamed and evaluates sync policy
+5. If sync_source=homeassistant and sync_enabled=true:
+   - HA area/floor registry is updated
+6. HA reflects renamed area/floor
+```
+
 ---
 
 ## 5. State Persistence
@@ -354,6 +370,7 @@ class HAPlatformAdapter:
       "id": "kitchen",
       "name": "Kitchen",
       "parent_id": "floor-1",
+      "order": 2,
       "modules": {
         "_meta": { "type": "room", "category": "kitchen" },
         "occupancy": { "enabled": true, "default_timeout": 600 }
@@ -362,6 +379,19 @@ class HAPlatformAdapter:
   ]
 }
 ```
+
+### 5.3 Sync authority matrix
+
+Per-location metadata in `_meta` determines synchronization authority:
+
+- `sync_source=homeassistant` and `sync_enabled=true`
+  - HA changes -> topology updates are allowed
+  - Topology changes -> HA writeback is allowed
+- `sync_source=topology` and `sync_enabled=true`
+  - HA changes -> topology updates are blocked
+  - Topology changes -> HA writeback is blocked
+- `sync_enabled=false` (any source)
+  - Cross-boundary writes are blocked in both directions
 
 ### 5.2 Runtime State Storage
 

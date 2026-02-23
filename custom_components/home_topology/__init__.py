@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP, Platform
@@ -80,6 +81,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     loc_mgr = LocationManager()
     bus = EventBus()
     bus.set_location_manager(loc_mgr)
+    if hasattr(loc_mgr, "set_event_bus"):
+        loc_mgr.set_event_bus(bus)
 
     # 2. Create root location
     try:
@@ -225,9 +228,92 @@ async def _load_configuration(hass: HomeAssistant, loc_mgr: LocationManager) -> 
         _LOGGER.debug("No saved configuration found")
         return
 
-    # TODO: Restore locations from saved config
-    # This would restore user-created locations, hierarchy changes, etc.
-    _LOGGER.debug("Configuration loading not yet implemented")
+    locations = data.get("locations")
+    if not isinstance(locations, list):
+        _LOGGER.warning("Invalid saved configuration format; expected locations list")
+        return
+
+    # Create locations in parent-first order where possible.
+    pending: dict[str, dict[str, Any]] = {}
+    for item in locations:
+        if not isinstance(item, Mapping):
+            continue
+        location_id = item.get("id")
+        if not isinstance(location_id, str) or not location_id:
+            continue
+        pending[location_id] = dict(item)
+
+    created: set[str] = set()
+    while pending:
+        progressed = False
+        for location_id, item in list(pending.items()):
+            parent_id = item.get("parent_id")
+            if parent_id and parent_id not in created and loc_mgr.get_location(parent_id) is None:
+                continue
+
+            if loc_mgr.get_location(location_id) is None:
+                try:
+                    loc_mgr.create_location(
+                        id=location_id,
+                        name=item.get("name", location_id),
+                        parent_id=parent_id,
+                        is_explicit_root=bool(item.get("is_explicit_root", False)),
+                        order=item.get("order"),
+                    )
+                except ValueError as err:
+                    _LOGGER.warning("Failed to restore location %s: %s", location_id, err)
+
+            created.add(location_id)
+            pending.pop(location_id)
+            progressed = True
+
+        if progressed:
+            continue
+
+        # Break cycles or bad parent references by forcing creation.
+        location_id, item = pending.popitem()
+        if loc_mgr.get_location(location_id) is None:
+            try:
+                loc_mgr.create_location(
+                    id=location_id,
+                    name=item.get("name", location_id),
+                    parent_id=None,
+                    is_explicit_root=False,
+                    order=item.get("order"),
+                )
+            except ValueError as err:
+                _LOGGER.warning("Failed to restore orphan location %s: %s", location_id, err)
+        created.add(location_id)
+
+    # Restore entity mappings and per-location module configs.
+    for item in locations:
+        if not isinstance(item, Mapping):
+            continue
+        location_id = item.get("id")
+        if not isinstance(location_id, str) or loc_mgr.get_location(location_id) is None:
+            continue
+
+        entity_ids = item.get("entity_ids", [])
+        if isinstance(entity_ids, list):
+            for entity_id in entity_ids:
+                if not isinstance(entity_id, str):
+                    continue
+                try:
+                    loc_mgr.add_entity_to_location(entity_id, location_id)
+                except (KeyError, ValueError):
+                    _LOGGER.debug(
+                        "Failed to restore entity mapping %s -> %s",
+                        entity_id,
+                        location_id,
+                    )
+
+        modules = item.get("modules", {})
+        if isinstance(modules, Mapping):
+            for module_id, config in modules.items():
+                if isinstance(module_id, str) and isinstance(config, Mapping):
+                    loc_mgr.set_module_config(location_id, module_id, dict(config))
+
+    _LOGGER.info("Restored %d locations from saved configuration", len(created))
 
 
 async def _restore_module_state(hass: HomeAssistant, modules: dict[str, Any]) -> None:
@@ -272,8 +358,22 @@ async def _save_state(
     state_store = Store(hass, STORAGE_VERSION, STORAGE_KEY_STATE)
     await state_store.async_save(state_data)
 
-    # TODO: Save configuration (locations, hierarchy, module configs)
-    # config_store = Store(hass, STORAGE_VERSION, STORAGE_KEY_CONFIG)
-    # await config_store.async_save(config_data)
+    # Save topology configuration (locations, hierarchy, module configs).
+    config_locations: list[dict[str, Any]] = []
+    for location in loc_mgr.all_locations():
+        config_locations.append(
+            {
+                "id": location.id,
+                "name": location.name,
+                "parent_id": location.parent_id,
+                "is_explicit_root": location.is_explicit_root,
+                "order": location.order,
+                "entity_ids": list(location.entity_ids),
+                "modules": dict(location.modules),
+            }
+        )
+
+    config_store = Store(hass, STORAGE_VERSION, STORAGE_KEY_CONFIG)
+    await config_store.async_save({"locations": config_locations})
 
     _LOGGER.info("Kernel state saved")

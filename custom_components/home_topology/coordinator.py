@@ -42,6 +42,13 @@ class HomeTopologyCoordinator:
             try:
                 module_timeout = module.get_next_timeout()
                 if module_timeout:
+                    if not isinstance(module_timeout, datetime):
+                        _LOGGER.warning(
+                            "Ignoring non-datetime timeout from %s: %r",
+                            module_id,
+                            module_timeout,
+                        )
+                        continue
                     if next_timeout is None or module_timeout < next_timeout:
                         next_timeout = module_timeout
                         next_module = module_id

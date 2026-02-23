@@ -6,19 +6,13 @@ integration setup, making them faster and more focused.
 
 from __future__ import annotations
 
-import asyncio
-from datetime import UTC, datetime
-from unittest.mock import AsyncMock, Mock, patch
-
 import pytest
+from home_topology import EventBus, LocationManager
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import entity_registry as er
 
-from home_topology import EventBus, LocationManager
-
 from custom_components.home_topology.sync_manager import SyncManager
-
 
 # =============================================================================
 # Fixtures
@@ -176,7 +170,7 @@ class TestInitialImport:
 
         location = loc_mgr.get_location(f"area_{kitchen.id}")
         assert location is not None
-        assert light.entity_id in loc_mgr.entities_in_location(location.id)
+        assert light.entity_id in location.entity_ids
 
     @pytest.mark.skipif(
         not hasattr(ar.AreaRegistry, "async_create_floor"),
@@ -320,8 +314,69 @@ class TestHAToTopologySync:
         kitchen_loc = f"area_{kitchen.id}"
         living_loc = f"area_{living_room.id}"
 
-        assert light.entity_id not in loc_mgr.entities_in_location(kitchen_loc)
-        assert light.entity_id in loc_mgr.entities_in_location(living_loc)
+        assert light.entity_id not in loc_mgr.get_location(kitchen_loc).entity_ids
+        assert light.entity_id in loc_mgr.get_location(living_loc).entity_ids
+
+    async def test_area_update_ignored_for_topology_owned_location(
+        self,
+        hass: HomeAssistant,
+        sync_manager: SyncManager,
+        loc_mgr: LocationManager,
+        clean_registries,
+    ):
+        """HA area updates should not overwrite topology-owned locations."""
+        area_reg = ar.async_get(hass)
+        kitchen = area_reg.async_create("Kitchen")
+
+        await sync_manager.import_all_areas_and_floors()
+        await sync_manager.async_setup()
+
+        location_id = f"area_{kitchen.id}"
+        location = loc_mgr.get_location(location_id)
+        loc_mgr.set_module_config(
+            location_id,
+            "_meta",
+            {
+                **location.modules.get("_meta", {}),
+                "sync_source": "topology",
+                "sync_enabled": True,
+            },
+        )
+
+        area_reg.async_update(kitchen.id, name="Culinary Space")
+        await hass.async_block_till_done()
+
+        assert loc_mgr.get_location(location_id).name == "Kitchen"
+
+    async def test_area_update_ignored_when_sync_disabled(
+        self,
+        hass: HomeAssistant,
+        sync_manager: SyncManager,
+        loc_mgr: LocationManager,
+        clean_registries,
+    ):
+        """HA area updates should not apply when sync is disabled."""
+        area_reg = ar.async_get(hass)
+        kitchen = area_reg.async_create("Kitchen")
+
+        await sync_manager.import_all_areas_and_floors()
+        await sync_manager.async_setup()
+
+        location_id = f"area_{kitchen.id}"
+        location = loc_mgr.get_location(location_id)
+        loc_mgr.set_module_config(
+            location_id,
+            "_meta",
+            {
+                **location.modules.get("_meta", {}),
+                "sync_enabled": False,
+            },
+        )
+
+        area_reg.async_update(kitchen.id, name="Culinary Space")
+        await hass.async_block_till_done()
+
+        assert loc_mgr.get_location(location_id).name == "Kitchen"
 
 
 # =============================================================================

@@ -209,14 +209,16 @@ home-topology-ha/
 ### v0.1.0 (Current - Alpha)
 
 - [x] Documentation infrastructure
-- [ ] Core kernel integration
-- [ ] Basic UI panel
-- [ ] Occupancy tracking
+- [x] Core kernel integration
+- [x] Basic UI panel
+- [x] Occupancy tracking
+- [x] Bidirectional HA area/entity sync
+- [ ] Topology configuration persistence (location tree + module configs)
 
 ### v0.2.0 (Beta)
 
-- [ ] Automation module integration
-- [ ] Lighting module integration
+- [x] Automation module integration
+- [x] Ambient light module integration
 - [ ] Full UI with entity configuration
 - [ ] State persistence
 - [ ] HACS compatible
