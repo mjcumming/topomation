@@ -19,6 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - WebSocket reorder contract test in `tests/test_websocket_contract.py`.
 - Service wrapper regression tests in `tests/test_services.py` for occupancy
   command mapping and multi-entry routing.
+- Service error-path tests for invalid `entry_id` and not-loaded integration
+  handling in `tests/test_services.py`.
+- Integration unload test coverage for service unregistration in
+  `tests/test_init.py`.
+- Cleanup scope guide in `docs/cleanup-pr-scope.md`.
 
 ### Changed
 
@@ -29,6 +34,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   events from `home-topology` instead of integration-level method wrapping.
 - `locations/reorder` now uses core indexed reorder support and persists
   canonical sibling ordering.
+- README and integration guide now document service wrapper routing behavior and
+  `entry_id` requirements for multi-entry setups.
 
 ### Fixed
 
@@ -39,3 +46,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and passes required `source_id` for lock/unlock/vacate operations.
 - Service registration is now idempotent and services are unregistered when the
   last config entry unloads.
+- Entity area-change cleanup now emits debug logs instead of silently swallowing
+  old-location removal errors in `sync_manager.py`.

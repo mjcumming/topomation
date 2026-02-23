@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from unittest.mock import Mock
 
 from homeassistant.core import HomeAssistant
@@ -131,4 +132,55 @@ async def test_service_entry_id_required_with_multiple_entries(hass: HomeAssista
 
     occupancy_one.trigger.assert_not_called()
     occupancy_two.trigger.assert_called_once_with("kitchen", "manual", 60)
+    async_unregister_services(hass)
+
+
+async def test_service_invalid_entry_id_logs_and_noops(
+    hass: HomeAssistant,
+    caplog,
+) -> None:
+    """Invalid entry_id should not dispatch to occupancy and should log."""
+    occupancy = Mock()
+    hass.data[DOMAIN] = {"entry_1": _kernel_with_occupancy(occupancy)}
+    async_register_services(hass)
+
+    caplog.set_level(logging.ERROR)
+
+    await hass.services.async_call(
+        DOMAIN,
+        "trigger",
+        {
+            "entry_id": "missing_entry",
+            "location_id": "kitchen",
+            "source_id": "manual",
+            "timeout": 60,
+        },
+        blocking=True,
+    )
+
+    occupancy.trigger.assert_not_called()
+    assert "Config entry 'missing_entry' not found" in caplog.text
+    async_unregister_services(hass)
+
+
+async def test_service_not_loaded_logs_and_noops(
+    hass: HomeAssistant,
+    caplog,
+) -> None:
+    """Service call when integration is not loaded should no-op with error log."""
+    async_register_services(hass)
+    caplog.set_level(logging.ERROR)
+
+    await hass.services.async_call(
+        DOMAIN,
+        "trigger",
+        {
+            "location_id": "kitchen",
+            "source_id": "manual",
+            "timeout": 60,
+        },
+        blocking=True,
+    )
+
+    assert "Integration not loaded" in caplog.text
     async_unregister_services(hass)

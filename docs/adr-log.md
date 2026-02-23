@@ -602,6 +602,34 @@ Standardize the wrapper contract:
 
 ---
 
+### ADR-HA-016: Archive Legacy Root Status Docs (2026-02-23)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+Root-level status snapshots (`BIDIRECTIONAL-SYNC-COMPLETE.md`,
+`COMPLETION-SUMMARY.md`, `IMPLEMENTATION-STATUS.md`, `NEXT-STEPS.md`) diverged
+from current implementation state and duplicated information already tracked in
+ADR/changelog/history docs.
+
+**Decision**:
+Remove the legacy root status files and treat these as canonical status sources:
+1. `CHANGELOG.md` for release-facing deltas
+2. `docs/adr-log.md` for architectural decisions
+3. `docs/history/*` for time-boxed implementation notes
+
+**Rationale**:
+1. Single source of truth for operational status
+2. Lower doc drift and maintenance overhead
+3. Clear separation between active docs and archived narrative history
+
+**Consequences**:
+- ✅ Reduced duplicated/stale status documents
+- ✅ Easier onboarding to current state
+- ⚠️ Links to deleted root status docs must be updated if discovered
+
+---
+
 ## How to Use This Log
 
 ### When to Create an ADR

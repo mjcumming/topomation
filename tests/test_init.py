@@ -241,3 +241,27 @@ async def test_unload_entry_cleans_up_data(
 
         # THEN
         assert config_entry.entry_id not in hass.data[DOMAIN]
+
+
+async def test_unload_last_entry_unregisters_services(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+) -> None:
+    """Unloading the last entry should unregister domain services."""
+    config_entry.add_to_hass(hass)
+
+    with (
+        patch("custom_components.home_topology.async_register_panel"),
+        patch("custom_components.home_topology.async_register_websocket_api"),
+        patch("custom_components.home_topology.async_register_services"),
+        patch("custom_components.home_topology.async_unregister_services") as mock_unregister,
+        patch.object(hass.config_entries, "async_forward_entry_setups", return_value=True),
+    ):
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        with patch.object(hass.config_entries, "async_unload_platforms", return_value=True):
+            await hass.config_entries.async_unload(config_entry.entry_id)
+            await hass.async_block_till_done()
+
+    mock_unregister.assert_called_once_with(hass)

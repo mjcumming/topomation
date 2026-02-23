@@ -109,6 +109,37 @@ automation:
           entity_id: light.kitchen
 ```
 
+### 7. Manual Service Control (Optional)
+
+Manual occupancy services are available for scripts and automations:
+
+```yaml
+service: home_topology.trigger
+data:
+  location_id: kitchen
+  source_id: manual_override
+  timeout: 300
+```
+
+```yaml
+service: home_topology.vacate_area
+data:
+  location_id: house
+  source_id: away_mode
+  include_locked: false
+```
+
+If multiple Home Topology config entries are loaded, include `entry_id`:
+
+```yaml
+service: home_topology.trigger
+data:
+  entry_id: your_entry_id
+  location_id: kitchen
+  source_id: manual_override
+  timeout: 300
+```
+
 ---
 
 ## Documentation

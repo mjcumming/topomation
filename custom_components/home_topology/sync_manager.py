@@ -536,7 +536,11 @@ class SyncManager:
                     if old_location and self._can_sync_from_ha(old_location):
                         self.loc_mgr.remove_entities_from_location([entity_id])
                 except (ValueError, KeyError):
-                    pass
+                    _LOGGER.debug(
+                        "Entity %s was not mapped to old location %s during area change cleanup",
+                        entity_id,
+                        old_location_id,
+                    )
 
             # Add to new location
             if new_area_id:

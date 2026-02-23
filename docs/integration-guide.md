@@ -1489,6 +1489,20 @@ This guide covered:
 ✅ **Best practices** - Patterns and anti-patterns  
 ✅ **Full HA integration example** - Production-ready code  
 
+### Manual Service Routing Notes
+
+The HA wrapper services map directly to occupancy module APIs:
+
+- `home_topology.trigger` -> `occupancy.trigger(location_id, source_id, timeout)`
+- `home_topology.clear` -> `occupancy.release(location_id, source_id, trailing_timeout)`
+- `home_topology.lock` -> `occupancy.lock(location_id, source_id)`
+- `home_topology.unlock` -> `occupancy.unlock(location_id, source_id)`
+- `home_topology.vacate_area` -> `occupancy.vacate_area(location_id, source_id, include_locked)`
+
+For multi-entry HA setups, service calls should include `entry_id`. If multiple
+entries are loaded and `entry_id` is omitted, the wrapper rejects the call to
+avoid ambiguous dispatch.
+
 ### Key Takeaways
 
 1. **Kernel is platform-agnostic** - No HA dependencies in core
@@ -1509,5 +1523,4 @@ This guide covered:
 **Document Version**: 2.3  
 **Last Updated**: 2025.11.26  
 **Status**: Living Document
-
 
