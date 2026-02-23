@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Sync policy tests for topology-owned and sync-disabled locations in
   `tests/test_sync_manager.py`.
 - WebSocket reorder contract test in `tests/test_websocket_contract.py`.
+- Service wrapper regression tests in `tests/test_services.py` for occupancy
+  command mapping and multi-entry routing.
 
 ### Changed
 
@@ -33,3 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unload/teardown safety for event unsubscription.
 - Coordinator timeout scheduling now ignores invalid non-datetime module values.
 - Duplicate pytest fixture definition cleanup in `tests/conftest.py`.
+- HA service wrapper now calls correct core occupancy APIs (`clear` -> `release`)
+  and passes required `source_id` for lock/unlock/vacate operations.
+- Service registration is now idempotent and services are unregistered when the
+  last config entry unloads.

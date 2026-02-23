@@ -19,7 +19,7 @@ from .const import DOMAIN, STORAGE_KEY_CONFIG, STORAGE_KEY_STATE, STORAGE_VERSIO
 from .coordinator import HomeTopologyCoordinator
 from .event_bridge import EventBridge
 from .panel import async_register_panel
-from .services import async_register_services
+from .services import async_register_services, async_unregister_services
 from .sync_manager import SyncManager
 from .websocket_api import async_register_websocket_api
 
@@ -190,6 +190,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         # Remove from hass.data
         hass.data[DOMAIN].pop(entry.entry_id)
+        if not hass.data[DOMAIN]:
+            async_unregister_services(hass)
 
     return unload_ok
 

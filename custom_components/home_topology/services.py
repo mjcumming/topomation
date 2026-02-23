@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     pass
 
 _LOGGER = logging.getLogger(__name__)
+SERVICE_NAMES = ("trigger", "clear", "lock", "unlock", "vacate_area")
 
 # Service schemas
 SERVICE_TRIGGER_SCHEMA = vol.Schema(
@@ -21,6 +22,7 @@ SERVICE_TRIGGER_SCHEMA = vol.Schema(
         vol.Required("location_id"): str,
         vol.Optional("source_id", default="manual"): str,
         vol.Optional("timeout", default=300): vol.All(vol.Coerce(int), vol.Range(min=0)),
+        vol.Optional("entry_id"): str,
     }
 )
 
@@ -29,30 +31,81 @@ SERVICE_CLEAR_SCHEMA = vol.Schema(
         vol.Required("location_id"): str,
         vol.Optional("source_id", default="manual"): str,
         vol.Optional("trailing_timeout", default=0): vol.All(vol.Coerce(int), vol.Range(min=0)),
+        vol.Optional("entry_id"): str,
     }
 )
 
 SERVICE_LOCK_SCHEMA = vol.Schema(
     {
         vol.Required("location_id"): str,
+        vol.Optional("source_id", default="manual"): str,
+        vol.Optional("entry_id"): str,
     }
 )
 
 SERVICE_UNLOCK_SCHEMA = vol.Schema(
     {
         vol.Required("location_id"): str,
+        vol.Optional("source_id", default="manual"): str,
+        vol.Optional("entry_id"): str,
     }
 )
 
 SERVICE_VACATE_AREA_SCHEMA = vol.Schema(
     {
         vol.Required("location_id"): str,
+        vol.Optional("source_id", default="manual"): str,
+        vol.Optional("include_locked", default=False): bool,
+        vol.Optional("entry_id"): str,
     }
 )
 
 
+def _resolve_kernel(hass: HomeAssistant, call: ServiceCall) -> dict[str, object] | None:
+    """Resolve integration runtime data for a service call."""
+    domain_data: dict[str, dict[str, object]] = hass.data.get(DOMAIN, {})
+    if not domain_data:
+        _LOGGER.error("Integration not loaded")
+        return None
+
+    requested_entry_id = call.data.get("entry_id")
+    if requested_entry_id is not None:
+        kernel = domain_data.get(requested_entry_id)
+        if kernel is None:
+            _LOGGER.error("Config entry '%s' not found", requested_entry_id)
+            return None
+        return kernel
+
+    if len(domain_data) == 1:
+        return next(iter(domain_data.values()))
+
+    _LOGGER.error(
+        "Multiple Home Topology entries loaded (%s); include service field 'entry_id'",
+        ", ".join(domain_data),
+    )
+    return None
+
+
+def _get_occupancy_module(kernel: dict[str, object]) -> object | None:
+    """Get occupancy module from kernel runtime data."""
+    modules = kernel.get("modules")
+    if not isinstance(modules, dict):
+        _LOGGER.error("Invalid runtime state: modules dictionary missing")
+        return None
+
+    occupancy = modules.get("occupancy")
+    if occupancy is None:
+        _LOGGER.warning("Occupancy module not loaded")
+        return None
+    return occupancy
+
+
 def async_register_services(hass: HomeAssistant) -> None:
     """Register Home Topology services."""
+    if hass.services.has_service(DOMAIN, "trigger"):
+        _LOGGER.debug("Services already registered")
+        return
+
     _LOGGER.debug("Registering services")
 
     @callback
@@ -69,24 +122,18 @@ def async_register_services(hass: HomeAssistant) -> None:
             timeout,
         )
 
-        # Get kernel
-        entry_ids = list(hass.data[DOMAIN].keys())
-        if not entry_ids:
-            _LOGGER.error("Integration not loaded")
+        kernel = _resolve_kernel(hass, call)
+        if kernel is None:
             return
 
-        kernel = hass.data[DOMAIN][entry_ids[0]]
-        modules = kernel["modules"]
+        occupancy = _get_occupancy_module(kernel)
+        if occupancy is None:
+            return
 
-        # Call occupancy module
-        if "occupancy" in modules:
-            occupancy = modules["occupancy"]
-            try:
-                occupancy.trigger(location_id, source_id, timeout)
-            except Exception as e:
-                _LOGGER.error("Failed to trigger occupancy: %s", e, exc_info=True)
-        else:
-            _LOGGER.warning("Occupancy module not loaded")
+        try:
+            occupancy.trigger(location_id, source_id, timeout)
+        except Exception as err:
+            _LOGGER.error("Failed to trigger occupancy: %s", err, exc_info=True)
 
     @callback
     def handle_clear(call: ServiceCall) -> None:
@@ -102,94 +149,87 @@ def async_register_services(hass: HomeAssistant) -> None:
             trailing_timeout,
         )
 
-        entry_ids = list(hass.data[DOMAIN].keys())
-        if not entry_ids:
-            _LOGGER.error("Integration not loaded")
+        kernel = _resolve_kernel(hass, call)
+        if kernel is None:
             return
 
-        kernel = hass.data[DOMAIN][entry_ids[0]]
-        modules = kernel["modules"]
+        occupancy = _get_occupancy_module(kernel)
+        if occupancy is None:
+            return
 
-        if "occupancy" in modules:
-            occupancy = modules["occupancy"]
-            try:
-                occupancy.clear(location_id, source_id, trailing_timeout)
-            except Exception as e:
-                _LOGGER.error("Failed to clear occupancy: %s", e, exc_info=True)
-        else:
-            _LOGGER.warning("Occupancy module not loaded")
+        try:
+            occupancy.release(location_id, source_id, trailing_timeout)
+        except Exception as err:
+            _LOGGER.error("Failed to clear occupancy: %s", err, exc_info=True)
 
     @callback
     def handle_lock(call: ServiceCall) -> None:
         """Handle lock service call."""
         location_id = call.data["location_id"]
+        source_id = call.data.get("source_id", "manual")
 
-        _LOGGER.info("Lock location: %s", location_id)
+        _LOGGER.info("Lock location: %s (source=%s)", location_id, source_id)
 
-        entry_ids = list(hass.data[DOMAIN].keys())
-        if not entry_ids:
-            _LOGGER.error("Integration not loaded")
+        kernel = _resolve_kernel(hass, call)
+        if kernel is None:
             return
 
-        kernel = hass.data[DOMAIN][entry_ids[0]]
-        modules = kernel["modules"]
+        occupancy = _get_occupancy_module(kernel)
+        if occupancy is None:
+            return
 
-        if "occupancy" in modules:
-            occupancy = modules["occupancy"]
-            try:
-                occupancy.lock(location_id)
-            except Exception as e:
-                _LOGGER.error("Failed to lock location: %s", e, exc_info=True)
-        else:
-            _LOGGER.warning("Occupancy module not loaded")
+        try:
+            occupancy.lock(location_id, source_id)
+        except Exception as err:
+            _LOGGER.error("Failed to lock location: %s", err, exc_info=True)
 
     @callback
     def handle_unlock(call: ServiceCall) -> None:
         """Handle unlock service call."""
         location_id = call.data["location_id"]
+        source_id = call.data.get("source_id", "manual")
 
-        _LOGGER.info("Unlock location: %s", location_id)
+        _LOGGER.info("Unlock location: %s (source=%s)", location_id, source_id)
 
-        entry_ids = list(hass.data[DOMAIN].keys())
-        if not entry_ids:
-            _LOGGER.error("Integration not loaded")
+        kernel = _resolve_kernel(hass, call)
+        if kernel is None:
             return
 
-        kernel = hass.data[DOMAIN][entry_ids[0]]
-        modules = kernel["modules"]
+        occupancy = _get_occupancy_module(kernel)
+        if occupancy is None:
+            return
 
-        if "occupancy" in modules:
-            occupancy = modules["occupancy"]
-            try:
-                occupancy.unlock(location_id)
-            except Exception as e:
-                _LOGGER.error("Failed to unlock location: %s", e, exc_info=True)
-        else:
-            _LOGGER.warning("Occupancy module not loaded")
+        try:
+            occupancy.unlock(location_id, source_id)
+        except Exception as err:
+            _LOGGER.error("Failed to unlock location: %s", err, exc_info=True)
 
     @callback
     def handle_vacate_area(call: ServiceCall) -> None:
         """Handle vacate_area service call."""
         location_id = call.data["location_id"]
+        source_id = call.data.get("source_id", "manual")
+        include_locked = call.data.get("include_locked", False)
 
-        _LOGGER.info("Vacate area (cascading): %s", location_id)
+        _LOGGER.info(
+            "Vacate area (cascading): %s (source=%s, include_locked=%s)",
+            location_id,
+            source_id,
+            include_locked,
+        )
 
-        entry_ids = list(hass.data[DOMAIN].keys())
-        if not entry_ids:
-            _LOGGER.error("Integration not loaded")
+        kernel = _resolve_kernel(hass, call)
+        if kernel is None:
             return
 
-        kernel = hass.data[DOMAIN][entry_ids[0]]
-        modules = kernel["modules"]
+        occupancy = _get_occupancy_module(kernel)
+        if occupancy is None:
+            return
 
-        if "occupancy" in modules:
-            occupancy = modules["occupancy"]
-            try:
-                occupancy.vacate_area(location_id)
-            except Exception as e:
-                _LOGGER.error("Failed to vacate area: %s", e, exc_info=True)
-        else:
-            _LOGGER.warning("Occupancy module not loaded")
+        try:
+            occupancy.vacate_area(location_id, source_id, include_locked)
+        except Exception as err:
+            _LOGGER.error("Failed to vacate area: %s", err, exc_info=True)
 
     # Register services
     hass.services.async_register(
@@ -228,3 +268,10 @@ def async_register_services(hass: HomeAssistant) -> None:
     )
 
     _LOGGER.info("Services registered: trigger, clear, lock, unlock, vacate_area")
+
+
+def async_unregister_services(hass: HomeAssistant) -> None:
+    """Unregister Home Topology services."""
+    for service_name in SERVICE_NAMES:
+        if hass.services.has_service(DOMAIN, service_name):
+            hass.services.async_remove(DOMAIN, service_name)

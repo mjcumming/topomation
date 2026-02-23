@@ -231,11 +231,16 @@ def handle_locations_list(hass, connection, msg):
 
 **Services**:
 
-- `home_topology.trigger` - Manual occupancy trigger
-- `home_topology.clear` - Manual occupancy clear
-- `home_topology.lock` - Lock location (prevent vacancy)
-- `home_topology.unlock` - Unlock location
+- `home_topology.trigger` - Manual occupancy trigger (`occupancy.trigger`)
+- `home_topology.clear` - Manual occupancy clear (`occupancy.release`, compatibility alias)
+- `home_topology.lock` - Lock location (prevent vacancy, source-aware)
+- `home_topology.unlock` - Unlock location (source-aware)
 - `home_topology.vacate_area` - Vacate location and descendants
+
+**Wrapper Behavior**:
+
+- Each service supports optional `entry_id` for multi-entry routing; if multiple entries are loaded and `entry_id` is omitted, the call is rejected.
+- Lock/unlock/vacate commands pass `source_id` through to the core occupancy module for deterministic multi-source behavior.
 
 ### 3.7 Frontend Panel (`frontend/`)
 

@@ -564,6 +564,44 @@ Adopt and document authority rules:
 
 ---
 
+### ADR-HA-015: HA Service Wrapper Contract Alignment (2026-02-23)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+The HA service wrapper drifted from the core occupancy API:
+- `home_topology.clear` called `occupancy.clear(...)`, which does not exist in
+  the core module (the correct call is `release(...)`).
+- Lock/unlock/vacate calls omitted `source_id`, reducing determinism for
+  multi-source lock semantics.
+- Service dispatch implicitly selected the first loaded config entry, which is
+  unsafe when multiple entries are loaded.
+- Service registration did not explicitly handle repeated setup/unload cycles.
+
+**Decision**:
+Standardize the wrapper contract:
+1. Keep external service names stable for users, but map internals to core API:
+   `clear -> release`.
+2. Require source-aware forwarding for lock/unlock/vacate behavior.
+3. Add optional `entry_id` routing for all services, and reject ambiguous calls
+   when multiple entries are loaded and `entry_id` is omitted.
+4. Make service registration idempotent and unregister services when the last
+   config entry unloads.
+
+**Rationale**:
+1. Preserve backward compatibility for existing automations
+2. Align integration behavior with core occupancy semantics
+3. Avoid cross-entry ambiguity in multi-instance setups
+4. Reduce lifecycle regressions during reload/restart workflows
+
+**Consequences**:
+- ✅ Service calls now map correctly to core occupancy methods
+- ✅ Multi-source lock behavior is deterministic in the wrapper path
+- ✅ Multi-entry setups have explicit routing semantics
+- ⚠️ Multi-entry users must provide `entry_id` for manual service calls
+
+---
+
 ## How to Use This Log
 
 ### When to Create an ADR

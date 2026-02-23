@@ -4,6 +4,12 @@ trigger:
   name: Trigger Occupancy
   description: Manually trigger occupancy for a location
   fields:
+    entry_id:
+      name: Config Entry ID
+      description: Optional config entry ID when multiple Home Topology entries are loaded
+      required: false
+      selector:
+        text:
     location_id:
       name: Location ID
       description: The location to trigger occupancy for
@@ -35,6 +41,12 @@ clear:
   name: Clear Occupancy
   description: Manually clear occupancy for a location
   fields:
+    entry_id:
+      name: Config Entry ID
+      description: Optional config entry ID when multiple Home Topology entries are loaded
+      required: false
+      selector:
+        text:
     location_id:
       name: Location ID
       description: The location to clear occupancy for
@@ -66,6 +78,12 @@ lock:
   name: Lock Location
   description: Lock a location to prevent it from becoming vacant
   fields:
+    entry_id:
+      name: Config Entry ID
+      description: Optional config entry ID when multiple Home Topology entries are loaded
+      required: false
+      selector:
+        text:
     location_id:
       name: Location ID
       description: The location to lock
@@ -73,11 +91,25 @@ lock:
       example: "kitchen"
       selector:
         text:
+    source_id:
+      name: Source ID
+      description: Identifier for lock source (supports multi-source locks)
+      required: false
+      default: "manual"
+      example: "manual"
+      selector:
+        text:
 
 unlock:
   name: Unlock Location
   description: Unlock a location to allow normal occupancy timeout
   fields:
+    entry_id:
+      name: Config Entry ID
+      description: Optional config entry ID when multiple Home Topology entries are loaded
+      required: false
+      selector:
+        text:
     location_id:
       name: Location ID
       description: The location to unlock
@@ -85,11 +117,25 @@ unlock:
       example: "kitchen"
       selector:
         text:
+    source_id:
+      name: Source ID
+      description: Identifier for unlock source (must match lock source)
+      required: false
+      default: "manual"
+      example: "manual"
+      selector:
+        text:
 
 vacate_area:
   name: Vacate Area
   description: Vacate a location and all its descendants (cascading clear)
   fields:
+    entry_id:
+      name: Config Entry ID
+      description: Optional config entry ID when multiple Home Topology entries are loaded
+      required: false
+      selector:
+        text:
     location_id:
       name: Location ID
       description: The location to vacate (including children)
@@ -97,3 +143,18 @@ vacate_area:
       example: "house"
       selector:
         text:
+    source_id:
+      name: Source ID
+      description: Identifier for this vacate action
+      required: false
+      default: "manual"
+      example: "manual"
+      selector:
+        text:
+    include_locked:
+      name: Include Locked
+      description: Also clear locked locations
+      required: false
+      default: false
+      selector:
+        boolean:
