@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Home Topology | Dev Harness</title>
+    <style>
+      /* ================================================================
+         CSS Variables - Mirror Home Assistant Theme System
+         Toggle between light/dark with the theme switcher
+         ================================================================ */
+      :root,
+      [data-theme="light"] {
+        --primary-color: #03a9f4;
+        --primary-background-color: #fafafa;
+        --secondary-background-color: #e5e5e5;
+        --card-background-color: #ffffff;
+        --primary-text-color: #212121;
+        --secondary-text-color: #727272;
+        --disabled-text-color: #bdbdbd;
+        --divider-color: #e0e0e0;
+        --success-color: #4caf50;
+        --error-color: #db4437;
+        --warning-color: #ffa726;
+        --rgb-error-color: 219, 68, 55;
+        --sidebar-background-color: #ffffff;
+        --sidebar-text-color: #212121;
+        color-scheme: light;
+      }
+
+      [data-theme="dark"] {
+        --primary-color: #03a9f4;
+        --primary-background-color: #111111;
+        --secondary-background-color: #1c1c1c;
+        --card-background-color: #1c1c1c;
+        --primary-text-color: #e1e1e1;
+        --secondary-text-color: #9b9b9b;
+        --disabled-text-color: #6f6f6f;
+        --divider-color: #3d3d3d;
+        --success-color: #4caf50;
+        --error-color: #ef5350;
+        --warning-color: #ffa726;
+        --rgb-error-color: 239, 83, 80;
+        --sidebar-background-color: #1c1c1c;
+        --sidebar-text-color: #e1e1e1;
+        color-scheme: dark;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
+          Ubuntu, Cantarell, sans-serif;
+        background: var(--primary-background-color);
+        color: var(--primary-text-color);
+        transition: background 0.3s, color 0.3s;
+      }
+
+      /* ================================================================
+         LAYOUT: Simulates HA with sidebar + main content
+         ================================================================ */
+      .harness-container {
+        display: flex;
+        height: 100vh;
+      }
+
+      /* Sidebar - Control Panel */
+      .harness-sidebar {
+        width: 280px;
+        background: var(--sidebar-background-color);
+        border-right: 1px solid var(--divider-color);
+        display: flex;
+        flex-direction: column;
+        overflow-y: auto;
+      }
+
+      .sidebar-header {
+        padding: 16px;
+        border-bottom: 1px solid var(--divider-color);
+        background: var(--primary-color);
+        color: white;
+      }
+
+      .sidebar-header h1 {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 600;
+      }
+
+      .sidebar-header p {
+        margin: 4px 0 0;
+        font-size: 12px;
+        opacity: 0.9;
+      }
+
+      .sidebar-section {
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--divider-color);
+      }
+
+      .sidebar-section h2 {
+        margin: 0 0 8px;
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: var(--secondary-text-color);
+      }
+
+      /* Control Buttons */
+      .control-btn {
+        display: block;
+        width: 100%;
+        padding: 8px 12px;
+        margin: 4px 0;
+        border: 1px solid var(--divider-color);
+        border-radius: 4px;
+        background: var(--card-background-color);
+        color: var(--primary-text-color);
+        font-size: 13px;
+        text-align: left;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+
+      .control-btn:hover {
+        background: var(--secondary-background-color);
+        border-color: var(--primary-color);
+      }
+
+      .control-btn.active {
+        background: var(--primary-color);
+        color: white;
+        border-color: var(--primary-color);
+      }
+
+      .control-btn.success {
+        background: var(--success-color);
+        color: white;
+        border-color: var(--success-color);
+      }
+
+      .control-btn.danger {
+        background: var(--error-color);
+        color: white;
+        border-color: var(--error-color);
+      }
+
+      /* State indicators */
+      .state-indicator {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 0;
+        font-size: 13px;
+        border-bottom: 1px solid var(--divider-color);
+      }
+
+      .state-indicator:last-child {
+        border-bottom: none;
+      }
+
+      .state-indicator .entity-name {
+        color: var(--secondary-text-color);
+      }
+
+      .state-indicator .state-value {
+        font-weight: 500;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 12px;
+      }
+
+      .state-indicator .state-value.on {
+        background: var(--success-color);
+        color: white;
+      }
+
+      .state-indicator .state-value.off {
+        background: var(--secondary-background-color);
+        color: var(--secondary-text-color);
+      }
+
+      /* Theme toggle */
+      .theme-toggle {
+        display: flex;
+        gap: 8px;
+      }
+
+      .theme-toggle button {
+        flex: 1;
+        padding: 8px;
+        border: 1px solid var(--divider-color);
+        border-radius: 4px;
+        background: var(--card-background-color);
+        color: var(--primary-text-color);
+        cursor: pointer;
+        font-size: 12px;
+      }
+
+      .theme-toggle button.active {
+        background: var(--primary-color);
+        color: white;
+        border-color: var(--primary-color);
+      }
+
+      /* Console log */
+      .console-section {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-height: 150px;
+      }
+
+      .console-log {
+        flex: 1;
+        background: #1e1e1e;
+        color: #d4d4d4;
+        font-family: "Fira Code", "Consolas", monospace;
+        font-size: 11px;
+        padding: 8px;
+        overflow-y: auto;
+        max-height: 200px;
+      }
+
+      .console-entry {
+        padding: 2px 0;
+        border-bottom: 1px solid #333;
+      }
+
+      .console-entry.service {
+        color: #4fc1ff;
+      }
+
+      .console-entry.event {
+        color: #dcdcaa;
+      }
+
+      .console-entry.error {
+        color: #f48771;
+      }
+
+      /* Main Content Area */
+      .harness-main {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+
+      .harness-main-header {
+        padding: 8px 16px;
+        background: var(--card-background-color);
+        border-bottom: 1px solid var(--divider-color);
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        font-size: 12px;
+        color: var(--secondary-text-color);
+      }
+
+      .harness-main-header .status {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .harness-main-header .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--success-color);
+      }
+
+      /* Panel container */
+      .panel-container {
+        flex: 1;
+        overflow: hidden;
+      }
+
+      home-topology-panel {
+        display: block;
+        height: 100%;
+      }
+    </style>
+  </head>
+  <body data-theme="light">
+    <div class="harness-container">
+      <!-- Sidebar: Control Panel -->
+      <aside class="harness-sidebar">
+        <header class="sidebar-header">
+          <h1>🧪 Dev Harness</h1>
+          <p>Home Topology Panel</p>
+        </header>
+
+        <!-- Theme Toggle -->
+        <section class="sidebar-section">
+          <h2>Theme</h2>
+          <div class="theme-toggle">
+            <button id="theme-light" class="active" onclick="setTheme('light')">
+              ☀️ Light
+            </button>
+            <button id="theme-dark" onclick="setTheme('dark')">🌙 Dark</button>
+          </div>
+        </section>
+
+        <!-- Entity States -->
+        <section class="sidebar-section">
+          <h2>Entity States</h2>
+          <div id="entity-states">
+            <!-- Populated by JS -->
+          </div>
+        </section>
+
+        <!-- Simulate Actions -->
+        <section class="sidebar-section">
+          <h2>Simulate Events</h2>
+          <button class="control-btn" onclick="simulateMotion('kitchen')">
+            🚶 Kitchen Motion Detected
+          </button>
+          <button class="control-btn" onclick="simulateMotion('bedroom')">
+            🚶 Bedroom Motion Detected
+          </button>
+          <button class="control-btn" onclick="simulateOccupancyChange('kitchen', true)">
+            ✅ Kitchen → Occupied
+          </button>
+          <button class="control-btn" onclick="simulateOccupancyChange('kitchen', false)">
+            ❌ Kitchen → Vacant
+          </button>
+        </section>
+
+        <!-- Data Actions -->
+        <section class="sidebar-section">
+          <h2>Data Actions</h2>
+          <button class="control-btn" onclick="reloadLocations()">
+            🔄 Reload Locations
+          </button>
+          <button class="control-btn" onclick="addTestLocation()">
+            ➕ Add Test Location
+          </button>
+          <button class="control-btn danger" onclick="clearLocations()">
+            🗑️ Clear All Locations
+          </button>
+          <button class="control-btn" onclick="resetMockData()">
+            ♻️ Reset Mock Data
+          </button>
+        </section>
+
+        <!-- Console Log -->
+        <section class="sidebar-section console-section">
+          <h2>Console</h2>
+          <div id="console-log" class="console-log">
+            <div class="console-entry">Harness initialized</div>
+          </div>
+          <button class="control-btn" onclick="clearConsole()" style="margin-top: 8px">
+            Clear Console
+          </button>
+        </section>
+      </aside>
+
+      <!-- Main Content -->
+      <main class="harness-main">
+        <header class="harness-main-header">
+          <div class="status">
+            <div class="status-dot"></div>
+            <span>Mock Mode Active</span>
+          </div>
+          <span>HMR Enabled</span>
+          <span id="update-count">Updates: 0</span>
+        </header>
+
+        <div class="panel-container">
+          <home-topology-panel id="panel"></home-topology-panel>
+        </div>
+      </main>
+    </div>
+
+    <script type="module">
+      import "./mock-ha-components.ts";
+      import "./home-topology-panel.ts";
+      import { createMockHass, MOCK_STATES } from "./mock-hass.ts";
+
+      // ================================================================
+      // INITIALIZE MOCK HASS
+      // ================================================================
+      const mock = createMockHass();
+      const panel = document.getElementById("panel");
+      let updateCount = 0;
+
+      // Initial injection
+      panel.hass = mock.hass;
+
+      // Make mock available globally for console debugging
+      window.mockHass = mock;
+      window.panel = panel;
+
+      // ================================================================
+      // CONSOLE LOGGING
+      // ================================================================
+      const consoleEl = document.getElementById("console-log");
+
+      function log(message, type = "info") {
+        const entry = document.createElement("div");
+        entry.className = `console-entry ${type}`;
+        entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+        consoleEl.appendChild(entry);
+        consoleEl.scrollTop = consoleEl.scrollHeight;
+      }
+
+      window.clearConsole = () => {
+        consoleEl.innerHTML = '<div class="console-entry">Console cleared</div>';
+      };
+
+      // Intercept console.log for service calls
+      const originalLog = console.log;
+      console.log = (...args) => {
+        originalLog(...args);
+        const msg = args.join(" ");
+        if (msg.includes("[MockHass]")) {
+          if (msg.includes("Service Call")) {
+            log(msg.replace("[MockHass] ", ""), "service");
+          } else if (msg.includes("callWS")) {
+            log(msg.replace("[MockHass] ", ""), "event");
+          }
+        }
+      };
+
+      // ================================================================
+      // REACTIVE UPDATE HELPER
+      // ================================================================
+      function triggerReactiveUpdate() {
+        // CRITICAL: This spread creates a new object reference
+        // Without this, Lit won't detect the change
+        panel.hass = mock.getReactiveHass();
+        updateCount++;
+        document.getElementById("update-count").textContent = `Updates: ${updateCount}`;
+      }
+
+      // ================================================================
+      // THEME SWITCHING
+      // ================================================================
+      window.setTheme = (theme) => {
+        document.body.setAttribute("data-theme", theme);
+        document.getElementById("theme-light").classList.toggle("active", theme === "light");
+        document.getElementById("theme-dark").classList.toggle("active", theme === "dark");
+        mock.setTheme(theme);
+        triggerReactiveUpdate();
+        log(`Theme changed to: ${theme}`);
+      };
+
+      // ================================================================
+      // ENTITY STATE RENDERING
+      // ================================================================
+      function renderEntityStates() {
+        const container = document.getElementById("entity-states");
+        container.innerHTML = "";
+
+        const states = mock.hass.states;
+        Object.entries(states).forEach(([entityId, entity]) => {
+          const div = document.createElement("div");
+          div.className = "state-indicator";
+          div.innerHTML = `
+            <span class="entity-name">${entity.attributes?.friendly_name || entityId}</span>
+            <span class="state-value ${entity.state}">${entity.state}</span>
+          `;
+          div.onclick = () => toggleEntity(entityId);
+          div.style.cursor = "pointer";
+          container.appendChild(div);
+        });
+      }
+
+      function toggleEntity(entityId) {
+        const currentState = mock.hass.states[entityId]?.state;
+        const newState = currentState === "on" ? "off" : "on";
+        mock.updateState(entityId, newState);
+        triggerReactiveUpdate();
+        renderEntityStates();
+        log(`${entityId}: ${currentState} → ${newState}`);
+      }
+
+      // Initial render
+      renderEntityStates();
+
+      // ================================================================
+      // SIMULATION FUNCTIONS
+      // ================================================================
+      window.simulateMotion = (room) => {
+        const entityId = `binary_sensor.${room}_motion`;
+        mock.updateState(entityId, "on");
+        triggerReactiveUpdate();
+        renderEntityStates();
+        log(`Motion detected in ${room}`, "event");
+
+        // Auto-clear after 30 seconds
+        setTimeout(() => {
+          mock.updateState(entityId, "off");
+          triggerReactiveUpdate();
+          renderEntityStates();
+          log(`Motion cleared in ${room}`, "event");
+        }, 5000);
+      };
+
+      window.simulateOccupancyChange = (room, occupied) => {
+        const occupancyEntity = `binary_sensor.${String(room).replace(/-/g, "_")}_occupancy`;
+        if (mock?.hass?.states?.[occupancyEntity]) {
+          mock.updateState(occupancyEntity, occupied ? "on" : "off");
+        }
+        // Fire a custom occupancy event
+        mock.connection.fireEvent("home_topology_occupancy_changed", {
+          location_id: room,
+          occupied: occupied,
+          source: "harness_simulation",
+        });
+        log(`Occupancy ${room}: ${occupied ? "OCCUPIED" : "VACANT"}`, "event");
+      };
+
+      window.reloadLocations = async () => {
+        log("Reloading locations...");
+        // Trigger panel to reload
+        if (panel && panel._loadLocations) {
+          await panel._loadLocations();
+          triggerReactiveUpdate();
+        } else {
+          // Fallback: manually call the API
+          const result = await mock.hass.callWS({ type: "home_topology/locations/list" });
+          log(`Loaded ${result.locations.length} locations`);
+          triggerReactiveUpdate();
+        }
+      };
+
+      window.addTestLocation = async () => {
+        const id = `test-${Date.now()}`;
+        const newLocation = {
+          id,
+          name: `Test Room ${Math.floor(Math.random() * 1000)}`,
+          parent_id: "main-floor",
+          is_explicit_root: false,
+          ha_area_id: null,
+          origin: "integration",
+          entity_ids: [],
+          modules: { _meta: { type: "area" } },
+        };
+        mock.addLocation(newLocation);
+        log(`Added test location: ${id}`);
+        // Trigger panel to reload locations by calling the API
+        try {
+          await mock.hass.callWS({ type: "home_topology/locations/list" });
+          // Force the panel to reload locations so the new item is immediately draggable/renamable
+          if (panel && panel._loadLocations) {
+            await panel._loadLocations(true);
+          }
+          triggerReactiveUpdate();
+        } catch (e) {
+          console.error("Failed to reload:", e);
+          triggerReactiveUpdate();
+        }
+      };
+
+      window.clearLocations = () => {
+        if (confirm("Clear all locations? (Refresh to restore)")) {
+          // This is a bit of a hack - we'd need to expose this properly
+          log("Locations cleared - refresh to restore", "error");
+        }
+      };
+
+      window.resetMockData = async () => {
+        if (!confirm("Reset mock data to defaults?")) return;
+        const fresh = createMockHass();
+        window.mockHass = fresh;
+        panel.hass = fresh.hass;
+        updateCount = 0;
+        document.getElementById("update-count").textContent = `Updates: ${updateCount}`;
+        renderEntityStates();
+        if (panel && panel._loadLocations) {
+          await panel._loadLocations(true);
+        }
+        log("Mock data reset to defaults.");
+      };
+
+      // ================================================================
+      // KEYBOARD SHORTCUTS
+      // ================================================================
+      document.addEventListener("keydown", (e) => {
+        // Ctrl+Shift+T: Toggle theme
+        if (e.ctrlKey && e.shiftKey && e.key === "T") {
+          const current = document.body.getAttribute("data-theme");
+          setTheme(current === "light" ? "dark" : "light");
+        }
+        // Ctrl+Shift+R: Reload locations
+        if (e.ctrlKey && e.shiftKey && e.key === "R") {
+          e.preventDefault();
+          reloadLocations();
+        }
+      });
+
+      log("Harness ready. Ctrl+Shift+T to toggle theme.");
+    </script>
+  </body>
+</html>

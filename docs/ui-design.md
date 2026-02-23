@@ -2,9 +2,9 @@
 
 > This document defines the UI design for the Home Topology Location Manager. It drives UI implementation in the Home Assistant integration.
 
-**Status**: Design Complete (Implementation Ready)  
-**Last Updated**: 2025-12-02  
-**Target Platform**: Home Assistant Panel (standalone view)  
+**Status**: Design Complete (Implementation Ready)
+**Last Updated**: 2025-12-02
+**Target Platform**: Home Assistant Panel (standalone view)
 **Technology**: Lit (LitElement) - See [Section 10](#10-implementation-notes) for rationale
 
 ---
@@ -14,6 +14,7 @@
 ### 1.1 Purpose
 
 The Location Manager UI provides a visual interface for:
+
 - **Modeling** the spatial topology of a home (floors, rooms, zones)
 - **Configuring** behavior modules attached to locations (Occupancy, Actions)
 - **Managing** entity-to-location assignments
@@ -22,6 +23,7 @@ The Location Manager UI provides a visual interface for:
 ### 1.2 UI Type
 
 This is a **standalone panel** in Home Assistant (similar to Energy Dashboard or History), not a Lovelace card. Rationale:
+
 - Complex hierarchical data requires dedicated screen space
 - Configuration workflows need persistent UI state
 - Not suitable for dashboard embedding
@@ -72,9 +74,9 @@ This is a **standalone panel** in Home Assistant (similar to Energy Dashboard or
 
 ### 2.1 Panel Dimensions
 
-| Panel | Width | Purpose |
-|-------|-------|---------|
-| Tree Panel | ~40% (min 300px) | Location hierarchy browser |
+| Panel         | Width            | Purpose                         |
+| ------------- | ---------------- | ------------------------------- |
+| Tree Panel    | ~40% (min 300px) | Location hierarchy browser      |
 | Details Panel | ~60% (min 400px) | Selected location configuration |
 
 ### 2.2 Responsive Behavior
@@ -98,12 +100,12 @@ Model your space and attach behavior modules.
 [+ New Location]  [Save Changes]
 ```
 
-| Element | Type | Behavior |
-|---------|------|----------|
-| Title | Static text | "Home Topology" |
-| Subtitle | Static text | "Model your space and attach behavior modules." |
-| + New Location | Button (outline) | Opens location creation dialog |
-| Save Changes | Button (primary) | Persists all pending changes |
+| Element        | Type             | Behavior                                        |
+| -------------- | ---------------- | ----------------------------------------------- |
+| Title          | Static text      | "Home Topology"                                 |
+| Subtitle       | Static text      | "Model your space and attach behavior modules." |
+| + New Location | Button (outline) | Opens location creation dialog                  |
+| Save Changes   | Button (primary) | Persists all pending changes                    |
 
 #### 3.1.2 Tree Node Structure
 
@@ -113,48 +115,58 @@ Each tree node displays:
 [Drag] [Expand] [Icon] Location Name                    [Delete] [Status]
 ```
 
-| Element | Description |
-|---------|-------------|
-| Drag Handle | 6-dot grip icon, visible on hover |
-| Expand/Collapse | Chevron, only if has children |
-| Type Icon | Indicates location type (see 3.1.3) |
-| Location Name | Editable on double-click |
-| Delete Button | ⊗ icon, visible on hover |
-| Status Indicator | Optional spark/dot for state |
+| Element          | Description                                 |
+| ---------------- | ------------------------------------------- |
+| Drag Handle      | 6-dot grip icon, visible on hover           |
+| Expand/Collapse  | Chevron, only if has children               |
+| Type Icon        | Indicates location type (see 3.1.3)         |
+| Location Name    | Editable on double-click                    |
+| Delete Button    | `mdi:delete-outline` icon, visible on hover |
+| Status Indicator | Optional spark/dot for state                |
 
-#### 3.1.3 Location Type Icons
+#### 3.1.3 Location Icons (HA Area Registry)
 
-The UI displays icons based on location type. These are **integration-layer concerns** - the core kernel has no knowledge of types or icons.
+**ADR**: The Home Topology UI mirrors Home Assistant **Floors + Areas** only.
+Icons are sourced from the **Home Assistant Area Registry** (not stored in `modules["_meta"].icon`).
 
-##### Base Type Icons
+##### Icon Source of Truth
 
-| Type | Icon | MDI Name | Description |
-|------|------|----------|-------------|
-| Floor | ≡ | `mdi:layers` | A floor/level of the building |
-| Room | ◎ | `mdi:map-marker` | Generic room (fallback) |
-| Zone | ◇ | `mdi:vector-square` | Sub-room area |
-| Suite | ❖ | `mdi:home-group` | Room group (e.g., Master Suite) |
-| Outdoor | ⌂ | `mdi:home-outline` | Exterior location |
-| Building | ▣ | `mdi:warehouse` | Separate structure |
+- **Areas**: `hass.areas[location.ha_area_id].icon` (if set)
+- **Floors**: Optional. If no HA-provided icon exists, the UI falls back to `mdi:layers`.
 
-##### Room Category Icons (Semantic Enhancement)
+If an area has no icon configured in HA, the UI falls back to `mdi:map-marker`.
+
+| Type  | MDI Icon         | Description                     |
+| ----- | ---------------- | ------------------------------- |
+| Floor | `mdi:layers`     | A floor/level of the building   |
+| Area  | `mdi:map-marker` | Generic room or zone (fallback) |
+
+##### Editing Icons (Create + Edit)
+
+When creating a new **Area**-type location, the dialog includes an optional “Area Icon” field.
+This icon is persisted into Home Assistant via WebSocket:
+
+- Create: `config/area_registry/create` with `{ name, icon }`
+- Update: `config/area_registry/update` with `{ area_id, icon }`
+
+The Home Topology location stores the returned `ha_area_id` and always renders the icon from HA.
 
 For better UX, the integration can infer room categories from names or allow explicit assignment:
 
-| Category | Icon | MDI Name | Example Rooms |
-|----------|------|----------|---------------|
-| Kitchen | 🍴 | `mdi:silverware-fork-knife` | Kitchen, Kitchenette |
-| Bedroom | 🛏️ | `mdi:bed` | Master Bedroom, Guest Room, Kids Room |
-| Bathroom | 🛁 | `mdi:shower` | Master Bath, Half Bath, Powder Room |
-| Living | 🛋️ | `mdi:sofa` | Living Room, Family Room, Den |
-| Dining | 🍽️ | `mdi:table-furniture` | Dining Room |
-| Office | 💼 | `mdi:desk` | Office, Study, Home Office |
-| Garage | 🚗 | `mdi:garage` | Garage, Carport |
-| Patio | 🌿 | `mdi:flower` | Patio, Deck, Porch |
-| Utility | ⚙️ | `mdi:washing-machine` | Laundry, Utility Room |
-| Storage | 📦 | `mdi:package-variant` | Closet, Pantry, Attic |
-| Gym | 🏋️ | `mdi:dumbbell` | Gym, Exercise Room |
-| Theater | 🎬 | `mdi:theater` | Media Room, Theater |
+| Category | MDI Icon                    | Example Rooms                         |
+| -------- | --------------------------- | ------------------------------------- |
+| Kitchen  | `mdi:silverware-fork-knife` | Kitchen, Kitchenette                  |
+| Bedroom  | `mdi:bed`                   | Master Bedroom, Guest Room, Kids Room |
+| Bathroom | `mdi:shower`                | Master Bath, Half Bath, Powder Room   |
+| Living   | `mdi:sofa`                  | Living Room, Family Room, Den         |
+| Dining   | `mdi:table-furniture`       | Dining Room                           |
+| Office   | `mdi:desk`                  | Office, Study, Home Office            |
+| Garage   | `mdi:garage`                | Garage, Carport                       |
+| Patio    | `mdi:flower`                | Patio, Deck, Porch                    |
+| Utility  | `mdi:washing-machine`       | Laundry, Utility Room                 |
+| Storage  | `mdi:package-variant`       | Closet, Pantry, Attic                 |
+| Gym      | `mdi:dumbbell`              | Gym, Exercise Room                    |
+| Theater  | `mdi:theater`               | Media Room, Theater                   |
 
 ##### Icon Resolution Strategy
 
@@ -168,17 +180,17 @@ The integration determines icons using this priority:
 # Integration icon resolution
 def get_location_icon(loc_mgr, location_id: str) -> str:
     meta = loc_mgr.get_module_config(location_id, "_meta") or {}
-    
+
     # 1. Explicit override
     if meta.get("icon"):
         return meta["icon"]
-    
+
     # 2. Category inference from name
     location = loc_mgr.get_location(location_id)
     category = infer_category(location.name)
     if category:
         return CATEGORY_ICONS[category]
-    
+
     # 3. Type fallback
     loc_type = meta.get("type", "room")
     return TYPE_ICONS.get(loc_type, "mdi:map-marker")
@@ -188,24 +200,24 @@ def get_location_icon(loc_mgr, location_id: str) -> str:
 
 #### 3.1.4 Tree Interactions
 
-| Action | Trigger | Result |
-|--------|---------|--------|
-| Select | Click node | Highlights node, loads details panel |
-| Expand/Collapse | Click chevron | Shows/hides children |
-| Rename | Double-click name | Inline text edit |
-| Reorder | Drag handle | Moves node within parent |
-| Reparent | Drag to different parent | Changes parent_id |
-| Delete | Click ⊗ | Confirmation dialog, removes location |
-| Add Child | Right-click → Add Child | Creates child location |
+| Action          | Trigger                  | Result                                |
+| --------------- | ------------------------ | ------------------------------------- |
+| Select          | Click node               | Highlights node, loads details panel  |
+| Expand/Collapse | Click chevron            | Shows/hides children                  |
+| Rename          | Double-click name        | Inline text edit                      |
+| Reorder         | Drag handle              | Moves node within parent              |
+| Reparent        | Drag to different parent | Changes parent_id                     |
+| Delete          | Click delete icon        | Confirmation dialog, removes location |
+| Add Child       | Right-click → Add Child  | Creates child location                |
 
 #### 3.1.5 Tree State Indicators
 
-| Indicator | Meaning |
-|-----------|---------|
-| Blue highlight | Currently selected |
-| Spark icon (✦) | Has pending changes |
-| Dot (colored) | Occupancy state (green=occupied, gray=vacant) |
-| Italic text | Location is locked |
+| Indicator      | Meaning                                       |
+| -------------- | --------------------------------------------- |
+| Blue highlight | Currently selected                            |
+| Pencil icon    | Has pending changes                           |
+| Dot (colored)  | Occupancy state (green=occupied, gray=vacant) |
+| Italic text    | Location is locked                            |
 
 ---
 
@@ -222,12 +234,12 @@ The details panel shows configuration for the selected location.
 [Occupancy]  [Actions]
 ```
 
-| Element | Description |
-|---------|-------------|
-| Type Icon | Large icon matching tree node type |
-| Location Name | Display name (editable via tree) |
-| Location ID | Slug/identifier (e.g., "room-kitchen") |
-| Module Tabs | Switch between Occupancy, Actions, (future: Comfort, Energy) |
+| Element       | Description                                                  |
+| ------------- | ------------------------------------------------------------ |
+| Type Icon     | Large icon matching tree node type                           |
+| Location Name | Display name (editable via tree)                             |
+| Location ID   | Slug/identifier (e.g., "room-kitchen")                       |
+| Module Tabs   | Switch between Occupancy, Actions, (future: Comfort, Energy) |
 
 #### 3.2.2 Occupancy Tab
 
@@ -247,23 +259,23 @@ DEVICE MAPPINGS
 
 ##### Presence Logic Section
 
-| Field | Type | Maps To | Description |
-|-------|------|---------|-------------|
-| Presence Logic Toggle | Switch | `modules.occupancy.enabled` | Enable/disable occupancy tracking |
-| Default Timeout | Number input | `modules.occupancy.default_timeout` | Minutes until vacant after TRIGGER event |
-| Hold Release Timeout | Number input | `modules.occupancy.hold_release_timeout` | Trailing minutes after RELEASE event |
+| Field                 | Type         | Maps To                                  | Description                              |
+| --------------------- | ------------ | ---------------------------------------- | ---------------------------------------- |
+| Presence Logic Toggle | Switch       | `modules.occupancy.enabled`              | Enable/disable occupancy tracking        |
+| Default Timeout       | Number input | `modules.occupancy.default_timeout`      | Minutes until vacant after TRIGGER event |
+| Hold Release Timeout  | Number input | `modules.occupancy.hold_release_timeout` | Trailing minutes after RELEASE event     |
 
 ##### Occupancy Sources Section
 
 Lists entities from this HA area that generate occupancy events.
 
-| Element | Description |
-|---------|-------------|
-| Entity Icon | Entity domain icon (motion, presence, door, etc.) |
-| Entity Name | Friendly name from Home Assistant |
-| Mode Badge | "Any Change" or "Specific States" |
-| Timeout Display | e.g., "5 min" or "∞ → 2m" |
-| Configure Button | Opens entity configuration dialog |
+| Element           | Description                                                 |
+| ----------------- | ----------------------------------------------------------- |
+| Entity Icon       | Entity domain icon (motion, presence, door, etc.)           |
+| Entity Name       | Friendly name from Home Assistant                           |
+| Mode Badge        | "Any Change" or "Specific States"                           |
+| Timeout Display   | e.g., "5 min" or "∞ → 2m"                                   |
+| Configure Button  | Opens entity configuration dialog                           |
 | Add Entity Button | Opens entity picker (only shows entities from this HA area) |
 
 ##### Entity Configuration Dialog
@@ -271,6 +283,7 @@ Lists entities from this HA area that generate occupancy events.
 Two trigger modes are available:
 
 **Mode 1: Any Change (Activity Detection)**
+
 ```
 TRIGGER MODE
 ─────────────────────────────────────────────────────────
@@ -283,6 +296,7 @@ Timeout: [5] min    ☐ Use location default
 Best for: dimmers, volume controls, thermostats, unusual sensors.
 
 **Mode 2: Specific States (Binary Mapping)**
+
 ```
 TRIGGER MODE
 ─────────────────────────────────────────────────────────
@@ -302,11 +316,13 @@ OFF STATE (on → off)
 Best for: motion sensors, presence sensors, door sensors, media players.
 
 **Timeout Options** (available for any sensor):
+
 - **Number input**: Timeout in minutes (e.g., 5 min)
 - **"Indefinite (until OFF state)" checkbox**: Source contributes indefinitely until OFF state triggers CLEAR
 - **"Use location default" checkbox**: Uses location's `default_timeout` setting
 
 **Examples of when "Indefinite" is useful**:
+
 - **Presence sensors**: Sensor ON = occupied, sensor OFF = CLEAR with trailing
 - **State-based door sensors**: Door open = occupied, door closed = CLEAR immediately
 - **Media players**: Playing = occupied, idle = CLEAR with trailing
@@ -316,20 +332,21 @@ Best for: motion sensors, presence sensors, door sensors, media players.
 
 ##### Default Mode by Entity Type
 
-| Entity Type | Default Mode | Default Config | Notes |
-|-------------|--------------|----------------|-------|
-| Motion sensor | Specific states | ON→TRIGGER(5m), OFF→ignore | Re-trigger extends timer |
-| Presence sensor | Specific states | ON→TRIGGER(∞), OFF→CLEAR(2m) | Indefinite until cleared |
-| Door sensor | Specific states | ON→TRIGGER(2m), OFF→ignore | **See door sensor patterns below** |
-| Media player | Specific states | playing→TRIGGER(∞), idle→CLEAR(5m) | Indefinite while playing |
-| Dimmer/Light | Any change | TRIGGER(5m) on any change | Activity detection |
-| Unknown | Any change | TRIGGER(5m) on any change | Conservative default |
+| Entity Type     | Default Mode    | Default Config                     | Notes                              |
+| --------------- | --------------- | ---------------------------------- | ---------------------------------- |
+| Motion sensor   | Specific states | ON→TRIGGER(5m), OFF→ignore         | Re-trigger extends timer           |
+| Presence sensor | Specific states | ON→TRIGGER(∞), OFF→CLEAR(2m)       | Indefinite until cleared           |
+| Door sensor     | Specific states | ON→TRIGGER(2m), OFF→ignore         | **See door sensor patterns below** |
+| Media player    | Specific states | playing→TRIGGER(∞), idle→CLEAR(5m) | Indefinite while playing           |
+| Dimmer/Light    | Any change      | TRIGGER(5m) on any change          | Activity detection                 |
+| Unknown         | Any change      | TRIGGER(5m) on any change          | Conservative default               |
 
 **Door Sensor Configuration Options**:
 
 The UI should allow users to choose between two door sensor patterns:
 
 1. **Entry Door** (default): `ON→TRIGGER(2m), OFF→ignore`
+
    - Use for: Front door, entryway, room doors
    - Behavior: Opening indicates entry, person may still be present after door closes
    - UI: Default configuration when adding door sensor
@@ -353,10 +370,10 @@ DOOR SENSOR PATTERN
 ─────────────────────────────────────────────────────────
 ○ Entry door (opening indicates entry)
   ON→TRIGGER(2m), OFF→ignore
-  
+
 ● State door (door state = occupancy state)
   ON→TRIGGER(∞), OFF→CLEAR(0)
-  
+
   ☐ Show advanced configuration
 ```
 
@@ -426,14 +443,14 @@ class Location:
 
 ### 4.3 API Endpoints (Conceptual)
 
-| Action | Method | Endpoint |
-|--------|--------|----------|
-| Get all locations | GET | `/api/home_topology/locations` |
-| Create location | POST | `/api/home_topology/locations` |
-| Update location | PUT | `/api/home_topology/locations/{id}` |
-| Delete location | DELETE | `/api/home_topology/locations/{id}` |
-| Reorder locations | PATCH | `/api/home_topology/locations/reorder` |
-| Get location state | GET | `/api/home_topology/locations/{id}/state` |
+| Action             | Method | Endpoint                                  |
+| ------------------ | ------ | ----------------------------------------- |
+| Get all locations  | GET    | `/api/home_topology/locations`            |
+| Create location    | POST   | `/api/home_topology/locations`            |
+| Update location    | PUT    | `/api/home_topology/locations/{id}`       |
+| Delete location    | DELETE | `/api/home_topology/locations/{id}`       |
+| Reorder locations  | PATCH  | `/api/home_topology/locations/reorder`    |
+| Get location state | GET    | `/api/home_topology/locations/{id}/state` |
 
 ---
 
@@ -444,13 +461,35 @@ class Location:
 ```
 1. User clicks [+ New Location]
 2. Dialog appears:
-   - Name: [text input]
-   - Type: [dropdown: Floor/Room/Zone/Suite/Outdoor/Building]
-   - Parent: [dropdown: existing locations or "Root"]
+   - Name: [text input, required]
+   - Type: [dropdown: Floor / Area]
+   - Parent: [dropdown: existing locations or "(Root Level)"]
+   - Icon: [icon picker, optional - for Areas only]
 3. User fills form, clicks [Create]
-4. New location appears in tree, selected
+4. New location appears in tree, auto-expanded if under a parent
 5. Details panel shows default module configs
 ```
+
+#### 5.1.1 Location Type and HA Entity Creation
+
+When creating a location, the **Type** selection determines what Home Assistant entity is created:
+
+| Type    | HA Entity Created | Description                                |
+| ------- | ----------------- | ------------------------------------------ |
+| **Floor** | None (metadata only) | Organizational grouping, stored in `modules._meta.type` |
+| **Area**  | HA Area           | Creates entry in HA Area Registry via `config/area_registry/create` |
+
+**Area Type Details:**
+- Creates a corresponding HA Area with the same name
+- Icon is stored in the HA Area Registry (not in Home Topology)
+- Enables entity assignment (entities belong to HA Areas)
+- `location.ha_area_id` links the topology location to the HA area
+
+**Floor Type Details:**
+- Does NOT create an HA entity
+- Used for structural grouping (e.g., "First Floor", "Basement")
+- Can contain Areas and other Floors
+- Icon defaults to `mdi:layers`
 
 ### 5.2 Configure Occupancy
 
@@ -496,40 +535,40 @@ Suite is a special case:
 
 ##### Valid Parent → Child Relationships
 
-| Parent Type | Can Contain |
-|-------------|-------------|
-| **Root** | Floor, Building, Outdoor |
-| **Floor** | Room, Suite |
-| **Suite** | Room only |
-| **Room** | Zone only |
-| **Zone** | Nothing (terminal) |
-| **Building** | Floor, Room |
-| **Outdoor** | Zone only |
+| Parent Type  | Can Contain              |
+| ------------ | ------------------------ |
+| **Root**     | Floor, Building, Outdoor |
+| **Floor**    | Room, Suite              |
+| **Suite**    | Room only                |
+| **Room**     | Zone only                |
+| **Zone**     | Nothing (terminal)       |
+| **Building** | Floor, Room              |
+| **Outdoor**  | Zone only                |
 
 ##### Illegal Moves (UI must block these)
 
-| Attempted Move | Allowed? | Reason |
-|----------------|----------|--------|
-| Floor → Room | ❌ No | Floors contain rooms, not vice versa |
-| Floor → Floor | ❌ No | Floors are siblings, not nested |
-| Room → Room | ❌ No | Rooms are flat within a floor (use Suite for grouping) |
-| Room → Zone | ❌ No | Zones are sub-divisions, cannot contain rooms |
-| Zone → anything | ❌ No | Zones are terminal nodes |
-| Suite → Floor | ❌ No | Suites exist within floors |
-| Room → Suite | ✅ Yes | Suites can contain rooms (Master Suite → Bedroom) |
-| Zone → Room | ✅ Yes | Zones belong inside rooms |
-| Outdoor → Building | ❌ No | These are both root-level |
-| Anything → itself | ❌ No | Cannot be own parent |
-| Parent → descendant | ❌ No | Cannot create cycles |
+| Attempted Move      | Allowed? | Reason                                                 |
+| ------------------- | -------- | ------------------------------------------------------ |
+| Floor → Room        | ❌ No    | Floors contain rooms, not vice versa                   |
+| Floor → Floor       | ❌ No    | Floors are siblings, not nested                        |
+| Room → Room         | ❌ No    | Rooms are flat within a floor (use Suite for grouping) |
+| Room → Zone         | ❌ No    | Zones are sub-divisions, cannot contain rooms          |
+| Zone → anything     | ❌ No    | Zones are terminal nodes                               |
+| Suite → Floor       | ❌ No    | Suites exist within floors                             |
+| Room → Suite        | ✅ Yes   | Suites can contain rooms (Master Suite → Bedroom)      |
+| Zone → Room         | ✅ Yes   | Zones belong inside rooms                              |
+| Outdoor → Building  | ❌ No    | These are both root-level                              |
+| Anything → itself   | ❌ No    | Cannot be own parent                                   |
+| Parent → descendant | ❌ No    | Cannot create cycles                                   |
 
 ##### Drag Feedback for Illegal Moves
 
-| State | Visual Feedback |
-|-------|-----------------|
-| Valid drop target | Green highlight, "+" cursor |
-| Invalid drop target | Red highlight, "🚫" cursor, tooltip: "Cannot place {type} inside {type}" |
-| Dragging over self | No highlight |
-| Dragging over descendant | Red highlight, tooltip: "Cannot move into own child" |
+| State                    | Visual Feedback                                                          |
+| ------------------------ | ------------------------------------------------------------------------ |
+| Valid drop target        | Green highlight, "+" cursor                                              |
+| Invalid drop target      | Red highlight, "🚫" cursor, tooltip: "Cannot place {type} inside {type}" |
+| Dragging over self       | No highlight                                                             |
+| Dragging over descendant | Red highlight, tooltip: "Cannot move into own child"                     |
 
 ##### Edge Cases
 
@@ -564,7 +603,8 @@ meta = loc_mgr.get_module_config(location_id, "_meta") or {}
 location_type = meta.get("type", "room")
 ```
 
-> **See also**: 
+> **See also**:
+>
 > - Section 3.1.3 above for icon resolution strategy
 > - [Integration Guide](./integration-guide.md#location-types-your-responsibility) for complete implementation patterns
 
@@ -576,34 +616,34 @@ location_type = meta.get("type", "room")
 
 ### 6.1 Colors
 
-| Token | Light Mode | Dark Mode | Usage |
-|-------|------------|-----------|-------|
-| `--primary` | #1976D2 | #90CAF9 | Selected state, primary buttons |
-| `--surface` | #FFFFFF | #1E1E1E | Panel backgrounds |
-| `--on-surface` | #212121 | #E0E0E0 | Text |
-| `--border` | #E0E0E0 | #424242 | Dividers, borders |
-| `--occupied` | #4CAF50 | #81C784 | Occupied indicator |
-| `--vacant` | #9E9E9E | #757575 | Vacant indicator |
-| `--locked` | #FF9800 | #FFB74D | Locked indicator |
+| Token          | Light Mode | Dark Mode | Usage                           |
+| -------------- | ---------- | --------- | ------------------------------- |
+| `--primary`    | #1976D2    | #90CAF9   | Selected state, primary buttons |
+| `--surface`    | #FFFFFF    | #1E1E1E   | Panel backgrounds               |
+| `--on-surface` | #212121    | #E0E0E0   | Text                            |
+| `--border`     | #E0E0E0    | #424242   | Dividers, borders               |
+| `--occupied`   | #4CAF50    | #81C784   | Occupied indicator              |
+| `--vacant`     | #9E9E9E    | #757575   | Vacant indicator                |
+| `--locked`     | #FF9800    | #FFB74D   | Locked indicator                |
 
 ### 6.2 Typography
 
-| Element | Size | Weight |
-|---------|------|--------|
-| Panel title | 20px | 600 |
+| Element        | Size | Weight          |
+| -------------- | ---- | --------------- |
+| Panel title    | 20px | 600             |
 | Section header | 12px | 600 (uppercase) |
-| Tree node | 14px | 400 |
-| Location ID | 12px | 400 (muted) |
+| Tree node      | 14px | 400             |
+| Location ID    | 12px | 400 (muted)     |
 
 ### 6.3 Spacing
 
-| Token | Value |
-|-------|-------|
-| `--spacing-xs` | 4px |
-| `--spacing-sm` | 8px |
-| `--spacing-md` | 16px |
-| `--spacing-lg` | 24px |
-| Tree indent | 24px per level |
+| Token          | Value          |
+| -------------- | -------------- |
+| `--spacing-xs` | 4px            |
+| `--spacing-sm` | 8px            |
+| `--spacing-md` | 16px           |
+| `--spacing-lg` | 24px           |
+| Tree indent    | 24px per level |
 
 ---
 
@@ -611,20 +651,20 @@ location_type = meta.get("type", "room")
 
 ### 7.1 UI State (Local)
 
-| State | Type | Description |
-|-------|------|-------------|
-| `selectedLocationId` | string | Currently selected location |
-| `expandedNodes` | Set<string> | Which tree nodes are expanded |
-| `pendingChanges` | Map<string, Location> | Unsaved modifications |
-| `activeTab` | 'occupancy' \| 'actions' | Current module tab |
+| State                | Type                     | Description                   |
+| -------------------- | ------------------------ | ----------------------------- |
+| `selectedLocationId` | string                   | Currently selected location   |
+| `expandedNodes`      | Set<string>              | Which tree nodes are expanded |
+| `pendingChanges`     | Map<string, Location>    | Unsaved modifications         |
+| `activeTab`          | 'occupancy' \| 'actions' | Current module tab            |
 
 ### 7.2 Server State
 
-| State | Source | Description |
-|-------|--------|-------------|
-| `locations` | API | Full location tree |
-| `occupancyStates` | WebSocket | Real-time occupancy per location |
-| `moduleConfigs` | API | Per-location module configurations |
+| State             | Source    | Description                        |
+| ----------------- | --------- | ---------------------------------- |
+| `locations`       | API       | Full location tree                 |
+| `occupancyStates` | WebSocket | Real-time occupancy per location   |
+| `moduleConfigs`   | API       | Per-location module configurations |
 
 ### 7.3 Sync Strategy
 
@@ -639,14 +679,14 @@ location_type = meta.get("type", "room")
 
 ### 8.1 Keyboard Navigation
 
-| Key | Action |
-|-----|--------|
-| Arrow Up/Down | Move selection in tree |
-| Arrow Right | Expand node / enter children |
-| Arrow Left | Collapse node / go to parent |
-| Enter | Activate selected (edit, open) |
-| Delete | Delete selected (with confirmation) |
-| Tab | Move between panels |
+| Key           | Action                              |
+| ------------- | ----------------------------------- |
+| Arrow Up/Down | Move selection in tree              |
+| Arrow Right   | Expand node / enter children        |
+| Arrow Left    | Collapse node / go to parent        |
+| Enter         | Activate selected (edit, open)      |
+| Delete        | Delete selected (with confirmation) |
+| Tab           | Move between panels                 |
 
 ### 8.2 Screen Reader
 
@@ -697,14 +737,14 @@ INBOX (3 entities)
 
 **Decision**: Use **Lit** (LitElement) for all frontend components.
 
-| Criterion | Lit | React | Why Lit Wins |
-|-----------|-----|-------|--------------|
-| HA Native | ✅ Yes | ❌ No | Entire HA frontend is Lit |
-| Component Reuse | ✅ Use `ha-*` directly | ❌ Wrap or rewrite | Leverage existing HA components |
-| Bundling | ✅ Native ES modules | ❌ Complex bundling | Simpler build, faster loads |
-| Theme Integration | ✅ CSS variables work | ⚠️ Requires adaptation | Automatic dark/light mode |
-| WebSocket API | ✅ `hass` object available | ⚠️ Manual wiring | Standard HA patterns |
-| Developer Experience | ⚠️ Less familiar | ✅ More popular | Worth learning for HA |
+| Criterion            | Lit                        | React                  | Why Lit Wins                    |
+| -------------------- | -------------------------- | ---------------------- | ------------------------------- |
+| HA Native            | ✅ Yes                     | ❌ No                  | Entire HA frontend is Lit       |
+| Component Reuse      | ✅ Use `ha-*` directly     | ❌ Wrap or rewrite     | Leverage existing HA components |
+| Bundling             | ✅ Native ES modules       | ❌ Complex bundling    | Simpler build, faster loads     |
+| Theme Integration    | ✅ CSS variables work      | ⚠️ Requires adaptation | Automatic dark/light mode       |
+| WebSocket API        | ✅ `hass` object available | ⚠️ Manual wiring       | Standard HA patterns            |
+| Developer Experience | ⚠️ Less familiar           | ✅ More popular        | Worth learning for HA           |
 
 **Rationale**: React prototyping (Gemini Canvas) revealed significant friction with state management, focus handling, and drag-and-drop. These are solved problems in HA's Lit ecosystem. Building natively avoids translation overhead and leverages battle-tested HA components.
 
@@ -712,18 +752,18 @@ INBOX (3 entities)
 
 Map design elements to existing HA components where possible:
 
-| Design Element | HA Component | Notes |
-|----------------|--------------|-------|
-| **Tree Panel** | Custom `ht-location-tree` | Build with `ha-list-item` + `ha-expansion-panel` |
-| **Details Panel** | Custom `ht-location-inspector` | Use `ha-card` for sections |
-| **Location Dialog** | `ha-dialog` + `ha-form` | Schema-driven form |
-| **Entity Picker** | `ha-entity-picker` | Filter by area with `include-areas` |
-| **Timeout Input** | `ha-selector` (number) | `{ number: { min: 1, max: 1440, unit_of_measurement: "min" } }` |
-| **Toggle Switch** | `ha-switch` | Standard HA toggle |
-| **Module Tabs** | `ha-tab-bar` + `ha-tab` | Or `mwc-tab-bar` |
-| **Icon Display** | `ha-icon` | MDI icons via `icon` attribute |
-| **Confirmation** | `ha-dialog` | Use `destructive` button style |
-| **Save Button** | `ha-button` | `unelevated` variant for primary |
+| Design Element      | HA Component                   | Notes                                                           |
+| ------------------- | ------------------------------ | --------------------------------------------------------------- |
+| **Tree Panel**      | Custom `ht-location-tree`      | Build with `ha-list-item` + `ha-expansion-panel`                |
+| **Details Panel**   | Custom `ht-location-inspector` | Use `ha-card` for sections                                      |
+| **Location Dialog** | `ha-dialog` + `ha-form`        | Schema-driven form                                              |
+| **Entity Picker**   | `ha-entity-picker`             | Filter by area with `include-areas`                             |
+| **Timeout Input**   | `ha-selector` (number)         | `{ number: { min: 1, max: 1440, unit_of_measurement: "min" } }` |
+| **Toggle Switch**   | `ha-switch`                    | Standard HA toggle                                              |
+| **Module Tabs**     | `ha-tab-bar` + `ha-tab`        | Or `mwc-tab-bar`                                                |
+| **Icon Display**    | `ha-icon`                      | MDI icons via `icon` attribute                                  |
+| **Confirmation**    | `ha-dialog`                    | Use `destructive` button style                                  |
+| **Save Button**     | `ha-button`                    | `unelevated` variant for primary                                |
 
 ### 10.3 Custom Components to Build
 
@@ -732,13 +772,13 @@ These components don't exist in HA and must be created:
 #### `ht-location-tree` (Tree Panel)
 
 ```typescript
-@customElement('ht-location-tree')
+@customElement("ht-location-tree")
 export class HtLocationTree extends LitElement {
   @property({ attribute: false }) hass!: HomeAssistant;
   @property({ attribute: false }) locations!: Location[];
   @property() selectedId?: string;
   @property({ attribute: false }) expandedIds: Set<string> = new Set();
-  
+
   // Events
   // - location-selected: { locationId: string }
   // - location-moved: { locationId: string, newParentId: string | null, newIndex: number }
@@ -748,6 +788,7 @@ export class HtLocationTree extends LitElement {
 ```
 
 **Implementation approach**:
+
 1. Render flat list with visual indentation (not nested DOM)
 2. Use CSS `padding-left` for depth (simpler than nested components)
 3. Drag-and-drop via SortableJS library (proven, accessible)
@@ -756,18 +797,19 @@ export class HtLocationTree extends LitElement {
 #### `ht-location-inspector` (Details Panel)
 
 ```typescript
-@customElement('ht-location-inspector')
+@customElement("ht-location-inspector")
 export class HtLocationInspector extends LitElement {
   @property({ attribute: false }) hass!: HomeAssistant;
   @property({ attribute: false }) location?: Location;
-  @property() activeTab: 'occupancy' | 'actions' = 'occupancy';
-  
+  @property() activeTab: "occupancy" | "actions" = "occupancy";
+
   // Events
   // - config-changed: { locationId: string, module: string, config: object }
 }
 ```
 
 **Implementation approach**:
+
 1. Header section with icon + name + ID
 2. Tab bar for modules (Occupancy, Actions)
 3. Each tab renders module-specific form
@@ -776,12 +818,12 @@ export class HtLocationInspector extends LitElement {
 #### `ht-entity-config-dialog` (Entity Configuration)
 
 ```typescript
-@customElement('ht-entity-config-dialog')
+@customElement("ht-entity-config-dialog")
 export class HtEntityConfigDialog extends LitElement {
   @property({ attribute: false }) hass!: HomeAssistant;
   @property({ attribute: false }) entity?: EntityConfig;
   @property({ type: Boolean }) open = false;
-  
+
   // Events
   // - config-saved: { entityId: string, config: OccupancySourceConfig }
   // - dialog-closed
@@ -789,6 +831,7 @@ export class HtEntityConfigDialog extends LitElement {
 ```
 
 **Implementation approach**:
+
 1. Wrap in `ha-dialog` for consistent modal behavior
 2. Two-column layout for ON/OFF state (desktop), stack on mobile
 3. Radio buttons for event type selection
@@ -820,14 +863,14 @@ home-topology-ha/
 
 ### 10.5 HA Integration Points
 
-| Integration | Method | Details |
-|-------------|--------|---------|
-| Panel registration | `async_register_panel()` | Register as sidebar panel |
-| State subscription | `hass.connection.subscribeEvents()` | Real-time occupancy updates |
-| API calls | `hass.callWS()` | CRUD operations on locations |
-| Entity data | `hass.states` | Entity states and attributes |
-| Area data | `hass.areas` | HA areas for entity filtering |
-| Themes | CSS variables | Automatic via `ha-style` |
+| Integration        | Method                              | Details                       |
+| ------------------ | ----------------------------------- | ----------------------------- |
+| Panel registration | `async_register_panel()`            | Register as sidebar panel     |
+| State subscription | `hass.connection.subscribeEvents()` | Real-time occupancy updates   |
+| API calls          | `hass.callWS()`                     | CRUD operations on locations  |
+| Entity data        | `hass.states`                       | Entity states and attributes  |
+| Area data          | `hass.areas`                        | HA areas for entity filtering |
+| Themes             | CSS variables                       | Automatic via `ha-style`      |
 
 #### WebSocket API Commands
 
@@ -837,7 +880,7 @@ hass.callWS({ type: 'home_topology/locations/list' })
   → { locations: Location[] }
 
 // Create location
-hass.callWS({ 
+hass.callWS({
   type: 'home_topology/locations/create',
   name: 'Kitchen',
   parent_id: 'floor-1',
@@ -883,14 +926,14 @@ hass.callWS({
 
 Study these HA frontend patterns before building:
 
-| HA Component | Path in `home-assistant/frontend` | What to Learn |
-|--------------|-----------------------------------|---------------|
-| Area Registry | `src/panels/config/areas/` | Similar tree/list + editor pattern |
-| Automation Editor | `src/panels/config/automation/` | Complex form editing |
-| Entity Picker | `src/components/entity/ha-entity-picker.ts` | Filtered entity selection |
-| Dialog Pattern | `src/dialogs/` | Modal lifecycle, focus management |
-| Form Rendering | `src/components/ha-form/` | Schema → UI rendering |
-| Sortable Lists | `src/panels/lovelace/editor/` | Drag-and-drop patterns |
+| HA Component      | Path in `home-assistant/frontend`           | What to Learn                      |
+| ----------------- | ------------------------------------------- | ---------------------------------- |
+| Area Registry     | `src/panels/config/areas/`                  | Similar tree/list + editor pattern |
+| Automation Editor | `src/panels/config/automation/`             | Complex form editing               |
+| Entity Picker     | `src/components/entity/ha-entity-picker.ts` | Filtered entity selection          |
+| Dialog Pattern    | `src/dialogs/`                              | Modal lifecycle, focus management  |
+| Form Rendering    | `src/components/ha-form/`                   | Schema → UI rendering              |
+| Sortable Lists    | `src/panels/lovelace/editor/`               | Drag-and-drop patterns             |
 
 ### 10.7 Development Workflow
 
@@ -918,11 +961,13 @@ ln -s /path/to/home-topology-ha/custom_components/home_topology \
 Drag-and-drop is the most complex interaction. Use a phased approach:
 
 **Phase 1 (MVP)**: No drag-and-drop
+
 - Use "Move to..." dropdown in context menu
 - Simpler to implement, fully functional
 - Ship early, gather feedback
 
 **Phase 2**: Add SortableJS
+
 ```typescript
 import Sortable from 'sortablejs';
 
@@ -941,27 +986,26 @@ firstUpdated() {
 
 ### 10.9 Accessibility Checklist
 
-| Requirement | Implementation |
-|-------------|----------------|
-| Keyboard tree navigation | Arrow keys, Enter, Tab |
-| Screen reader | `role="tree"`, `role="treeitem"`, `aria-expanded` |
-| Focus visible | Use HA's focus styles (automatic) |
-| Color contrast | Use HA theme tokens (automatic) |
-| Reduced motion | Respect `prefers-reduced-motion` |
-| Dialog focus trap | `ha-dialog` handles this |
+| Requirement              | Implementation                                    |
+| ------------------------ | ------------------------------------------------- |
+| Keyboard tree navigation | Arrow keys, Enter, Tab                            |
+| Screen reader            | `role="tree"`, `role="treeitem"`, `aria-expanded` |
+| Focus visible            | Use HA's focus styles (automatic)                 |
+| Color contrast           | Use HA theme tokens (automatic)                   |
+| Reduced motion           | Respect `prefers-reduced-motion`                  |
+| Dialog focus trap        | `ha-dialog` handles this                          |
 
 ---
 
 ## Revision History
 
-| Version | Date | Changes |
-|---------|------|---------|
-| 0.1 | 2025-11-25 | Initial draft from Gemini Canvas mockup |
-| 0.2 | 2025-12-02 | **Technology decision: Lit**. Added component mapping, file structure, WebSocket API, reference implementations, development workflow. Removed TBD status from Section 10. |
+| Version | Date       | Changes                                                                                                                                                                    |
+| ------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0.1     | 2025-11-25 | Initial draft from Gemini Canvas mockup                                                                                                                                    |
+| 0.2     | 2025-12-02 | **Technology decision: Lit**. Added component mapping, file structure, WebSocket API, reference implementations, development workflow. Removed TBD status from Section 10. |
 
 ---
 
-**Status**: Design Complete (Implementation Ready)  
-**Owner**: Mike  
+**Status**: Design Complete (Implementation Ready)
+**Owner**: Mike
 **Next Step**: Create `home-topology-ha` repository and scaffold integration
-

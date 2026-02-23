@@ -88,7 +88,10 @@ class OccupancyBinarySensor(BinarySensorEntity):
         self._attr_name = f"{location_name} Occupancy"
 
         self._attr_is_on = False
-        self._attr_extra_state_attributes = {}
+        self._attr_extra_state_attributes = {
+            "location_id": self._location_id,
+            "location_name": self._location_name,
+        }
 
     async def async_added_to_hass(self) -> None:
         """Subscribe to occupancy events when added."""
@@ -101,10 +104,13 @@ class OccupancyBinarySensor(BinarySensorEntity):
                 payload = event.payload
                 self._attr_is_on = payload.get("occupied", False)
                 self._attr_extra_state_attributes = {
-                    "confidence": payload.get("confidence", 0.0),
-                    "active_holds": payload.get("active_holds", []),
-                    "expires_at": payload.get("expires_at"),
+                    "location_id": self._location_id,
+                    "location_name": self._location_name,
+                    "locked_by": payload.get("locked_by", []),
                     "is_locked": payload.get("is_locked", False),
+                    "contributions": payload.get("contributions", []),
+                    "previous_occupied": payload.get("previous_occupied", False),
+                    "reason": payload.get("reason"),
                 }
                 self.async_write_ha_state()
                 _LOGGER.debug(

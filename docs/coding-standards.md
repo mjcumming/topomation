@@ -331,7 +331,8 @@ def test_translate_motion_sensor_on():
     event = bridge.translate_state("binary_sensor.motion", "on")
 
     # Assert
-    assert event.type == "sensor.state_changed"
+    assert event.type == "occupancy.signal"
+    assert event.payload["event_type"] == "trigger"
     assert event.payload["new_state"] == "on"
 ```
 
@@ -574,5 +575,5 @@ pytest tests/
 ---
 
 **Document Status**: Active
-**Last Updated**: 2025-12-09
+**Last Updated**: 2026-02-23
 **Maintainer**: Mike

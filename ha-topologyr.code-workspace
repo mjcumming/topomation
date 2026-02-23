@@ -1,21 +1,18 @@
 {
   "folders": [
     {
-      "path": "/workspaces/core"
+      "path": "/workspaces/core",
     },
     {
-      "path": "/workspaces/wiim"
+      "path": "/workspaces/home-topology-ha",
     },
     {
-      "path": "/workspaces/home-topology-ha"
+      "path": "../home-topology",
     },
-    {
-      "path": "../home-topology"
-    }
   ],
   "settings": {
     "files.associations": {
-      "*.yaml": "home-assistant"
-    }
-  }
+      "*.yaml": "home-assistant",
+    },
+  },
 }

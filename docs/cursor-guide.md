@@ -3,7 +3,7 @@
 > This document contains detailed patterns, code examples, and comprehensive guidelines.
 > For the essential rules loaded in every conversation, see `.cursorrules`.
 
-Last Updated: 2025-12-09
+Last Updated: 2026-02-23
 
 ---
 
@@ -538,11 +538,13 @@ def state_changed_listener(event: Event) -> None:
     # Translate to kernel Event
     if new_state.domain == "binary_sensor":
         kernel_event = Event(
-            type="sensor.state_changed",
-            data={
-                "location_id": location_id,
-                "entity_id": entity_id,
-                "state": new_state.state == "on",
+            type="occupancy.signal",
+            source="ha",
+            location_id=location_id,
+            entity_id=entity_id,
+            payload={
+                "event_type": "trigger" if new_state.state == "on" else "clear",
+                "source_id": entity_id,
                 "device_class": new_state.attributes.get("device_class"),
             }
         )

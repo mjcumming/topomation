@@ -94,7 +94,7 @@ The `home-topology-ha` integration is a **thin adapter layer** that bridges Home
 
 ### 3.2 Event Bridge (`event_bridge.py`)
 
-**Purpose**: Translate HA state changes to kernel events
+**Purpose**: Translate HA state changes to kernel occupancy signals (v3 API)
 
 **Pattern**:
 
@@ -107,13 +107,15 @@ def state_changed_listener(event):
     # Get location for entity
     location_id = loc_mgr.get_entity_location(entity_id)
 
-    # Translate to kernel event
+    # Translate to kernel occupancy signal
     kernel_event = Event(
-        type="sensor.state_changed",
+        type="occupancy.signal",
         source="ha",
         entity_id=entity_id,
         location_id=location_id,
         payload={
+            "event_type": "trigger",  # or "clear"
+            "source_id": entity_id,
             "old_state": old_state.state,
             "new_state": new_state.state,
             "attributes": dict(new_state.attributes),
@@ -316,7 +318,7 @@ class HAPlatformAdapter:
 ```
 1. User walks past motion sensor
 2. HA: binary_sensor.kitchen_motion: off → on
-3. EventBridge: Translates to Event(type="sensor.state_changed", entity_id="...", payload={"new_state": "on"})
+3. EventBridge: Translates to Event(type="occupancy.signal", payload={"event_type": "trigger", ...})
 4. EventBus: Routes to OccupancyModule
 5. OccupancyModule: Processes event, updates state, emits Event(type="occupancy.changed", payload={"occupied": True})
 6. BinarySensor: Receives occupancy.changed, updates binary_sensor.occupancy_kitchen to ON

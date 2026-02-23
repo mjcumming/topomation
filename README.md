@@ -244,7 +244,7 @@ home-topology-ha/
 - [x] Basic UI panel
 - [x] Occupancy tracking
 - [x] Bidirectional HA area/entity sync
-- [ ] Topology configuration persistence (location tree + module configs)
+- [x] Topology configuration persistence (location tree + module configs)
 
 ### v0.2.0 (Beta)
 
@@ -330,4 +330,4 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 **Status**: Alpha (v0.1.0)
 **Maintainer**: Mike Cumming
-**Last Updated**: 2025-12-09
+**Last Updated**: 2026-02-23

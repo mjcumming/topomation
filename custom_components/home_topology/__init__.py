@@ -81,8 +81,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     loc_mgr = LocationManager()
     bus = EventBus()
     bus.set_location_manager(loc_mgr)
-    if hasattr(loc_mgr, "set_event_bus"):
-        loc_mgr.set_event_bus(bus)
+    loc_mgr.set_event_bus(bus)
 
     # 2. Create root location
     try:

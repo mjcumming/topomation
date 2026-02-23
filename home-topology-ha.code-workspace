@@ -1,0 +1,13 @@
+{
+  "folders": [
+    {
+      "name": "home-topology-ha",
+      "path": "."
+    }
+  ],
+  "settings": {
+    "files.associations": {
+      "*.yaml": "home-assistant"
+    }
+  }
+}

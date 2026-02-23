@@ -62,6 +62,13 @@ def _get_kernel(
     return None
 
 
+def _location_type(location: Any) -> str:
+    """Read integration location type from _meta module (defaults to area)."""
+    modules = getattr(location, "modules", {}) or {}
+    meta = modules.get("_meta", {}) if isinstance(modules, dict) else {}
+    return str(meta.get("type", "area"))
+
+
 def async_register_websocket_api(hass: HomeAssistant) -> None:
     """Register WebSocket API commands."""
     # Location management
@@ -317,14 +324,8 @@ def handle_locations_reorder(
             connection.send_error(msg["id"], "not_found", f"Location {location_id} not found")
             return
 
-        if hasattr(loc_mgr, "reorder_location"):
-            updated = loc_mgr.reorder_location(location_id, new_parent_id, new_index)
-            resolved_parent_id = updated.parent_id
-        else:
-            # Fallback for older core versions (parent move only).
-            if location.parent_id != new_parent_id:
-                loc_mgr.update_location(location_id, parent_id=new_parent_id)
-            resolved_parent_id = new_parent_id
+        updated = loc_mgr.reorder_location(location_id, new_parent_id, new_index)
+        resolved_parent_id = updated.parent_id
 
         connection.send_result(
             msg["id"],
@@ -367,6 +368,22 @@ def handle_locations_set_module_config(
     config = msg["config"]
 
     try:
+        location = loc_mgr.get_location(location_id)
+        if not location:
+            connection.send_error(msg["id"], "not_found", f"Location {location_id} not found")
+            return
+
+        # Product policy: occupancy sensors are area-only (no floor-level sources).
+        if module_id == "occupancy" and _location_type(location) == "floor":
+            sources = config.get("occupancy_sources", []) if isinstance(config, dict) else []
+            if sources:
+                connection.send_error(
+                    msg["id"],
+                    "invalid_config",
+                    "Floor locations cannot have occupancy sources. Configure sensors on areas.",
+                )
+                return
+
         # Set config in LocationManager
         loc_mgr.set_module_config(location_id, module_id, config)
 

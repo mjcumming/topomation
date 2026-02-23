@@ -48,8 +48,7 @@ class SyncManager:
         self.hass = hass
         self.loc_mgr = loc_mgr
         self.event_bus = event_bus
-        if hasattr(self.loc_mgr, "set_event_bus"):
-            self.loc_mgr.set_event_bus(event_bus)
+        self.loc_mgr.set_event_bus(event_bus)
 
         # Registries
         self.area_registry = ar.async_get(hass)
@@ -60,7 +59,7 @@ class SyncManager:
 
         # Event unsubscribers
         self._ha_unsubs: list[callable] = []
-        self._topo_unsubs: list[callable] = []
+        self._topo_handlers: list[callable] = []
 
     async def async_setup(self) -> None:
         """Set up the sync manager and start syncing."""
@@ -88,10 +87,9 @@ class SyncManager:
         self._ha_unsubs.clear()
 
         # Unsubscribe from topology events
-        for unsub in self._topo_unsubs:
-            if callable(unsub):
-                unsub()
-        self._topo_unsubs.clear()
+        for handler in self._topo_handlers:
+            self.event_bus.unsubscribe(handler)
+        self._topo_handlers.clear()
 
     # =========================================================================
     # Phase 1: Initial Import (HA → Topology)
@@ -577,29 +575,26 @@ class SyncManager:
         """Set up listeners for topology events."""
         _LOGGER.debug("Setting up topology event listeners")
 
-        # Listen for location renames
-        unsub = self.event_bus.subscribe(
+        # EventBus.subscribe() in core v3 is one-way; keep handlers for explicit unsubscribe.
+        self.event_bus.subscribe(
             self._on_location_renamed,
             EventFilter(event_type="location.renamed"),
         )
-        if callable(unsub):
-            self._topo_unsubs.append(unsub)
-
-        # Listen for location deletions
-        unsub = self.event_bus.subscribe(
+        self.event_bus.subscribe(
             self._on_location_deleted,
             EventFilter(event_type="location.deleted"),
         )
-        if callable(unsub):
-            self._topo_unsubs.append(unsub)
-
-        # Listen for location parent changes
-        unsub = self.event_bus.subscribe(
+        self.event_bus.subscribe(
             self._on_location_parent_changed,
             EventFilter(event_type="location.parent_changed"),
         )
-        if callable(unsub):
-            self._topo_unsubs.append(unsub)
+        self._topo_handlers.extend(
+            [
+                self._on_location_renamed,
+                self._on_location_deleted,
+                self._on_location_parent_changed,
+            ]
+        )
 
     @callback
     def _on_location_renamed(self, event: Event) -> None:

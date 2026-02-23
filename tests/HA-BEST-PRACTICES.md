@@ -259,7 +259,7 @@ async def test_state_change_publishes_kernel_event(...) -> None:
 
     # THEN
     event_bus.publish.assert_called_once()
-    assert published_event.type == "sensor.state_changed"
+    assert published_event.type == "occupancy.signal"
 ```
 
 ### `test_coordinator.py` - Timeout Coordination Tests

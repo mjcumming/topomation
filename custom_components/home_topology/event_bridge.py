@@ -1,10 +1,10 @@
-"""Event bridge for translating HA state changes to kernel events."""
+"""Event bridge for translating HA state changes to occupancy v3 signals."""
 
 from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.const import (
     EVENT_STATE_CHANGED,
@@ -24,7 +24,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class EventBridge:
-    """Bridge HA state changes to kernel events."""
+    """Bridge HA state changes to normalized occupancy.signal events."""
 
     def __init__(
         self,
@@ -71,18 +71,34 @@ class EventBridge:
             return
 
         # Normalize state
+        domain = entity_id.split(".", 1)[0]
         normalized_old = self._normalize_state(
-            old_state.state if old_state else None, new_state.attributes
+            old_state.state if old_state else None,
+            old_state.attributes if old_state else {},
         )
         normalized_new = self._normalize_state(new_state.state, new_state.attributes)
+        signal_type = None
+        if domain == "media_player":
+            signal_type = self._media_state_to_signal_type(
+                old_state=old_state,
+                new_state=new_state,
+                old_normalized=normalized_old,
+                new_normalized=normalized_new,
+            )
+        if signal_type is None:
+            signal_type = self._state_to_signal_type(normalized_old, normalized_new)
+        if signal_type is None:
+            return
 
-        # Create kernel event
+        # Create kernel occupancy signal event (core occupancy v3 API)
         kernel_event = Event(
-            type="sensor.state_changed",
+            type="occupancy.signal",
             source="ha",
             entity_id=entity_id,
             location_id=location_id,
             payload={
+                "event_type": signal_type,
+                "source_id": entity_id,
                 "old_state": normalized_old,
                 "new_state": normalized_new,
                 "attributes": dict(new_state.attributes),
@@ -100,6 +116,77 @@ class EventBridge:
                 e,
                 exc_info=True,
             )
+
+    def _state_to_signal_type(
+        self,
+        old_state: str | None,
+        new_state: str | None,
+    ) -> str | None:
+        """Map normalized HA states to occupancy v3 trigger/clear signals."""
+        if old_state == new_state or new_state is None:
+            return None
+
+        trigger_states = {
+            STATE_ON,
+            "open",
+            STATE_PLAYING,
+            "home",
+            "occupied",
+            "active",
+            "detected",
+            "motion",
+            "true",
+        }
+        clear_states = {
+            STATE_OFF,
+            "closed",
+            "away",
+            "not_home",
+            "unoccupied",
+            "inactive",
+            "clear",
+            "false",
+        }
+
+        if new_state in trigger_states:
+            return "trigger"
+        if new_state in clear_states:
+            return "clear"
+        return None
+
+    def _media_state_to_signal_type(
+        self,
+        old_state: Any,
+        new_state: Any,
+        old_normalized: str | None,
+        new_normalized: str | None,
+    ) -> str | None:
+        """Map media player changes to occupancy signals.
+
+        Media occupancy should come from user interactions:
+        - playback transition into playing
+        - volume or mute changes
+        """
+        if old_normalized != STATE_PLAYING and new_normalized == STATE_PLAYING:
+            return "trigger"
+
+        old_attrs = dict(old_state.attributes) if old_state else {}
+        new_attrs = dict(new_state.attributes) if new_state else {}
+        if self._media_interaction_changed(old_attrs, new_attrs):
+            return "trigger"
+
+        return None
+
+    def _media_interaction_changed(
+        self,
+        old_attrs: dict[str, Any],
+        new_attrs: dict[str, Any],
+    ) -> bool:
+        """Return true when media interaction attributes changed."""
+        for key in ("volume_level", "is_volume_muted"):
+            if old_attrs.get(key) != new_attrs.get(key):
+                return True
+        return False
 
     def _normalize_state(self, state: str | None, attributes: dict) -> str | None:
         """Normalize entity state for kernel.

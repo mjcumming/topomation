@@ -1,0 +1,32 @@
+name: Frontend Tests
+
+on:
+    push:
+    pull_request:
+
+jobs:
+    frontend-tests:
+        runs-on: ubuntu-latest
+        defaults:
+            run:
+                working-directory: custom_components/home_topology/frontend
+        steps:
+            - uses: actions/checkout@v4
+
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: "20"
+                  cache: "npm"
+                  cache-dependency-path: custom_components/home_topology/frontend/package-lock.json
+
+            - name: Install dependencies
+              run: npm ci
+
+            - name: Unit tests (Vitest)
+              run: npm run test:unit
+
+            - name: Install Playwright browsers
+              run: npx --yes playwright install chromium --with-deps
+
+            - name: E2E tests (Playwright)
+              run: npm run test:e2e

@@ -4,6 +4,21 @@
 
 ---
 
+## Agentic Development Framework
+
+**This project uses the Cursor Agentic Development Framework.**
+
+Before starting any task:
+
+1. **Load** `/project/README.md` - Master instruction set
+2. **Check** `/project/epics/` - Current epic context
+3. **Check** `/project/issues/` - Specific task details
+4. **Follow** `/project/agent/*.md` - Task selection, dev, and review protocols
+
+The framework provides structured workflows for task management, code generation, and self-review.
+
+---
+
 ## 1. Project Identity
 
 - **Name**: home-topology-ha
@@ -43,6 +58,14 @@ This integration is a **thin adapter layer** between Home Assistant and the home
 
 ## 3. Documentation Strategy
 
+### 3-Tier Structure
+
+Maintain a clean separation of concerns for documentation:
+
+1.  **`project/`**: Agentic Framework for AI planning (Roadmap, Epics, Issues).
+2.  **`docs/`**: Permanent technical reference (Architecture, UI Design, Coding Standards).
+3.  **`docs/history/`**: Chronological archive for past summaries, milestone logs, and snapshots.
+
 ### Read Core Library Docs First
 
 Before working on integration features:
@@ -75,6 +98,7 @@ Before working on integration features:
 - `docs/cursor-guide.md` - Detailed patterns and examples (detailed version of this file)
 - `docs/architecture.md` - Integration-specific architecture
 - `docs/coding-standards.md` - Python + TypeScript standards
+- `docs/frontend-dev-workflow.md` - Frontend development guide
 - `docs/adr-log.md` - Architectural decisions
 - `docs/work-tracking.md` - Project status
 
@@ -102,11 +126,48 @@ from .const import DOMAIN            # 5. Local integration
 
 ### TypeScript/Lit (Frontend)
 
+> **See `.cursor/rules/` for detailed frontend AI context:**
+>
+> - `ha-components.mdc` - HA component reference (ha-form, ha-card, etc.)
+> - `frontend-patterns.mdc` - Lit patterns, shouldUpdate, lifecycle
+> - `styling.mdc` - CSS variables, theming, responsive design
+
+**Core Rules:**
+
+- **Framework**: Always use Lit (lit.dev). Never React, Vue, or Polymer.
 - **Style**: Home Assistant Lit conventions
 - **Naming**: `kebab-case` for component files
 - **Components**: Use existing `ha-*` components where possible
 - **Required**: TypeScript strict mode
 - **Pattern**: LitElement with `@customElement` decorator
+- **Styling**: Use CSS variables from HA theme system, never hardcoded hex colors
+- **Forms**: Prefer `ha-form` with schema over manual form building
+
+**Critical Pattern - hass Reactivity:**
+
+```typescript
+// ALWAYS use attribute: false for hass (it's a complex object)
+@property({ attribute: false }) public hass!: HomeAssistant;
+
+// ALWAYS implement shouldUpdate to filter unnecessary re-renders
+protected shouldUpdate(changedProps: PropertyValues): boolean {
+  if (changedProps.has('_localState')) return true;
+  if (changedProps.has('hass')) {
+    const oldHass = changedProps.get('hass');
+    // Only re-render if relevant data changed
+    return oldHass?.areas !== this.hass.areas;
+  }
+  return true;
+}
+```
+
+**Development Workflow:**
+
+```bash
+cd custom_components/home_topology/frontend
+npm run dev                    # Start Vite with HMR
+# Open http://localhost:5173/mock-harness.html
+```
 
 ---
 
@@ -120,6 +181,9 @@ from .const import DOMAIN            # 5. Local integration
 - Use `time.sleep()` or blocking calls
 - Mutate HA state objects directly
 - Forget to handle missing entities/locations gracefully
+- Use hardcoded hex colors in CSS (breaks theming)
+- Build custom forms when `ha-form` with schema works
+- Skip `shouldUpdate` filtering (causes 100+ re-renders/minute)
 
 ### ✅ DO
 
@@ -129,6 +193,9 @@ from .const import DOMAIN            # 5. Local integration
 - Validate all user inputs
 - Handle errors gracefully (one bad location shouldn't crash)
 - Log liberally with appropriate levels
+- Use HA CSS variables for all colors
+- Use `ha-form` schemas for configuration UIs
+- Filter `hass` updates in `shouldUpdate`
 
 ---
 
@@ -155,6 +222,16 @@ The kernel is type-agnostic. Store type/icon metadata via `_meta` module config.
 
 ```
 home-topology-ha/
+├── project/                 # Agentic Development Framework
+│   ├── README.md            # Master instruction set
+│   ├── roadmap.md           # High-level timeline
+│   ├── epics/               # Feature-level tracking
+│   ├── issues/              # Task-level tracking
+│   └── agent/               # AI behavior protocols
+├── .cursor/rules/           # Granular AI context rules
+│   ├── ha-components.mdc    # HA web components reference
+│   ├── frontend-patterns.mdc # Lit patterns & lifecycle
+│   └── styling.mdc          # CSS theming rules
 ├── custom_components/home_topology/
 │   ├── __init__.py          # Integration setup
 │   ├── config_flow.py       # Setup wizard
@@ -163,8 +240,13 @@ home-topology-ha/
 │   ├── binary_sensor.py     # Occupancy entities
 │   ├── websocket_api.py     # WS API handlers
 │   └── frontend/            # Lit components (kebab-case)
+│       ├── mock-harness.html # Dev harness
+│       ├── mock-hass.ts     # Mock hass factory
+│       ├── home-topology-panel.ts
+│       └── ...components
 ├── docs/
 │   ├── cursor-guide.md      # Detailed patterns & examples
+│   ├── frontend-dev-workflow.md # Frontend development guide
 │   ├── architecture.md
 │   ├── coding-standards.md
 │   └── work-tracking.md
@@ -187,6 +269,21 @@ home-topology-ha/
 9. **Update `docs/work-tracking.md` as you work**
 10. **Reference existing code, don't duplicate patterns**
 11. **Leverage HA's components and conventions, don't reinvent**
+12. **Frontend: Use ha-form schemas, CSS variables, shouldUpdate filtering**
+13. **Documentation: No underscores in filenames; use hyphens and YYYY.MM.DD prefix for history** [[memory:8853163]]
+14. **Artifact Management: Archive transient summaries to `docs/history/`; don't clutter root**
+
+---
+
+## 9. Artifact Bloat Prevention
+
+To maintain a high-signal workspace, follow these document management rules:
+
+- **No Root Summaries**: Never create completion summaries or status reports in the project root.
+- **Archive by Default**: Move milestone completion logs, phase summaries, and transient reports to `docs/history/` immediately after the task is finished.
+- **Naming Standard**: Use `YYYY.MM.DD-description.md` for historical artifacts.
+- **Consolidate Status**: Use `docs/work-tracking.md` as the single source of truth for daily progress. Avoid creating separate "status" files.
+- **Hyphens Only**: Never use underscores in file or directory names. Use hyphens for readability.
 
 ---
 
@@ -197,9 +294,12 @@ home-topology-ha/
 | Event translation  | Core: integration-guide.md, Local: cursor-guide.md  |
 | State exposure     | Core: integration-guide.md, HA: binary_sensor.py    |
 | Timeout scheduling | Core: integration-guide.md, HA: coordinator.py      |
-| UI components      | Core: ui-design.md, HA frontend patterns            |
+| UI components      | `.cursor/rules/ha-components.mdc`, ui-design.md     |
 | WebSocket API      | Local: cursor-guide.md, HA: websocket_api.py        |
 | Location types     | Core: integration-guide.md (Location Types section) |
+| Frontend workflow  | `docs/frontend-dev-workflow.md`                     |
+| Lit patterns       | `.cursor/rules/frontend-patterns.mdc`               |
+| CSS theming        | `.cursor/rules/styling.mdc`                         |
 
 ---
 
@@ -207,4 +307,4 @@ home-topology-ha/
 
 For detailed code examples, patterns, and testing strategies, see `docs/cursor-guide.md`.
 
-Last Updated: 2025-12-09
+Last Updated: 2025-12-25

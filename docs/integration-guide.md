@@ -1,10 +1,14 @@
 # home-topology Integration Guide
 
-**Version**: 2.3  
-**Date**: 2025.11.26  
+**Version**: 2.4  
+**Date**: 2026.02.23  
 **Audience**: Platform developers integrating home-topology into Home Assistant.
 
-> **v2.3 Changes**: 
+> **v2.4 Changes**:
+> - Occupancy v3 signal contract (`occupancy.signal`) examples
+> - Explicit `event_type` + `source_id` payload fields in bridge examples
+>
+> **v2.3 Changes**:
 > - Events vs Commands API separation
 > - Timer suspension during lock
 > - Holds and timers coexist
@@ -67,10 +71,15 @@ occupancy.attach(bus, loc_mgr)
 # 4. Publish platform event
 bus.publish(
     Event(
-        type="sensor.state_changed",
+        type="occupancy.signal",
         source="ha",
         entity_id="binary_sensor.kitchen_motion",
-        payload={"old_state": "off", "new_state": "on"},
+        payload={
+            "event_type": "trigger",
+            "source_id": "binary_sensor.kitchen_motion",
+            "old_state": "off",
+            "new_state": "on",
+        },
         timestamp=datetime.now(UTC),
     )
 )
@@ -159,11 +168,16 @@ bus.subscribe(
 # Publish events
 bus.publish(
     Event(
-        type="sensor.state_changed",
+        type="occupancy.signal",
         source="ha",
         entity_id="binary_sensor.motion",
         location_id="kitchen",
-        payload={"old_state": "off", "new_state": "on"}
+        payload={
+            "event_type": "trigger",
+            "source_id": "binary_sensor.motion",
+            "old_state": "off",
+            "new_state": "on",
+        },
     )
 )
 ```
@@ -469,11 +483,13 @@ def state_changed_listener(hass, event):
     
     # Translate to kernel event
     kernel_event = Event(
-        type="sensor.state_changed",
+        type="occupancy.signal",
         source="ha",
         entity_id=entity_id,
         location_id=location_id,
         payload={
+            "event_type": "trigger" if new_state.state == "on" else "clear",
+            "source_id": entity_id,
             "old_state": old_state.state if old_state else None,
             "new_state": new_state.state,
             "attributes": dict(new_state.attributes),
@@ -490,7 +506,7 @@ def state_changed_listener(hass, event):
 
 | Platform Event | Kernel Event Type | Notes |
 |----------------|-------------------|-------|
-| `state_changed` | `sensor.state_changed` | All entity state changes |
+| `state_changed` | `occupancy.signal` | Emit `event_type=trigger/clear` + `source_id` |
 | Time trigger | `time.tick` | Periodic or scheduled |
 | Service call | `service.called` | User-initiated actions |
 | Platform start | `platform.started` | Initial load complete |
@@ -873,9 +889,13 @@ def test_occupancy_timeout():
     # Trigger motion at t=0
     t0 = datetime(2025, 11, 24, 14, 0, 0, tzinfo=UTC)
     bus.publish(Event(
-        type="sensor.state_changed",
+        type="occupancy.signal",
         entity_id="binary_sensor.motion",
-        payload={"new_state": "on"},
+        payload={
+            "event_type": "trigger",
+            "source_id": "binary_sensor.motion",
+            "new_state": "on",
+        },
         timestamp=t0,
     ))
     
@@ -1199,11 +1219,13 @@ def setup_event_bridge(
         
         # Publish to kernel
         kernel_event = Event(
-            type="sensor.state_changed",
+            type="occupancy.signal",
             source="ha",
             entity_id=entity_id,
             location_id=location_id,
             payload={
+                "event_type": "trigger" if new_state.state == "on" else "clear",
+                "source_id": entity_id,
                 "old_state": old_state.state if old_state else None,
                 "new_state": new_state.state,
                 "attributes": dict(new_state.attributes),
@@ -1521,6 +1543,5 @@ avoid ambiguous dispatch.
 ---
 
 **Document Version**: 2.3  
-**Last Updated**: 2025.11.26  
+**Last Updated**: 2026.02.23  
 **Status**: Living Document
-

@@ -5,15 +5,28 @@ import { css } from "lit";
  */
 export const sharedStyles = css`
   :host {
-    --primary-color: var(--primary-color, #1976d2);
-    --text-primary-color: var(--primary-text-color, #212121);
-    --text-secondary-color: var(--secondary-text-color, #757575);
+    /* HA theme variables with fallbacks */
+    --primary-color: var(--primary-color, #03a9f4);
+    --primary-text-color: var(--primary-text-color, #212121);
+    --secondary-text-color: var(--secondary-text-color, #757575);
     --divider-color: var(--divider-color, #e0e0e0);
     --card-background-color: var(--card-background-color, #ffffff);
-    --disabled-color: var(--disabled-text-color, #9e9e9e);
+    --secondary-background-color: var(--secondary-background-color, #f5f5f5);
+    --disabled-text-color: var(--disabled-text-color, #9e9e9e);
     --success-color: var(--success-color, #4caf50);
     --error-color: var(--error-color, #f44336);
     --warning-color: var(--warning-color, #ff9800);
+
+    /* Aliases for compatibility */
+    --text-primary-color: var(--primary-text-color, #212121);
+    --text-secondary-color: var(--secondary-text-color, #757575);
+    --disabled-color: var(--disabled-text-color, #9e9e9e);
+
+    /* RGB variants for rgba() usage */
+    --rgb-primary-color: 3, 169, 244;
+    --rgb-error-color: 244, 67, 54;
+    --rgb-warning-color: 255, 152, 0;
+    --rgb-success-color: 76, 175, 80;
 
     --spacing-xs: 4px;
     --spacing-sm: 8px;
@@ -40,7 +53,7 @@ export const sharedStyles = css`
     font-size: 12px;
     font-weight: 600;
     text-transform: uppercase;
-    color: var(--text-secondary-color);
+    color: var(--secondary-text-color);
     margin: var(--spacing-lg) 0 var(--spacing-sm);
     letter-spacing: 0.5px;
   }
@@ -62,8 +75,9 @@ export const sharedStyles = css`
   }
 
   .button-primary {
-    background: var(--primary-color);
-    color: white;
+    background: var(--primary-color, #03a9f4);
+    color: white !important;
+    border: none;
   }
 
   .button-primary:hover {
@@ -72,12 +86,16 @@ export const sharedStyles = css`
 
   .button-secondary {
     background: transparent;
-    color: var(--primary-color);
-    border: 1px solid var(--divider-color);
+    color: var(--primary-color, #03a9f4) !important;
+    border: 1px solid var(--divider-color, #e0e0e0);
   }
 
   .button-secondary:hover {
     background: rgba(0, 0, 0, 0.05);
+  }
+
+  [data-theme="dark"] .button-secondary:hover {
+    background: rgba(255, 255, 255, 0.05);
   }
 
   .icon-button {
@@ -121,6 +139,7 @@ export const sharedStyles = css`
   }
 
   .empty-state-icon {
+    --mdc-icon-size: 48px;
     font-size: 48px;
     opacity: 0.3;
     margin-bottom: var(--spacing-md);

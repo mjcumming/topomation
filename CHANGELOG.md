@@ -36,8 +36,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   canonical sibling ordering.
 - README and integration guide now document service wrapper routing behavior and
   `entry_id` requirements for multi-entry setups.
+- Event bridge now targets occupancy v3 API by publishing
+  `occupancy.signal` events (`trigger`/`clear`) instead of legacy
+  `sensor.state_changed` events.
+- Removed legacy core-compat fallback paths in `locations/reorder` and adapter
+  setup; integration now assumes core v3 APIs directly.
+- Updated package requirements to align with core v3 (`home-topology>=0.2.0a0`,
+  Python `>=3.12`).
+- Occupancy binary sensor attributes now expose v3 fields
+  (`locked_by`, `contributions`, `reason`, etc.) instead of legacy
+  confidence/hold attributes.
+- Updated active docs/status artifacts for v3 contract and current project state
+  (`integration-guide`, `coding-standards`, `cursor-guide`, roadmap/epics/work-tracking).
+- Occupancy source UX now supports end-to-end edit flow from inspector:
+  source rows show ON/OFF behavior + timeout semantics, and the inspector cog
+  opens `ht-entity-config-dialog` for per-source editing.
+- Occupancy source rows now include `Test ON` / `Test OFF` controls that call
+  existing `home_topology.trigger` / `home_topology.clear` service wrappers.
+- Add/edit source dialogs now include quick templates, effective behavior
+  preview text, and warning callouts for non-functional or risky mappings.
+- Added optional in-panel runtime event log window to inspect relevant
+  `state_changed`, `home_topology_updated`, and source test actions during tuning.
+- Runtime event log now defaults to selected-location subtree filtering, with a
+  one-click toggle to view events across all locations.
+- Occupancy source dialogs now include event behavior presets
+  (`Pulse` / `State-Mapped` / `Clear-Only` / `Ignored`) to speed up ON/OFF
+  event mapping.
+- Occupancy source dialogs now show contribution preview text describing whether
+  each source creates occupancy, clears occupancy, both, or neither.
+- Location inspector now shows occupancy source contribution summary counts
+  (trigger, clear, indefinite, ignored) plus per-source contribution text.
+- Location tree drag-and-drop now uses level-stable reorder behavior by default
+  and clearer drag visual states/handle affordance to reduce accidental
+  reparenting.
+- Occupancy inspector layout now keeps configuration controls left-aligned
+  (including Default Timeout), preventing far-right drift and header overlap in
+  wide panels.
+- Frontend dialog event wiring fixed in panel (`dialog-closed` handlers for
+  add-device and rule dialogs), preventing stuck-open dialog state.
+- Occupancy source policy now enforces area-only sensor configuration:
+  floors show a policy notice in inspector, source dialogs reject floor
+  locations, and `locations/set_module_config` rejects non-empty
+  `occupancy_sources` on floor locations.
+- Occupancy inspector now uses an area-first source workflow:
+  it lists entities assigned to the selected area with per-entity
+  `Use Source` / `Configure` actions, while cross-area mapping moved to
+  explicit `Add External Source`.
+- Occupancy inspector visual cleanup: fixed mock icon rendering, tightened
+  row/action spacing, moved `Add External Source` into the `Area Sensors`
+  subsection header, and aligned source timeout text with effective defaults.
 
 ### Fixed
+
+- Local HA test environment compatibility by using `pycares<5` with current
+  `aiodns` and pinning `pytest-asyncio<1` for plugin fixture compatibility.
 
 - Unload/teardown safety for event unsubscription.
 - Coordinator timeout scheduling now ignores invalid non-datetime module values.

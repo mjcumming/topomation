@@ -24,12 +24,14 @@ from custom_components.home_topology.const import (  # type: ignore[import]
     WS_TYPE_LOCATIONS_DELETE,
     WS_TYPE_LOCATIONS_LIST,
     WS_TYPE_LOCATIONS_REORDER,
+    WS_TYPE_LOCATIONS_SET_MODULE_CONFIG,
 )
 from custom_components.home_topology.websocket_api import (  # type: ignore[import]
     handle_locations_create,
     handle_locations_delete,
     handle_locations_list,
     handle_locations_reorder,
+    handle_locations_set_module_config,
 )
 
 
@@ -257,6 +259,52 @@ async def test_locations_reorder_applies_sibling_index(hass: HomeAssistant) -> N
 
     children = [loc.id for loc in loc_mgr.children_of("house")]
     assert children[:3] == ["gamma", "alpha", "beta"]
+
+
+@pytest.mark.asyncio
+async def test_set_module_config_rejects_floor_occupancy_sources(hass: HomeAssistant) -> None:
+    """Occupancy source config is blocked for floor locations."""
+    entry = MockConfigEntry(domain=DOMAIN, data={}, entry_id="test_entry")
+    entry.add_to_hass(hass)
+
+    with patch("custom_components.home_topology.async_register_panel", AsyncMock()):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    loc_mgr = hass.data[DOMAIN][entry.entry_id]["location_manager"]
+    loc_mgr.create_location(id="main_floor", name="Main Floor", parent_id="house")
+    loc_mgr.set_module_config("main_floor", "_meta", {"type": "floor"})
+
+    connection = _fake_connection()
+    handle_locations_set_module_config(
+        hass,
+        connection,
+        {
+            "id": 30,
+            "type": WS_TYPE_LOCATIONS_SET_MODULE_CONFIG,
+            "location_id": "main_floor",
+            "module_id": "occupancy",
+            "config": {
+                "enabled": True,
+                "occupancy_sources": [
+                    {
+                        "entity_id": "binary_sensor.kitchen_motion",
+                        "mode": "specific_states",
+                        "on_event": "trigger",
+                        "on_timeout": 300,
+                        "off_event": "none",
+                        "off_trailing": 0,
+                    }
+                ],
+            },
+            "entry_id": entry.entry_id,
+        },
+    )
+
+    assert connection.send_result.call_count == 0
+    connection.send_error.assert_called_once()
+    err_args = connection.send_error.call_args[0]
+    assert err_args[1] == "invalid_config"
 
 
 def _add_floors(area_registry: ar.AreaRegistry, floors: Iterable[FloorDef]) -> None:

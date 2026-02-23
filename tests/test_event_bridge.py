@@ -12,8 +12,8 @@ from __future__ import annotations
 from unittest.mock import Mock
 
 import pytest
-from home_topology import Event, EventBus, LocationManager
-from homeassistant.const import STATE_OFF, STATE_ON, STATE_PLAYING
+from home_topology import Event, EventBus, EventFilter, LocationManager
+from homeassistant.const import EVENT_STATE_CHANGED, STATE_OFF, STATE_ON, STATE_PAUSED, STATE_PLAYING
 from homeassistant.core import HomeAssistant, State
 
 from custom_components.home_topology.event_bridge import EventBridge
@@ -157,6 +157,53 @@ def test_normalize_state_none(event_bridge: EventBridge) -> None:
     assert result is None
 
 
+@pytest.mark.parametrize(
+    ("old_state", "new_state", "expected"),
+    [
+        (STATE_PAUSED, STATE_PLAYING, "trigger"),
+        (STATE_PLAYING, STATE_PAUSED, None),
+        (STATE_PLAYING, "idle", None),
+    ],
+)
+def test_media_state_to_signal_type_from_playback(
+    event_bridge: EventBridge,
+    old_state: str,
+    new_state: str,
+    expected: str | None,
+) -> None:
+    """Test media playback state mapping for occupancy signals."""
+    old = State("media_player.living_room_tv", old_state)
+    new = State("media_player.living_room_tv", new_state)
+
+    result = event_bridge._media_state_to_signal_type(
+        old_state=old,
+        new_state=new,
+        old_normalized=old_state,
+        new_normalized=new_state,
+    )
+
+    assert result == expected
+
+
+@pytest.mark.parametrize(
+    ("old_attrs", "new_attrs", "expected"),
+    [
+        ({"volume_level": 0.2, "is_volume_muted": False}, {"volume_level": 0.5, "is_volume_muted": False}, True),
+        ({"volume_level": 0.2, "is_volume_muted": False}, {"volume_level": 0.2, "is_volume_muted": True}, True),
+        ({"volume_level": 0.2, "is_volume_muted": False}, {"volume_level": 0.2, "is_volume_muted": False}, False),
+        ({"volume_level": 0.2, "is_volume_muted": False}, {"volume_level": 0.2, "is_volume_muted": False, "media_position": 100}, False),
+    ],
+)
+def test_media_interaction_changed(
+    event_bridge: EventBridge,
+    old_attrs: dict,
+    new_attrs: dict,
+    expected: bool,
+) -> None:
+    """Test media interaction detector tracks only volume/mute changes."""
+    assert event_bridge._media_interaction_changed(old_attrs, new_attrs) is expected
+
+
 async def test_state_change_publishes_kernel_event(
     event_bridge: EventBridge,
     event_bus: Mock,
@@ -186,12 +233,100 @@ async def test_state_change_publishes_kernel_event(
     event_bus.publish.assert_called_once()
     published_event: Event = event_bus.publish.call_args[0][0]
 
-    assert published_event.type == "sensor.state_changed"
+    assert published_event.type == "occupancy.signal"
     assert published_event.source == "ha"
     assert published_event.entity_id == "binary_sensor.kitchen_motion"
     assert published_event.location_id == "kitchen"
+    assert published_event.payload["event_type"] == "trigger"
+    assert published_event.payload["source_id"] == "binary_sensor.kitchen_motion"
     assert published_event.payload["old_state"] == STATE_OFF
     assert published_event.payload["new_state"] == STATE_ON
+
+
+async def test_media_volume_change_publishes_trigger(
+    event_bridge: EventBridge,
+    event_bus: Mock,
+) -> None:
+    """Test media volume changes generate trigger signals even without state change."""
+    old_state = State("media_player.living_room_tv", STATE_PLAYING, {"volume_level": 0.2})
+    new_state = State("media_player.living_room_tv", STATE_PLAYING, {"volume_level": 0.5})
+
+    ha_event = Mock()
+    ha_event.data = {
+        "entity_id": "media_player.living_room_tv",
+        "old_state": old_state,
+        "new_state": new_state,
+    }
+
+    event_bridge._state_changed_listener(ha_event)
+
+    event_bus.publish.assert_called_once()
+    published_event: Event = event_bus.publish.call_args[0][0]
+    assert published_event.payload["event_type"] == "trigger"
+    assert published_event.payload["old_state"] == STATE_PLAYING
+    assert published_event.payload["new_state"] == STATE_PLAYING
+
+
+async def test_media_mute_change_publishes_trigger(
+    event_bridge: EventBridge,
+    event_bus: Mock,
+) -> None:
+    """Test media mute toggles generate trigger signals."""
+    old_state = State("media_player.living_room_tv", STATE_PLAYING, {"is_volume_muted": False})
+    new_state = State("media_player.living_room_tv", STATE_PLAYING, {"is_volume_muted": True})
+
+    ha_event = Mock()
+    ha_event.data = {
+        "entity_id": "media_player.living_room_tv",
+        "old_state": old_state,
+        "new_state": new_state,
+    }
+
+    event_bridge._state_changed_listener(ha_event)
+
+    event_bus.publish.assert_called_once()
+    published_event: Event = event_bus.publish.call_args[0][0]
+    assert published_event.payload["event_type"] == "trigger"
+
+
+async def test_media_non_interaction_attribute_change_ignored(
+    event_bridge: EventBridge,
+    event_bus: Mock,
+) -> None:
+    """Test unrelated media attribute changes do not trigger occupancy."""
+    old_state = State("media_player.living_room_tv", STATE_PLAYING, {"media_position": 10})
+    new_state = State("media_player.living_room_tv", STATE_PLAYING, {"media_position": 20})
+
+    ha_event = Mock()
+    ha_event.data = {
+        "entity_id": "media_player.living_room_tv",
+        "old_state": old_state,
+        "new_state": new_state,
+    }
+
+    event_bridge._state_changed_listener(ha_event)
+
+    event_bus.publish.assert_not_called()
+
+
+async def test_media_paused_state_does_not_auto_clear(
+    event_bridge: EventBridge,
+    event_bus: Mock,
+) -> None:
+    """Test media pause transitions do not emit clear by default."""
+    old_state = State("media_player.living_room_tv", STATE_PLAYING)
+    new_state = State("media_player.living_room_tv", STATE_PAUSED)
+
+    ha_event = Mock()
+    ha_event.data = {
+        "entity_id": "media_player.living_room_tv",
+        "old_state": old_state,
+        "new_state": new_state,
+    }
+
+    event_bridge._state_changed_listener(ha_event)
+
+    event_bus.publish.assert_not_called()
 
 
 async def test_unmapped_entity_ignored(
@@ -260,7 +395,7 @@ async def test_dimmer_state_normalized_in_event(
     THEN: Published event has state=OFF
     """
     # GIVEN
-    old_state = State("light.kitchen", STATE_OFF)
+    old_state = State("light.kitchen", STATE_ON, {"brightness": 255})
     new_state = State("light.kitchen", STATE_ON, {"brightness": 0})
 
     ha_event = Mock()
@@ -275,6 +410,8 @@ async def test_dimmer_state_normalized_in_event(
 
     # THEN
     published_event: Event = event_bus.publish.call_args[0][0]
+    assert published_event.type == "occupancy.signal"
+    assert published_event.payload["event_type"] == "clear"
     assert published_event.payload["new_state"] == STATE_OFF
 
 
@@ -303,3 +440,80 @@ async def test_publish_error_handled_gracefully(
 
     # WHEN / THEN - Should not raise
     event_bridge._state_changed_listener(ha_event)
+
+
+async def test_media_state_changed_end_to_end_with_module_config(
+    hass: HomeAssistant,
+) -> None:
+    """End-to-end test: configured media source + HA state_changed emits occupancy.signal.
+
+    GIVEN: A real EventBus/LocationManager setup with an occupancy source configured
+    WHEN: HA fires a media state_changed event with volume interaction delta
+    THEN: EventBridge publishes occupancy.signal trigger for that location
+    """
+    bus = EventBus()
+    loc_mgr = LocationManager()
+    bus.set_location_manager(loc_mgr)
+    loc_mgr.set_event_bus(bus)
+
+    loc_mgr.create_location(id="house", name="House", is_explicit_root=True)
+    loc_mgr.create_location(id="living_room", name="Living Room", parent_id="house")
+    loc_mgr.add_entity_to_location("media_player.living_room_tv", "living_room")
+    loc_mgr.set_module_config(
+        "living_room",
+        "occupancy",
+        {
+            "enabled": True,
+            "default_timeout": 300,
+            "occupancy_sources": [
+                {
+                    "entity_id": "media_player.living_room_tv",
+                    "mode": "any_change",
+                    "on_event": "trigger",
+                    "on_timeout": 1800,
+                    "off_event": "none",
+                    "off_trailing": 0,
+                }
+            ],
+        },
+    )
+
+    captured: list[Event] = []
+
+    def _capture(event: Event) -> None:
+        captured.append(event)
+
+    bus.subscribe(_capture, EventFilter(event_type="occupancy.signal"))
+
+    bridge = EventBridge(hass, bus, loc_mgr)
+    await bridge.async_setup()
+
+    old_state = State(
+        "media_player.living_room_tv",
+        STATE_PLAYING,
+        {"volume_level": 0.2, "is_volume_muted": False},
+    )
+    new_state = State(
+        "media_player.living_room_tv",
+        STATE_PLAYING,
+        {"volume_level": 0.6, "is_volume_muted": False},
+    )
+
+    hass.bus.async_fire(
+        EVENT_STATE_CHANGED,
+        {
+            "entity_id": "media_player.living_room_tv",
+            "old_state": old_state,
+            "new_state": new_state,
+        },
+    )
+    await hass.async_block_till_done()
+
+    assert len(captured) == 1
+    emitted = captured[0]
+    assert emitted.type == "occupancy.signal"
+    assert emitted.location_id == "living_room"
+    assert emitted.payload["event_type"] == "trigger"
+    assert emitted.payload["source_id"] == "media_player.living_room_tv"
+
+    await bridge.async_teardown()

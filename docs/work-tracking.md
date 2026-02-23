@@ -6,12 +6,20 @@
 > For current implementation status, treat `README.md` and code under
 > `custom_components/home_topology/` as the source of truth.
 
+## Current Snapshot (2026-02-23)
+
+- Backend integration is largely complete and aligned to core v3 APIs.
+- Event bridge now publishes `occupancy.signal` with `event_type` and `source_id`.
+- Persistence, sync manager, service wrappers, and WS contracts are implemented.
+- Backend test suites pass locally in the current environment (with `--no-cov`).
+- Next focus is UI reliability and expanded frontend test coverage.
+
 ---
 
-## 🎯 Current Sprint: UI Polish & Infrastructure
+## 🎯 Current Sprint: UI Reliability + v3 Validation
 
-**Sprint Goal**: Complete frontend infrastructure and fix remaining UI issues
-**Dates**: 2025-12-09 - 2025-12-10
+**Sprint Goal**: Resolve panel UX issues and complete v3 live validation
+**Dates**: 2026-02-23 onward
 **Status**: 🟢 IN PROGRESS
 
 ---
@@ -67,22 +75,23 @@
 
 ### 🔨 In Progress
 
-#### Backend Integration (45%)
+#### Backend Integration (90%)
 
 - [x] Wire WebSocket handlers to actual LocationManager ✅
-- [ ] Location persistence to storage
-- [ ] Event bridge (HA state → kernel events)
-- [ ] Coordinator for timeout scheduling
+- [x] Location persistence to storage
+- [x] Event bridge (HA state → kernel occupancy.signal)
+- [x] Coordinator for timeout scheduling
+- [ ] Live HA manual validation of v3 flow
 
 ---
 
 ### 📅 Planned
 
-#### Testing (0%)
+#### Testing (65%)
 
-- [ ] Unit tests for event bridge
-- [ ] Unit tests for coordinator
-- [ ] Integration tests for full flow
+- [x] Unit tests for event bridge
+- [x] Unit tests for coordinator
+- [ ] Integration tests for full live-HA flow
 - [ ] Frontend component tests (expand coverage)
 - [ ] Visual regression with Playwright
 
@@ -114,12 +123,12 @@
 
 ### Overall Project
 
-- **Completion**: ~75%
+- **Completion**: ~82%
 - **Documentation**: 90% ✅
 - **Frontend UI**: 95% ✅
 - **Frontend Infrastructure**: 100% ✅
-- **Backend Integration**: 45% 🔨 (was 30%)
-- **Tests**: 30% ⚠️
+- **Backend Integration**: 90% 🔨
+- **Tests**: 65% ⚠️
 
 ### Code Stats
 
@@ -198,9 +207,9 @@
 
 ### Next Session
 
-1. [ ] Wire WebSocket handlers to LocationManager
-2. [ ] Implement storage persistence
-3. [ ] Test full flow in live HA instance
+1. [ ] Resolve current UI interaction issues in panel/tree/dialog flow
+2. [ ] Expand frontend tests for those interaction fixes
+3. [ ] Run live-HA validation of v3 occupancy signal flow
 
 ---
 

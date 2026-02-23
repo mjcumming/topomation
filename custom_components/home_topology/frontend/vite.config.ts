@@ -1,21 +1,24 @@
 import { defineConfig } from 'vite';
+import { resolve } from 'path';
 
 export default defineConfig({
+  // Dev server configuration
+  server: {
+    port: 5173,
+    open: '/mock-harness.html',
+  },
+
+  // Build configuration for production (library mode)
   build: {
     lib: {
       entry: 'home-topology-panel.ts',
       formats: ['es'],
       fileName: () => 'home-topology-panel.js'
     },
-    outDir: '.',
-    emptyOutDir: false,
+    outDir: 'dist',
+    emptyOutDir: true,
     rollupOptions: {
-      external: [
-        // We might want to bundle everything for a custom panel,
-        // or exclude lit if we are sure HA provides it (it usually does but versions vary).
-        // For safety/easier dev, we'll bundle for now.
-      ]
+      external: [],
     }
   }
 });
-

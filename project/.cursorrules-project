@@ -1,0 +1,45 @@
+# Project Folder AI Context
+
+This `/project/` folder contains the **Agentic Development Framework** for this repository.
+
+## What Cursor Should Know
+
+When working in this repository, you MUST:
+
+1. **Always load** `README.md` first (master instruction set)
+2. **Check** relevant epic files before starting work
+3. **Follow** agent protocols in `agent/*.md`
+4. **Create** issue files for new tasks
+5. **Update** issue status as work completes
+
+## File Purposes
+
+- **README.md** - Your governing instruction set (read this every session)
+- **QUICK-START.md** - Daily workflow guide for users
+- **FRAMEWORK-OVERVIEW.md** - Complete framework documentation
+- **roadmap.md** - Multi-week timeline and milestones
+- **agent/*.md** - How you should behave (task selection, coding, reviewing)
+- **epics/*.md** - Feature-level work tracking
+- **issues/*.md** - Task-level work tracking
+
+## The Golden Rule
+
+**Integration translates, kernel implements.**
+
+This integration is a thin adapter. Never put behavior logic here—it belongs in the home-topology kernel.
+
+## Quick Reference
+
+| Need | File |
+|------|------|
+| Master instructions | `README.md` |
+| Daily workflow | `QUICK-START.md` |
+| Current focus | `epics/epic-001-backend-integration.md` |
+| How to pick tasks | `agent/task-manager.md` |
+| How to code | `agent/dev-protocol.md` |
+| How to review | `agent/review-protocol.md` |
+
+---
+
+**Load README.md at the start of every session.**
+
