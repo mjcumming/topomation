@@ -3,7 +3,8 @@
 These tests verify that the integration:
 - Imports HA floors/areas/entities into topology locations
 - Exposes the expected shape via the WebSocket list endpoint
-- Creates new locations via the WebSocket create endpoint
+- Rejects topology lifecycle mutations (create/update/delete/reorder)
+  per adapter policy
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import floor_registry as fr
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.home_topology.const import (  # type: ignore[import]
@@ -25,6 +27,7 @@ from custom_components.home_topology.const import (  # type: ignore[import]
     WS_TYPE_LOCATIONS_LIST,
     WS_TYPE_LOCATIONS_REORDER,
     WS_TYPE_LOCATIONS_SET_MODULE_CONFIG,
+    WS_TYPE_LOCATIONS_UPDATE,
 )
 from custom_components.home_topology.websocket_api import (  # type: ignore[import]
     handle_locations_create,
@@ -32,6 +35,7 @@ from custom_components.home_topology.websocket_api import (  # type: ignore[impo
     handle_locations_list,
     handle_locations_reorder,
     handle_locations_set_module_config,
+    handle_locations_update,
 )
 
 
@@ -57,7 +61,7 @@ async def test_locations_list_imports_floors_areas_and_entities(
         FloorDef("ground", "Ground Floor"),
         FloorDef("first", "First Floor"),
     ]
-    _add_floors(area_registry, floors)
+    _add_floors(hass, floors)
 
     areas = [
         ("Living Room", "ground"),
@@ -133,14 +137,14 @@ async def test_locations_list_imports_floors_areas_and_entities(
 
 
 @pytest.mark.asyncio
-async def test_locations_create_adds_new_location(hass: HomeAssistant) -> None:
-    """locations/create creates a new location with underscore id and meta."""
+async def test_locations_create_is_rejected(hass: HomeAssistant) -> None:
+    """locations/create is rejected by adapter policy."""
 
     area_registry = ar.async_get(hass)
     entity_registry = er.async_get(hass)
 
     # Minimal seed: one floor + one area to ensure house is set up
-    _add_floors(area_registry, [FloorDef("ground", "Ground Floor")])
+    _add_floors(hass, [FloorDef("ground", "Ground Floor")])
     area_entry = _create_area(area_registry, "Living Room", "ground")
     _create_entity(entity_registry, "binary_sensor.living_room_motion", area_entry)
 
@@ -151,11 +155,6 @@ async def test_locations_create_adds_new_location(hass: HomeAssistant) -> None:
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
 
-    kernel = hass.data[DOMAIN][entry.entry_id]
-    loc_mgr = kernel["location_manager"]
-
-    initial_count = len(loc_mgr.all_locations())
-
     connection = _fake_connection()
     handle_locations_create(
         hass,
@@ -165,23 +164,20 @@ async def test_locations_create_adds_new_location(hass: HomeAssistant) -> None:
             "type": WS_TYPE_LOCATIONS_CREATE,
             "name": "Bonus Room",
             "parent_id": "house",
-            "meta": {"type": "room"},
+            "ha_area_id": area_entry.id,
+            "meta": {"type": "area"},
         },
     )
 
-    payload = connection.send_result.call_args[0][1]["location"]
-    assert payload["id"] == "bonus_room"  # underscores from spaces
-    assert payload["parent_id"] == "house"
-
-    created = loc_mgr.get_location("bonus_room")
-    assert created is not None
-    assert created.parent_id == "house"
-    assert len(loc_mgr.all_locations()) == initial_count + 1
+    assert connection.send_result.call_count == 0
+    connection.send_error.assert_called_once()
+    err_args = connection.send_error.call_args[0]
+    assert err_args[1] == "operation_not_supported"
 
 
 @pytest.mark.asyncio
-async def test_locations_delete_removes_location(hass: HomeAssistant) -> None:
-    """locations/delete removes a location and returns success."""
+async def test_locations_delete_is_rejected(hass: HomeAssistant) -> None:
+    """locations/delete is rejected by adapter policy."""
 
     area_registry = ar.async_get(hass)
     kitchen = area_registry.async_create("Kitchen")
@@ -193,22 +189,6 @@ async def test_locations_delete_removes_location(hass: HomeAssistant) -> None:
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
 
-    loc_mgr = hass.data[DOMAIN][entry.entry_id]["location_manager"]
-
-    if not hasattr(loc_mgr, "delete_location"):
-        pytest.skip("LocationManager delete_location not available in this version")
-
-    # Import areas to create locations
-    connection_list = _fake_connection()
-    handle_locations_list(
-        hass,
-        connection_list,
-        {"id": 10, "type": WS_TYPE_LOCATIONS_LIST},
-    )
-
-    location_id = f"area_{kitchen.id}"
-    assert loc_mgr.get_location(location_id) is not None
-
     connection = _fake_connection()
     handle_locations_delete(
         hass,
@@ -216,29 +196,25 @@ async def test_locations_delete_removes_location(hass: HomeAssistant) -> None:
         {
             "id": 11,
             "type": WS_TYPE_LOCATIONS_DELETE,
-            "location_id": location_id,
+            "location_id": f"area_{kitchen.id}",
         },
     )
 
-    result = connection.send_result.call_args[0][1]
-    assert result["success"] is True
-    assert loc_mgr.get_location(location_id) is None
+    assert connection.send_result.call_count == 0
+    connection.send_error.assert_called_once()
+    err_args = connection.send_error.call_args[0]
+    assert err_args[1] == "operation_not_supported"
 
 
 @pytest.mark.asyncio
-async def test_locations_reorder_applies_sibling_index(hass: HomeAssistant) -> None:
-    """locations/reorder should persist sibling order via core reorder API."""
+async def test_locations_reorder_is_rejected(hass: HomeAssistant) -> None:
+    """locations/reorder is rejected by adapter policy."""
     entry = MockConfigEntry(domain=DOMAIN, data={}, entry_id="test_entry")
     entry.add_to_hass(hass)
 
     with patch("custom_components.home_topology.async_register_panel", AsyncMock()):
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
-
-    loc_mgr = hass.data[DOMAIN][entry.entry_id]["location_manager"]
-    loc_mgr.create_location(id="alpha", name="Alpha", parent_id="house")
-    loc_mgr.create_location(id="beta", name="Beta", parent_id="house")
-    loc_mgr.create_location(id="gamma", name="Gamma", parent_id="house")
 
     connection = _fake_connection()
     handle_locations_reorder(
@@ -253,12 +229,38 @@ async def test_locations_reorder_applies_sibling_index(hass: HomeAssistant) -> N
         },
     )
 
-    result = connection.send_result.call_args[0][1]
-    assert result["success"] is True
-    assert result["index"] == 0
+    assert connection.send_result.call_count == 0
+    connection.send_error.assert_called_once()
+    err_args = connection.send_error.call_args[0]
+    assert err_args[1] == "operation_not_supported"
 
-    children = [loc.id for loc in loc_mgr.children_of("house")]
-    assert children[:3] == ["gamma", "alpha", "beta"]
+
+@pytest.mark.asyncio
+async def test_locations_update_is_rejected(hass: HomeAssistant) -> None:
+    """locations/update is rejected by adapter policy."""
+    entry = MockConfigEntry(domain=DOMAIN, data={}, entry_id="test_entry")
+    entry.add_to_hass(hass)
+
+    with patch("custom_components.home_topology.async_register_panel", AsyncMock()):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    connection = _fake_connection()
+    handle_locations_update(
+        hass,
+        connection,
+        {
+            "id": 21,
+            "type": WS_TYPE_LOCATIONS_UPDATE,
+            "location_id": "house",
+            "changes": {"name": "Renamed House"},
+        },
+    )
+
+    assert connection.send_result.call_count == 0
+    connection.send_error.assert_called_once()
+    err_args = connection.send_error.call_args[0]
+    assert err_args[1] == "operation_not_supported"
 
 
 @pytest.mark.asyncio
@@ -307,9 +309,10 @@ async def test_set_module_config_rejects_floor_occupancy_sources(hass: HomeAssis
     assert err_args[1] == "invalid_config"
 
 
-def _add_floors(area_registry: ar.AreaRegistry, floors: Iterable[FloorDef]) -> None:
-    """Inject floors into the registry (HA may not expose floor registry in tests)."""
-    area_registry.floors = {
+def _add_floors(hass: HomeAssistant, floors: Iterable[FloorDef]) -> None:
+    """Inject floors into the floor registry for deterministic IDs in tests."""
+    floor_registry = fr.async_get(hass)
+    floor_registry.floors = {
         floor.floor_id: type("Floor", (), {"floor_id": floor.floor_id, "name": floor.name})()
         for floor in floors
     }

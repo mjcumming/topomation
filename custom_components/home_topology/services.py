@@ -158,7 +158,12 @@ def async_register_services(hass: HomeAssistant) -> None:
             return
 
         try:
-            occupancy.release(location_id, source_id, trailing_timeout)
+            if hasattr(occupancy, "clear"):
+                occupancy.clear(location_id, source_id, trailing_timeout)
+            elif hasattr(occupancy, "release"):
+                occupancy.release(location_id, source_id, trailing_timeout)
+            else:
+                raise AttributeError("occupancy module has neither clear nor release")
         except Exception as err:
             _LOGGER.error("Failed to clear occupancy: %s", err, exc_info=True)
 

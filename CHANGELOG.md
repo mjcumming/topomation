@@ -30,8 +30,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - SyncManager now uses explicit authority rules:
   - `sync_source=homeassistant` + `sync_enabled=true` allows sync
   - `sync_source=topology` or `sync_enabled=false` blocks cross-boundary writes
-- Topology rename/parent/delete synchronization now consumes core mutation
-  events from `home-topology` instead of integration-level method wrapping.
+- Home Assistant Area/Floor registries are now treated as read-only by this
+  adapter: area/floor create/rename/update is managed in HA Settings menus, and
+  topology-originated mutations no longer write back to HA registries.
+- Removed dormant topology→HA mutation handlers from `SyncManager`
+  (`location.renamed`, `location.parent_changed`, `location.deleted` writeback
+  paths), so policy is now enforced by code removal instead of runtime flags.
 - `locations/reorder` now uses core indexed reorder support and persists
   canonical sibling ordering.
 - README and integration guide now document service wrapper routing behavior and
@@ -78,6 +82,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   floors show a policy notice in inspector, source dialogs reject floor
   locations, and `locations/set_module_config` rejects non-empty
   `occupancy_sources` on floor locations.
+- Sync manager now uses Home Assistant's dedicated floor registry APIs
+  (`homeassistant.helpers.floor_registry`) instead of legacy
+  `area_registry.floors` assumptions.
+- Area imports now set canonical `Location.ha_area_id` links, and sync status
+  reports canonical area linkage.
+- `locations/create` now accepts and persists optional `ha_area_id`.
 - Occupancy inspector now uses an area-first source workflow:
   it lists entities assigned to the selected area with per-entity
   `Use Source` / `Configure` actions, while cross-area mapping moved to
@@ -85,6 +95,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Occupancy inspector visual cleanup: fixed mock icon rendering, tightened
   row/action spacing, moved `Add External Source` into the `Area Sensors`
   subsection header, and aligned source timeout text with effective defaults.
+- Occupancy source model now supports per-signal interaction sources for media
+  and dimmable lights using explicit `signal_key` records:
+  - media: `playback`, `volume`, `mute`
+  - light: `power`, `level`, `color`
+  with source IDs persisted as `{entity_id}::{signal_key}`.
+- Occupancy source editor now keeps OFF behavior configurable for
+  appliance-like sources (light/switch/fan/power signals) while treating pure
+  interaction signals (`volume`, `mute`, `level`, `color`) as trigger-only.
+- Wrapper location lifecycle policy is now enforced end-to-end:
+  `locations/create`, `locations/update`, `locations/delete`, and
+  `locations/reorder` return `operation_not_supported`; the panel/tree runs in
+  read-only topology mode and directs users to HA Settings for Area/Floor
+  structure changes.
 
 ### Fixed
 
@@ -100,3 +123,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   last config entry unloads.
 - Entity area-change cleanup now emits debug logs instead of silently swallowing
   old-location removal errors in `sync_manager.py`.
+- `home_topology.clear` service now maps to core `occupancy.clear(...)` and
+  falls back to legacy `release(...)` only when needed.

@@ -22,9 +22,37 @@ def _kernel_with_occupancy(occupancy: Mock) -> dict:
     }
 
 
-async def test_clear_service_maps_to_release(hass: HomeAssistant) -> None:
-    """clear service should call occupancy.release for compatibility."""
+async def test_clear_service_maps_to_clear(hass: HomeAssistant) -> None:
+    """clear service should call occupancy.clear with current core API."""
     occupancy = Mock()
+    hass.data[DOMAIN] = {"entry_1": _kernel_with_occupancy(occupancy)}
+    async_register_services(hass)
+
+    await hass.services.async_call(
+        DOMAIN,
+        "clear",
+        {
+            "location_id": "kitchen",
+            "source_id": "manual_test",
+            "trailing_timeout": 45,
+        },
+        blocking=True,
+    )
+
+    occupancy.clear.assert_called_once_with("kitchen", "manual_test", 45)
+    async_unregister_services(hass)
+
+
+async def test_clear_service_falls_back_to_release_for_legacy_core(
+    hass: HomeAssistant,
+) -> None:
+    """clear service should fall back to release for older occupancy module APIs."""
+
+    class LegacyOccupancy:
+        def __init__(self) -> None:
+            self.release = Mock()
+
+    occupancy = LegacyOccupancy()
     hass.data[DOMAIN] = {"entry_1": _kernel_with_occupancy(occupancy)}
     async_register_services(hass)
 

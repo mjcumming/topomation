@@ -1,4 +1,4 @@
-"""Unit tests for SyncManager bidirectional synchronization.
+"""Unit tests for SyncManager HA-registry-driven synchronization.
 
 These tests validate the SyncManager class independently from full
 integration setup, making them faster and more focused.
@@ -11,6 +11,7 @@ from home_topology import EventBus, LocationManager
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import floor_registry as fr
 
 from custom_components.home_topology.sync_manager import SyncManager
 
@@ -46,16 +47,22 @@ async def sync_manager(hass: HomeAssistant, loc_mgr, event_bus):
 async def clean_registries(hass: HomeAssistant):
     """Start with clean area and entity registries."""
     area_reg = ar.async_get(hass)
+    floor_reg = fr.async_get(hass)
 
     # Clear all areas
     for area in list(area_reg.areas.values()):
         area_reg.async_delete(area.id)
+
+    for floor in list(floor_reg.floors.values()):
+        floor_reg.async_delete(floor.floor_id)
 
     yield
 
     # Cleanup after test
     for area in list(area_reg.areas.values()):
         area_reg.async_delete(area.id)
+    for floor in list(floor_reg.floors.values()):
+        floor_reg.async_delete(floor.floor_id)
 
 
 # =============================================================================
@@ -110,8 +117,9 @@ class TestInitialImport:
 
         # Check metadata
         meta = location.modules.get("_meta", {})
+        assert location.ha_area_id == kitchen.id
         assert meta["ha_area_id"] == kitchen.id
-        assert meta["type"] == "room"
+        assert meta["type"] == "area"
         assert meta["sync_source"] == "homeassistant"
         assert meta["sync_enabled"] is True
 
@@ -172,10 +180,6 @@ class TestInitialImport:
         assert location is not None
         assert light.entity_id in location.entity_ids
 
-    @pytest.mark.skipif(
-        not hasattr(ar.AreaRegistry, "async_create_floor"),
-        reason="Floor registry not available",
-    )
     async def test_import_floor_with_areas(
         self,
         hass: HomeAssistant,
@@ -192,12 +196,8 @@ class TestInitialImport:
           - Area parent is set to floor
         """
         area_reg = ar.async_get(hass)
-
-        # Skip if floor support not available
-        if not hasattr(area_reg, "async_create_floor"):
-            pytest.skip("Floor registry not available")
-
-        floor = area_reg.async_create_floor("Ground Floor")
+        floor_reg = fr.async_get(hass)
+        floor = floor_reg.async_create("Ground Floor")
         kitchen = area_reg.async_create("Kitchen", floor_id=floor.floor_id)
 
         await sync_manager.import_all_areas_and_floors()
@@ -380,14 +380,14 @@ class TestHAToTopologySync:
 
 
 # =============================================================================
-# Phase 3: Topology → HA Sync Tests
+# Phase 3: Topology Mutation Non-Writeback Tests
 # =============================================================================
 
 
 class TestTopologyToHASync:
     """Test live sync from topology to HA."""
 
-    async def test_location_rename_updates_area(
+    async def test_location_rename_does_not_update_area_registry(
         self,
         hass: HomeAssistant,
         sync_manager: SyncManager,
@@ -395,11 +395,11 @@ class TestTopologyToHASync:
         event_bus: EventBus,
         clean_registries,
     ):
-        """Test topology location rename updates HA area.
+        """Topology rename should not mutate HA area registry.
 
         GIVEN: Synced location "Kitchen"
         WHEN: Location renamed to "Culinary Space"
-        THEN: HA area name updates
+        THEN: HA area name remains unchanged
         """
         area_reg = ar.async_get(hass)
         kitchen = area_reg.async_create("Kitchen")
@@ -413,9 +413,9 @@ class TestTopologyToHASync:
         loc_mgr.update_location(location_id, name="Culinary Space")
         await hass.async_block_till_done()
 
-        # Verify HA area updated
+        # Verify HA area not updated by integration writeback
         updated_area = area_reg.async_get_area(kitchen.id)
-        assert updated_area.name == "Culinary Space"
+        assert updated_area.name == "Kitchen"
 
     async def test_topology_only_location_no_sync(
         self,
@@ -461,6 +461,46 @@ class TestTopologyToHASync:
 
         # Verify no new HA area created
         assert len(area_reg.areas) == initial_area_count
+
+    async def test_parent_change_does_not_write_floor_assignment_to_ha(
+        self,
+        hass: HomeAssistant,
+        sync_manager: SyncManager,
+        loc_mgr: LocationManager,
+        clean_registries,
+    ):
+        """Topology parent changes should not mutate HA area floor assignment."""
+        area_reg = ar.async_get(hass)
+        floor_reg = fr.async_get(hass)
+
+        floor = floor_reg.async_create("Ground Floor")
+        kitchen = area_reg.async_create("Kitchen", floor_id=floor.floor_id)
+
+        await sync_manager.import_all_areas_and_floors()
+        await sync_manager.async_setup()
+
+        floor_location_id = f"floor_{floor.floor_id}"
+        loc_mgr.create_location(
+            id="grouping_area",
+            name="Grouping Area",
+            parent_id=floor_location_id,
+        )
+        loc_mgr.set_module_config(
+            "grouping_area",
+            "_meta",
+            {
+                "type": "area",
+                "sync_source": "topology",
+                "sync_enabled": True,
+            },
+        )
+
+        original_floor_id = area_reg.async_get_area(kitchen.id).floor_id
+        loc_mgr.update_location(f"area_{kitchen.id}", parent_id="grouping_area")
+        await hass.async_block_till_done()
+
+        # No topology->HA writeback: floor assignment remains as configured in HA.
+        assert area_reg.async_get_area(kitchen.id).floor_id == original_floor_id
 
 
 # =============================================================================

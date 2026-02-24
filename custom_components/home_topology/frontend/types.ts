@@ -55,6 +55,8 @@ export interface OccupancyConfig extends ModuleConfig {
 
 export interface OccupancySource {
   entity_id: string;
+  source_id?: string;
+  signal_key?: "playback" | "volume" | "mute" | "power" | "level" | "color";
   mode: "specific_states" | "any_change";
   on_event?: "trigger" | "none";
   on_timeout?: number | null;

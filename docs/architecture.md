@@ -116,6 +116,7 @@ def state_changed_listener(event):
         payload={
             "event_type": "trigger",  # or "clear"
             "source_id": entity_id,
+            "signal_key": None,  # e.g. playback/volume/mute or power/level/color
             "old_state": old_state.state,
             "new_state": new_state.state,
             "attributes": dict(new_state.attributes),
@@ -130,7 +131,8 @@ def state_changed_listener(event):
 **Normalization**:
 
 - Dimmers: `state=on, brightness=0` → OFF
-- Dimmers: `state=on, brightness>0` → ON (brightness changes re-trigger)
+- Dimmers: `state=on, brightness>0` → ON (brightness changes emit `signal_key=level`)
+- Color lights: RGB/HS/XY/color-temp changes emit `signal_key=color`
 - Media players: Map playing/paused/idle states
 
 ### 3.3 State Exposure (`binary_sensor.py`, `sensor.py`)
@@ -199,20 +201,17 @@ class HomeTopologyCoordinator:
 
 ### 3.5 WebSocket API (`websocket_api.py`)
 
-**Purpose**: CRUD operations for locations and module configs
+**Purpose**: Read topology state + update module configuration
 
 **Commands**:
 
 - `home_topology/locations/list` - Get all locations
-- `home_topology/locations/create` - Create location
-- `home_topology/locations/update` - Update location (name, parent)
-- `home_topology/locations/delete` - Delete location
-- `home_topology/locations/reorder` - Move location in hierarchy
 - `home_topology/locations/set_module_config` - Update module config
 
-`locations/reorder` is backed by core `LocationManager.reorder_location()`,
-which enforces canonical sibling ordering (`Location.order`) so tree order is
-stable across reloads and restarts.
+Per adapter policy (ADR-HA-017/018), location lifecycle mutation commands
+(`create` / `update` / `delete` / `reorder`) are intentionally rejected with
+`operation_not_supported`. Area/Floor lifecycle is managed in Home Assistant
+Settings and imported into topology.
 
 **Pattern**:
 
@@ -234,7 +233,7 @@ def handle_locations_list(hass, connection, msg):
 **Services**:
 
 - `home_topology.trigger` - Manual occupancy trigger (`occupancy.trigger`)
-- `home_topology.clear` - Manual occupancy clear (`occupancy.release`, compatibility alias)
+- `home_topology.clear` - Manual occupancy clear (`occupancy.clear`, with legacy `release` fallback)
 - `home_topology.lock` - Lock location (prevent vacancy, source-aware)
 - `home_topology.unlock` - Unlock location (source-aware)
 - `home_topology.vacate_area` - Vacate location and descendants
@@ -348,16 +347,14 @@ class HAPlatformAdapter:
 7. Frontend: Receives success, updates UI
 ```
 
-### 4.4 Topology Rename Syncs Back to HA
+### 4.4 Topology Rename Is Local (HA Registry Managed in HA Menus)
 
 ```
-1. User renames location in topology UI ("Kitchen" -> "Culinary Space")
-2. Frontend sends update/reorder command
-3. LocationManager emits Event(type="location.renamed", source="topology")
-4. SyncManager receives location.renamed and evaluates sync policy
-5. If sync_source=homeassistant and sync_enabled=true:
-   - HA area/floor registry is updated
-6. HA reflects renamed area/floor
+1. User renames a topology location in the panel
+2. Frontend sends update command to integration
+3. LocationManager updates topology location state
+4. HA area/floor registries are unchanged
+5. Any HA area/floor rename must be performed in HA Settings menus
 ```
 
 ---
@@ -379,7 +376,7 @@ class HAPlatformAdapter:
       "parent_id": "floor-1",
       "order": 2,
       "modules": {
-        "_meta": { "type": "room", "category": "kitchen" },
+        "_meta": { "type": "area", "category": "kitchen" },
         "occupancy": { "enabled": true, "default_timeout": 600 }
       }
     }
@@ -393,7 +390,7 @@ Per-location metadata in `_meta` determines synchronization authority:
 
 - `sync_source=homeassistant` and `sync_enabled=true`
   - HA changes -> topology updates are allowed
-  - Topology changes -> HA writeback is allowed
+  - Topology changes -> HA writeback is disabled by adapter policy (ADR-HA-017)
 - `sync_source=topology` and `sync_enabled=true`
   - HA changes -> topology updates are blocked
   - Topology changes -> HA writeback is blocked

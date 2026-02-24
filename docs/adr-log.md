@@ -506,7 +506,7 @@ events; it no longer monkeypatches manager methods.
 3. Less integration-level complexity and lower regression risk
 
 **Consequences**:
-- ✅ Topology rename/parent/delete sync is deterministic
+- ✅ Core-emitted rename/parent/delete events are deterministic for adapters that consume them
 - ✅ Adapter code is thinner and easier to reason about
 - ⚠️ Core now has optional runtime coupling to an event bus instance
 
@@ -627,6 +627,85 @@ Remove the legacy root status files and treat these as canonical status sources:
 - ✅ Reduced duplicated/stale status documents
 - ✅ Easier onboarding to current state
 - ⚠️ Links to deleted root status docs must be updated if discovered
+
+---
+
+### ADR-HA-017: HA Registry Mutations Are Out of Scope for This Adapter (2026-02-24)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+The integration currently includes code paths that mutate Home Assistant Area/Floor
+registries from the topology panel and topology mutation handlers (e.g. area create,
+area/floor rename, floor assignment writeback). This blurs ownership boundaries and
+increases conflict risk between HA-native settings and topology UI operations.
+
+**Decision**:
+Treat Home Assistant Area/Floor registries as **read-only** in this adapter:
+1. Users create/rename/manage Areas and Floors in HA Settings menus only.
+2. This adapter imports and reflects HA registry state into topology.
+3. Topology-originated mutations no longer write back to HA area/floor registry.
+4. UI flows no longer call HA registry create/update endpoints directly.
+
+**Rationale**:
+1. Keep adapter scope thin and predictable ("wrapper, not owner of HA registry")
+2. Reduce accidental global edits from topology UX actions
+3. Simplify sync conflict handling and operator mental model
+4. Align with HA-native information architecture for Area/Floor administration
+
+**Consequences**:
+- ✅ Clear ownership boundary: HA menus are authoritative for Areas/Floors
+- ✅ Lower risk of loop/conflict behavior from bidirectional write paths
+- ✅ Simpler support/debugging for naming and floor-link discrepancies
+- ✅ Legacy topology→HA rename/delete/floor-writeback handlers removed from adapter code
+- ⚠️ Less convenience: no one-click HA area creation/rename from topology panel
+- ⚠️ Users may switch between HA Settings and topology UI during setup
+
+**Supersedes / Narrows**:
+- Narrows ADR-HA-014 by disabling topology→HA writeback paths for area/floor metadata
+  in the current adapter policy.
+
+---
+
+### ADR-HA-018: Explicit Signal-Key Sources for Interaction Entities (2026-02-24)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+Occupancy source UX and bridge behavior drifted when activity-style entities
+(media players and advanced lights) were modeled as a single source row.
+Users needed independent control for different interaction channels:
+
+- media playback vs volume vs mute
+- light power vs brightness level changes vs RGB/color changes
+
+Without explicit decomposition, UI behavior became inconsistent (missing OFF
+behavior where expected), and bridge events could not reliably map to intended
+source semantics.
+
+**Decision**:
+Adopt explicit per-signal source records using `signal_key`, with stable source
+IDs: `{entity_id}::{signal_key}`.
+
+1. Media source signals: `playback`, `volume`, `mute`
+2. Light source signals: `power`, `level`, `color`
+3. Bridge emits matching `signal_key` in `occupancy.signal` payload
+4. UI presents each signal as its own include/config row
+5. OFF behavior remains configurable for state signals (`power`), and is
+   suppressed for interaction-only signals (`volume`, `mute`, `level`, `color`)
+
+**Rationale**:
+1. Clear and predictable behavior mapping per interaction type
+2. Better UX than overloading one source row with mixed semantics
+3. Deterministic routing between incoming events and configured sources
+4. Extensible pattern for future signal families without schema churn
+
+**Consequences**:
+- ✅ User intent maps directly to source configuration
+- ✅ Event bridge and UI use the same signal taxonomy
+- ✅ Advanced light/media interactions are first-class occupancy sources
+- ⚠️ More rows in source lists for rich entities
+- ⚠️ Existing assumptions that one entity equals one source are no longer valid
 
 ---
 

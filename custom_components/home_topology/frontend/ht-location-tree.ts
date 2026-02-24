@@ -194,6 +194,7 @@ export class HtLocationTree extends LitElement {
   @property({ type: Number }) public version = 0;
   @property() public selectedId?: string;
   @property({ attribute: false }) public occupancyStates: Record<string, boolean> = {};
+  @property({ type: Boolean }) public readOnly = false;
 
   // CRITICAL: Explicit static properties for Vite dev mode compatibility
   static properties = {
@@ -202,6 +203,7 @@ export class HtLocationTree extends LitElement {
     version: { type: Number },
     selectedId: {},
     occupancyStates: { attribute: false },
+    readOnly: { type: Boolean },
     // Internal state
     _expandedIds: { state: true },
     _editingId: { state: true },
@@ -700,8 +702,12 @@ export class HtLocationTree extends LitElement {
       return html`
         <div class="empty-state">
           <ha-icon icon="mdi:map-marker-plus"></ha-icon>
-          <div>No locations yet. Create your first location to get started.</div>
-          <button class="button" @click=${this._handleCreate}>+ New Location</button>
+          <div>
+            ${this.readOnly
+              ? "No synced locations yet. Create Areas/Floors in Home Assistant Settings."
+              : "No locations yet. Create your first location to get started."}
+          </div>
+          ${this.readOnly ? "" : html`<button class="button" @click=${this._handleCreate}>+ New Location</button>`}
         </div>
       `;
     }
@@ -737,8 +743,12 @@ export class HtLocationTree extends LitElement {
         @click=${(e: Event) => this._handleClick(e, location)}
       >
         <div
-          class="drag-handle ${type === "floor" ? "disabled" : ""}"
-          title=${type === "floor" ? "Floors are fixed at top level" : "Drag to reorder or move levels."}
+          class="drag-handle ${type === "floor" || this.readOnly ? "disabled" : ""}"
+          title=${this.readOnly
+            ? "Topology structure is managed in Home Assistant Settings."
+            : type === "floor"
+              ? "Floors are fixed at top level"
+              : "Drag to reorder or move levels."}
         ><ha-icon icon="mdi:drag-vertical"></ha-icon></div>
 
         <button
@@ -762,11 +772,16 @@ export class HtLocationTree extends LitElement {
                   @blur=${() => this._finishEditing(location.id)}
                   @keydown=${(e: any) => this._handleEditKeydown(e, location.id)}
                   @click=${(e: any) => e.stopPropagation()} />`
-          : html`<div class="location-name" @dblclick=${(e: any) => this._startEditing(e, location)}>${location.name}</div>`}
+          : html`<div
+              class="location-name"
+              @dblclick=${this.readOnly ? (() => {}) : ((e: any) => this._startEditing(e, location))}
+            >${location.name}</div>`}
 
         <span class="type-badge ${type}">${type}</span>
 
-        <button class="delete-btn" @click=${(e: any) => this._handleDelete(e, location)} title="Delete"><ha-icon icon="mdi:delete-outline"></ha-icon></button>
+        ${this.readOnly
+          ? ""
+          : html`<button class="delete-btn" @click=${(e: any) => this._handleDelete(e, location)} title="Delete"><ha-icon icon="mdi:delete-outline"></ha-icon></button>`}
       </div>
     `;
   }
@@ -853,6 +868,7 @@ export class HtLocationTree extends LitElement {
   }
 
   private _startEditing(e: Event, location: Location): void {
+    if (this.readOnly) return;
     e.stopPropagation();
     this._editingId = location.id;
     this._editingValue = location.name;
@@ -877,12 +893,14 @@ export class HtLocationTree extends LitElement {
   }
 
   private _handleDelete(e: Event, location: Location): void {
+    if (this.readOnly) return;
     e.stopPropagation();
     if (!confirm(`Delete "${location.name}"?`)) return;
     this.dispatchEvent(new CustomEvent("location-delete", { detail: { location }, bubbles: true, composed: true }));
   }
 
   private _handleCreate(): void {
+    if (this.readOnly) return;
     this.dispatchEvent(new CustomEvent("location-create", { bubbles: true, composed: true }));
   }
 }

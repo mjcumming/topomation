@@ -24,6 +24,88 @@ def location_manager_fixture() -> Mock:
     """Create a mock LocationManager for event bridge testing."""
     loc_mgr = Mock(spec=LocationManager)
     loc_mgr.get_entity_location.return_value = "kitchen"
+    loc_mgr.get_module_config.return_value = {
+        "enabled": True,
+        "default_timeout": 300,
+        "occupancy_sources": [
+            {
+                "entity_id": "binary_sensor.kitchen_motion",
+                "mode": "specific_states",
+                "on_event": "trigger",
+                "on_timeout": 1800,
+                "off_event": "clear",
+                "off_trailing": 0,
+            },
+            {
+                "entity_id": "light.kitchen",
+                "source_id": "light.kitchen::power",
+                "signal_key": "power",
+                "mode": "any_change",
+                "on_event": "trigger",
+                "on_timeout": 1800,
+                "off_event": "clear",
+                "off_trailing": 0,
+            },
+            {
+                "entity_id": "light.kitchen",
+                "source_id": "light.kitchen::level",
+                "signal_key": "level",
+                "mode": "any_change",
+                "on_event": "trigger",
+                "on_timeout": 1800,
+                "off_event": "none",
+                "off_trailing": 0,
+            },
+            {
+                "entity_id": "light.kitchen",
+                "source_id": "light.kitchen::color",
+                "signal_key": "color",
+                "mode": "any_change",
+                "on_event": "trigger",
+                "on_timeout": 1800,
+                "off_event": "none",
+                "off_trailing": 0,
+            },
+            {
+                "entity_id": "binary_sensor.motion",
+                "mode": "specific_states",
+                "on_event": "trigger",
+                "on_timeout": 1800,
+                "off_event": "none",
+                "off_trailing": 0,
+            },
+            {
+                "entity_id": "media_player.living_room_tv",
+                "source_id": "media_player.living_room_tv::playback",
+                "signal_key": "playback",
+                "mode": "any_change",
+                "on_event": "trigger",
+                "on_timeout": 1800,
+                "off_event": "clear",
+                "off_trailing": 0,
+            },
+            {
+                "entity_id": "media_player.living_room_tv",
+                "source_id": "media_player.living_room_tv::volume",
+                "signal_key": "volume",
+                "mode": "any_change",
+                "on_event": "trigger",
+                "on_timeout": 1800,
+                "off_event": "none",
+                "off_trailing": 0,
+            },
+            {
+                "entity_id": "media_player.living_room_tv",
+                "source_id": "media_player.living_room_tv::mute",
+                "signal_key": "mute",
+                "mode": "any_change",
+                "on_event": "trigger",
+                "on_timeout": 1800,
+                "off_event": "none",
+                "off_trailing": 0,
+            },
+        ],
+    }
     return loc_mgr
 
 
@@ -160,22 +242,22 @@ def test_normalize_state_none(event_bridge: EventBridge) -> None:
 @pytest.mark.parametrize(
     ("old_state", "new_state", "expected"),
     [
-        (STATE_PAUSED, STATE_PLAYING, "trigger"),
-        (STATE_PLAYING, STATE_PAUSED, None),
-        (STATE_PLAYING, "idle", None),
+        (STATE_PAUSED, STATE_PLAYING, ("trigger", "playback")),
+        (STATE_PLAYING, STATE_PAUSED, ("clear", "playback")),
+        (STATE_PLAYING, "idle", ("clear", "playback")),
     ],
 )
-def test_media_state_to_signal_type_from_playback(
+def test_media_state_to_signal_from_playback(
     event_bridge: EventBridge,
     old_state: str,
     new_state: str,
-    expected: str | None,
+    expected: tuple[str, str] | None,
 ) -> None:
     """Test media playback state mapping for occupancy signals."""
     old = State("media_player.living_room_tv", old_state)
     new = State("media_player.living_room_tv", new_state)
 
-    result = event_bridge._media_state_to_signal_type(
+    result = event_bridge._media_state_to_signal(
         old_state=old,
         new_state=new,
         old_normalized=old_state,
@@ -188,20 +270,78 @@ def test_media_state_to_signal_type_from_playback(
 @pytest.mark.parametrize(
     ("old_attrs", "new_attrs", "expected"),
     [
-        ({"volume_level": 0.2, "is_volume_muted": False}, {"volume_level": 0.5, "is_volume_muted": False}, True),
-        ({"volume_level": 0.2, "is_volume_muted": False}, {"volume_level": 0.2, "is_volume_muted": True}, True),
-        ({"volume_level": 0.2, "is_volume_muted": False}, {"volume_level": 0.2, "is_volume_muted": False}, False),
-        ({"volume_level": 0.2, "is_volume_muted": False}, {"volume_level": 0.2, "is_volume_muted": False, "media_position": 100}, False),
+        (
+            {"volume_level": 0.2, "is_volume_muted": False},
+            {"volume_level": 0.5, "is_volume_muted": False},
+            ("trigger", "volume"),
+        ),
+        (
+            {"volume_level": 0.2, "is_volume_muted": False},
+            {"volume_level": 0.2, "is_volume_muted": True},
+            ("trigger", "mute"),
+        ),
+        (
+            {"volume_level": 0.2, "is_volume_muted": False},
+            {"volume_level": 0.2, "is_volume_muted": False},
+            None,
+        ),
+        (
+            {"volume_level": 0.2, "is_volume_muted": False},
+            {"volume_level": 0.2, "is_volume_muted": False, "media_position": 100},
+            None,
+        ),
     ],
 )
-def test_media_interaction_changed(
+def test_media_signal_from_interaction(
     event_bridge: EventBridge,
     old_attrs: dict,
     new_attrs: dict,
-    expected: bool,
+    expected: tuple[str, str] | None,
 ) -> None:
-    """Test media interaction detector tracks only volume/mute changes."""
-    assert event_bridge._media_interaction_changed(old_attrs, new_attrs) is expected
+    """Test media interaction mapping tracks volume/mute signal keys."""
+    old = State("media_player.living_room_tv", STATE_PLAYING, old_attrs)
+    new = State("media_player.living_room_tv", STATE_PLAYING, new_attrs)
+    assert (
+        event_bridge._media_state_to_signal(
+            old_state=old,
+            new_state=new,
+            old_normalized=STATE_PLAYING,
+            new_normalized=STATE_PLAYING,
+        )
+        == expected
+    )
+
+
+@pytest.mark.parametrize(
+    ("old_state", "new_state", "old_attrs", "new_attrs", "expected"),
+    [
+        (STATE_OFF, STATE_ON, {}, {"brightness": 128}, ("trigger", "power")),
+        (STATE_ON, STATE_OFF, {"brightness": 128}, {"brightness": 0}, ("clear", "power")),
+        (STATE_ON, STATE_ON, {"brightness": 64}, {"brightness": 192}, ("trigger", "level")),
+        (STATE_ON, STATE_ON, {"rgb_color": [255, 100, 0]}, {"rgb_color": [0, 120, 255]}, ("trigger", "color")),
+        (STATE_ON, STATE_ON, {"brightness": 64}, {"brightness": 64}, None),
+    ],
+)
+def test_light_state_to_signal_mapping(
+    event_bridge: EventBridge,
+    old_state: str,
+    new_state: str,
+    old_attrs: dict,
+    new_attrs: dict,
+    expected: tuple[str, str] | None,
+) -> None:
+    """Test light power and dimmer level mapping to signal keys."""
+    old = State("light.kitchen", old_state, old_attrs)
+    new = State("light.kitchen", new_state, new_attrs)
+    assert (
+        event_bridge._light_state_to_signal(
+            old_state=old,
+            new_state=new,
+            old_normalized=old_state,
+            new_normalized=new_state,
+        )
+        == expected
+    )
 
 
 async def test_state_change_publishes_kernel_event(
@@ -263,6 +403,8 @@ async def test_media_volume_change_publishes_trigger(
     event_bus.publish.assert_called_once()
     published_event: Event = event_bus.publish.call_args[0][0]
     assert published_event.payload["event_type"] == "trigger"
+    assert published_event.payload["signal_key"] == "volume"
+    assert published_event.payload["source_id"] == "media_player.living_room_tv::volume"
     assert published_event.payload["old_state"] == STATE_PLAYING
     assert published_event.payload["new_state"] == STATE_PLAYING
 
@@ -287,6 +429,8 @@ async def test_media_mute_change_publishes_trigger(
     event_bus.publish.assert_called_once()
     published_event: Event = event_bus.publish.call_args[0][0]
     assert published_event.payload["event_type"] == "trigger"
+    assert published_event.payload["signal_key"] == "mute"
+    assert published_event.payload["source_id"] == "media_player.living_room_tv::mute"
 
 
 async def test_media_non_interaction_attribute_change_ignored(
@@ -309,11 +453,11 @@ async def test_media_non_interaction_attribute_change_ignored(
     event_bus.publish.assert_not_called()
 
 
-async def test_media_paused_state_does_not_auto_clear(
+async def test_media_paused_state_publishes_clear(
     event_bridge: EventBridge,
     event_bus: Mock,
 ) -> None:
-    """Test media pause transitions do not emit clear by default."""
+    """Test media pause transitions emit clear signals."""
     old_state = State("media_player.living_room_tv", STATE_PLAYING)
     new_state = State("media_player.living_room_tv", STATE_PAUSED)
 
@@ -326,7 +470,11 @@ async def test_media_paused_state_does_not_auto_clear(
 
     event_bridge._state_changed_listener(ha_event)
 
-    event_bus.publish.assert_not_called()
+    event_bus.publish.assert_called_once()
+    published_event: Event = event_bus.publish.call_args[0][0]
+    assert published_event.payload["event_type"] == "clear"
+    assert published_event.payload["signal_key"] == "playback"
+    assert published_event.payload["source_id"] == "media_player.living_room_tv::playback"
 
 
 async def test_unmapped_entity_ignored(
@@ -412,7 +560,57 @@ async def test_dimmer_state_normalized_in_event(
     published_event: Event = event_bus.publish.call_args[0][0]
     assert published_event.type == "occupancy.signal"
     assert published_event.payload["event_type"] == "clear"
+    assert published_event.payload["signal_key"] == "power"
+    assert published_event.payload["source_id"] == "light.kitchen::power"
     assert published_event.payload["new_state"] == STATE_OFF
+
+
+async def test_dimmer_level_change_publishes_level_signal(
+    event_bridge: EventBridge,
+    event_bus: Mock,
+) -> None:
+    """Test dimmer brightness changes while ON emit level trigger."""
+    old_state = State("light.kitchen", STATE_ON, {"brightness": 40})
+    new_state = State("light.kitchen", STATE_ON, {"brightness": 180})
+
+    ha_event = Mock()
+    ha_event.data = {
+        "entity_id": "light.kitchen",
+        "old_state": old_state,
+        "new_state": new_state,
+    }
+
+    event_bridge._state_changed_listener(ha_event)
+
+    event_bus.publish.assert_called_once()
+    published_event: Event = event_bus.publish.call_args[0][0]
+    assert published_event.payload["event_type"] == "trigger"
+    assert published_event.payload["signal_key"] == "level"
+    assert published_event.payload["source_id"] == "light.kitchen::level"
+
+
+async def test_light_color_change_publishes_color_signal(
+    event_bridge: EventBridge,
+    event_bus: Mock,
+) -> None:
+    """Test RGB/color changes while ON emit color trigger."""
+    old_state = State("light.kitchen", STATE_ON, {"rgb_color": [255, 100, 0]})
+    new_state = State("light.kitchen", STATE_ON, {"rgb_color": [0, 120, 255]})
+
+    ha_event = Mock()
+    ha_event.data = {
+        "entity_id": "light.kitchen",
+        "old_state": old_state,
+        "new_state": new_state,
+    }
+
+    event_bridge._state_changed_listener(ha_event)
+
+    event_bus.publish.assert_called_once()
+    published_event: Event = event_bus.publish.call_args[0][0]
+    assert published_event.payload["event_type"] == "trigger"
+    assert published_event.payload["signal_key"] == "color"
+    assert published_event.payload["source_id"] == "light.kitchen::color"
 
 
 async def test_publish_error_handled_gracefully(
@@ -468,6 +666,18 @@ async def test_media_state_changed_end_to_end_with_module_config(
             "occupancy_sources": [
                 {
                     "entity_id": "media_player.living_room_tv",
+                    "source_id": "media_player.living_room_tv::playback",
+                    "signal_key": "playback",
+                    "mode": "any_change",
+                    "on_event": "trigger",
+                    "on_timeout": 1800,
+                    "off_event": "clear",
+                    "off_trailing": 0,
+                },
+                {
+                    "entity_id": "media_player.living_room_tv",
+                    "source_id": "media_player.living_room_tv::volume",
+                    "signal_key": "volume",
                     "mode": "any_change",
                     "on_event": "trigger",
                     "on_timeout": 1800,
@@ -514,6 +724,7 @@ async def test_media_state_changed_end_to_end_with_module_config(
     assert emitted.type == "occupancy.signal"
     assert emitted.location_id == "living_room"
     assert emitted.payload["event_type"] == "trigger"
-    assert emitted.payload["source_id"] == "media_player.living_room_tv"
+    assert emitted.payload["source_id"] == "media_player.living_room_tv::volume"
+    assert emitted.payload["signal_key"] == "volume"
 
     await bridge.async_teardown()

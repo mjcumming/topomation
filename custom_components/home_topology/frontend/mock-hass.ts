@@ -4,6 +4,7 @@ import type { HomeAssistant, Location, LocationMeta } from "./types";
 export const MOCK_AREAS: Record<string, { area_id: string; name: string; icon?: string }> = {
   kitchen: { area_id: "kitchen", name: "Kitchen", icon: "mdi:silverware-fork-knife" },
   living_room: { area_id: "living_room", name: "Living Room", icon: "mdi:sofa" },
+  bathroom: { area_id: "bathroom", name: "Bathroom", icon: "mdi:shower" },
   primary_bedroom: { area_id: "primary_bedroom", name: "Primary Bedroom", icon: "mdi:bed" },
   guest_bedroom: { area_id: "guest_bedroom", name: "Guest Bedroom", icon: "mdi:bed" },
   garage: { area_id: "garage", name: "Garage", icon: "mdi:garage" },
@@ -78,6 +79,19 @@ export const MOCK_LOCATIONS: Location[] = [
     ],
     modules: { _meta: { type: "area", category: "living" }, occupancy: { enabled: true, default_timeout: 600 } },
   },
+  {
+    id: "bathroom",
+    name: "Bathroom",
+    parent_id: "main-floor",
+    is_explicit_root: false,
+    ha_area_id: "bathroom",
+    origin: "ha",
+    entity_ids: [
+      "fan.bathroom_exhaust",
+      "light.bathroom_main",
+    ],
+    modules: { _meta: { type: "area", category: "bathroom" }, occupancy: { enabled: true, default_timeout: 300 } },
+  },
   // Deep Nesting (Area inside Area)
   {
     id: "pantry",
@@ -117,7 +131,13 @@ export const MOCK_STATES: Record<string, any> = {
   "light.kitchen_main": {
     entity_id: "light.kitchen_main",
     state: "on",
-    attributes: { friendly_name: "Kitchen Main Light", area_id: "kitchen" },
+    attributes: {
+      friendly_name: "Kitchen Main Light",
+      area_id: "kitchen",
+      brightness: 170,
+      rgb_color: [255, 180, 120],
+      supported_color_modes: ["rgb", "brightness"],
+    },
   },
   "light.living_room": {
     entity_id: "light.living_room",
@@ -152,6 +172,22 @@ export const MOCK_STATES: Record<string, any> = {
       volume_level: 0.35,
       is_volume_muted: false,
       area_id: "living_room",
+    },
+  },
+  "fan.bathroom_exhaust": {
+    entity_id: "fan.bathroom_exhaust",
+    state: "off",
+    attributes: {
+      friendly_name: "Bathroom Exhaust Fan",
+      area_id: "bathroom",
+    },
+  },
+  "light.bathroom_main": {
+    entity_id: "light.bathroom_main",
+    state: "off",
+    attributes: {
+      friendly_name: "Bathroom Main Light",
+      area_id: "bathroom",
     },
   },
   "binary_sensor.living_room_presence": {

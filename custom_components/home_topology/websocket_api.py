@@ -62,11 +62,26 @@ def _get_kernel(
     return None
 
 
-def _location_type(location: Any) -> str:
+def _location_type(location: object) -> str:
     """Read integration location type from _meta module (defaults to area)."""
     modules = getattr(location, "modules", {}) or {}
     meta = modules.get("_meta", {}) if isinstance(modules, dict) else {}
     return str(meta.get("type", "area"))
+
+
+def _reject_location_mutation(
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Reject topology location lifecycle mutations per adapter policy."""
+    connection.send_error(
+        msg["id"],
+        "operation_not_supported",
+        (
+            "Location lifecycle mutations are disabled in this adapter. "
+            "Create/rename/delete/re-parent floors and areas in Home Assistant Settings."
+        ),
+    )
 
 
 def async_register_websocket_api(hass: HomeAssistant) -> None:
@@ -134,6 +149,7 @@ def handle_locations_list(
         vol.Required("type"): WS_TYPE_LOCATIONS_CREATE,
         vol.Required("name"): str,
         vol.Optional("parent_id"): vol.Any(str, None),
+        vol.Optional("ha_area_id"): vol.Any(str, None),
         vol.Optional("meta"): dict,
         vol.Optional("entry_id"): str,
     }
@@ -145,50 +161,7 @@ def handle_locations_create(
     msg: dict[str, Any],
 ) -> None:
     """Handle locations/create command."""
-    kernel = _get_kernel(hass, connection, msg)
-    if kernel is None:
-        return
-
-    loc_mgr = kernel["location_manager"]
-
-    name = msg["name"]
-    parent_id = msg.get("parent_id")
-    meta = msg.get("meta", {})
-
-    # Generate ID from name
-    location_id = name.lower().replace(" ", "_")
-
-    try:
-        # Create location
-        loc_mgr.create_location(
-            id=location_id,
-            name=name,
-            parent_id=parent_id,
-            is_explicit_root=(parent_id is None),
-        )
-
-        # Set meta config if provided
-        if meta:
-            loc_mgr.set_module_config(location_id, "_meta", meta)
-
-        # Return created location
-        location = loc_mgr.get_location(location_id)
-        connection.send_result(
-            msg["id"],
-            {
-                "location": {
-                    "id": location.id,
-                    "name": location.name,
-                    "parent_id": location.parent_id,
-                    "is_explicit_root": location.is_explicit_root,
-                    "ha_area_id": location.ha_area_id,
-                    "entity_ids": location.entity_ids,
-                    "modules": location.modules,
-                }
-            },
-        )
-    except ValueError as e:
-        connection.send_error(msg["id"], "invalid_format", str(e))
+    _reject_location_mutation(connection, msg)
 
 
 @websocket_api.websocket_command(
@@ -206,61 +179,7 @@ def handle_locations_update(
     msg: dict[str, Any],
 ) -> None:
     """Handle locations/update command."""
-    kernel = _get_kernel(hass, connection, msg)
-    if kernel is None:
-        return
-
-    loc_mgr = kernel["location_manager"]
-
-    location_id = msg["location_id"]
-    changes = msg["changes"]
-
-    try:
-        location = loc_mgr.get_location(location_id)
-        if not location:
-            connection.send_error(msg["id"], "not_found", f"Location {location_id} not found")
-            return
-
-        # Extract update parameters
-        update_kwargs = {}
-        if "name" in changes:
-            update_kwargs["name"] = changes["name"]
-        if "parent_id" in changes:
-            update_kwargs["parent_id"] = changes["parent_id"]
-
-        # Update location using LocationManager.update_location()
-        if update_kwargs:
-            updated = loc_mgr.update_location(location_id, **update_kwargs)
-        else:
-            updated = location
-
-        # Handle meta updates (per ADR-HA-005)
-        if "meta" in changes:
-            meta = changes["meta"]
-            # Merge with existing meta
-            existing_meta = location.modules.get("_meta", {})
-            merged_meta = {**existing_meta, **meta}
-            loc_mgr.set_module_config(location_id, "_meta", merged_meta)
-            # Reload to get updated modules
-            updated = loc_mgr.get_location(location_id)
-
-        # Return updated location
-        connection.send_result(
-            msg["id"],
-            {
-                "location": {
-                    "id": updated.id,
-                    "name": updated.name,
-                    "parent_id": updated.parent_id,
-                    "is_explicit_root": updated.is_explicit_root,
-                    "ha_area_id": updated.ha_area_id,
-                    "entity_ids": updated.entity_ids,
-                    "modules": updated.modules,
-                }
-            },
-        )
-    except (ValueError, KeyError) as e:
-        connection.send_error(msg["id"], "update_failed", str(e))
+    _reject_location_mutation(connection, msg)
 
 
 @websocket_api.websocket_command(
@@ -277,19 +196,7 @@ def handle_locations_delete(
     msg: dict[str, Any],
 ) -> None:
     """Handle locations/delete command."""
-    kernel = _get_kernel(hass, connection, msg)
-    if kernel is None:
-        return
-
-    loc_mgr = kernel["location_manager"]
-
-    location_id = msg["location_id"]
-
-    try:
-        loc_mgr.delete_location(location_id)
-        connection.send_result(msg["id"], {"success": True})
-    except (ValueError, KeyError) as e:
-        connection.send_error(msg["id"], "delete_failed", str(e))
+    _reject_location_mutation(connection, msg)
 
 
 @websocket_api.websocket_command(
@@ -308,36 +215,7 @@ def handle_locations_reorder(
     msg: dict[str, Any],
 ) -> None:
     """Handle locations/reorder command."""
-    kernel = _get_kernel(hass, connection, msg)
-    if kernel is None:
-        return
-
-    loc_mgr = kernel["location_manager"]
-
-    location_id = msg["location_id"]
-    new_parent_id = msg["new_parent_id"]
-    new_index = msg["new_index"]
-
-    try:
-        location = loc_mgr.get_location(location_id)
-        if not location:
-            connection.send_error(msg["id"], "not_found", f"Location {location_id} not found")
-            return
-
-        updated = loc_mgr.reorder_location(location_id, new_parent_id, new_index)
-        resolved_parent_id = updated.parent_id
-
-        connection.send_result(
-            msg["id"],
-            {
-                "success": True,
-                "location_id": location_id,
-                "parent_id": resolved_parent_id,
-                "index": new_index,
-            },
-        )
-    except (ValueError, KeyError) as e:
-        connection.send_error(msg["id"], "reorder_failed", str(e))
+    _reject_location_mutation(connection, msg)
 
 
 @websocket_api.websocket_command(
@@ -612,7 +490,7 @@ def handle_sync_status(
             {
                 "location_id": location_id,
                 "name": location.name,
-                "ha_area_id": meta.get("ha_area_id"),
+                "ha_area_id": location.ha_area_id or meta.get("ha_area_id"),
                 "ha_floor_id": meta.get("ha_floor_id"),
                 "sync_source": meta.get("sync_source"),
                 "sync_enabled": meta.get("sync_enabled", True),

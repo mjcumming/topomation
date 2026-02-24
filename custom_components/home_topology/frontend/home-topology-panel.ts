@@ -469,20 +469,11 @@ export class HomeTopologyPanel extends LitElement {
           ${this._renderConflictBanner()}
           <div class="header">
             <div class="header-title">Home Topology</div>
-            <div class="header-subtitle">Model your space and attach behavior modules.</div>
+            <div class="header-subtitle">
+              Locations are synced from Home Assistant Areas/Floors.
+              Manage structure in HA Settings; configure behavior here.
+            </div>
             <div class="header-actions">
-              <button
-                class="button button-primary"
-                @click=${this._handleNewLocation}
-                data-testid="new-location-button"
-              >
-                + New Location
-              </button>
-              ${this._locations.length === 0 ? html`
-                <button class="button button-secondary" @click=${this._seedDemoData}>
-                  ⚡ Seed Demo Data
-                </button>
-              ` : ''}
               <button class="button button-secondary" @click=${this._toggleEventLog}>
                 ${this._eventLogOpen ? "Hide Log" : "Event Log"}
               </button>
@@ -494,6 +485,7 @@ export class HomeTopologyPanel extends LitElement {
             .version=${this._locationsVersion}
             .selectedId=${this._selectedId}
             .occupancyStates=${this._occupancyStateByLocation}
+            .readOnly=${true}
             @location-selected=${this._handleLocationSelected}
             @location-create=${this._handleLocationCreate}
             @location-edit=${this._handleLocationEdit}
@@ -717,145 +709,31 @@ export class HomeTopologyPanel extends LitElement {
       e.preventDefault();
       e.stopPropagation();
     }
-    console.log("[Panel] _handleNewLocation called");
-    console.log("[Panel] Current _locationDialogOpen:", this._locationDialogOpen);
-    this._editingLocation = undefined;
-
-    // Default new-location parent/type based on current selection (supports sub-locations)
-    const selected = this._selectedId
-      ? this._locations.find((l) => l.id === this._selectedId)
-      : undefined;
-    if (selected) {
-      // Simplified type system: only "floor" and "area"
-      // Areas can nest under areas, floors can only be at root
-      this._newLocationDefaults = { parentId: selected.id, type: "area" };
-    } else {
-      this._newLocationDefaults = undefined;
-    }
-
-    this._locationDialogOpen = true;
-    console.log("[Panel] Opening dialog with defaults:", this._newLocationDefaults);
-    this.requestUpdate();
+    this._showToast("Manage Areas/Floors in Home Assistant Settings", "warning");
   }
 
   private _handleLocationCreate(): void {
-    this._editingLocation = undefined;
-
-    // Same behavior as header button: create under current selection when possible.
-    const selected = this._selectedId
-      ? this._locations.find((l) => l.id === this._selectedId)
-      : undefined;
-    if (selected) {
-      // Simplified type system: only "floor" and "area"
-      // Areas can nest under areas, floors can only be at root
-      const inferredType: LocationType = "area";
-      this._newLocationDefaults = { parentId: selected.id, type: inferredType };
-    } else {
-      this._newLocationDefaults = undefined;
-    }
-
-    this._locationDialogOpen = true;
+    this._showToast("Manage Areas/Floors in Home Assistant Settings", "warning");
   }
 
   private _handleLocationEdit(e: CustomEvent): void {
-    const { location } = e.detail;
-    console.log("[Panel] _handleLocationEdit called for:", location.name);
-    this._editingLocation = location;
-    this._locationDialogOpen = true;
-    this.requestUpdate();
+    e.stopPropagation();
+    this._showToast("Rename locations in Home Assistant Settings", "warning");
   }
 
   private async _handleLocationMoved(e: CustomEvent): Promise<void> {
-    const { locationId, newParentId, newIndex } = e.detail;
-    console.log("Location moved", { locationId, newParentId, newIndex });
-
-    try {
-      await this.hass.callWS({
-        type: "home_topology/locations/reorder",
-        location_id: locationId,
-        new_parent_id: newParentId,
-        new_index: newIndex
-      });
-
-      // Reload to get updated hierarchy
-      await this._loadLocations(true);
-      this._locationsVersion += 1;
-      this._showToast("Location moved", 'success');
-      this._logEvent("ui", "location moved", { locationId, newParentId, newIndex });
-    } catch (error: any) {
-      console.error("Failed to move location:", error);
-      this._showToast(`Failed to move: ${error.message}`, 'error');
-      this._logEvent("error", "location move failed", error?.message || error);
-      await this._loadLocations(true);
-    }
+    e.stopPropagation();
+    this._showToast("Reparent/reorder in Home Assistant Settings", "warning");
   }
 
   private async _handleLocationRenamed(e: CustomEvent): Promise<void> {
-    const { locationId, newName } = e.detail;
-    console.log("Location renamed", { locationId, newName });
-
-    // Serialize renames per location to ensure "last user action wins"
-    // and avoid out-of-order WS completions reverting the name.
-    await this._enqueueLocationOp(locationId, async () => {
-      try {
-        await this.hass.callWS({
-          type: "home_topology/locations/update",
-          location_id: locationId,
-          changes: { name: newName }
-        });
-
-        // Update local state
-        const index = this._locations.findIndex(l => l.id === locationId);
-        if (index !== -1) {
-          this._locations[index] = { ...this._locations[index], name: newName };
-          this._locations = [...this._locations];
-          this._locationsVersion += 1;
-        }
-
-        this._showToast(`Renamed to "${newName}"`, 'success');
-        this._logEvent("ui", "location renamed", { locationId, newName });
-        // Coalesced reload to sync with backend + handle any side effects (area registry sync, etc.)
-        this._scheduleReload(true);
-      } catch (error: any) {
-        console.error("Failed to rename location:", error);
-        this._showToast(`Failed to rename: ${error.message}`, 'error');
-        this._logEvent("error", "location rename failed", error?.message || error);
-        this._scheduleReload(true);
-      }
-    });
+    e.stopPropagation();
+    this._showToast("Rename locations in Home Assistant Settings", "warning");
   }
 
   private async _handleLocationDelete(e: CustomEvent): Promise<void> {
-    const location = e.detail.location;
-    console.log("[Panel] Location delete requested", location);
-
-    try {
-      const result = await this.hass.callWS({
-        type: "home_topology/locations/delete",
-        location_id: location.id
-      });
-      console.log("[Panel] Delete API result:", result);
-
-      // Remove from local state immediately
-      this._locations = this._locations.filter(l => l.id !== location.id);
-      this._locationsVersion += 1;
-
-      // Reload to sync with server
-      await this._loadLocations(true);
-
-      // Clear selection if deleted
-      if (this._selectedId === location.id) {
-        this._selectedId = this._locations[0]?.id;
-      }
-
-      this._showToast(`Deleted "${location.name}"`, 'success');
-      this._logEvent("ui", "location deleted", { locationId: location.id });
-    } catch (error: any) {
-      console.error("[Panel] Failed to delete location:", error);
-      this._showToast(`Failed to delete: ${error.message}`, 'error');
-      this._logEvent("error", "location delete failed", error?.message || error);
-      await this._loadLocations(true);
-    }
+    e.stopPropagation();
+    this._showToast("Delete locations in Home Assistant Settings", "warning");
   }
 
   private async _handleLocationDialogSaved(e: CustomEvent): Promise<void> {

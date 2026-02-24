@@ -1,9 +1,16 @@
 # home-topology Integration Guide
 
-**Version**: 2.4  
-**Date**: 2026.02.23  
+**Version**: 2.6  
+**Date**: 2026.02.24  
 **Audience**: Platform developers integrating home-topology into Home Assistant.
 
+> **v2.6 Changes**:
+> - Explicit light interaction signal keys (`power`, `level`, `color`)
+> - Bridge payload examples now include optional `signal_key`
+>
+> **v2.5 Changes**:
+> - HA Area/Floor registry writeback disabled in adapter policy (manage in HA menus)
+>
 > **v2.4 Changes**:
 > - Occupancy v3 signal contract (`occupancy.signal`) examples
 > - Explicit `event_type` + `source_id` payload fields in bridge examples
@@ -77,6 +84,7 @@ bus.publish(
         payload={
             "event_type": "trigger",
             "source_id": "binary_sensor.kitchen_motion",
+            "signal_key": None,
             "old_state": "off",
             "new_state": "on",
         },
@@ -175,6 +183,7 @@ bus.publish(
         payload={
             "event_type": "trigger",
             "source_id": "binary_sensor.motion",
+            "signal_key": None,
             "old_state": "off",
             "new_state": "on",
         },
@@ -490,6 +499,7 @@ def state_changed_listener(hass, event):
         payload={
             "event_type": "trigger" if new_state.state == "on" else "clear",
             "source_id": entity_id,
+            "signal_key": None,  # e.g. playback/volume/mute or power/level/color
             "old_state": old_state.state if old_state else None,
             "new_state": new_state.state,
             "attributes": dict(new_state.attributes),
@@ -506,11 +516,21 @@ def state_changed_listener(hass, event):
 
 | Platform Event | Kernel Event Type | Notes |
 |----------------|-------------------|-------|
-| `state_changed` | `occupancy.signal` | Emit `event_type=trigger/clear` + `source_id` |
+| `state_changed` | `occupancy.signal` | Emit `event_type=trigger/clear` + `source_id` (+ optional `signal_key`) |
 | Time trigger | `time.tick` | Periodic or scheduled |
 | Service call | `service.called` | User-initiated actions |
 | Platform start | `platform.started` | Initial load complete |
 | Platform stop | `platform.stopping` | Save state before shutdown |
+
+### Signal Key Conventions (Occupancy v3)
+
+Use `signal_key` when an entity exposes multiple interaction channels:
+
+- media player: `playback`, `volume`, `mute`
+- light: `power`, `level`, `color`
+
+Persist source IDs as `{entity_id}::{signal_key}` to keep routing deterministic.
+For single-channel entities (e.g., basic motion/door/fan), omit `signal_key`.
 
 ### Event Payload Guidelines
 
@@ -1516,7 +1536,7 @@ This guide covered:
 The HA wrapper services map directly to occupancy module APIs:
 
 - `home_topology.trigger` -> `occupancy.trigger(location_id, source_id, timeout)`
-- `home_topology.clear` -> `occupancy.release(location_id, source_id, trailing_timeout)`
+- `home_topology.clear` -> `occupancy.clear(location_id, source_id, trailing_timeout)` (legacy fallback: `release`)
 - `home_topology.lock` -> `occupancy.lock(location_id, source_id)`
 - `home_topology.unlock` -> `occupancy.unlock(location_id, source_id)`
 - `home_topology.vacate_area` -> `occupancy.vacate_area(location_id, source_id, include_locked)`

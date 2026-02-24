@@ -310,8 +310,7 @@ export class HtLocationDialog extends LitElement {
       name: "Name",
       type: "Type",
       parent_id: "Parent Location",
-      icon: "Area Icon (optional)",
-      create_ha_area: "Create Home Assistant Area"
+      icon: "Area Icon (optional)"
     };
     return labels[schema.name] || schema.name;
   };
@@ -345,15 +344,6 @@ export class HtLocationDialog extends LitElement {
 
     try {
       if (this.location) {
-        // If this is an HA Area-backed location, persist icon into HA Area Registry.
-        if (this._config.type === "area" && this.location.ha_area_id) {
-          await this.hass.callWS({
-            type: "config/area_registry/update",
-            area_id: this.location.ha_area_id,
-            icon: this._config.icon || null,
-          });
-        }
-
         // Update existing location
         await this.hass.callWS({
           type: "home_topology/locations/update",
@@ -374,23 +364,11 @@ export class HtLocationDialog extends LitElement {
           }
         });
       } else {
-        let haAreaId: string | null = null;
-        if (this._config.type === "area") {
-          // Create an HA Area so the icon persists in HA's registry.
-          const created = await this.hass.callWS<{ area_id: string }>({
-            type: "config/area_registry/create",
-            name: this._config.name,
-            icon: this._config.icon || undefined,
-          });
-          haAreaId = created.area_id;
-        }
-
         // Create new location
         await this.hass.callWS({
           type: "home_topology/locations/create",
           name: this._config.name,
           parent_id: this._config.parent_id || null,
-          ha_area_id: haAreaId,
           meta: {
             type: this._config.type
           }

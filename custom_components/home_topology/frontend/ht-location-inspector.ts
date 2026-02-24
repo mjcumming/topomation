@@ -6,6 +6,8 @@ import { getLocationIcon } from "./icon-utils";
 import { getLocationType } from "./hierarchy-rules";
 import { applyModeDefaults, getSourceDefaultsForEntity } from "./source-profile-utils";
 
+type SourceSignalKey = OccupancySource["signal_key"];
+
 console.log("[ht-location-inspector] module loaded");
 
 // Dev UX: custom elements cannot be hot-replaced. On HMR updates, force a quick reload.
@@ -31,11 +33,12 @@ export class HtLocationInspector extends LitElement {
   };
 
   @state() private _activeTab: "occupancy" | "actions" = "occupancy";
-  @state() private _editingSourceIndex?: number;
-  @state() private _sourceDraft?: OccupancySource;
+  @state() private _stagedSources?: OccupancySource[];
+  @state() private _sourcesDirty = false;
   @state() private _savingSource = false;
   @state() private _externalAreaId = "";
   @state() private _externalEntityId = "";
+  private _onTimeoutMemory: Record<string, number> = {};
 
   static styles = [
     sharedStyles,
@@ -180,6 +183,12 @@ export class HtLocationInspector extends LitElement {
         font-weight: 500;
       }
 
+      .config-help {
+        margin-top: 3px;
+        color: var(--text-secondary-color);
+        font-size: 12px;
+      }
+
       .config-value {
         display: flex;
         align-items: center;
@@ -319,6 +328,28 @@ export class HtLocationInspector extends LitElement {
         color: var(--warning-color);
       }
 
+      .lock-banner {
+        margin: 0 0 var(--spacing-md);
+        padding: 10px 12px;
+        border: 1px solid rgba(var(--rgb-warning-color), 0.4);
+        border-radius: 8px;
+        background: rgba(var(--rgb-warning-color), 0.1);
+      }
+
+      .lock-title {
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+        color: var(--warning-color);
+      }
+
+      .lock-details {
+        margin-top: 4px;
+        font-size: 13px;
+        color: var(--primary-text-color);
+      }
+
       .subsection-title {
         font-size: 12px;
         font-weight: 700;
@@ -343,6 +374,18 @@ export class HtLocationInspector extends LitElement {
         max-width: 820px;
       }
 
+      .source-card {
+        border: 1px solid var(--divider-color);
+        border-radius: 8px;
+        background: var(--card-background-color);
+        overflow: hidden;
+      }
+
+      .source-card.enabled {
+        border-color: rgba(var(--rgb-primary-color), 0.25);
+        background: rgba(var(--rgb-primary-color), 0.03);
+      }
+
       .subsection-help {
         margin-bottom: var(--spacing-sm);
         color: var(--text-secondary-color);
@@ -352,19 +395,17 @@ export class HtLocationInspector extends LitElement {
 
       .candidate-item {
         display: grid;
-        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-columns: auto minmax(0, 1fr);
         gap: var(--spacing-md);
         align-items: center;
         padding: 10px 12px;
-        border: 1px solid var(--divider-color);
-        border-radius: 8px;
-        background: var(--card-background-color);
-        cursor: pointer;
+        border: none;
+        border-radius: 0;
+        background: transparent;
       }
 
       .candidate-item:hover {
-        border-color: rgba(var(--rgb-primary-color), 0.35);
-        background: rgba(var(--rgb-primary-color), 0.03);
+        background: rgba(var(--rgb-primary-color), 0.04);
       }
 
       .candidate-title {
@@ -378,11 +419,57 @@ export class HtLocationInspector extends LitElement {
         font-size: 12px;
       }
 
-      .candidate-actions {
+      .candidate-submeta {
+        margin-top: 2px;
+        color: var(--text-secondary-color);
+        font-size: 11px;
+      }
+
+      .candidate-headline {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .inline-mode-select {
+        min-width: 180px;
+        border: 1px solid var(--divider-color);
+        border-radius: 6px;
+        padding: 4px 8px;
+        font-size: 12px;
+        background: var(--card-background-color);
+        color: var(--primary-text-color);
+      }
+
+      .inline-mode-group {
         display: inline-flex;
         align-items: center;
         gap: 8px;
-        white-space: nowrap;
+      }
+
+      .inline-mode-label {
+        color: var(--text-secondary-color);
+        font-size: 12px;
+        font-weight: 600;
+      }
+
+      .source-enable-control {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .source-enable-input {
+        width: 18px;
+        height: 18px;
+        cursor: pointer;
+        accent-color: var(--primary-color);
+      }
+
+      .source-enable-input:focus-visible {
+        outline: 2px solid rgba(var(--rgb-primary-color), 0.4);
+        outline-offset: 2px;
       }
 
       .status-pill {
@@ -420,17 +507,24 @@ export class HtLocationInspector extends LitElement {
       }
 
       .source-editor {
-        margin-top: 10px;
-        border: 1px solid var(--divider-color);
-        border-radius: 8px;
-        padding: 10px;
-        background: rgba(var(--rgb-primary-color), 0.04);
+        margin: 0;
+        border: none;
+        border-top: 1px solid rgba(var(--rgb-primary-color), 0.2);
+        border-radius: 0;
+        padding: 10px 12px;
+        background: rgba(var(--rgb-primary-color), 0.07);
       }
 
       .editor-grid {
         display: grid;
-        grid-template-columns: repeat(2, minmax(180px, 1fr));
+        grid-template-columns: repeat(2, minmax(220px, 1fr));
         gap: 10px 12px;
+      }
+
+      .media-signals {
+        margin-bottom: 10px;
+        color: var(--text-secondary-color);
+        font-size: 12px;
       }
 
       .editor-field {
@@ -476,6 +570,12 @@ export class HtLocationInspector extends LitElement {
         margin-top: 10px;
         display: flex;
         gap: 8px;
+        justify-content: flex-end;
+      }
+
+      .sources-actions {
+        margin-top: 10px;
+        max-width: 820px;
       }
 
       .external-composer {
@@ -565,28 +665,46 @@ export class HtLocationInspector extends LitElement {
 
   protected willUpdate(changedProps: Map<string, unknown>): void {
     if (changedProps.has("location")) {
-      this._cancelEditSource();
-      this._externalAreaId = "";
-      this._externalEntityId = "";
+      const prev = changedProps.get("location") as LocationNode | undefined;
+      const prevId = prev?.id || "";
+      const nextId = this.location?.id || "";
+      if (prevId !== nextId) {
+        this._stagedSources = undefined;
+        this._sourcesDirty = false;
+        this._externalAreaId = "";
+        this._externalEntityId = "";
+        this._onTimeoutMemory = {};
+      }
     }
   }
 
   private _renderHeader() {
     if (!this.location) return "";
+    const areaId = this.location.ha_area_id;
+    const subtitleLabel = areaId ? "HA Area ID:" : "Location ID:";
+    const subtitleValue = areaId || this.location.id;
 
     return html`
       <div class="header">
         <div class="header-icon">
-          <ha-icon .icon=${getLocationIcon(this.location)}></ha-icon>
+          <ha-icon .icon=${this._headerIcon(this.location)}></ha-icon>
         </div>
         <div class="header-content">
           <div class="location-name">${this.location.name}</div>
           <div class="location-id">
-            <span class="id-label">Identifier:</span>${this.location.id}
+            <span class="id-label">${subtitleLabel}</span>${subtitleValue}
           </div>
         </div>
       </div>
     `;
+  }
+
+  private _headerIcon(location: LocationNode): string {
+    const areaId = location.ha_area_id;
+    if (areaId && this.hass?.areas?.[areaId]?.icon) {
+      return this.hass.areas[areaId].icon;
+    }
+    return getLocationIcon(location);
   }
 
   private _renderTabs() {
@@ -594,13 +712,19 @@ export class HtLocationInspector extends LitElement {
       <div class="tabs">
         <button
           class="tab ${this._activeTab === "occupancy" ? "active" : ""}"
-          @click=${() => (this._activeTab = "occupancy")}
+          @click=${() => {
+            this._activeTab = "occupancy";
+            this.requestUpdate();
+          }}
         >
           Occupancy
         </button>
         <button
           class="tab ${this._activeTab === "actions" ? "active" : ""}"
-          @click=${() => (this._activeTab = "actions")}
+          @click=${() => {
+            this._activeTab = "actions";
+            this.requestUpdate();
+          }}
         >
           Actions
         </button>
@@ -623,9 +747,8 @@ export class HtLocationInspector extends LitElement {
 
     const config = (this.location.modules.occupancy || {}) as OccupancyConfig;
     const isFloor = this._isFloorLocation();
-    const enabled = config.enabled ?? true;
-    const timeout = config.default_timeout || 300;
     const floorSourceCount = (config.occupancy_sources || []).length;
+    const lockState = this._getLockState();
 
     if (isFloor) {
       return html`
@@ -652,97 +775,251 @@ export class HtLocationInspector extends LitElement {
 
     return html`
       <div>
-        <!-- Occupancy settings -->
         <div class="card-section">
+          ${lockState.isLocked ? html`
+            <div class="lock-banner">
+              <div class="lock-title">Locked</div>
+              <div class="lock-details">
+                ${lockState.lockedBy.length
+                  ? html`Held by ${lockState.lockedBy.join(", ")}.`
+                  : html`Occupancy is currently held by a lock.`}
+              </div>
+            </div>
+          ` : ""}
           <div class="section-title">
-            <ha-icon .icon=${"mdi:tune-variant"}></ha-icon>
-            Occupancy Controls
+            Sources
           </div>
-          <div class="settings-grid">
-            <div class="config-row">
-              <div class="config-label">Occupancy Tracking Enabled</div>
-              <div class="config-value">
-                <input
-                  class="switch-input"
-                  type="checkbox"
-                  .checked=${enabled}
-                  @change=${this._toggleEnabled}
-                />
-                <span class="text-muted">${enabled ? "On" : "Off"}</span>
-              </div>
+          <div class="subsection-help">
+            Use the left control to include a source. Included sources show editable behavior below.
+          </div>
+          ${this._renderAreaSensorList(config)}
+          <div class="subsection-help">
+            Need cross-area behavior? Add a source from another area.
+          </div>
+          ${this._renderExternalSourceComposer(config)}
+          ${this._sourcesDirty ? html`
+            <div class="editor-actions sources-actions">
+              <button
+                class="button button-secondary"
+                ?disabled=${this._savingSource}
+                @click=${this._discardSourceChanges}
+              >
+                Discard
+              </button>
+              <button
+                class="button button-primary"
+                ?disabled=${this._savingSource}
+                @click=${this._saveSourceChanges}
+              >
+                Save
+              </button>
             </div>
-
-            ${enabled ? html`
-              <div class="config-row">
-                <div class="config-label">Default Timeout</div>
-                <div class="config-value">
-                  <input
-                    class="timeout-slider"
-                    type="range"
-                    min="1"
-                    max="120"
-                    step="1"
-                    .value=${String(Math.max(1, Math.floor(timeout / 60)))}
-                    @input=${this._handleTimeoutSliderInput}
-                    @change=${this._handleTimeoutChange}
-                  />
-                  <input
-                    type="number"
-                    class="input"
-                    min="1"
-                    max="120"
-                    .value=${Math.max(1, Math.floor(timeout / 60))}
-                    @change=${this._handleTimeoutChange}
-                  />
-                  <span class="text-muted">min</span>
-                </div>
-              </div>
-            ` : ""}
-          </div>
+          ` : ""}
         </div>
-
-        <!-- Occupancy sources -->
-        ${enabled ? html`
-          <div class="card-section">
-            <div class="section-title">
-              Occupancy Sources
-            </div>
-            <div class="subsection-header">
-              <div class="subsection-title">Area Sensors</div>
-            </div>
-            <div class="subsection-help">
-              Use sensors assigned to this area first. For cross-area behavior, add a sensor from another area below.
-            </div>
-            ${this._renderExternalSourceComposer(config)}
-            ${this._renderAreaSensorList(config)}
-            <div class="subsection-header">
-              <div class="subsection-title">Configured Sensors</div>
-            </div>
-            <div class="sources-list">
-              ${this._renderOccupancySources(config)}
-            </div>
-          </div>
-        ` : ""}
       </div>
     `;
   }
 
+  private _isMediaEntity(entityId: string): boolean {
+    return entityId.startsWith("media_player.");
+  }
+
+  private _mediaSignalLabel(signalKey?: SourceSignalKey): string {
+    if (signalKey === "color") return "Color change";
+    if (signalKey === "power") return "Power";
+    if (signalKey === "level") return "Level change";
+    if (signalKey === "volume") return "Volume";
+    if (signalKey === "mute") return "Mute";
+    return "Playback";
+  }
+
+  private _signalDescription(signalKey?: SourceSignalKey): string {
+    if (signalKey === "color") return "RGB/color changes";
+    if (signalKey === "power") return "on/off";
+    if (signalKey === "level") return "brightness changes";
+    if (signalKey === "volume") return "volume changes";
+    if (signalKey === "mute") return "mute/unmute";
+    return "playback start/stop";
+  }
+
+  private _sourceKey(entityId: string, signalKey?: SourceSignalKey): string {
+    return signalKey ? `${entityId}::${signalKey}` : entityId;
+  }
+
+  private _sourceKeyFromSource(source: OccupancySource): string {
+    if (source.signal_key) return this._sourceKey(source.entity_id, source.signal_key);
+    return this._sourceKey(source.entity_id);
+  }
+
+  private _defaultSignalKeyForEntity(entityId: string): SourceSignalKey | undefined {
+    if (this._isMediaEntity(entityId)) return "playback";
+    if (this._isDimmableEntity(entityId) || this._isColorCapableEntity(entityId)) return "power";
+    return undefined;
+  }
+
+  private _candidateItemsForEntity(
+    entityId: string
+  ): Array<{ key: string; entityId: string; signalKey?: SourceSignalKey }> {
+    if (!this._isMediaEntity(entityId)) {
+      const isDimmable = this._isDimmableEntity(entityId);
+      const isColorCapable = this._isColorCapableEntity(entityId);
+      if (!isDimmable && !isColorCapable) {
+        return [{ key: this._sourceKey(entityId), entityId }];
+      }
+      const signalKeys: SourceSignalKey[] = ["power"];
+      if (isDimmable) signalKeys.push("level");
+      if (isColorCapable) signalKeys.push("color");
+      return signalKeys.map((signalKey) => ({
+        key: this._sourceKey(entityId, signalKey),
+        entityId,
+        signalKey,
+      }));
+    }
+
+    return (["playback", "volume", "mute"] as const).map((signalKey) => ({
+      key: this._sourceKey(entityId, signalKey),
+      entityId,
+      signalKey,
+    }));
+  }
+
+  private _candidateTitle(entityId: string, signalKey?: SourceSignalKey): string {
+    const baseName = this._entityName(entityId);
+    if (signalKey && (entityId.startsWith("media_player.") || entityId.startsWith("light."))) {
+      return `${baseName} — ${this._mediaSignalLabel(signalKey)}`;
+    }
+    if (!this._isMediaEntity(entityId) && !this._isDimmableEntity(entityId) && !this._isColorCapableEntity(entityId)) {
+      return baseName;
+    }
+    return `${baseName} — ${this._mediaSignalLabel(signalKey)}`;
+  }
+
+  private _mediaSignalDefaults(
+    entityId: string,
+    signalKey: "playback" | "volume" | "mute"
+  ): Partial<OccupancySource> {
+    if (signalKey === "playback") {
+      return {
+        entity_id: entityId,
+        source_id: this._sourceKey(entityId, "playback"),
+        signal_key: "playback",
+        mode: "any_change",
+        on_event: "trigger",
+        on_timeout: 30 * 60,
+        off_event: "none",
+        off_trailing: 0,
+      };
+    }
+    return {
+      entity_id: entityId,
+      source_id: this._sourceKey(entityId, signalKey),
+      signal_key: signalKey,
+      mode: "any_change",
+      on_event: "trigger",
+      on_timeout: 30 * 60,
+      off_event: "none",
+      off_trailing: 0,
+    };
+  }
+
+  private _lightSignalDefaults(
+    entityId: string,
+    signalKey: "power" | "level" | "color"
+  ): Partial<OccupancySource> {
+    if (signalKey === "power") {
+      return {
+        entity_id: entityId,
+        source_id: this._sourceKey(entityId, "power"),
+        signal_key: "power",
+        mode: "any_change",
+        on_event: "trigger",
+        on_timeout: 30 * 60,
+        off_event: "none",
+        off_trailing: 0,
+      };
+    }
+
+    if (signalKey === "color") {
+      return {
+        entity_id: entityId,
+        source_id: this._sourceKey(entityId, "color"),
+        signal_key: "color",
+        mode: "any_change",
+        on_event: "trigger",
+        on_timeout: 30 * 60,
+        off_event: "none",
+        off_trailing: 0,
+      };
+    }
+
+    return {
+      entity_id: entityId,
+      source_id: this._sourceKey(entityId, "level"),
+      signal_key: "level",
+      mode: "any_change",
+      on_event: "trigger",
+      on_timeout: 30 * 60,
+      off_event: "none",
+      off_trailing: 0,
+    };
+  }
+
+  private _isDimmableEntity(entityId: string): boolean {
+    const stateObj = this.hass?.states?.[entityId];
+    if (!stateObj) return false;
+    const domain = entityId.split(".", 1)[0];
+    if (domain !== "light") return false;
+    const attrs = stateObj.attributes || {};
+    if (typeof attrs.brightness === "number") return true;
+    const colorModes = attrs.supported_color_modes;
+    if (Array.isArray(colorModes)) {
+      return colorModes.some((mode: string) => mode && mode !== "onoff");
+    }
+    return false;
+  }
+
+  private _isColorCapableEntity(entityId: string): boolean {
+    const stateObj = this.hass?.states?.[entityId];
+    if (!stateObj) return false;
+    const domain = entityId.split(".", 1)[0];
+    if (domain !== "light") return false;
+    const attrs = stateObj.attributes || {};
+    if (attrs.rgb_color || attrs.hs_color || attrs.xy_color) return true;
+    const colorModes = attrs.supported_color_modes;
+    if (Array.isArray(colorModes)) {
+      return colorModes.some((mode: string) => ["hs", "xy", "rgb", "rgbw", "rgbww"].includes(mode));
+    }
+    return false;
+  }
+
   private _renderAreaSensorList(config: OccupancyConfig) {
     if (!this.location) return "";
-    const sources = config.occupancy_sources || [];
-    const sourceIndexByEntity = new Map<string, number>();
-    sources.forEach((source, index) => sourceIndexByEntity.set(source.entity_id, index));
+    const sources = this._workingSources(config);
+    const sourceIndexByKey = new Map<string, number>();
+    sources.forEach((source, index) => sourceIndexByKey.set(this._sourceKeyFromSource(source), index));
 
-    const entityIds = [...(this.location.entity_ids || [])].sort((a, b) =>
+    const areaEntityIds = [...(this.location.entity_ids || [])].sort((a, b) =>
       this._entityName(a).localeCompare(this._entityName(b))
     );
+    const areaEntitySet = new Set(areaEntityIds);
+    const candidateAreaEntityIds = areaEntityIds.filter((entityId) => this._isCandidateEntity(entityId));
+    const candidateItems = candidateAreaEntityIds.flatMap((entityId) => this._candidateItemsForEntity(entityId));
+    const candidateItemKeys = new Set(candidateItems.map((item) => item.key));
+    const configuredExtraItems = sources
+      .filter((source) => !candidateItemKeys.has(this._sourceKeyFromSource(source)))
+      .map((source) => ({
+        key: this._sourceKeyFromSource(source),
+        entityId: source.entity_id,
+        signalKey: source.signal_key,
+      }));
+    const items = [...candidateItems, ...configuredExtraItems];
 
-    if (!entityIds.length) {
+    if (!items.length) {
       return html`
         <div class="empty-state">
           <div class="text-muted">
-            No entities are assigned to this area in Home Assistant yet.
-            Add entities to this area, or add one from another area.
+            No occupancy-relevant entities found yet.
+            Add one from another area to get started.
           </div>
         </div>
       `;
@@ -750,53 +1027,68 @@ export class HtLocationInspector extends LitElement {
 
     return html`
       <div class="candidate-list">
-        ${entityIds.map((entityId) => {
-          const sourceIndex = sourceIndexByEntity.get(entityId);
+        ${items.map((item) => {
+          const sourceIndex = sourceIndexByKey.get(item.key);
           const configured = sourceIndex !== undefined;
           const source = configured ? sources[sourceIndex] : undefined;
+          const draft = configured && source ? source : undefined;
+          const modeOptions = this._modeOptionsForEntity(item.entityId);
           return html`
-            <div
-              class="candidate-item"
-            >
-              <div>
-                <div class="candidate-title">${this._entityName(entityId)}</div>
-                <div class="candidate-meta">${entityId} • ${this._entityState(entityId)}</div>
+            <div class="source-card ${configured ? "enabled" : ""}">
+              <div class="candidate-item">
+                <div class="source-enable-control">
+                  <input
+                    type="checkbox"
+                    class="source-enable-input"
+                    aria-label="Include source"
+                    .checked=${configured}
+                    @change=${(ev: Event) => {
+                      const checked = (ev.target as HTMLInputElement).checked;
+                      if (checked && !configured) {
+                        this._addSourceWithDefaults(item.entityId, config, {
+                          resetExternalPicker: false,
+                          signalKey: item.signalKey,
+                        });
+                      } else if (!checked && configured) {
+                        this._removeSource(sourceIndex, config);
+                      }
+                    }}
+                  />
+                </div>
+                <div>
+                  <div class="candidate-headline">
+                    <div class="candidate-title">${this._candidateTitle(item.entityId, item.signalKey)}</div>
+                    ${configured && draft && modeOptions.length > 1
+                      ? html`
+                          <div class="inline-mode-group">
+                            <span class="inline-mode-label">Mode</span>
+                            <select
+                              class="inline-mode-select"
+                              .value=${modeOptions.some((opt) => opt.value === draft.mode)
+                                ? draft.mode
+                                : modeOptions[0].value}
+                              @change=${(ev: Event) => {
+                                const mode = (ev.target as HTMLSelectElement).value as "any_change" | "specific_states";
+                                const entity = this.hass.states[item.entityId];
+                                const next = applyModeDefaults(draft, mode, entity) as OccupancySource;
+                                this._updateSourceDraft(config, sourceIndex, { ...next, entity_id: draft.entity_id });
+                              }}
+                            >
+                              ${modeOptions.map((opt) => html`<option value=${opt.value}>${opt.label}</option>`)}
+                            </select>
+                          </div>
+                        `
+                      : ""}
+                  </div>
+                  <div class="candidate-meta">${item.entityId} • ${this._entityState(item.entityId)}</div>
+                  ${(this._isMediaEntity(item.entityId) || item.entityId.startsWith("light.")) && item.signalKey
+                    ? html`<div class="candidate-submeta">Signal: ${this._mediaSignalLabel(item.signalKey)}</div>`
+                    : ""}
+                </div>
               </div>
-              <div class="candidate-actions">
-                <span class="status-pill ${configured ? "active" : ""}">
-                  ${configured ? "Configured" : "Available"}
-                </span>
-                ${configured && source
-                  ? html`
-                      <button
-                        class="mini-button"
-                        title="Configure this source"
-                        @click=${(ev: Event) => {
-                          ev.stopPropagation();
-                          this._beginEditSource(source, sourceIndex);
-                        }}
-                      >
-                        Configure
-                      </button>
-                    `
-                  : html`
-                      <button
-                        class="mini-button"
-                        data-testid="use-area-source-button"
-                        data-entity-id=${entityId}
-                        ?disabled=${this._savingSource}
-                        title="Use default occupancy behavior for this sensor"
-                        @click=${async (ev: Event) => {
-                          ev.stopPropagation();
-                          await this._addSourceWithDefaults(entityId, {
-                            successMessage: `Added ${this._entityName(entityId)}`,
-                          });
-                        }}
-                      >
-                        Use Default
-                      </button>
-                    `}
-              </div>
+              ${configured && source
+                ? this._renderSourceEditor(config, source, sourceIndex)
+                : ""}
             </div>
           `;
         })}
@@ -809,7 +1101,11 @@ export class HtLocationInspector extends LitElement {
     const selectedAreaId = this._externalAreaId || "";
     const entityOptions = selectedAreaId ? this._entitiesForArea(selectedAreaId) : [];
     const entityId = this._externalEntityId || "";
-    const existing = new Set((config.occupancy_sources || []).map((source) => source.entity_id));
+    const existing = new Set(this._workingSources(config).map((source) => this._sourceKeyFromSource(source)));
+    const defaultSignalKey = entityId ? this._defaultSignalKeyForEntity(entityId) : undefined;
+    const selectedKey = entityId
+      ? this._sourceKey(entityId, defaultSignalKey)
+      : "";
 
     return html`
       <div class="external-composer">
@@ -823,6 +1119,7 @@ export class HtLocationInspector extends LitElement {
               const nextAreaId = (ev.target as HTMLSelectElement).value;
               this._externalAreaId = nextAreaId;
               this._externalEntityId = "";
+              this.requestUpdate();
             }}
           >
             <option value="">Select area...</option>
@@ -838,13 +1135,17 @@ export class HtLocationInspector extends LitElement {
             .value=${entityId}
             @change=${(ev: Event) => {
               this._externalEntityId = (ev.target as HTMLSelectElement).value;
+              this.requestUpdate();
             }}
             ?disabled=${!selectedAreaId}
           >
             <option value="">Select sensor...</option>
             ${entityOptions.map((id) => html`
-              <option value=${id} ?disabled=${existing.has(id)}>
-                ${this._entityName(id)}${existing.has(id) ? " (already added)" : ""}
+              <option
+                value=${id}
+                ?disabled=${existing.has(this._sourceKey(id, this._defaultSignalKeyForEntity(id)))}
+              >
+                ${this._entityName(id)}${existing.has(this._sourceKey(id, this._defaultSignalKeyForEntity(id))) ? " (already added)" : ""}
               </option>
             `)}
           </select>
@@ -853,138 +1154,59 @@ export class HtLocationInspector extends LitElement {
         <button
           class="button button-secondary"
           data-testid="add-external-source-inline"
-          ?disabled=${this._savingSource || !entityId || existing.has(entityId)}
-          @click=${async () => {
-            await this._addSourceWithDefaults(entityId, {
+          ?disabled=${this._savingSource || !entityId || (selectedKey ? existing.has(selectedKey) : false)}
+          @click=${() => {
+            this._addSourceWithDefaults(entityId, config, {
               resetExternalPicker: true,
-              successMessage: `Added ${this._entityName(entityId)} from another area`,
+              signalKey: this._defaultSignalKeyForEntity(entityId),
             });
           }}
         >
-          + Add
+          + Add Source
         </button>
       </div>
     `;
   }
 
-  private _renderOccupancySources(config: OccupancyConfig) {
-    const sources = config.occupancy_sources || [];
-
-    if (!sources.length) {
-      return html`
-        <div class="empty-state">
-          <div class="text-muted">
-            No sensors configured yet. Use “Use Default” above or add one from another area.
-          </div>
-        </div>
-      `;
-    }
-
-    return html`
-      ${sources.map(
-        (source, index) => html`
-          <div class="source-item">
-            <div class="source-icon">
-              <ha-icon .icon=${"mdi:target"}></ha-icon>
-            </div>
-            <div class="source-info">
-              <div class="source-name">${this._entityName(source.entity_id)}</div>
-              <div class="source-details">
-                ${source.entity_id} • ${this._describeSource(source, config.default_timeout || 300)}
-              </div>
-              <div class="source-events">
-                ${this._renderSourceEventChips(source, config.default_timeout || 300)}
-              </div>
-            </div>
-            <div class="source-actions">
-              <button
-                class="mini-button"
-                title="Edit source behavior"
-                @click=${() => this._beginEditSource(source, index)}
-              >
-                ${this._editingSourceIndex === index ? "Editing" : "Configure"}
-              </button>
-              <button
-                class="mini-button"
-                title="Send test trigger for this source"
-                ?disabled=${source.on_event !== "trigger"}
-                @click=${() => this._handleTestSource(source, "trigger")}
-              >
-                Test ON
-              </button>
-              <button
-                class="mini-button"
-                title="Send test clear for this source"
-                ?disabled=${source.off_event !== "clear"}
-                @click=${() => this._handleTestSource(source, "clear")}
-              >
-                Test OFF
-              </button>
-              <button
-                class="mini-button"
-                title="Remove this source"
-                ?disabled=${this._savingSource}
-                @click=${() => this._removeSource(index)}
-              >
-                Remove
-              </button>
-            </div>
-            ${this._editingSourceIndex === index && this._sourceDraft
-              ? this._renderSourceEditor(config, source, index)
-              : ""}
-          </div>
-        `
-      )}
-    `;
-  }
-
   private _renderSourceEditor(config: OccupancyConfig, source: OccupancySource, sourceIndex: number) {
-    const draft = this._sourceDraft!;
-    const entity = this.hass.states[source.entity_id];
+    const draft = source;
+    const labels = this._eventLabelsForSource(source);
+    const sourceKey = this._sourceKeyFromSource(source);
+    const supportsOffBehavior = this._supportsOffBehavior(source);
     const defaultTimeoutSeconds = config.default_timeout || 300;
-    const onTimeoutSeconds = draft.on_timeout === null ? defaultTimeoutSeconds : (draft.on_timeout ?? defaultTimeoutSeconds);
+    const rememberedOnTimeout = this._onTimeoutMemory[sourceKey];
+    const onTimeoutSeconds = draft.on_timeout === null
+      ? (rememberedOnTimeout ?? defaultTimeoutSeconds)
+      : (draft.on_timeout ?? rememberedOnTimeout ?? defaultTimeoutSeconds);
     const onTimeoutMinutes = Math.max(1, Math.min(120, Math.round(onTimeoutSeconds / 60)));
     const offTrailingSeconds = draft.off_trailing ?? 0;
     const offTrailingMinutes = Math.max(0, Math.min(120, Math.round(offTrailingSeconds / 60)));
 
     return html`
       <div class="source-editor">
+        ${(this._isMediaEntity(source.entity_id) || source.entity_id.startsWith("light.")) && source.signal_key
+          ? html`<div class="media-signals">Signal: ${this._mediaSignalLabel(source.signal_key)} (${this._signalDescription(source.signal_key)}).</div>`
+          : ""}
         <div class="editor-grid">
           <div class="editor-field">
-            <label for="source-mode-${sourceIndex}">Mode</label>
-            <select
-              id="source-mode-${sourceIndex}"
-              .value=${draft.mode}
-              @change=${(ev: Event) => {
-                const mode = (ev.target as HTMLSelectElement).value as "any_change" | "specific_states";
-                const next = applyModeDefaults(draft, mode, entity) as OccupancySource;
-                this._sourceDraft = { ...next, entity_id: draft.entity_id };
-              }}
-            >
-              <option value="any_change">Any change</option>
-              <option value="specific_states">Specific states</option>
-            </select>
-          </div>
-
-          <div class="editor-field">
-            <label for="source-on-event-${sourceIndex}">ON behavior</label>
+            <label for="source-on-event-${sourceIndex}">${labels.onBehavior}</label>
             <select
               id="source-on-event-${sourceIndex}"
               .value=${draft.on_event || "trigger"}
               @change=${(ev: Event) => {
-                this._sourceDraft = {
+                this._updateSourceDraft(config, sourceIndex, {
                   ...draft,
                   on_event: (ev.target as HTMLSelectElement).value as "trigger" | "none",
-                };
+                });
               }}
             >
-              <option value="trigger">Trigger occupancy</option>
-              <option value="none">Ignore</option>
+              <option value="trigger">Mark occupied</option>
+              <option value="none">No change</option>
             </select>
           </div>
 
           <div class="editor-field">
-            <label for="source-on-timeout-${sourceIndex}">ON timeout</label>
+            <label for="source-on-timeout-${sourceIndex}">${labels.onTimeout}</label>
             <div class="editor-timeout">
               <input
                 id="source-on-timeout-${sourceIndex}"
@@ -996,7 +1218,11 @@ export class HtLocationInspector extends LitElement {
                 ?disabled=${draft.on_timeout === null}
                 @input=${(ev: Event) => {
                   const minutes = Number((ev.target as HTMLInputElement).value) || 1;
-                  this._sourceDraft = { ...draft, on_timeout: minutes * 60 };
+                  this._onTimeoutMemory = {
+                    ...this._onTimeoutMemory,
+                    [sourceKey]: minutes * 60,
+                  };
+                  this._updateSourceDraft(config, sourceIndex, { ...draft, on_timeout: minutes * 60 });
                 }}
               />
               <input
@@ -1007,7 +1233,11 @@ export class HtLocationInspector extends LitElement {
                 ?disabled=${draft.on_timeout === null}
                 @change=${(ev: Event) => {
                   const minutes = Math.max(1, Math.min(120, Number((ev.target as HTMLInputElement).value) || 1));
-                  this._sourceDraft = { ...draft, on_timeout: minutes * 60 };
+                  this._onTimeoutMemory = {
+                    ...this._onTimeoutMemory,
+                    [sourceKey]: minutes * 60,
+                  };
+                  this._updateSourceDraft(config, sourceIndex, { ...draft, on_timeout: minutes * 60 });
                 }}
               />
               <span class="text-muted">min</span>
@@ -1018,79 +1248,76 @@ export class HtLocationInspector extends LitElement {
                 .checked=${draft.on_timeout === null}
                 @change=${(ev: Event) => {
                   const checked = (ev.target as HTMLInputElement).checked;
-                  this._sourceDraft = { ...draft, on_timeout: checked ? null : onTimeoutMinutes * 60 };
+                  const remembered = this._onTimeoutMemory[sourceKey];
+                  const fallbackSeconds = onTimeoutMinutes * 60;
+                  const restoreSeconds = remembered ?? fallbackSeconds;
+                  if (checked) {
+                    this._onTimeoutMemory = {
+                      ...this._onTimeoutMemory,
+                      [sourceKey]: draft.on_timeout ?? restoreSeconds,
+                    };
+                  }
+                  this._updateSourceDraft(config, sourceIndex, {
+                    ...draft,
+                    on_timeout: checked ? null : restoreSeconds,
+                  });
                 }}
               />
-              Indefinite (until OFF)
+              Indefinite (until ${labels.offState})
             </label>
           </div>
 
-          <div class="editor-field">
-            <label for="source-off-event-${sourceIndex}">OFF behavior</label>
-            <select
-              id="source-off-event-${sourceIndex}"
-              .value=${draft.off_event || "none"}
-              @change=${(ev: Event) => {
-                this._sourceDraft = {
-                  ...draft,
-                  off_event: (ev.target as HTMLSelectElement).value as "clear" | "none",
-                };
-              }}
-            >
-              <option value="none">Ignore</option>
-              <option value="clear">Clear occupancy</option>
-            </select>
-          </div>
+          ${supportsOffBehavior
+            ? html`
+                <div class="editor-field">
+                  <label for="source-off-event-${sourceIndex}">${labels.offBehavior}</label>
+                  <select
+                    id="source-off-event-${sourceIndex}"
+                    .value=${draft.off_event || "none"}
+                    @change=${(ev: Event) => {
+                      this._updateSourceDraft(config, sourceIndex, {
+                        ...draft,
+                        off_event: (ev.target as HTMLSelectElement).value as "clear" | "none",
+                      });
+                    }}
+                  >
+                    <option value="none">No change</option>
+                    <option value="clear">Mark vacant</option>
+                  </select>
+                </div>
 
-          <div class="editor-field">
-            <label for="source-off-trailing-${sourceIndex}">OFF delay</label>
-            <div class="editor-timeout">
-              <input
-                id="source-off-trailing-${sourceIndex}"
-                type="range"
-                min="0"
-                max="120"
-                step="1"
-                .value=${String(offTrailingMinutes)}
-                ?disabled=${(draft.off_event || "none") !== "clear"}
-                @input=${(ev: Event) => {
-                  const minutes = Math.max(0, Math.min(120, Number((ev.target as HTMLInputElement).value) || 0));
-                  this._sourceDraft = { ...draft, off_trailing: minutes * 60 };
-                }}
-              />
-              <input
-                type="number"
-                min="0"
-                max="120"
-                .value=${String(offTrailingMinutes)}
-                ?disabled=${(draft.off_event || "none") !== "clear"}
-                @change=${(ev: Event) => {
-                  const minutes = Math.max(0, Math.min(120, Number((ev.target as HTMLInputElement).value) || 0));
-                  this._sourceDraft = { ...draft, off_trailing: minutes * 60 };
-                }}
-              />
-              <span class="text-muted">min</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="editor-actions">
-          <button
-            class="mini-button"
-            ?disabled=${this._savingSource}
-            @click=${async () => {
-              await this._saveEditedSource(sourceIndex);
-            }}
-          >
-            Save
-          </button>
-          <button
-            class="mini-button"
-            ?disabled=${this._savingSource}
-            @click=${() => this._cancelEditSource()}
-          >
-            Cancel
-          </button>
+                <div class="editor-field">
+                  <label for="source-off-trailing-${sourceIndex}">${labels.offDelay}</label>
+                  <div class="editor-timeout">
+                    <input
+                      id="source-off-trailing-${sourceIndex}"
+                      type="range"
+                      min="0"
+                      max="120"
+                      step="1"
+                      .value=${String(offTrailingMinutes)}
+                      ?disabled=${(draft.off_event || "none") !== "clear"}
+                      @input=${(ev: Event) => {
+                        const minutes = Math.max(0, Math.min(120, Number((ev.target as HTMLInputElement).value) || 0));
+                        this._updateSourceDraft(config, sourceIndex, { ...draft, off_trailing: minutes * 60 });
+                      }}
+                    />
+                    <input
+                      type="number"
+                      min="0"
+                      max="120"
+                      .value=${String(offTrailingMinutes)}
+                      ?disabled=${(draft.off_event || "none") !== "clear"}
+                      @change=${(ev: Event) => {
+                        const minutes = Math.max(0, Math.min(120, Number((ev.target as HTMLInputElement).value) || 0));
+                        this._updateSourceDraft(config, sourceIndex, { ...draft, off_trailing: minutes * 60 });
+                      }}
+                    />
+                    <span class="text-muted">min</span>
+                  </div>
+                </div>
+              `
+            : ""}
         </div>
       </div>
     `;
@@ -1160,53 +1387,60 @@ export class HtLocationInspector extends LitElement {
     `;
   }
 
-  private _beginEditSource(source: OccupancySource, sourceIndex: number): void {
-    if (this._isFloorLocation()) {
-      this._showToast("Floor source editing is disabled. Configure sources on areas.", "error");
-      return;
+  private _workingSources(config: OccupancyConfig): OccupancySource[] {
+    return this._stagedSources ? [...this._stagedSources] : [...(config.occupancy_sources || [])];
+  }
+
+  private _setWorkingSources(config: OccupancyConfig, sources: OccupancySource[]): void {
+    const normalized = sources.map((source) => this._normalizeSource(source.entity_id, source));
+    const nextMemory = { ...this._onTimeoutMemory };
+    for (const source of normalized) {
+      if (typeof source.on_timeout === "number" && source.on_timeout > 0) {
+        nextMemory[this._sourceKeyFromSource(source)] = source.on_timeout;
+      }
     }
-    this._editingSourceIndex = sourceIndex;
-    this._sourceDraft = this._normalizeSource(source.entity_id, source);
+    this._onTimeoutMemory = nextMemory;
+    this._stagedSources = normalized;
+    this._sourcesDirty = true;
+    this.requestUpdate();
   }
 
-  private _cancelEditSource(): void {
-    this._editingSourceIndex = undefined;
-    this._sourceDraft = undefined;
+  private _updateSourceDraft(config: OccupancyConfig, sourceIndex: number, draft: OccupancySource): void {
+    const sources = this._workingSources(config);
+    const current = sources[sourceIndex];
+    if (!current) return;
+    const supportedModes = this._modeOptionsForEntity(current.entity_id).map((opt) => opt.value);
+    const normalizedDraft = this._normalizeSource(
+      current.entity_id,
+      {
+        ...draft,
+        mode: supportedModes.includes(draft.mode) ? draft.mode : supportedModes[0],
+      }
+    );
+    sources[sourceIndex] = normalizedDraft;
+    this._setWorkingSources(config, sources);
   }
 
-  private async _saveEditedSource(sourceIndex: number): Promise<void> {
-    if (!this.location || !this._sourceDraft) return;
-    const config = this._getOccupancyConfig();
-    const sources = [...(config.occupancy_sources || [])];
-    if (!sources[sourceIndex]) return;
-
-    sources[sourceIndex] = this._normalizeSource(sources[sourceIndex].entity_id, this._sourceDraft);
-    await this._persistOccupancySources(sources);
-    this._cancelEditSource();
-    this._showToast(`Updated ${this._entityName(sources[sourceIndex].entity_id)}`, "success");
-  }
-
-  private async _removeSource(sourceIndex: number): Promise<void> {
-    if (!this.location) return;
-    const config = this._getOccupancyConfig();
-    const sources = [...(config.occupancy_sources || [])];
+  private _removeSource(sourceIndex: number, config: OccupancyConfig): void {
+    const sources = this._workingSources(config);
     const removed = sources[sourceIndex];
     if (!removed) return;
     sources.splice(sourceIndex, 1);
-    await this._persistOccupancySources(sources);
-    this._cancelEditSource();
-    this._showToast(`Removed ${this._entityName(removed.entity_id)}`, "success");
+    const nextMemory = { ...this._onTimeoutMemory };
+    delete nextMemory[this._sourceKeyFromSource(removed)];
+    this._onTimeoutMemory = nextMemory;
+    this._setWorkingSources(config, sources);
   }
 
-  private async _addSourceWithDefaults(
+  private _addSourceWithDefaults(
     entityId: string,
-    options?: { resetExternalPicker?: boolean; successMessage?: string }
-  ): Promise<void> {
+    config: OccupancyConfig,
+    options?: { resetExternalPicker?: boolean; signalKey?: SourceSignalKey }
+  ): void {
     if (!this.location || this._isFloorLocation()) return;
-    const config = this._getOccupancyConfig();
-    const existing = config.occupancy_sources || [];
-    if (existing.some((source) => source.entity_id === entityId)) {
-      this._showToast(`${this._entityName(entityId)} is already configured`, "error");
+    const existing = this._workingSources(config);
+    const targetKey = this._sourceKey(entityId, options?.signalKey);
+    if (existing.some((source) => this._sourceKeyFromSource(source) === targetKey)) {
       return;
     }
 
@@ -1217,20 +1451,42 @@ export class HtLocationInspector extends LitElement {
     }
 
     const defaults = getSourceDefaultsForEntity(entity);
-    const source = this._normalizeSource(entityId, defaults);
-    await this._persistOccupancySources([...existing, source]);
+    let signalDefaults: Partial<OccupancySource> = defaults;
+    if (options?.signalKey === "playback" || options?.signalKey === "volume" || options?.signalKey === "mute") {
+      signalDefaults = this._mediaSignalDefaults(entityId, options.signalKey);
+    } else if (options?.signalKey === "power" || options?.signalKey === "level" || options?.signalKey === "color") {
+      signalDefaults = this._lightSignalDefaults(entityId, options.signalKey);
+    }
+    const source = this._normalizeSource(entityId, signalDefaults);
+    this._setWorkingSources(config, [...existing, source]);
 
     if (options?.resetExternalPicker) {
       this._externalAreaId = "";
       this._externalEntityId = "";
+      this.requestUpdate();
     }
-    this._showToast(options?.successMessage || `Added ${this._entityName(entityId)}`, "success");
+  }
+
+  private _discardSourceChanges = (): void => {
+    this._stagedSources = undefined;
+    this._sourcesDirty = false;
+    this.requestUpdate();
+  };
+
+  private _saveSourceChanges = async (): Promise<void> => {
+    if (!this.location || !this._stagedSources || !this._sourcesDirty) return;
+    await this._persistOccupancySources(this._stagedSources);
+    this._stagedSources = undefined;
+    this._sourcesDirty = false;
+    this.requestUpdate();
+    this._showToast("Saved source changes", "success");
   }
 
   private async _persistOccupancySources(sources: OccupancySource[]): Promise<void> {
     if (!this.location) return;
     const config = this._getOccupancyConfig();
     this._savingSource = true;
+    this.requestUpdate();
     try {
       await this._updateConfig({
         ...config,
@@ -1238,12 +1494,33 @@ export class HtLocationInspector extends LitElement {
       });
     } finally {
       this._savingSource = false;
+      this.requestUpdate();
     }
   }
 
   private _normalizeSource(entityId: string, partial: Partial<OccupancySource>): OccupancySource {
+    const isMedia = this._isMediaEntity(entityId);
+    const isDimmable = this._isDimmableEntity(entityId);
+    const isColorCapable = this._isColorCapableEntity(entityId);
+    const signalFromSourceId = partial.source_id?.includes("::")
+      ? (partial.source_id.split("::")[1] as SourceSignalKey)
+      : undefined;
+    const defaultSignalKey = this._defaultSignalKeyForEntity(entityId);
+    const requestedSignalKey = partial.signal_key || signalFromSourceId || defaultSignalKey;
+    let signalKey: SourceSignalKey | undefined;
+
+    if (isMedia && (requestedSignalKey === "playback" || requestedSignalKey === "volume" || requestedSignalKey === "mute")) {
+      signalKey = requestedSignalKey;
+    } else if ((isDimmable || isColorCapable) && (requestedSignalKey === "power" || requestedSignalKey === "level" || requestedSignalKey === "color")) {
+      signalKey = requestedSignalKey;
+    }
+
+    const sourceId = partial.source_id || this._sourceKey(entityId, signalKey);
+
     return {
       entity_id: entityId,
+      source_id: sourceId,
+      signal_key: signalKey,
       mode: (partial.mode || "any_change") as "any_change" | "specific_states",
       on_event: (partial.on_event || "trigger") as "trigger" | "none",
       on_timeout: partial.on_timeout,
@@ -1283,7 +1560,42 @@ export class HtLocationInspector extends LitElement {
     if (!stateObj) return false;
     const attrs = stateObj.attributes || {};
     if (attrs.device_class === "occupancy" && attrs.location_id) return false;
-    return true;
+    const domain = entityId.split(".", 1)[0];
+    if (["person", "device_tracker", "light", "switch", "fan", "media_player", "climate", "cover", "vacuum"].includes(domain)) {
+      return true;
+    }
+    if (domain === "binary_sensor") {
+      const deviceClass = String(attrs.device_class || "");
+      if (!deviceClass) return true;
+      return [
+        "motion",
+        "occupancy",
+        "presence",
+        "door",
+        "garage_door",
+        "opening",
+        "window",
+        "lock",
+      ].includes(deviceClass);
+    }
+    return false;
+  }
+
+  private _getLockState(): { isLocked: boolean; lockedBy: string[] } {
+    if (!this.location) return { isLocked: false, lockedBy: [] };
+    const states = this.hass?.states || {};
+    for (const stateObj of Object.values(states)) {
+      const attrs = stateObj?.attributes || {};
+      if (attrs.device_class !== "occupancy") continue;
+      if (attrs.location_id !== this.location.id) continue;
+      const lockedByRaw = attrs.locked_by;
+      const lockedBy = Array.isArray(lockedByRaw) ? lockedByRaw.map((item: any) => String(item)) : [];
+      return {
+        isLocked: Boolean(attrs.is_locked),
+        lockedBy,
+      };
+    }
+    return { isLocked: false, lockedBy: [] };
   }
 
   private _describeSource(source: any, defaultTimeout: number): string {
@@ -1321,6 +1633,141 @@ export class HtLocationInspector extends LitElement {
     return chips;
   }
 
+  private _modeOptionsForEntity(entityId: string): Array<{ value: "any_change" | "specific_states"; label: string }> {
+    const stateObj = this.hass?.states?.[entityId];
+    const attrs = stateObj?.attributes || {};
+    const domain = entityId.split(".", 1)[0];
+    const deviceClass = String(attrs.device_class || "");
+
+    if (domain === "person" || domain === "device_tracker") {
+      return [{ value: "specific_states", label: "Specific states" }];
+    }
+
+    if (domain === "binary_sensor") {
+      if (["door", "garage_door", "opening", "window", "motion", "presence", "occupancy"].includes(deviceClass)) {
+        return [{ value: "specific_states", label: "Specific states" }];
+      }
+      return [
+        { value: "specific_states", label: "Specific states" },
+        { value: "any_change", label: "Any change" },
+      ];
+    }
+
+    if (["light", "switch", "fan", "media_player", "climate", "cover", "vacuum"].includes(domain)) {
+      return [{ value: "any_change", label: "Any change" }];
+    }
+
+    return [
+      { value: "specific_states", label: "Specific states" },
+      { value: "any_change", label: "Any change" },
+    ];
+  }
+
+  private _supportsOffBehavior(source: OccupancySource): boolean {
+    const domain = source.entity_id.split(".", 1)[0];
+    if (domain === "media_player" && (source.signal_key === "volume" || source.signal_key === "mute")) {
+      return false;
+    }
+    if (domain === "light" && (source.signal_key === "level" || source.signal_key === "color")) {
+      return false;
+    }
+    return true;
+  }
+
+  private _eventLabelsForSource(source: OccupancySource): {
+    onState: string;
+    offState: string;
+    onBehavior: string;
+    onTimeout: string;
+    offBehavior: string;
+    offDelay: string;
+  } {
+    const entityId = source.entity_id;
+    const stateObj = this.hass?.states?.[entityId];
+    const attrs = stateObj?.attributes || {};
+    const domain = entityId.split(".", 1)[0];
+    const deviceClass = String(attrs.device_class || "");
+
+    let onState = "ON";
+    let offState = "OFF";
+
+    if (domain === "binary_sensor" && ["door", "garage_door", "opening", "window"].includes(deviceClass)) {
+      onState = "Open";
+      offState = "Closed";
+    } else if (domain === "binary_sensor" && deviceClass === "motion") {
+      onState = "Motion";
+      offState = "No motion";
+    } else if (domain === "binary_sensor" && ["presence", "occupancy"].includes(deviceClass)) {
+      onState = "Detected";
+      offState = "Not detected";
+    } else if (domain === "person" || domain === "device_tracker") {
+      onState = "Home";
+      offState = "Away";
+    } else if (domain === "media_player") {
+      if (source.signal_key === "volume") {
+        return {
+          onState: "Volume change",
+          offState: "No volume change",
+          onBehavior: "Volume change behavior",
+          onTimeout: "Volume timeout",
+          offBehavior: "No-volume behavior",
+          offDelay: "No-volume delay",
+        };
+      }
+      if (source.signal_key === "mute") {
+        return {
+          onState: "Mute change",
+          offState: "No mute change",
+          onBehavior: "Mute change behavior",
+          onTimeout: "Mute timeout",
+          offBehavior: "No-mute behavior",
+          offDelay: "No-mute delay",
+        };
+      }
+      return {
+        onState: "Playing",
+        offState: "Paused/idle",
+        onBehavior: "Playing behavior",
+        onTimeout: "Playing timeout",
+        offBehavior: "Paused/idle behavior",
+        offDelay: "Paused/idle delay",
+      };
+    } else if (domain === "light" && source.signal_key === "level") {
+      return {
+        onState: "Level change",
+        offState: "No level change",
+        onBehavior: "Level change behavior",
+        onTimeout: "Level timeout",
+        offBehavior: "No-level behavior",
+        offDelay: "No-level delay",
+      };
+    } else if (domain === "light" && source.signal_key === "color") {
+      return {
+        onState: "Color change",
+        offState: "No color change",
+        onBehavior: "Color change behavior",
+        onTimeout: "Color timeout",
+        offBehavior: "No-color behavior",
+        offDelay: "No-color delay",
+      };
+    } else if (domain === "light" && source.signal_key === "power") {
+      onState = "On";
+      offState = "Off";
+    } else if (domain === "light" || domain === "switch" || domain === "fan") {
+      onState = "On";
+      offState = "Off";
+    }
+
+    return {
+      onState,
+      offState,
+      onBehavior: `${onState} behavior`,
+      onTimeout: `${onState} timeout`,
+      offBehavior: `${offState} behavior`,
+      offDelay: `${offState} delay`,
+    };
+  }
+
   private _formatDuration(seconds?: number | null): string {
     if (seconds === null) return "indefinite";
     if (!seconds || seconds <= 0) return "0m";
@@ -1344,13 +1791,14 @@ export class HtLocationInspector extends LitElement {
       if (action === "trigger") {
         const fallback = ((this.location.modules.occupancy || {}) as OccupancyConfig).default_timeout || 300;
         const timeout = source.on_timeout === null ? fallback : (source.on_timeout ?? fallback);
+        const sourceId = source.source_id || source.entity_id;
         await this.hass.callWS({
           type: "call_service",
           domain: "home_topology",
           service: "trigger",
           service_data: {
             location_id: this.location.id,
-            source_id: source.entity_id,
+            source_id: sourceId,
             timeout,
           },
         });
@@ -1359,25 +1807,26 @@ export class HtLocationInspector extends LitElement {
             detail: {
               action: "trigger",
               locationId: this.location.id,
-              sourceId: source.entity_id,
+              sourceId,
               timeout,
             },
             bubbles: true,
             composed: true,
           })
         );
-        this._showToast(`Triggered ${source.entity_id}`, "success");
+        this._showToast(`Triggered ${sourceId}`, "success");
         return;
       }
 
       const trailing_timeout = source.off_trailing ?? 0;
+      const sourceId = source.source_id || source.entity_id;
       await this.hass.callWS({
         type: "call_service",
         domain: "home_topology",
         service: "clear",
         service_data: {
           location_id: this.location.id,
-          source_id: source.entity_id,
+          source_id: sourceId,
           trailing_timeout,
         },
       });
@@ -1386,14 +1835,14 @@ export class HtLocationInspector extends LitElement {
           detail: {
             action: "clear",
             locationId: this.location.id,
-            sourceId: source.entity_id,
+            sourceId,
             trailing_timeout,
           },
           bubbles: true,
           composed: true,
         })
       );
-      this._showToast(`Cleared ${source.entity_id}`, "success");
+      this._showToast(`Cleared ${sourceId}`, "success");
     } catch (err: any) {
       console.error("Failed to test source event:", err);
       this._showToast(err?.message || "Failed to run source test", "error");
