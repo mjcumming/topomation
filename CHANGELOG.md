@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Automation lock policy blueprints:
+  - `blueprints/automation/topomation/away_mode_vacant_guard.yaml`
+  - `blueprints/automation/topomation/party_mode_hold_occupied.yaml`
+- Operator workflow reference for lock modes/scopes and automation usage in
+  `docs/occupancy-lock-workflows.md`.
+- `topomation.unlock_all` service for operator/emergency lock reset at a
+  location.
 - ADR-HA-020 edge-case coverage in `tests/test_event_bridge.py` for:
   - invalid policy target fallback to owner location
   - dynamic `all_roots` resolution when root set changes at runtime
@@ -60,6 +67,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Occupancy binary sensor attributes now expose v3 fields
   (`locked_by`, `contributions`, `reason`, etc.) instead of legacy
   confidence/hold attributes.
+- Occupancy lock contract is now automation-first:
+  - `topomation.lock` forwards `mode` (`freeze`, `block_occupied`,
+    `block_vacant`) and `scope` (`self`, `subtree`)
+  - `topomation.unlock` remains source-aware
+  - `topomation.unlock_all` force-clears all lock owners on a location.
+- Location inspector now shows selected-location runtime lock diagnostics and
+  vacancy timing:
+  - lock sources, lock modes, and direct lock directives (source/mode/scope)
+  - current `time until vacant` and `vacant at` details based on effective
+    occupancy timeout state.
 - Updated active docs/status artifacts for v3 contract and current project state
   (`integration-guide`, `coding-standards`, `cursor-guide`, roadmap/epics/work-tracking).
 - Occupancy source UX now supports end-to-end edit flow from inspector:
