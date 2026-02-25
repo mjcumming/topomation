@@ -1,6 +1,6 @@
 # Documentation Index
 
-**Last Reviewed**: 2026-02-24
+**Last Reviewed**: 2026-02-25
 
 This file is the source of truth for active documentation and lifecycle rules.
 If a file is not listed as active below, treat it as reference-only.
@@ -10,15 +10,19 @@ If a file is not listed as active below, treat it as reference-only.
 | File | Purpose | Status |
 | --- | --- | --- |
 | `docs/architecture.md` | Integration architecture and adapter boundaries | Active |
+| `docs/contracts.md` | Canonical behavior contracts and invariants | Active |
 | `docs/bidirectional-sync-design.md` | Sync contract + mandatory pre-change checks | Active |
 | `docs/adr-log.md` | Architectural decisions and policy record | Active |
+| `docs/agent-quickstart.md` | Fast startup guide for contributors and AI agents | Active (Operational) |
 | `docs/coding-standards.md` | Coding conventions for backend/frontend | Active |
 | `docs/frontend-dev-workflow.md` | Current frontend/mock workflow | Active |
 | `docs/setup-test-topology.md` | Test topology setup in HA + overlay testing | Active |
 | `docs/live-ha-validation-checklist.md` | Manual validation procedure for v0.1.0 release | Active |
 | `docs/installation.md` | Installation guide for v0.1.0 (HACS and manual) | Active |
+| `docs/occupancy-lock-workflows.md` | Automation-first lock policy workflows (`away`, `party`) | Active |
 | `docs/integration-guide.md` | Broad integration reference (not policy source) | Active (Reference) |
 | `docs/work-tracking.md` | Current sprint execution status | Active (Operational) |
+| `docs/current-work.md` | Live parallel-work and handoff context | Active (Operational) |
 | `docs/cursor-guide.md` | Agent reference and repository operating notes | Active (Reference) |
 
 ## Project Docs Scope (`/project`)
@@ -37,9 +41,10 @@ Do not use `/project` files as architecture or contract policy sources.
 When documents disagree, use this order:
 
 1. `docs/bidirectional-sync-design.md`
-2. `docs/architecture.md`
-3. `docs/adr-log.md`
-4. tests + implementation under `custom_components/topomation/`
+2. `docs/contracts.md`
+3. `docs/architecture.md`
+4. `docs/adr-log.md`
+5. tests + implementation under `custom_components/topomation/`
 
 ## Governance Rules
 

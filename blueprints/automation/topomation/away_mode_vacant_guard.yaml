@@ -1,0 +1,82 @@
+blueprint:
+  name: Topomation away mode vacant guard
+  description: >-
+    Apply a Topomation lock policy when an alarm/away entity changes state.
+    On away, this blueprint blocks occupied transitions for the selected scope;
+    on disarm/home states, it releases the same source lock.
+  domain: automation
+  source_url: https://github.com/mjcumming/topomation/blob/main/blueprints/automation/topomation/away_mode_vacant_guard.yaml
+  input:
+    alarm_entity:
+      name: Alarm or mode entity
+      description: Entity that controls away/home state
+      selector:
+        entity: {}
+    away_state:
+      name: Away state
+      description: State value that should apply vacant guard lock
+      default: armed_away
+      selector:
+        text: {}
+    release_states:
+      name: Release states
+      description: States that should release the lock source
+      default:
+        - disarmed
+      selector:
+        object: {}
+    location_id:
+      name: Topomation location ID
+      description: Root location for the lock command
+      selector:
+        text: {}
+    scope:
+      name: Lock scope
+      description: Apply only to this location or this location plus descendants
+      default: subtree
+      selector:
+        select:
+          options:
+            - self
+            - subtree
+    source_id:
+      name: Lock source ID
+      description: Stable source used for lock/unlock pairing
+      default: automation_away_guard
+      selector:
+        text: {}
+
+mode: single
+
+variables:
+  away_state_var: !input away_state
+  release_states_var: !input release_states
+  location_id_var: !input location_id
+  scope_var: !input scope
+  source_id_var: !input source_id
+
+trigger:
+  - platform: state
+    entity_id: !input alarm_entity
+
+action:
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ trigger.to_state is not none and trigger.to_state.state == away_state_var }}"
+        sequence:
+          - service: topomation.lock
+            data:
+              location_id: "{{ location_id_var }}"
+              source_id: "{{ source_id_var }}"
+              mode: block_occupied
+              scope: "{{ scope_var }}"
+      - conditions:
+          - condition: template
+            value_template: >-
+              {{ trigger.to_state is not none and trigger.to_state.state in release_states_var }}
+        sequence:
+          - service: topomation.unlock
+            data:
+              location_id: "{{ location_id_var }}"
+              source_id: "{{ source_id_var }}"

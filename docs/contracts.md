@@ -1,0 +1,77 @@
+# Contracts
+
+**Last reviewed**: 2026-02-25
+**Purpose**: canonical behavior contracts for Topomation runtime and panel actions.
+
+Use this file as the quick contract surface. Keep it synchronized with:
+- `docs/architecture.md`
+- `docs/adr-log.md`
+- implementation under `custom_components/topomation/`
+
+## C-001 Lock immutability
+
+- Locked locations are immutable for manual occupancy overrides.
+- Manual occupied/unoccupied controls must reject changes when the target is locked.
+- Rejection must be user-visible (warning toast/message), not silent.
+- Lock policy services (`lock`, `unlock`, `unlock_all`) are the valid paths to change lock state.
+
+## C-002 Manual occupied action contract
+
+- Tree/UI "set occupied" maps to:
+  - `service: topomation.trigger`
+  - `source_id: manual_ui`
+- Timeout behavior:
+  - if location config has `modules.occupancy.default_timeout` (number >= 0), pass it as `timeout`
+  - otherwise service default applies (`timeout=300` seconds)
+
+## C-003 Manual unoccupied action contract
+
+- Tree/UI "set unoccupied" maps to:
+  - `service: topomation.vacate_area`
+  - `source_id: manual_ui`
+  - `include_locked: false`
+- This is intentional subtree vacate semantics, not source-level clear semantics.
+
+## C-004 Service surface contract
+
+Supported services in domain `topomation`:
+
+1. `trigger(location_id, source_id?, timeout?, entry_id?)`
+2. `clear(location_id, source_id?, trailing_timeout?, entry_id?)`
+3. `lock(location_id, source_id?, mode?, scope?, entry_id?)`
+4. `unlock(location_id, source_id?, entry_id?)`
+5. `unlock_all(location_id, entry_id?)`
+6. `vacate_area(location_id, source_id?, include_locked?, entry_id?)`
+
+Lock policy contract:
+- `mode`: `freeze | block_occupied | block_vacant`
+- `scope`: `self | subtree`
+
+Multi-entry routing:
+- If multiple Topomation entries are loaded and `entry_id` is omitted, service calls are rejected.
+
+## C-005 Tree control contract
+
+- Non-root rows expose:
+  - occupancy toggle icon (`mdi:home` / `mdi:home-account`)
+  - lock toggle icon (`mdi:lock*`)
+- Occupancy icon reflects effective occupancy state for the location row.
+- Lock icon reflects lock state from occupancy entity attributes (`is_locked`, `locked_by`).
+
+## C-006 Persistence contract
+
+Debounced autosave must be scheduled for:
+
+1. successful `locations/reorder`
+2. successful `locations/set_module_config`
+3. `occupancy.changed` events
+
+Additional save points:
+- immediate save on integration unload
+- save on Home Assistant stop event
+
+## C-007 Documentation maintenance contract
+
+- Contract changes must update this file in the same change.
+- Decision-level changes must add/update ADR entries.
+- Handoff/parallel context changes must update `docs/current-work.md`.

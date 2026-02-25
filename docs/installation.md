@@ -70,6 +70,37 @@ Deep-link aliases are also available (same panel, different default focus):
 - `/topomation-occupancy`
 - `/topomation-actions`
 
+### 5. Manual occupancy controls in the tree
+
+Each non-root location row in the left tree includes:
+
+- Occupancy icon (`mdi:home` / `mdi:home-account`) to manually mark occupied or unoccupied
+- Lock icon (`mdi:lock*`) to lock/unlock occupancy state
+
+Behavior contract:
+
+- Mark occupied calls `topomation.trigger` with `source_id=manual_ui`
+- Mark unoccupied calls `topomation.vacate_area` with `source_id=manual_ui`
+- If the location is locked, manual occupancy changes are blocked and a warning is shown
+
+### 6. Automation-first lock policies (recommended)
+
+Topomation lock behavior is intended to be driven from HA automations:
+
+- `topomation.lock` supports:
+  - `mode=freeze`
+  - `mode=block_occupied` (away/security)
+  - `mode=block_vacant` (party/manual hold)
+  - `scope=self|subtree`
+- Release with `topomation.unlock` (same `source_id`) or `topomation.unlock_all`.
+
+Two starter blueprints are provided in this repository:
+
+- `blueprints/automation/topomation/away_mode_vacant_guard.yaml`
+- `blueprints/automation/topomation/party_mode_hold_occupied.yaml`
+
+Import those files into HA blueprint editor, then create automations from the imported blueprints.
+
 ## Troubleshooting
 
 ### Integration fails to load

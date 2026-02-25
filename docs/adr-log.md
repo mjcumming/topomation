@@ -1125,6 +1125,95 @@ automations:
 
 ---
 
+### ADR-HA-028: Manual Occupancy Tree Controls with Lock-Safe Vacate Semantics (2026-02-25)
+
+**Status**: ✅ APPROVED
+**Lifecycle**: Active. Extended by ADR-HA-029 for automation lock policy modes/scopes.
+
+**Context**:
+Operators needed a fast way to force occupancy state during testing and live
+validation directly from the location tree. Two constraints had to remain true:
+
+1. Locked locations must remain immutable.
+2. "Set vacant" must actually vacate effective occupancy state, not only clear a
+   single source contribution.
+
+Using `clear` for manual "vacant" was insufficient when occupancy remained active
+because of other contributions or descendant rollups.
+
+**Decision**:
+Add row-level manual occupancy controls in the left location tree and route them
+to explicit service wrappers:
+
+1. `set occupied` -> `topomation.trigger(location_id, source_id="manual_ui", timeout=default_timeout)`
+2. `set unoccupied` -> `topomation.vacate_area(location_id, source_id="manual_ui", include_locked=false)`
+3. Before either action, check lock state from occupancy entity attributes and
+   reject with a warning toast when locked.
+4. Persist runtime occupancy mutations by scheduling debounced autosave on
+   `occupancy.changed`.
+
+**Rationale**:
+1. Tree-level control keeps manual testing fast and local to the selected
+   topology context.
+2. `vacate_area` expresses operator intent ("make this location vacant now")
+   better than source-level `clear`.
+3. Lock pre-check enforces the hard invariant: locked state cannot be overridden.
+4. Autosave-on-change ensures manual overrides survive restart/reload windows.
+
+**Consequences**:
+- ✅ Occupied/unoccupied manual testing is available without opening service tools
+- ✅ Lock semantics remain strict and user-visible
+- ✅ Vacate behavior is deterministic for subtree state
+- ✅ Runtime occupancy changes are persisted via existing debounced save path
+- ⚠️ Vacate excludes locked descendants by default (`include_locked=false`)
+- ⚠️ UI icon states reflect effective occupancy state, not per-source diagnostics
+
+---
+
+### ADR-HA-029: Automation-first lock policies with mode/scope contract (2026-02-25)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+The existing `lock/unlock` controls solved local freeze behavior but did not
+cleanly model two primary HA automation intents:
+
+1. Away/security mode: prevent occupancy from becoming active in a scope.
+2. Party/manual hold mode: keep occupancy active in a scope.
+
+Manual UI controls are useful for validation, but production behavior is driven
+by Home Assistant automations, helpers, and alarm state changes.
+
+**Decision**:
+Extend lock service contract and core semantics:
+
+1. `topomation.lock` accepts:
+   - `mode`: `freeze | block_occupied | block_vacant`
+   - `scope`: `self | subtree`
+2. `topomation.unlock` remains source-aware (`source_id` must match intent owner).
+3. Add `topomation.unlock_all` for emergency/operator reset.
+4. Scope application is inherited policy evaluation, not lock-copy fanout to
+   every child node.
+5. Keep row-level lock UI as a fast operator/test surface; canonical long-lived
+   behavior should be configured via HA automations.
+6. Ship starter blueprints for `away` and `party` workflows.
+
+**Rationale**:
+1. Separates occupancy propagation from occupancy policy constraints.
+2. Matches how users actually operate HA (events, automations, helpers).
+3. Avoids stale descendant lock-copy state and unlock fanout complexity.
+4. Preserves deterministic source-aware lock ownership.
+
+**Consequences**:
+- ✅ Away/security flow can block occupied transitions for selected scopes
+- ✅ Party/manual flow can hold occupied transitions for selected scopes
+- ✅ Existing local lock calls remain backward compatible (`freeze`, `self`)
+- ✅ Explicit global reset path exists via `unlock_all`
+- ⚠️ Additional service fields require updated docs and blueprint guidance
+- ⚠️ Mixed lock modes from different sources require clear operator naming conventions
+
+---
+
 ## How to Use This Log
 
 ### When to Create an ADR

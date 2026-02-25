@@ -62,3 +62,9 @@ WS_TYPE_AMBIENT_AUTO_DISCOVER = f"{DOMAIN}/ambient/auto_discover"
 WS_TYPE_SYNC_IMPORT = f"{DOMAIN}/sync/import"
 WS_TYPE_SYNC_STATUS = f"{DOMAIN}/sync/status"
 WS_TYPE_SYNC_ENABLE = f"{DOMAIN}/sync/enable"
+
+# Actions automation metadata/logging
+TOPOMATION_AUTOMATION_METADATA_PREFIX = "[topomation]"
+AUTOMATION_REAPPLY_CONFIG_KEY = "reapply_last_state_on_startup"
+AUTOMATION_STARTUP_BUFFER_SECONDS = 20
+EVENT_TOPOMATION_ACTIONS_SUMMARY = f"{DOMAIN}_actions_summary"

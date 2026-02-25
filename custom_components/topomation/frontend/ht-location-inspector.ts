@@ -1,6 +1,13 @@
 import { LitElement, html, css } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import type { HomeAssistant, Location, OccupancyConfig, OccupancySource, TopomationActionRule } from "./types";
+import type {
+  AutomationConfig,
+  HomeAssistant,
+  Location,
+  OccupancyConfig,
+  OccupancySource,
+  TopomationActionRule,
+} from "./types";
 import { sharedStyles } from "./styles";
 import { getLocationIcon } from "./icon-utils";
 import { getLocationType } from "./hierarchy-rules";
@@ -15,6 +22,17 @@ import {
 type SourceSignalKey = OccupancySource["signal_key"];
 type InspectorTab = "detection" | "occupied_actions" | "vacant_actions";
 type InspectorTabRequest = InspectorTab | "occupancy" | "actions";
+type OccupancyLockDirective = {
+  sourceId: string;
+  mode: string;
+  scope: string;
+};
+type InspectorLockState = {
+  isLocked: boolean;
+  lockedBy: string[];
+  lockModes: string[];
+  directLocks: OccupancyLockDirective[];
+};
 
 console.log("[ht-location-inspector] module loaded");
 
@@ -52,9 +70,11 @@ export class HtLocationInspector extends LitElement {
   @state() private _actionRules: TopomationActionRule[] = [];
   @state() private _loadingActionRules = false;
   @state() private _actionRulesError?: string;
+  @state() private _nowEpochMs = Date.now();
   private _onTimeoutMemory: Record<string, number> = {};
   private _entityAreaLoadPromise?: Promise<void>;
   private _actionRulesLoadSeq = 0;
+  private _clockTimer?: number;
 
   static styles = [
     sharedStyles,
@@ -203,6 +223,30 @@ export class HtLocationInspector extends LitElement {
         margin-top: 3px;
         color: var(--text-secondary-color);
         font-size: 12px;
+      }
+
+      .startup-config-row {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding-top: 4px;
+      }
+
+      .startup-config-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+      }
+
+      .startup-config-row .config-help {
+        margin-top: 0;
+        max-width: 700px;
+        line-height: 1.45;
+      }
+
+      .startup-config-row .config-value {
+        flex: 0 0 auto;
       }
 
       .config-value {
@@ -364,6 +408,62 @@ export class HtLocationInspector extends LitElement {
         margin-top: 4px;
         font-size: 13px;
         color: var(--primary-text-color);
+      }
+
+      .runtime-grid {
+        display: grid;
+        row-gap: 8px;
+        margin-bottom: var(--spacing-md);
+      }
+
+      .runtime-row {
+        display: grid;
+        grid-template-columns: minmax(180px, 240px) 1fr;
+        align-items: center;
+        column-gap: 12px;
+      }
+
+      .runtime-key {
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--text-secondary-color);
+        text-transform: uppercase;
+        letter-spacing: 0.3px;
+      }
+
+      .runtime-value {
+        font-size: 14px;
+        color: var(--primary-text-color);
+      }
+
+      .runtime-note {
+        margin-top: 8px;
+        font-size: 12px;
+        color: var(--text-secondary-color);
+      }
+
+      .lock-directive-list {
+        margin-top: 8px;
+        display: grid;
+        gap: 6px;
+      }
+
+      .lock-directive {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        font-size: 12px;
+        color: var(--primary-text-color);
+      }
+
+      .lock-pill {
+        display: inline-flex;
+        align-items: center;
+        border: 1px solid rgba(var(--rgb-warning-color), 0.35);
+        border-radius: 999px;
+        padding: 2px 8px;
+        color: var(--warning-color);
+        background: rgba(var(--rgb-warning-color), 0.08);
       }
 
       .subsection-title {
@@ -656,6 +756,14 @@ export class HtLocationInspector extends LitElement {
           row-gap: 8px;
         }
 
+        .startup-config-row {
+          gap: 10px;
+        }
+
+        .startup-config-header {
+          align-items: flex-start;
+        }
+
         .editor-grid {
           grid-template-columns: 1fr;
         }
@@ -891,6 +999,16 @@ export class HtLocationInspector extends LitElement {
     return undefined;
   }
 
+  connectedCallback(): void {
+    super.connectedCallback();
+    this._startClockTicker();
+  }
+
+  disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this._stopClockTicker();
+  }
+
   private _renderOccupancyTab() {
     if (!this.location) return "";
 
@@ -926,6 +1044,7 @@ export class HtLocationInspector extends LitElement {
     return html`
       <div>
         <div class="card-section">
+          ${this._renderRuntimeStatus(lockState)}
           ${lockState.isLocked ? html`
             <div class="lock-banner">
               <div class="lock-title">Locked</div>
@@ -934,6 +1053,26 @@ export class HtLocationInspector extends LitElement {
                   ? html`Held by ${lockState.lockedBy.join(", ")}.`
                   : html`Occupancy is currently held by a lock.`}
               </div>
+              ${lockState.lockModes.length
+                ? html`
+                    <div class="runtime-note">
+                      Modes: ${lockState.lockModes.map((mode) => this._lockModeLabel(mode)).join(", ")}
+                    </div>
+                  `
+                : ""}
+              ${lockState.directLocks.length
+                ? html`
+                    <div class="lock-directive-list">
+                      ${lockState.directLocks.map((directive) => html`
+                        <div class="lock-directive">
+                          <span class="lock-pill">${directive.sourceId}</span>
+                          <span>${this._lockModeLabel(directive.mode)}</span>
+                          <span>${this._lockScopeLabel(directive.scope)}</span>
+                        </div>
+                      `)}
+                    </div>
+                  `
+                : html`<div class="runtime-note">Inherited from an ancestor subtree lock.</div>`}
             </div>
           ` : ""}
           <div class="section-title">
@@ -976,6 +1115,77 @@ export class HtLocationInspector extends LitElement {
               </button>
             </div>
           ` : ""}
+        </div>
+      </div>
+    `;
+  }
+
+  private _renderRuntimeStatus(lockState: InspectorLockState) {
+    const occupancyState = this._getOccupancyState();
+    if (!occupancyState) {
+      return html`
+        <div class="runtime-grid">
+          <div class="runtime-row">
+            <div class="runtime-key">Occupancy</div>
+            <div class="runtime-value">Sensor unavailable</div>
+          </div>
+        </div>
+      `;
+    }
+
+    const attrs = occupancyState.attributes || {};
+    const occupied = occupancyState.state === "on";
+    const vacantAt = this._resolveVacantAt(attrs, occupied);
+
+    let timeUntilVacant = "Unknown";
+    let vacantAtLabel = "Unknown";
+    if (!occupied) {
+      timeUntilVacant = "Already vacant";
+      vacantAtLabel = "-";
+    } else if (vacantAt === null) {
+      const hasBlockVacant = lockState.lockModes.includes("block_vacant");
+      const hasFreeze = lockState.lockModes.includes("freeze");
+      timeUntilVacant = hasBlockVacant
+        ? "Indefinite (block vacant)"
+        : hasFreeze
+          ? "Paused while freeze lock is active"
+          : "Indefinite";
+      vacantAtLabel = "Not scheduled";
+    } else if (vacantAt instanceof Date) {
+      timeUntilVacant = this._formatRelativeDuration(vacantAt);
+      vacantAtLabel = this._formatDateTime(vacantAt);
+    } else if (lockState.lockModes.includes("freeze")) {
+      timeUntilVacant = "Paused while freeze lock is active";
+      vacantAtLabel = "Not scheduled";
+    }
+
+    const occupancyLabel = occupied ? "Occupied" : occupancyState.state === "off" ? "Vacant" : "Unknown";
+    const lockModeLabel = lockState.lockModes.length
+      ? lockState.lockModes.map((mode) => this._lockModeLabel(mode)).join(", ")
+      : "None";
+    const lockSourceLabel = lockState.lockedBy.length ? lockState.lockedBy.join(", ") : "None";
+
+    return html`
+      <div class="runtime-grid">
+        <div class="runtime-row">
+          <div class="runtime-key">Occupancy</div>
+          <div class="runtime-value">${occupancyLabel}</div>
+        </div>
+        <div class="runtime-row">
+          <div class="runtime-key">Time Until Vacant</div>
+          <div class="runtime-value" data-testid="runtime-time-until-vacant">${timeUntilVacant}</div>
+        </div>
+        <div class="runtime-row">
+          <div class="runtime-key">Vacant At</div>
+          <div class="runtime-value" data-testid="runtime-vacant-at">${vacantAtLabel}</div>
+        </div>
+        <div class="runtime-row">
+          <div class="runtime-key">Lock Modes</div>
+          <div class="runtime-value">${lockModeLabel}</div>
+        </div>
+        <div class="runtime-row">
+          <div class="runtime-key">Lock Sources</div>
+          <div class="runtime-value">${lockSourceLabel}</div>
         </div>
       </div>
     `;
@@ -1524,6 +1734,7 @@ export class HtLocationInspector extends LitElement {
 
     return html`
       <div>
+        ${triggerType === "occupied" ? this._renderActionStartupConfig() : ""}
         <div class="card-section">
           <div class="section-title">
             <ha-icon .icon=${"mdi:flash"}></ha-icon>
@@ -1602,6 +1813,45 @@ export class HtLocationInspector extends LitElement {
           </div>
           <div class="text-muted" style="font-size: 13px; line-height: 1.4;">
             ${infoText} Rules are created as native Home Assistant automations and tagged for this location.
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  private _renderActionStartupConfig() {
+    const config = this._getAutomationConfig();
+    const reapplyOnStartup = Boolean(config.reapply_last_state_on_startup);
+
+    return html`
+      <div class="card-section">
+        <div class="section-title">
+          <ha-icon .icon=${"mdi:power-cycle"}></ha-icon>
+          Startup behavior
+        </div>
+
+        <div class="config-row startup-config-row">
+          <div class="startup-config-header">
+            <div class="config-label">Reapply current occupancy actions on startup</div>
+            <div class="config-value">
+              <input
+                type="checkbox"
+                class="switch-input"
+                .checked=${reapplyOnStartup}
+                @change=${(ev: Event) => {
+                  const checked = (ev.target as HTMLInputElement).checked;
+                  this._updateAutomationConfig({
+                    ...config,
+                    reapply_last_state_on_startup: checked,
+                  });
+                }}
+              />
+            </div>
+          </div>
+          <div class="config-help">
+            After Home Assistant is fully started, Topomation waits briefly then reruns
+            this location's occupied or vacant automations based on current
+            occupancy state.
           </div>
         </div>
       </div>
@@ -1761,6 +2011,14 @@ export class HtLocationInspector extends LitElement {
     return ((this.location?.modules?.occupancy || {}) as OccupancyConfig) || {};
   }
 
+  private _getAutomationConfig(): AutomationConfig {
+    return ((this.location?.modules?.automation || {}) as AutomationConfig) || {};
+  }
+
+  private async _updateAutomationConfig(config: AutomationConfig): Promise<void> {
+    await this._updateModuleConfig("automation", config);
+  }
+
   private _availableSourceAreas(): Array<{ area_id: string; name: string }> {
     const currentAreaId = this.location?.ha_area_id;
     const areaMap = this.hass?.areas || {};
@@ -1820,21 +2078,134 @@ export class HtLocationInspector extends LitElement {
     return false;
   }
 
-  private _getLockState(): { isLocked: boolean; lockedBy: string[] } {
-    if (!this.location) return { isLocked: false, lockedBy: [] };
+  private _getOccupancyState() {
+    if (!this.location) return undefined;
     const states = this.hass?.states || {};
     for (const stateObj of Object.values(states)) {
       const attrs = stateObj?.attributes || {};
       if (attrs.device_class !== "occupancy") continue;
       if (attrs.location_id !== this.location.id) continue;
-      const lockedByRaw = attrs.locked_by;
-      const lockedBy = Array.isArray(lockedByRaw) ? lockedByRaw.map((item: any) => String(item)) : [];
-      return {
-        isLocked: Boolean(attrs.is_locked),
-        lockedBy,
-      };
+      return stateObj as Record<string, any>;
     }
-    return { isLocked: false, lockedBy: [] };
+    return undefined;
+  }
+
+  private _getLockState(): InspectorLockState {
+    const occupancyState = this._getOccupancyState();
+    const attrs = occupancyState?.attributes || {};
+    const lockedByRaw = attrs.locked_by;
+    const lockModesRaw = attrs.lock_modes;
+    const directLocksRaw = attrs.direct_locks;
+
+    const lockedBy = Array.isArray(lockedByRaw) ? lockedByRaw.map((item: unknown) => String(item)) : [];
+    const lockModes = Array.isArray(lockModesRaw) ? lockModesRaw.map((item: unknown) => String(item)) : [];
+    const directLocks = Array.isArray(directLocksRaw)
+      ? directLocksRaw
+          .map((item: any) => ({
+            sourceId: String(item?.source_id || "unknown"),
+            mode: String(item?.mode || "freeze"),
+            scope: String(item?.scope || "self"),
+          }))
+          .sort((a: OccupancyLockDirective, b: OccupancyLockDirective) =>
+            `${a.sourceId}:${a.mode}:${a.scope}`.localeCompare(`${b.sourceId}:${b.mode}:${b.scope}`)
+          )
+      : [];
+
+    return {
+      isLocked: Boolean(attrs.is_locked),
+      lockedBy,
+      lockModes,
+      directLocks,
+    };
+  }
+
+  private _resolveVacantAt(attrs: Record<string, any>, occupied: boolean): Date | null | undefined {
+    if (!occupied) return undefined;
+
+    const explicitVacantAt = this._parseDateValue(attrs.vacant_at) || this._parseDateValue(attrs.effective_timeout_at);
+    if (explicitVacantAt) {
+      return explicitVacantAt;
+    }
+
+    const contributions = Array.isArray(attrs.contributions) ? attrs.contributions : [];
+    if (!contributions.length) {
+      return undefined;
+    }
+
+    let hasIndefiniteContribution = false;
+    let latestExpiry: Date | undefined;
+    for (const contribution of contributions) {
+      const expiresAt = contribution?.expires_at;
+      if (expiresAt === null || expiresAt === undefined) {
+        hasIndefiniteContribution = true;
+        continue;
+      }
+      const parsed = this._parseDateValue(expiresAt);
+      if (!parsed) continue;
+      if (!latestExpiry || parsed.getTime() > latestExpiry.getTime()) {
+        latestExpiry = parsed;
+      }
+    }
+
+    if (hasIndefiniteContribution) {
+      return null;
+    }
+    return latestExpiry;
+  }
+
+  private _parseDateValue(value: unknown): Date | undefined {
+    if (typeof value !== "string" || !value) return undefined;
+    const dateValue = new Date(value);
+    return Number.isNaN(dateValue.getTime()) ? undefined : dateValue;
+  }
+
+  private _formatDateTime(value: Date): string {
+    return new Intl.DateTimeFormat(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(value);
+  }
+
+  private _formatRelativeDuration(target: Date): string {
+    const totalSeconds = Math.max(0, Math.floor((target.getTime() - this._nowEpochMs) / 1000));
+    if (totalSeconds <= 0) return "now";
+
+    const days = Math.floor(totalSeconds / 86400);
+    const hours = Math.floor((totalSeconds % 86400) / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+
+    const parts: string[] = [];
+    if (days > 0) parts.push(`${days}d`);
+    if (hours > 0) parts.push(`${hours}h`);
+    if (minutes > 0 && parts.length < 2) parts.push(`${minutes}m`);
+    if (parts.length === 0 || (days === 0 && hours === 0 && minutes === 0)) parts.push(`${seconds}s`);
+
+    return parts.slice(0, 2).join(" ");
+  }
+
+  private _lockModeLabel(mode: string): string {
+    if (mode === "block_occupied") return "Block occupied";
+    if (mode === "block_vacant") return "Block vacant";
+    return "Freeze";
+  }
+
+  private _lockScopeLabel(scope: string): string {
+    if (scope === "subtree") return "Subtree";
+    return "Self";
+  }
+
+  private _startClockTicker(): void {
+    if (this._clockTimer !== undefined) return;
+    this._clockTimer = window.setInterval(() => {
+      this._nowEpochMs = Date.now();
+    }, 1000);
+  }
+
+  private _stopClockTicker(): void {
+    if (this._clockTimer === undefined) return;
+    window.clearInterval(this._clockTimer);
+    this._clockTimer = undefined;
   }
 
   private _describeSource(source: any, defaultTimeout: number): string {

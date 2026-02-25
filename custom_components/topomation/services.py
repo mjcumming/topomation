@@ -14,7 +14,9 @@ if TYPE_CHECKING:
     pass
 
 _LOGGER = logging.getLogger(__name__)
-SERVICE_NAMES = ("trigger", "clear", "lock", "unlock", "vacate_area")
+SERVICE_NAMES = ("trigger", "clear", "lock", "unlock", "unlock_all", "vacate_area")
+LOCK_MODES = ("freeze", "block_occupied", "block_vacant")
+LOCK_SCOPES = ("self", "subtree")
 
 # Service schemas
 SERVICE_TRIGGER_SCHEMA = vol.Schema(
@@ -39,6 +41,8 @@ SERVICE_LOCK_SCHEMA = vol.Schema(
     {
         vol.Required("location_id"): str,
         vol.Optional("source_id", default="manual"): str,
+        vol.Optional("mode", default="freeze"): vol.In(LOCK_MODES),
+        vol.Optional("scope", default="self"): vol.In(LOCK_SCOPES),
         vol.Optional("entry_id"): str,
     }
 )
@@ -47,6 +51,13 @@ SERVICE_UNLOCK_SCHEMA = vol.Schema(
     {
         vol.Required("location_id"): str,
         vol.Optional("source_id", default="manual"): str,
+        vol.Optional("entry_id"): str,
+    }
+)
+
+SERVICE_UNLOCK_ALL_SCHEMA = vol.Schema(
+    {
+        vol.Required("location_id"): str,
         vol.Optional("entry_id"): str,
     }
 )
@@ -167,8 +178,16 @@ def async_register_services(hass: HomeAssistant) -> None:
         """Handle lock service call."""
         location_id = call.data["location_id"]
         source_id = call.data.get("source_id", "manual")
+        mode = call.data.get("mode", "freeze")
+        scope = call.data.get("scope", "self")
 
-        _LOGGER.info("Lock location: %s (source=%s)", location_id, source_id)
+        _LOGGER.info(
+            "Lock location: %s (source=%s mode=%s scope=%s)",
+            location_id,
+            source_id,
+            mode,
+            scope,
+        )
 
         kernel = _resolve_kernel(hass, call)
         if kernel is None:
@@ -179,7 +198,7 @@ def async_register_services(hass: HomeAssistant) -> None:
             return
 
         try:
-            occupancy.lock(location_id, source_id)
+            occupancy.lock(location_id, source_id, mode, scope)
         except Exception as err:
             _LOGGER.error("Failed to lock location: %s", err, exc_info=True)
 
@@ -203,6 +222,26 @@ def async_register_services(hass: HomeAssistant) -> None:
             occupancy.unlock(location_id, source_id)
         except Exception as err:
             _LOGGER.error("Failed to unlock location: %s", err, exc_info=True)
+
+    @callback
+    def handle_unlock_all(call: ServiceCall) -> None:
+        """Handle unlock_all service call."""
+        location_id = call.data["location_id"]
+
+        _LOGGER.info("Force unlock all lock sources for: %s", location_id)
+
+        kernel = _resolve_kernel(hass, call)
+        if kernel is None:
+            return
+
+        occupancy = _get_occupancy_module(kernel)
+        if occupancy is None:
+            return
+
+        try:
+            occupancy.unlock_all(location_id)
+        except Exception as err:
+            _LOGGER.error("Failed to unlock all lock sources: %s", err, exc_info=True)
 
     @callback
     def handle_vacate_area(call: ServiceCall) -> None:
@@ -262,12 +301,19 @@ def async_register_services(hass: HomeAssistant) -> None:
 
     hass.services.async_register(
         DOMAIN,
+        "unlock_all",
+        handle_unlock_all,
+        schema=SERVICE_UNLOCK_ALL_SCHEMA,
+    )
+
+    hass.services.async_register(
+        DOMAIN,
         "vacate_area",
         handle_vacate_area,
         schema=SERVICE_VACATE_AREA_SCHEMA,
     )
 
-    _LOGGER.info("Services registered: trigger, clear, lock, unlock, vacate_area")
+    _LOGGER.info("Services registered: trigger, clear, lock, unlock, unlock_all, vacate_area")
 
 
 def async_unregister_services(hass: HomeAssistant) -> None:

@@ -76,7 +76,7 @@ clear:
 
 lock:
   name: Lock Location
-  description: Lock a location to prevent it from becoming vacant
+  description: Apply an occupancy lock policy to a location
   fields:
     entry_id:
       name: Config Entry ID
@@ -99,6 +99,27 @@ lock:
       example: "manual"
       selector:
         text:
+    mode:
+      name: Lock Mode
+      description: Policy intent (freeze state, block occupied transitions, or block vacant transitions)
+      required: false
+      default: "freeze"
+      selector:
+        select:
+          options:
+            - "freeze"
+            - "block_occupied"
+            - "block_vacant"
+    scope:
+      name: Lock Scope
+      description: Apply policy to only this location or the full descendant subtree
+      required: false
+      default: "self"
+      selector:
+        select:
+          options:
+            - "self"
+            - "subtree"
 
 unlock:
   name: Unlock Location
@@ -123,6 +144,24 @@ unlock:
       required: false
       default: "manual"
       example: "manual"
+      selector:
+        text:
+
+unlock_all:
+  name: Unlock All Sources
+  description: Remove all lock sources from a location
+  fields:
+    entry_id:
+      name: Config Entry ID
+      description: Optional config entry ID when multiple Topomation entries are loaded
+      required: false
+      selector:
+        text:
+    location_id:
+      name: Location ID
+      description: The location to force-unlock
+      required: true
+      example: "kitchen"
       selector:
         text:
 

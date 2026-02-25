@@ -10,6 +10,7 @@
 
 Before starting any task:
 
+0. **Load** `/docs/agent-quickstart.md` (fast startup context + command map)
 1. **Load** `/project/README.md` - Master instruction set
 2. **Check** `/project/epics/` - Current epic context
 3. **Check** `/project/issues/` - Specific task details
@@ -95,6 +96,9 @@ Before working on integration features:
 
 ### Local Documentation
 
+- `docs/agent-quickstart.md` - required first-read startup context
+- `docs/current-work.md` - live parallel-work and handoff context
+- `docs/contracts.md` - canonical behavior and API/UI invariants
 - `docs/cursor-guide.md` - Detailed patterns and examples (detailed version of this file)
 - `docs/architecture.md` - Integration-specific architecture
 - `docs/coding-standards.md` - Python + TypeScript standards

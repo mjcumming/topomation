@@ -47,10 +47,21 @@ The primary flow: motion sensor triggers → occupancy entity ON → timeout exp
 
 - [x] Call `topomation.trigger` with `location_id` and `entity_id` → occupancy turns ON
 - [x] Call `topomation.clear` with `location_id` → occupancy turns OFF
-- [x] Call `topomation.lock` → occupancy stays ON until unlock
+- [x] Call `topomation.vacate_area` with `location_id` → subtree vacates (default excludes locked)
+- [x] Call `topomation.lock` (`mode=freeze`) → occupancy stays ON until unlock
+- [x] Call `topomation.lock` (`mode=block_occupied`, `scope=subtree`) → descendants cannot become occupied
+- [x] Call `topomation.lock` (`mode=block_vacant`, `scope=subtree`) → descendants cannot become vacant
 - [x] Call `topomation.unlock` → occupancy can clear normally
+- [x] Call `topomation.unlock_all` → all lock sources clear for the target
 
-**Result**: [x] PASS / [ ] FAIL — Notes: Services validated against `area_kitchen` (`trigger`, `clear`, `lock`, `unlock`).
+**Result**: [x] PASS / [ ] FAIL — Notes: Services validated against `area_kitchen` (`trigger`, `clear`, `vacate_area`, `lock`, `unlock`, `unlock_all`).
+
+### 2.1 Manual tree controls (UI)
+
+- [x] Click occupancy icon on an unlocked location row → location becomes occupied
+- [x] Click occupancy icon again on an unlocked location row → location vacates
+- [x] Click occupancy icon on a locked location row → blocked with warning toast
+- [x] Lock icon still toggles lock/unlock independently of occupancy icon
 
 ---
 

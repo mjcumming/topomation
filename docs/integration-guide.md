@@ -1492,8 +1492,9 @@ The HA wrapper services map directly to occupancy module APIs:
 
 - `topomation.trigger` -> `occupancy.trigger(location_id, source_id, timeout)`
 - `topomation.clear` -> `occupancy.clear(location_id, source_id, trailing_timeout)`
-- `topomation.lock` -> `occupancy.lock(location_id, source_id)`
+- `topomation.lock` -> `occupancy.lock(location_id, source_id, mode, scope)`
 - `topomation.unlock` -> `occupancy.unlock(location_id, source_id)`
+- `topomation.unlock_all` -> `occupancy.unlock_all(location_id)`
 - `topomation.vacate_area` -> `occupancy.vacate_area(location_id, source_id, include_locked)`
 
 For multi-entry HA setups, service calls should include `entry_id`. If multiple

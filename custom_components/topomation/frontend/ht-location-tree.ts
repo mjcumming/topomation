@@ -561,6 +561,32 @@ export class HtLocationTree extends LitElement {
         background: rgba(var(--rgb-primary-color), 0.1);
       }
 
+      .occupancy-btn {
+        opacity: 0.7;
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        padding: 4px;
+        color: var(--secondary-text-color);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 4px;
+      }
+
+      .tree-item:hover .occupancy-btn,
+      .tree-item.selected .occupancy-btn {
+        opacity: 1;
+      }
+
+      .occupancy-btn.occupied {
+        color: var(--success-color);
+      }
+
+      .occupancy-btn:hover {
+        background: rgba(var(--rgb-primary-color), 0.1);
+      }
+
       .sortable-ghost {
         opacity: 0.5;
         background: rgba(var(--rgb-primary-color), 0.12);
@@ -821,6 +847,9 @@ export class HtLocationTree extends LitElement {
         ? `Locked (${lockState.lockedBy.join(", ")})`
         : "Locked"
       : "Unlocked";
+    const isDirectlyOccupied = this.occupancyStates?.[location.id] === true;
+    const occupancyIcon = isDirectlyOccupied ? "mdi:home-account" : "mdi:home";
+    const occupancyTitle = isDirectlyOccupied ? "Mark unoccupied" : "Mark occupied";
 
     return html`
       <div
@@ -867,6 +896,14 @@ export class HtLocationTree extends LitElement {
         ${location.is_explicit_root || this.readOnly
           ? ""
           : html`
+              <button
+                class="occupancy-btn ${isDirectlyOccupied ? "occupied" : ""}"
+                title=${occupancyTitle}
+                @click=${(e: Event) =>
+                  this._handleOccupancyToggle(e, location, isDirectlyOccupied)}
+              >
+                <ha-icon .icon=${occupancyIcon}></ha-icon>
+              </button>
               <button
                 class="lock-btn ${lockState.isLocked ? "locked" : ""}"
                 title=${lockTitle}
@@ -966,7 +1003,12 @@ export class HtLocationTree extends LitElement {
 
   private _handleClick(e: Event, location: Location): void {
     const target = e.target as HTMLElement;
-    if (target.closest(".drag-handle") || target.closest(".expand-btn") || target.closest(".lock-btn")) return;
+    if (
+      target.closest(".drag-handle") ||
+      target.closest(".expand-btn") ||
+      target.closest(".lock-btn") ||
+      target.closest(".occupancy-btn")
+    ) return;
     this.dispatchEvent(new CustomEvent("location-selected", { detail: { locationId: location.id }, bubbles: true, composed: true }));
   }
 
@@ -1023,6 +1065,25 @@ export class HtLocationTree extends LitElement {
         detail: {
           locationId: location.id,
           lock: !lockState.isLocked,
+        },
+        bubbles: true,
+        composed: true,
+      })
+    );
+  }
+
+  private _handleOccupancyToggle(
+    e: Event,
+    location: Location,
+    isDirectlyOccupied: boolean
+  ): void {
+    if (this.readOnly) return;
+    e.stopPropagation();
+    this.dispatchEvent(
+      new CustomEvent("location-occupancy-toggle", {
+        detail: {
+          locationId: location.id,
+          occupied: !isDirectlyOccupied,
         },
         bubbles: true,
         composed: true,

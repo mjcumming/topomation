@@ -3,21 +3,25 @@
 from __future__ import annotations
 
 import logging
-from inspect import isawaitable
 from collections.abc import Mapping
+from inspect import isawaitable
 from typing import TYPE_CHECKING, Any
-
-from homeassistant.const import EVENT_HOMEASSISTANT_STOP, Platform
-from homeassistant.core import Event, HomeAssistant, callback
-from homeassistant.helpers.event import async_call_later
-from homeassistant.helpers.storage import Store
 
 from home_topology import EventBus, EventFilter, LocationManager
 from home_topology.modules.ambient import AmbientLightModule
 from home_topology.modules.automation import AutomationModule
 from home_topology.modules.occupancy import OccupancyModule
+from homeassistant.const import EVENT_HOMEASSISTANT_STOP, Platform
+from homeassistant.core import Event, HomeAssistant, callback
+from homeassistant.helpers.event import async_call_later
+from homeassistant.helpers.storage import Store
 
+from .actions_runtime import (
+    TopomationActionsRuntime,
+    ensure_automation_config_defaults,
+)
 from .const import (
+    AUTOMATION_REAPPLY_CONFIG_KEY,
     AUTOSAVE_DEBOUNCE_SECONDS,
     DOMAIN,
     STORAGE_KEY_CONFIG,
@@ -143,6 +147,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     wrappers_normalized = _normalize_root_only_structural_wrappers(loc_mgr)
     if wrappers_normalized:
         _setup_default_configs(loc_mgr, modules)
+    automation_defaults_updated = ensure_automation_config_defaults(loc_mgr)
 
     # 9. Set up event bridge (HA → kernel)
     event_bridge = EventBridge(hass, bus, loc_mgr, modules.get("occupancy"))
@@ -153,7 +158,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if isawaitable(maybe_awaitable):
             await maybe_awaitable
 
-    # 10. Debounced persistence scheduler for runtime/config edits.
+    # 10. Runtime observers for occupied/vacant native HA automations.
+    actions_runtime = TopomationActionsRuntime(hass, loc_mgr, bus)
+    await actions_runtime.async_setup()
+
+    # 11. Debounced persistence scheduler for runtime/config edits.
     autosave_unsub = None
     autosave_running = False
     autosave_again = False
@@ -203,13 +212,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         autosave_unsub()
         autosave_unsub = None
 
+    @callback
+    def _schedule_persist_on_occupancy(_: Event) -> None:
+        _schedule_persist("occupancy.changed")
+
+    bus.subscribe(_schedule_persist_on_occupancy, EventFilter(event_type="occupancy.changed"))
+
     # Persist topology migration updates for existing installs as soon as possible.
     if should_bootstrap_structure and has_saved_configuration:
         _schedule_persist("upgrade/ensure_home_root")
     if wrappers_normalized and has_saved_configuration:
         _schedule_persist("upgrade/root_only_wrappers")
+    if automation_defaults_updated and has_saved_configuration:
+        _schedule_persist("upgrade/automation_defaults")
 
-    # 11. Store kernel in hass.data
+    # 12. Store kernel in hass.data
     hass.data[DOMAIN][entry.entry_id] = {
         "entry": entry,
         "location_manager": loc_mgr,
@@ -218,22 +235,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "coordinator": coordinator,
         "sync_manager": sync_manager,
         "event_bridge": event_bridge,
+        "actions_runtime": actions_runtime,
         "schedule_persist": _schedule_persist,
         "cancel_pending_persist": _cancel_pending_persist,
     }
 
-    # 12. Register panel, WebSocket API, and services
+    # 13. Register panel, WebSocket API, and services
     await async_register_panel(hass)
     async_register_websocket_api(hass)
     async_register_services(hass)
 
-    # 13. Set up platforms (entities)
+    # 14. Set up platforms (entities)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
-    # 14. Schedule initial timeout check
+    # 15. Schedule initial timeout check
     coordinator.schedule_next_timeout()
 
-    # 15. Register shutdown handler
+    # 16. Register shutdown handler
     @callback
     async def save_state_on_shutdown(_: Event) -> None:
         """Save state before shutdown."""
@@ -276,6 +294,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         event_bridge: EventBridge = kernel["event_bridge"]
         await event_bridge.async_teardown()
 
+        # Clean up action runtime observers/timers
+        actions_runtime: TopomationActionsRuntime = kernel["actions_runtime"]
+        await actions_runtime.async_teardown()
+
         # Remove from hass.data
         hass.data[DOMAIN].pop(entry.entry_id)
         if not hass.data[DOMAIN]:
@@ -300,6 +322,8 @@ def _setup_default_configs(loc_mgr: LocationManager, modules: dict[str, Any]) ->
             # Get default config from module
             default_config = module.default_config()
             default_config["version"] = module.CURRENT_CONFIG_VERSION
+            if module_id == "automation":
+                default_config.setdefault(AUTOMATION_REAPPLY_CONFIG_KEY, False)
 
             # Store in LocationManager
             loc_mgr.set_module_config(

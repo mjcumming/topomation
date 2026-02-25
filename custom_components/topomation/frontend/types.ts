@@ -66,6 +66,10 @@ export interface OccupancyConfig extends ModuleConfig {
   occupancy_sources?: OccupancySource[];
 }
 
+export interface AutomationConfig extends ModuleConfig {
+  reapply_last_state_on_startup?: boolean;
+}
+
 export interface OccupancySource {
   entity_id: string;
   source_id?: string;

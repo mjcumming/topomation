@@ -96,6 +96,7 @@ export class TopomationPanel extends LitElement {
   private _unsubUpdates?: () => void;
   private _unsubStateChanged?: () => void;
   private _unsubOccupancyChanged?: () => void;
+  private _unsubActionsSummary?: () => void;
   @state() private _newLocationDefaults?: { parentId?: string; type?: LocationType };
   private _loadSeq = 0;
   private _reloadTimer?: number;
@@ -176,6 +177,10 @@ export class TopomationPanel extends LitElement {
     if (this._unsubOccupancyChanged) {
       this._unsubOccupancyChanged();
       this._unsubOccupancyChanged = undefined;
+    }
+    if (this._unsubActionsSummary) {
+      this._unsubActionsSummary();
+      this._unsubActionsSummary = undefined;
     }
   }
 
@@ -588,6 +593,7 @@ export class TopomationPanel extends LitElement {
             @location-moved=${this._handleLocationMoved}
             @location-move-blocked=${this._handleLocationMoveBlocked}
             @location-lock-toggle=${this._handleLocationLockToggle}
+            @location-occupancy-toggle=${this._handleLocationOccupancyToggle}
             @location-renamed=${this._handleLocationRenamed}
             @location-delete=${this._handleLocationDelete}
           ></ht-location-tree>
@@ -1054,6 +1060,86 @@ export class TopomationPanel extends LitElement {
     });
   }
 
+  private _getLocationLockState(locationId: string): { isLocked: boolean; lockedBy: string[] } {
+    const states = this.hass?.states || {};
+    for (const state of Object.values(states) as any[]) {
+      const attrs = state?.attributes || {};
+      if (attrs?.device_class !== "occupancy") continue;
+      if (String(attrs?.location_id) !== String(locationId)) continue;
+      const lockedBy = Array.isArray(attrs?.locked_by)
+        ? attrs.locked_by.map((item: unknown) => String(item))
+        : [];
+      return {
+        isLocked: Boolean(attrs?.is_locked),
+        lockedBy,
+      };
+    }
+
+    return { isLocked: false, lockedBy: [] };
+  }
+
+  private async _handleLocationOccupancyToggle(e: CustomEvent): Promise<void> {
+    e.stopPropagation();
+    const locationId = e?.detail?.locationId as string | undefined;
+    const occupied = Boolean(e?.detail?.occupied);
+    if (!locationId) {
+      this._showToast("Invalid occupancy request", "error");
+      return;
+    }
+
+    await this._enqueueLocationOp(locationId, async () => {
+      const location = this._locations.find((loc) => loc.id === locationId);
+      const locationName = location?.name || locationId;
+      const { isLocked, lockedBy } = this._getLocationLockState(locationId);
+      if (isLocked) {
+        const lockDetails = lockedBy.length ? ` (${lockedBy.join(", ")})` : "";
+        this._showToast(`Hey, can't do it. "${locationName}" is locked${lockDetails}.`, "warning");
+        return;
+      }
+
+      try {
+        if (!location) {
+          this._showToast("Invalid occupancy request", "error");
+          return;
+        }
+
+        const service = occupied ? "trigger" : "vacate_area";
+        const serviceData: Record<string, unknown> = {
+          location_id: locationId,
+          source_id: "manual_ui",
+        };
+
+        if (occupied) {
+          const configuredTimeout = location.modules?.occupancy?.default_timeout;
+          if (typeof configuredTimeout === "number" && configuredTimeout >= 0) {
+            serviceData.timeout = Math.floor(configuredTimeout);
+          }
+        } else {
+          serviceData.include_locked = false;
+        }
+
+        await this.hass.callWS({
+          type: "call_service",
+          domain: "topomation",
+          service,
+          service_data: serviceData,
+        });
+        this._logEvent("ui", service, { locationId, source_id: "manual_ui" });
+        await this._loadLocations(true);
+        this._locationsVersion += 1;
+        this._showToast(
+          occupied
+            ? `Marked "${locationName}" as occupied`
+            : `Marked "${locationName}" as unoccupied (vacated)`,
+          "success"
+        );
+      } catch (error: any) {
+        console.error("Failed to toggle occupancy:", error);
+        this._showToast(error?.message || "Hey, can't do it.", "error");
+      }
+    });
+  }
+
   private async _handleLocationRenamed(e: CustomEvent): Promise<void> {
     e.stopPropagation();
     const { locationId, newName } = e.detail || {};
@@ -1213,6 +1299,10 @@ export class TopomationPanel extends LitElement {
       this._unsubOccupancyChanged();
       this._unsubOccupancyChanged = undefined;
     }
+    if (this._unsubActionsSummary) {
+      this._unsubActionsSummary();
+      this._unsubActionsSummary = undefined;
+    }
 
     try {
       this._unsubUpdates = await this.hass.connection.subscribeEvents(
@@ -1269,6 +1359,18 @@ export class TopomationPanel extends LitElement {
     } catch (err) {
       console.warn("Failed to subscribe to topomation_occupancy_changed events", err);
       this._logEvent("error", "subscribe failed: topomation_occupancy_changed", String(err));
+    }
+
+    try {
+      this._unsubActionsSummary = await this.hass.connection.subscribeEvents(
+        (event: any) => {
+          this._logEvent("ha", "topomation_actions_summary", event?.data || {});
+        },
+        "topomation_actions_summary"
+      );
+    } catch (err) {
+      console.warn("Failed to subscribe to topomation_actions_summary events", err);
+      this._logEvent("error", "subscribe failed: topomation_actions_summary", String(err));
     }
   }
 

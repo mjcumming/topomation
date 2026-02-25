@@ -404,6 +404,129 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(tabLabels).to.include("On Vacant");
   });
 
+  it("renders lock diagnostics and indefinite vacant timing when block-vacant lock is active", async () => {
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>) => {
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        return [] as T;
+      },
+      connection: {},
+      states: {
+        "binary_sensor.occupancy_area_kitchen": {
+          entity_id: "binary_sensor.occupancy_area_kitchen",
+          state: "on",
+          attributes: {
+            device_class: "occupancy",
+            location_id: "area_kitchen",
+            is_locked: true,
+            locked_by: ["party_mode"],
+            lock_modes: ["block_vacant"],
+            direct_locks: [
+              {
+                source_id: "party_mode",
+                mode: "block_vacant",
+                scope: "subtree",
+              },
+            ],
+            contributions: [{ source_id: "__lock_hold__:area_kitchen", expires_at: null }],
+          },
+        },
+      },
+      areas: {},
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_kitchen";
+    location.name = "Kitchen";
+    location.modules._meta = { type: "area" };
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${location}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    const untilVacantText = (
+      element.shadowRoot!.querySelector('[data-testid="runtime-time-until-vacant"]')?.textContent || ""
+    ).trim();
+    const lockModesText = Array.from(element.shadowRoot!.querySelectorAll(".runtime-row"))
+      .find((row) => (row.textContent || "").includes("Lock Modes"))
+      ?.textContent || "";
+    const lockDirectiveText = (
+      element.shadowRoot!.querySelector(".lock-directive")?.textContent || ""
+    ).trim();
+
+    expect(untilVacantText).to.include("Indefinite");
+    expect(lockModesText).to.include("Block vacant");
+    expect(lockDirectiveText).to.include("Subtree");
+  });
+
+  it("renders vacant-at timestamp when effective timeout is provided", async () => {
+    const vacantAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+    const expectedVacantAtLabel = new Intl.DateTimeFormat(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(new Date(vacantAt));
+
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>) => {
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        return [] as T;
+      },
+      connection: {},
+      states: {
+        "binary_sensor.occupancy_area_kitchen": {
+          entity_id: "binary_sensor.occupancy_area_kitchen",
+          state: "on",
+          attributes: {
+            device_class: "occupancy",
+            location_id: "area_kitchen",
+            is_locked: false,
+            locked_by: [],
+            lock_modes: [],
+            direct_locks: [],
+            contributions: [{ source_id: "motion.kitchen", expires_at: vacantAt }],
+            effective_timeout_at: vacantAt,
+            vacant_at: vacantAt,
+          },
+        },
+      },
+      areas: {},
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_kitchen";
+    location.name = "Kitchen";
+    location.modules._meta = { type: "area" };
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${location}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    const untilVacantText = (
+      element.shadowRoot!.querySelector('[data-testid="runtime-time-until-vacant"]')?.textContent || ""
+    ).trim();
+    const vacantAtText = (
+      element.shadowRoot!.querySelector('[data-testid="runtime-vacant-at"]')?.textContent || ""
+    ).trim();
+
+    expect(untilVacantText).to.not.equal("Unknown");
+    expect(untilVacantText).to.not.equal("Already vacant");
+    expect(vacantAtText).to.equal(expectedVacantAtLabel);
+  });
+
   it("emits add-rule with vacant trigger from On Vacant tab", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>) => {

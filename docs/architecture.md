@@ -241,14 +241,24 @@ def handle_locations_list(hass, connection, msg):
 
 - `topomation.trigger` - Manual occupancy trigger (`occupancy.trigger`)
 - `topomation.clear` - Manual occupancy clear (`occupancy.clear`)
-- `topomation.lock` - Lock location (prevent vacancy, source-aware)
+- `topomation.lock` - Apply lock policy (`freeze`, `block_occupied`, `block_vacant`) with `scope` (`self`, `subtree`)
 - `topomation.unlock` - Unlock location (source-aware)
+- `topomation.unlock_all` - Force-clear all lock sources at a location
 - `topomation.vacate_area` - Vacate location and descendants
 
 **Wrapper Behavior**:
 
 - Each service supports optional `entry_id` for multi-entry routing; if multiple entries are loaded and `entry_id` is omitted, the call is rejected.
 - Lock/unlock/vacate commands pass `source_id` through to the core occupancy module for deterministic multi-source behavior.
+- `topomation.lock` forwards `mode` and `scope` to the core occupancy engine:
+  - `freeze`: suspend local occupancy changes while locked
+  - `block_occupied`: prevent occupied transitions (away/security intent)
+  - `block_vacant`: prevent vacant transitions (party/manual hold intent)
+  - `scope=subtree`: applies policy to location + descendants without physically copying lock state to each child
+- Manual occupancy controls in the panel map to services using a stable source:
+  - `set occupied` -> `topomation.trigger(location_id, source_id="manual_ui", timeout=default_timeout)`
+  - `set unoccupied` -> `topomation.vacate_area(location_id, source_id="manual_ui", include_locked=false)`
+- Locked locations are immutable for manual occupancy actions. The UI must reject the request and show a warning toast.
 
 ### 3.7 Frontend Panel (`frontend/`)
 
@@ -269,6 +279,10 @@ shared location tree selection context.
 **Workspace Behavior**:
 
 - Location tree is always present on the left; occupancy/actions use the same selected node context.
+- Each non-root location row exposes two quick controls:
+  - occupancy toggle icon (house): mark occupied/unoccupied
+  - lock icon: lock/unlock location
+- Occupancy quick-controls are source-aware (`manual_ui`) and respect lock invariants (no mutation while locked).
 - Inspector tabs are split into `Detection`, `On Occupied`, and `On Vacant`.
 - `On Occupied` / `On Vacant` rules are created as native Home Assistant automation entities (managed in HA's automation system).
 - Topomation tags those automations with panel metadata + labels/category so each location tab can filter only its own rules.
@@ -455,6 +469,7 @@ Broken/invalid persisted payloads are ignored and do not block startup.
 - On integration unload
 - Debounced autosave after successful `locations/reorder`
 - Debounced autosave after successful `locations/set_module_config`
+- Debounced autosave after `occupancy.changed` (runtime occupancy/lock mutations)
 
 **Restore**:
 

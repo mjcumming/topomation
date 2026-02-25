@@ -329,6 +329,33 @@ describe('HtLocationTree - shouldUpdate Performance', () => {
     expect(lockDetail?.lock).to.equal(true);
   });
 
+  it('dispatches location-occupancy-toggle when occupancy icon is clicked', async () => {
+    const element = await fixture<HtLocationTree>(html`
+      <ht-location-tree
+        .hass=${mockHass as HomeAssistant}
+        .locations=${mockLocations}
+        .occupancyStates=${{ kitchen: false }}
+        .allowRename=${true}
+      ></ht-location-tree>
+    `);
+
+    await element.updateComplete;
+
+    let occupancyDetail: { locationId: string; occupied: boolean } | undefined;
+    element.addEventListener('location-occupancy-toggle', (e: Event) => {
+      occupancyDetail = (e as CustomEvent).detail;
+    });
+
+    const occupancyBtn = element.shadowRoot!.querySelector('.occupancy-btn') as HTMLElement;
+    expect(occupancyBtn).to.exist;
+    occupancyBtn.click();
+
+    await element.updateComplete;
+    expect(occupancyDetail).to.exist;
+    expect(occupancyDetail?.locationId).to.equal('kitchen');
+    expect(occupancyDetail?.occupied).to.equal(true);
+  });
+
   it('does not render row delete buttons', async () => {
     const element = await fixture<HtLocationTree>(html`
       <ht-location-tree

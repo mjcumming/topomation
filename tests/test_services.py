@@ -68,8 +68,50 @@ async def test_lock_and_unlock_use_source_id(hass: HomeAssistant) -> None:
         blocking=True,
     )
 
-    occupancy.lock.assert_called_once_with("office", "away_automation")
+    occupancy.lock.assert_called_once_with("office", "away_automation", "freeze", "self")
     occupancy.unlock.assert_called_once_with("office", "away_automation")
+    async_unregister_services(hass)
+
+
+async def test_lock_defaults_mode_and_scope(hass: HomeAssistant) -> None:
+    """lock service should default mode/scope for backward-compatible calls."""
+    occupancy = Mock()
+    hass.data[DOMAIN] = {"entry_1": _kernel_with_occupancy(occupancy)}
+    async_register_services(hass)
+
+    await hass.services.async_call(
+        DOMAIN,
+        "lock",
+        {
+            "location_id": "office",
+            "source_id": "away_automation",
+        },
+        blocking=True,
+    )
+
+    occupancy.lock.assert_called_once_with("office", "away_automation", "freeze", "self")
+    async_unregister_services(hass)
+
+
+async def test_lock_passes_mode_and_scope(hass: HomeAssistant) -> None:
+    """lock service should pass explicit mode/scope through to occupancy module."""
+    occupancy = Mock()
+    hass.data[DOMAIN] = {"entry_1": _kernel_with_occupancy(occupancy)}
+    async_register_services(hass)
+
+    await hass.services.async_call(
+        DOMAIN,
+        "lock",
+        {
+            "location_id": "house",
+            "source_id": "alarm_away",
+            "mode": "block_occupied",
+            "scope": "subtree",
+        },
+        blocking=True,
+    )
+
+    occupancy.lock.assert_called_once_with("house", "alarm_away", "block_occupied", "subtree")
     async_unregister_services(hass)
 
 
@@ -91,6 +133,23 @@ async def test_vacate_area_passes_source_and_include_locked(hass: HomeAssistant)
     )
 
     occupancy.vacate_area.assert_called_once_with("house", "night_mode", True)
+    async_unregister_services(hass)
+
+
+async def test_unlock_all_forces_clear_all_lock_sources(hass: HomeAssistant) -> None:
+    """unlock_all service should call occupancy.unlock_all for the location."""
+    occupancy = Mock()
+    hass.data[DOMAIN] = {"entry_1": _kernel_with_occupancy(occupancy)}
+    async_register_services(hass)
+
+    await hass.services.async_call(
+        DOMAIN,
+        "unlock_all",
+        {"location_id": "house"},
+        blocking=True,
+    )
+
+    occupancy.unlock_all.assert_called_once_with("house")
     async_unregister_services(hass)
 
 

@@ -591,6 +591,195 @@ describe('TopomationPanel integration (fake hass)', () => {
     );
   });
 
+  it("handles occupancy toggle from tree via topomation trigger service", async () => {
+    const callWsCalls: any[] = [];
+    const hass: HomeAssistant = {
+      callWS: async <T>(req: Record<string, any>): Promise<T> => {
+        callWsCalls.push(req);
+        if (req.type === "topomation/locations/list") {
+          return { locations } as T;
+        }
+        if (req.type === "config/entity_registry/list") {
+          return [] as T;
+        }
+        if (req.type === "config/device_registry/list") {
+          return [] as T;
+        }
+        if (req.type === "call_service") {
+          return {} as T;
+        }
+        throw new Error("Unexpected WS call");
+      },
+      connection: {},
+      states: {},
+      areas: {},
+      floors: {},
+      config: {
+        location_name: "Test Property",
+      },
+      localize: (key: string) => key,
+    };
+
+    const element = await fixture<HTMLDivElement>(html`
+      <topomation-panel .hass=${hass}></topomation-panel>
+    `);
+
+    await waitUntil(() => (element as any)._loading === false, "panel did not finish loading");
+    const tree = element.shadowRoot!.querySelector("ht-location-tree") as HTMLElement;
+    expect(tree).to.exist;
+
+    tree.dispatchEvent(
+      new CustomEvent("location-occupancy-toggle", {
+        detail: { locationId: "kitchen", occupied: true },
+        bubbles: true,
+        composed: true,
+      })
+    );
+
+    await waitUntil(
+      () =>
+        callWsCalls.some(
+          (call) =>
+            call.type === "call_service" &&
+            call.domain === "topomation" &&
+            call.service === "trigger" &&
+            call.service_data?.location_id === "kitchen"
+        ),
+      "trigger service was not called"
+    );
+  });
+
+  it("shows warning toast and skips service call when occupancy toggle targets locked location", async () => {
+    const callWsCalls: any[] = [];
+    const notifications: any[] = [];
+    const hass: HomeAssistant = {
+      callWS: async <T>(req: Record<string, any>): Promise<T> => {
+        callWsCalls.push(req);
+        if (req.type === "topomation/locations/list") {
+          return { locations } as T;
+        }
+        if (req.type === "config/entity_registry/list") {
+          return [] as T;
+        }
+        if (req.type === "config/device_registry/list") {
+          return [] as T;
+        }
+        if (req.type === "call_service") {
+          return {} as T;
+        }
+        throw new Error("Unexpected WS call");
+      },
+      connection: {},
+      states: {
+        "binary_sensor.occupancy_kitchen": {
+          entity_id: "binary_sensor.occupancy_kitchen",
+          state: "on",
+          attributes: {
+            device_class: "occupancy",
+            location_id: "kitchen",
+            is_locked: true,
+            locked_by: ["manual_ui"],
+          },
+        },
+      },
+      areas: {},
+      floors: {},
+      config: {
+        location_name: "Test Property",
+      },
+      localize: (key: string) => key,
+    };
+
+    const element = await fixture<HTMLDivElement>(html`
+      <topomation-panel .hass=${hass}></topomation-panel>
+    `);
+
+    await waitUntil(() => (element as any)._loading === false, "panel did not finish loading");
+    element.addEventListener("hass-notification", (event: Event) => {
+      notifications.push((event as CustomEvent).detail);
+    });
+
+    const tree = element.shadowRoot!.querySelector("ht-location-tree") as HTMLElement;
+    expect(tree).to.exist;
+
+    tree.dispatchEvent(
+      new CustomEvent("location-occupancy-toggle", {
+        detail: { locationId: "kitchen", occupied: false },
+        bubbles: true,
+        composed: true,
+      })
+    );
+
+    await waitUntil(() => notifications.length > 0, "warning notification was not emitted");
+    expect(notifications[0].message).to.contain("can't do it");
+    expect(
+      callWsCalls.some(
+        (call) =>
+          call.type === "call_service" &&
+          call.domain === "topomation" &&
+          (call.service === "trigger" || call.service === "clear")
+      )
+    ).to.equal(false);
+  });
+
+  it("handles occupancy toggle to vacant via topomation vacate_area service", async () => {
+    const callWsCalls: any[] = [];
+    const hass: HomeAssistant = {
+      callWS: async <T>(req: Record<string, any>): Promise<T> => {
+        callWsCalls.push(req);
+        if (req.type === "topomation/locations/list") {
+          return { locations } as T;
+        }
+        if (req.type === "config/entity_registry/list") {
+          return [] as T;
+        }
+        if (req.type === "config/device_registry/list") {
+          return [] as T;
+        }
+        if (req.type === "call_service") {
+          return {} as T;
+        }
+        throw new Error("Unexpected WS call");
+      },
+      connection: {},
+      states: {},
+      areas: {},
+      floors: {},
+      config: {
+        location_name: "Test Property",
+      },
+      localize: (key: string) => key,
+    };
+
+    const element = await fixture<HTMLDivElement>(html`
+      <topomation-panel .hass=${hass}></topomation-panel>
+    `);
+
+    await waitUntil(() => (element as any)._loading === false, "panel did not finish loading");
+    const tree = element.shadowRoot!.querySelector("ht-location-tree") as HTMLElement;
+    expect(tree).to.exist;
+
+    tree.dispatchEvent(
+      new CustomEvent("location-occupancy-toggle", {
+        detail: { locationId: "kitchen", occupied: false },
+        bubbles: true,
+        composed: true,
+      })
+    );
+
+    await waitUntil(
+      () =>
+        callWsCalls.some(
+          (call) =>
+            call.type === "call_service" &&
+            call.domain === "topomation" &&
+            call.service === "vacate_area" &&
+            call.service_data?.location_id === "kitchen"
+        ),
+      "vacate_area service was not called"
+    );
+  });
+
   it("resolves manager view from panel config and path", async () => {
     const element = document.createElement("topomation-panel") as any;
 

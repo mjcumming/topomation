@@ -1,11 +1,10 @@
 {
   "folders": [
     {
-      "name": "topomation",
-      "path": ".",
+      "path": "/workspaces/core",
     },
     {
-      "path": "../core",
+      "path": ".",
     },
   ],
   "settings": {

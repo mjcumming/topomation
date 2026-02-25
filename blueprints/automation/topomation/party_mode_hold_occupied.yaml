@@ -1,0 +1,77 @@
+blueprint:
+  name: Topomation party mode hold occupied
+  description: >-
+    Keep occupancy held while a mode helper is on.
+    Turns on block-vacant lock policy, then removes it when the helper turns off.
+  domain: automation
+  source_url: https://github.com/mjcumming/topomation/blob/main/blueprints/automation/topomation/party_mode_hold_occupied.yaml
+  input:
+    mode_entity:
+      name: Party mode helper
+      description: Usually an input_boolean or scene helper
+      selector:
+        entity: {}
+    enabled_state:
+      name: Enabled state
+      default: "on"
+      selector:
+        text: {}
+    disabled_state:
+      name: Disabled state
+      default: "off"
+      selector:
+        text: {}
+    location_id:
+      name: Topomation location ID
+      description: Location to hold occupied
+      selector:
+        text: {}
+    scope:
+      name: Lock scope
+      description: Apply only to this location or this location plus descendants
+      default: subtree
+      selector:
+        select:
+          options:
+            - self
+            - subtree
+    source_id:
+      name: Lock source ID
+      description: Stable source used for lock/unlock pairing
+      default: automation_party_mode
+      selector:
+        text: {}
+
+mode: single
+
+variables:
+  enabled_state_var: !input enabled_state
+  disabled_state_var: !input disabled_state
+  location_id_var: !input location_id
+  scope_var: !input scope
+  source_id_var: !input source_id
+
+trigger:
+  - platform: state
+    entity_id: !input mode_entity
+
+action:
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ trigger.to_state is not none and trigger.to_state.state == enabled_state_var }}"
+        sequence:
+          - service: topomation.lock
+            data:
+              location_id: "{{ location_id_var }}"
+              source_id: "{{ source_id_var }}"
+              mode: block_vacant
+              scope: "{{ scope_var }}"
+      - conditions:
+          - condition: template
+            value_template: "{{ trigger.to_state is not none and trigger.to_state.state == disabled_state_var }}"
+        sequence:
+          - service: topomation.unlock
+            data:
+              location_id: "{{ location_id_var }}"
+              source_id: "{{ source_id_var }}"
