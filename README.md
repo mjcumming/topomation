@@ -1,104 +1,82 @@
-# Home Topology - Home Assistant Integration
+# Topomation
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
-[![Version](https://img.shields.io/badge/version-0.1.0--alpha-blue)](https://github.com/mjcumming/home-topology-ha/releases)
+[![Version](https://img.shields.io/badge/version-0.1.0--alpha-blue)](https://github.com/mjcumming/topomation/releases)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-A Home Assistant integration for the [home-topology](https://github.com/mjcumming/home-topology) platform-agnostic home automation kernel.
+**Topomation: Occupancy-driven automation**
 
-## Features
+Topomation turns disconnected sensor signals into a reliable occupancy model you can automate against.  
+Instead of wiring every automation directly to individual entities, you define occupancy at the location level and reuse that behavior across your home.
 
-- **Spatial Topology**: Model your home as floors, rooms, zones, and suites
-- **Smart Occupancy**: Track presence with motion, BLE, and door sensors
-- **Location-Aware Automations**: Attach behaviors to locations, not entities
-- **Visual Manager**: Sidebar panel for drag-and-drop organization
-- **Behavior Modules**: Occupancy tracking, automations, and lighting presets
+## Naming and Namespace
 
-## Why home-topology?
+Topomation is the product name.  
+Current Home Assistant internals use:
 
-Traditional home automation organizes around **entities** (lights, sensors, switches). home-topology organizes around **locations** (kitchen, bedroom, office). This makes automation more intuitive:
+- Integration domain: `topomation`
+- Services: `topomation.trigger`, `topomation.clear`, `topomation.lock`, `topomation.unlock`, `topomation.vacate_area`
+- Repository: `topomation`
 
-```yaml
-# Traditional approach
-- Kitchen motion → Turn on kitchen lights
-- Living room motion → Turn on living room lights
-- Office motion → Turn on office lights
+## Why Topomation
 
-# home-topology approach
-- Any location: occupied → Turn on lights
-```
+Home Assistant gives you great raw signals, but occupancy automations often become brittle when every room uses different sensor logic.  
+Topomation introduces one shared pattern:
 
-The kernel handles the complexity; you just configure which sensors affect which locations.
+1. Collect occupancy-relevant events from your sensors.
+2. Resolve those events into a location-level occupied/vacant state.
+3. Drive automations from that state instead of ad hoc per-entity conditions.
 
----
+Result: simpler automations, better consistency, easier debugging.
+
+## What It Does Well
+
+- **Unifies disparate sensors** into one occupancy decision per location.
+- **Keeps automations location-first** so behavior can be reused across rooms.
+- **Supports hierarchy-aware control** across floors, areas, and subareas.
+- **Provides a visual manager** for structure, detection sources, and actions.
+- **Uses native Home Assistant automations** for occupied/vacant action rules.
+
+## How It Works
+
+Topomation is a thin Home Assistant adapter around the Topomation core kernel (`home_topology` Python package).
+
+Flow:
+
+1. HA entities change state (motion, BLE, contact, etc.).
+2. `event_bridge.py` translates state changes into kernel events.
+3. Occupancy module resolves occupied/vacant with timeouts and holds.
+4. Integration exposes occupancy state back to HA entities and panel views.
+5. You use occupancy state and generated action automations for behavior.
+
+See [Architecture](docs/architecture.md) for full details.
 
 ## Installation
 
-### HACS (Recommended)
+Use the full guide: [Installation Guide](docs/installation.md)
 
-1. Open HACS in Home Assistant
-2. Click the three dots menu → **Custom repositories**
-3. Add `https://github.com/mjcumming/home-topology-ha` as an **Integration**
-4. Search for "Home Topology" and install
-5. Restart Home Assistant
-6. Go to **Settings** → **Devices & Services** → **Add Integration** → **Home Topology**
+Quick path via HACS:
 
-### Manual
-
-1. Copy `custom_components/home_topology` to your `config/custom_components/` directory
-2. Restart Home Assistant
-3. Go to **Settings** → **Devices & Services** → **Add Integration** → **Home Topology**
-
----
+1. Open HACS in Home Assistant.
+2. Add `https://github.com/mjcumming/topomation` as a custom integration repository.
+3. Install the integration.
+4. Restart Home Assistant.
+5. Add the integration from **Settings** -> **Devices & Services**.
 
 ## Quick Start
 
-### 1. Access the Location Manager
+1. Open **Location Manager** from the HA sidebar.
+2. Import/sync your floors and areas.
+3. Build your location hierarchy.
+4. Add occupancy sources under the `Detection` tab.
+5. Configure actions under `On Occupied` and `On Vacant`.
+6. Validate behavior using occupancy entities and service calls.
 
-After installation, "Location Manager" appears in your sidebar. Open it to start organizing your home.
-
-### 2. Import Your Areas
-
-The integration automatically creates locations from your Home Assistant areas. You'll see them in the "Unassigned" section.
-
-### 3. Organize Your Topology
-
-Drag locations to create hierarchy:
-
-```
-House
-├── First Floor
-│   ├── Kitchen
-│   ├── Living Room
-│   └── Dining Room
-└── Second Floor
-    ├── Master Suite
-    │   ├── Master Bedroom
-    │   ├── Master Bath
-    │   └── Master Closet
-    └── Guest Room
-```
-
-### 4. Configure Occupancy
-
-Select a location, go to the **Occupancy** tab:
-
-- Set timeout (how long until vacant)
-- Add occupancy sources (motion sensors, presence sensors)
-- Configure trigger modes (motion vs. state-based)
-
-### 5. View Occupancy State
-
-Occupancy entities appear automatically:
-
-- `binary_sensor.occupancy_kitchen` - Occupied/vacant
-- Attributes: confidence, active holds, expires at
-
-### 6. Use in Automations
+Example automation trigger:
 
 ```yaml
 automation:
-  - alias: "Kitchen lights on when occupied"
+  - alias: Kitchen lights on when occupied
     trigger:
       - platform: state
         entity_id: binary_sensor.occupancy_kitchen
@@ -109,225 +87,65 @@ automation:
           entity_id: light.kitchen
 ```
 
-### 7. Manual Service Control (Optional)
-
-Manual occupancy services are available for scripts and automations:
+Manual occupancy service example:
 
 ```yaml
-service: home_topology.trigger
+service: topomation.trigger
 data:
   location_id: kitchen
   source_id: manual_override
   timeout: 300
 ```
 
-```yaml
-service: home_topology.vacate_area
-data:
-  location_id: house
-  source_id: away_mode
-  include_locked: false
-```
+## Design Decisions
 
-If multiple Home Topology config entries are loaded, include `entry_id`:
+Topomation is built on documented ADRs in [ADR Log](docs/adr-log.md).  
+Key decisions include:
 
-```yaml
-service: home_topology.trigger
-data:
-  entry_id: your_entry_id
-  location_id: kitchen
-  source_id: manual_override
-  timeout: 300
-```
+- Lit-based UI aligned with Home Assistant frontend patterns.
+- Host-controlled timeout scheduling for deterministic behavior.
+- Integration-owned topology wrappers plus HA-backed area/floor mapping.
+- Single sidebar entry with deep-link aliases for occupancy/actions workflows.
 
----
+## Troubleshooting and Validation
 
-## Documentation
+- Live validation checklist: [Live HA Validation Checklist](docs/live-ha-validation-checklist.md)
+- Integration and behavior guide: [Integration Guide](docs/integration-guide.md)
+- Work log and release context: [Work Tracking](docs/work-tracking.md)
 
-### Core Concepts
+## Current Scope and Tradeoffs (v0.1.0-alpha)
 
-- **Location**: A place in your home (room, floor, zone)
-- **Module**: Behavior attached to locations (Occupancy, Automation, Lighting)
-- **Occupancy Source**: Entity that generates occupancy events (motion sensor, BLE tracker)
-- **Trigger Mode**: How an entity affects occupancy (any change vs. specific states)
-
-### Configuration
-
-See [`docs/integration-guide.md`](docs/integration-guide.md) for:
-
-- Event translation patterns
-- Timeout configuration
-- Entity configuration modes
-- Advanced hierarchy patterns
-
-### UI Guide
-
-See [`docs/ui-design.md`](docs/ui-design.md) for:
-
-- Component specifications
-- Interaction patterns
-- Accessibility features
-- Icon resolution
-
-### Development
-
-See [`docs/architecture.md`](docs/architecture.md) and [`docs/coding-standards.md`](docs/coding-standards.md) for integration architecture and development guidelines.
-
----
+- Occupancy and actions workflow is available and usable.
+- Integration and service namespaces are now `topomation`.
+- Some advanced UX polish and broader module surface are still in progress.
 
 ## Development
 
-### Setup Development Environment
-
 ```bash
-# Clone the repo
-git clone https://github.com/mjcumming/home-topology-ha
-cd home-topology-ha
-
-# Install with dev dependencies
+git clone https://github.com/mjcumming/topomation
+cd topomation
 make dev-install
-
-# Symlink into your HA config
-make symlink
-# Enter path when prompted: /path/to/ha-config
-
-# Restart HA to load the integration
-```
-
-### Testing
-
-```bash
-# Run tests
 make test
-
-# Run with coverage
-make test-cov
-
-# Run all checks (format, lint, typecheck, test)
-make check
 ```
 
-### Frontend Development
+For deeper development workflows, start with:
 
-The panel is built with Lit (Home Assistant's native framework):
-
-```bash
-# When frontend build system is added
-make frontend-install
-make frontend-watch  # Auto-rebuild on changes
-```
-
-### Project Structure
-
-```
-home-topology-ha/
-├── custom_components/home_topology/
-│   ├── __init__.py              # Integration setup
-│   ├── event_bridge.py          # HA → kernel events
-│   ├── coordinator.py           # Timeout scheduling
-│   ├── binary_sensor.py         # Occupancy entities
-│   ├── websocket_api.py         # UI API
-│   └── frontend/                # Lit components
-├── docs/                        # Architecture & guides
-├── tests/                       # Unit & integration tests
-└── Makefile                     # Development commands
-```
-
----
-
-## Roadmap
-
-### v0.1.0 (Current - Alpha)
-
-- [x] Documentation infrastructure
-- [x] Core kernel integration
-- [x] Basic UI panel
-- [x] Occupancy tracking
-- [x] Bidirectional HA area/entity sync
-- [x] Topology configuration persistence (location tree + module configs)
-
-### v0.2.0 (Beta)
-
-- [x] Automation module integration
-- [x] Ambient light module integration
-- [ ] Full UI with entity configuration
-- [ ] State persistence
-- [ ] HACS compatible
-
-### v1.0.0 (Stable)
-
-- [ ] Production-ready
-- [ ] Comprehensive tests (>80% coverage)
-- [ ] Complete documentation
-- [ ] HACS default repository
-
-### Future
-
-- [ ] Climate module
-- [ ] Media module
-- [ ] Floor plan view
-- [ ] Bulk operations
-
----
-
-## Architecture
-
-This integration is a **thin adapter layer** between Home Assistant and the platform-agnostic [home-topology](https://github.com/mjcumming/home-topology) kernel.
-
-**Integration provides**:
-
-- Event translation (HA state changes → kernel events)
-- State exposure (kernel state → HA entities)
-- Timeout coordination (host-controlled scheduling)
-- UI panel (Lit-based)
-
-**Kernel provides**:
-
-- Location hierarchy management
-- Event routing
-- Module behavior (Occupancy, Automation, Lighting)
-
-See [`docs/architecture.md`](docs/architecture.md) for complete architecture documentation.
-
----
-
-## Contributing
-
-Contributions welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) first.
-
-### Development Workflow
-
-1. Fork the repository
-2. Create a feature branch (`feat/awesome-feature`)
-3. Make changes with tests
-4. Run `make check` to verify
-5. Commit with [conventional commit messages](https://www.conventionalcommits.org/)
-6. Push and create a Pull Request
-
----
+- [Docs Index](docs/index.md)
+- [Frontend Workflow](docs/frontend-dev-workflow.md)
+- [Architecture](docs/architecture.md)
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/mjcumming/home-topology-ha/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/mjcumming/home-topology-ha/discussions)
-- **Core Library**: [home-topology repository](https://github.com/mjcumming/home-topology)
-
----
+- Issues: <https://github.com/mjcumming/topomation/issues>
+- Discussions: <https://github.com/mjcumming/topomation/discussions>
+- Core library: <https://github.com/mjcumming/topomation>
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
+MIT License. See [LICENSE](LICENSE).
 
 ---
 
-## Acknowledgments
-
-- Built on [home-topology](https://github.com/mjcumming/home-topology) kernel
-- Inspired by [Magic Areas](https://github.com/jseidl/hass-magic_areas)
-- Uses [Home Assistant](https://www.home-assistant.io/) integration framework
-
----
-
-**Status**: Alpha (v0.1.0)
-**Maintainer**: Mike Cumming
-**Last Updated**: 2026-02-23
+**Status**: Alpha (v0.1.0)  
+**Maintainer**: Mike Cumming  
+**Last Updated**: 2026-02-25

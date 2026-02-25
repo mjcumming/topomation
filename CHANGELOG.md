@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to `home-topology-ha` will be documented in this file.
+All notable changes to `topomation` will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- ADR-HA-020 edge-case coverage in `tests/test_event_bridge.py` for:
+  - invalid policy target fallback to owner location
+  - dynamic `all_roots` resolution when root set changes at runtime
+- Policy-source persistence round-trip coverage in `tests/test_persistence.py`.
+- Panel registration coverage in `tests/test_panel.py` and Playwright harness
+  validation (`10/10` passing) for panel load/hierarchy workflows.
 - Topology persistence for location tree + module configs now includes sibling
   ordering (`order`) and entity mappings.
 - New persistence tests in `tests/test_persistence.py`.
@@ -30,9 +36,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - SyncManager now uses explicit authority rules:
   - `sync_source=homeassistant` + `sync_enabled=true` allows sync
   - `sync_source=topology` or `sync_enabled=false` blocks cross-boundary writes
-- Home Assistant Area/Floor registries are now treated as read-only by this
-  adapter: area/floor create/rename/update is managed in HA Settings menus, and
-  topology-originated mutations no longer write back to HA registries.
+- Home Assistant Area/Floor lifecycle is now managed in HA Settings menus
+  (create/rename/delete). The adapter imports HA registry changes and propagates
+  HA area/floor renames and HA area floor reassignment into topology.
+- Topology hierarchy reorder remains supported as an overlay and now syncs
+  HA-backed area `floor_id` from nearest floor ancestor.
+- Integration startup/storage migration removed the synthetic `house` root.
+  Existing persisted `house` root data is migrated to rootless topology.
 - Removed dormant topology→HA mutation handlers from `SyncManager`
   (`location.renamed`, `location.parent_changed`, `location.deleted` writeback
   paths), so policy is now enforced by code removal instead of runtime flags.
@@ -56,7 +66,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   source rows show ON/OFF behavior + timeout semantics, and the inspector cog
   opens `ht-entity-config-dialog` for per-source editing.
 - Occupancy source rows now include `Test ON` / `Test OFF` controls that call
-  existing `home_topology.trigger` / `home_topology.clear` service wrappers.
+  existing `topomation.trigger` / `topomation.clear` service wrappers.
 - Add/edit source dialogs now include quick templates, effective behavior
   preview text, and warning callouts for non-functional or risky mappings.
 - Added optional in-panel runtime event log window to inspect relevant
@@ -104,10 +114,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   appliance-like sources (light/switch/fan/power signals) while treating pure
   interaction signals (`volume`, `mute`, `level`, `color`) as trigger-only.
 - Wrapper location lifecycle policy is now enforced end-to-end:
-  `locations/create`, `locations/update`, `locations/delete`, and
-  `locations/reorder` return `operation_not_supported`; the panel/tree runs in
-  read-only topology mode and directs users to HA Settings for Area/Floor
-  structure changes.
+  `locations/create`, `locations/update`, and `locations/delete` return
+  `operation_not_supported`, while `locations/reorder` is allowed for
+  hierarchy overlay; panel/tree keeps Area/Floor lifecycle read-only and
+  supports drag-move hierarchy management with HA-backed area `floor_id`
+  synchronization on reorder.
 
 ### Fixed
 
@@ -123,5 +134,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   last config entry unloads.
 - Entity area-change cleanup now emits debug logs instead of silently swallowing
   old-location removal errors in `sync_manager.py`.
-- `home_topology.clear` service now maps to core `occupancy.clear(...)` and
+- `topomation.clear` service now maps to core `occupancy.clear(...)` and
   falls back to legacy `release(...)` only when needed.

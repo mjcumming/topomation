@@ -25,7 +25,7 @@ When developing the UI in the mock harness (`mock-harness.html`):
 **Architectural Layers (Critical)**:
 
 1. **Kernel** (`home-topology` core): Type-agnostic. Only knows `Location` objects. No floor/room/building.
-2. **Integration** (`home-topology-ha`): Defines types via `modules._meta`, enforces hierarchy, maps to HA Areas.
+2. **Integration** (`topomation`): Defines types via `modules._meta`, enforces hierarchy, maps to HA Areas.
 3. **Home Assistant**: Areas (flat), Floors (optional grouping), Zones (GPS geofences, NOT indoor topology).
 
 ## Naming Conventions

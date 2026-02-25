@@ -5,8 +5,8 @@ from unittest.mock import Mock, patch
 import pytest
 from homeassistant.core import HomeAssistant
 
-from custom_components.home_topology import HAPlatformAdapter
-from custom_components.home_topology.const import DOMAIN
+from custom_components.topomation import HAPlatformAdapter
+from custom_components.topomation.const import DOMAIN
 
 
 @pytest.fixture
@@ -137,7 +137,7 @@ class TestAmbientLightSensorEntity:
     @pytest.mark.asyncio
     async def test_sensor_creation(self, mock_hass):
         """Test that ambient light sensor is created correctly."""
-        from custom_components.home_topology.sensor import AmbientLightSensor
+        from custom_components.topomation.sensor import AmbientLightSensor
         from home_topology.modules.ambient import AmbientLightModule
         from home_topology.core.bus import EventBus
 
@@ -162,7 +162,7 @@ class TestAmbientLightSensorEntity:
     @pytest.mark.asyncio
     async def test_sensor_update_reading(self, mock_hass):
         """Test sensor updates reading from module."""
-        from custom_components.home_topology.sensor import AmbientLightSensor
+        from custom_components.topomation.sensor import AmbientLightSensor
         from home_topology.modules.ambient import (
             AmbientLightModule,
             AmbientLightReading,
@@ -213,7 +213,7 @@ class TestAmbientLightBinarySensor:
     @pytest.mark.asyncio
     async def test_is_dark_sensor_creation(self, mock_hass):
         """Test that is_dark binary sensor is created correctly."""
-        from custom_components.home_topology.binary_sensor import (
+        from custom_components.topomation.binary_sensor import (
             AmbientLightBinarySensor,
         )
         from home_topology.modules.ambient import AmbientLightModule
@@ -239,7 +239,7 @@ class TestAmbientLightBinarySensor:
     @pytest.mark.asyncio
     async def test_is_dark_update_reading(self, mock_hass):
         """Test is_dark sensor updates correctly."""
-        from custom_components.home_topology.binary_sensor import (
+        from custom_components.topomation.binary_sensor import (
             AmbientLightBinarySensor,
         )
         from home_topology.modules.ambient import (
@@ -287,7 +287,7 @@ class TestAmbientWebSocketAPI:
 
     def test_get_reading_command(self, mock_hass):
         """Test ambient/get_reading WebSocket command."""
-        from custom_components.home_topology.websocket_api import (
+        from custom_components.topomation.websocket_api import (
             handle_ambient_get_reading,
         )
         from home_topology.modules.ambient import AmbientLightReading
@@ -317,7 +317,7 @@ class TestAmbientWebSocketAPI:
 
         msg = {
             "id": 1,
-            "type": "home_topology/ambient/get_reading",
+            "type": "topomation/ambient/get_reading",
             "location_id": "kitchen",
         }
 
@@ -332,7 +332,7 @@ class TestAmbientWebSocketAPI:
 
     def test_set_sensor_command(self, mock_hass):
         """Test ambient/set_sensor WebSocket command."""
-        from custom_components.home_topology.websocket_api import (
+        from custom_components.topomation.websocket_api import (
             handle_ambient_set_sensor,
         )
 
@@ -346,7 +346,7 @@ class TestAmbientWebSocketAPI:
 
         msg = {
             "id": 1,
-            "type": "home_topology/ambient/set_sensor",
+            "type": "topomation/ambient/set_sensor",
             "location_id": "kitchen",
             "entity_id": "sensor.kitchen_lux",
         }
@@ -362,7 +362,7 @@ class TestAmbientWebSocketAPI:
 
     def test_auto_discover_command(self, mock_hass):
         """Test ambient/auto_discover WebSocket command."""
-        from custom_components.home_topology.websocket_api import (
+        from custom_components.topomation.websocket_api import (
             handle_ambient_auto_discover,
         )
 
@@ -378,7 +378,7 @@ class TestAmbientWebSocketAPI:
             DOMAIN: {"test_entry": {"modules": {"ambient": mock_ambient_module}}}
         }
 
-        msg = {"id": 1, "type": "home_topology/ambient/auto_discover"}
+        msg = {"id": 1, "type": "topomation/ambient/auto_discover"}
 
         # Execute
         handle_ambient_auto_discover(mock_hass, mock_connection, msg)

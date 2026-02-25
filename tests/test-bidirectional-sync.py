@@ -1,4 +1,4 @@
-"""Bidirectional Sync Tests: Home Assistant ↔ Home Topology.
+"""Bidirectional Sync Tests: Home Assistant ↔ Topomation.
 
 Tests the bidirectional synchronization between HA's area/floor system
 and the home-topology location hierarchy:

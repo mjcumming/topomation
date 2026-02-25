@@ -1,4 +1,4 @@
-"""Test configuration for Home Topology integration.
+"""Test configuration for Topomation integration.
 
 This module provides fixtures and configuration for testing the home-topology
 integration. It follows patterns from successful HA integrations like WiiM.
@@ -13,7 +13,9 @@ Structure:
 from __future__ import annotations
 
 import os
+import sys
 from collections.abc import Generator
+from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -21,7 +23,11 @@ from homeassistant.const import CONF_ID
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.home_topology.const import DOMAIN
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from custom_components.topomation.const import DOMAIN
 
 # Make pytest-homeassistant-custom-component plugin available
 pytest_plugins = "pytest_homeassistant_custom_component"
@@ -161,7 +167,7 @@ def skip_platforms() -> list[str]:
 @pytest.fixture(name="mock_location_manager")
 def mock_location_manager_fixture() -> Generator[Mock]:
     """Mock LocationManager for testing."""
-    with patch("custom_components.home_topology.LocationManager") as mock_cls:
+    with patch("custom_components.topomation.LocationManager") as mock_cls:
         instance = Mock()
         instance.all_locations.return_value = []
         instance.create_location = Mock()
@@ -177,7 +183,7 @@ def mock_location_manager_fixture() -> Generator[Mock]:
 @pytest.fixture(name="mock_event_bus")
 def mock_event_bus_fixture() -> Generator[Mock]:
     """Mock EventBus for testing."""
-    with patch("custom_components.home_topology.EventBus") as mock_cls:
+    with patch("custom_components.topomation.EventBus") as mock_cls:
         instance = Mock()
         instance.set_location_manager = Mock()
         instance.publish = Mock()
@@ -189,7 +195,7 @@ def mock_event_bus_fixture() -> Generator[Mock]:
 @pytest.fixture(name="mock_occupancy_module")
 def mock_occupancy_module_fixture() -> Generator[Mock]:
     """Mock OccupancyModule for testing."""
-    with patch("custom_components.home_topology.OccupancyModule") as mock_cls:
+    with patch("custom_components.topomation.OccupancyModule") as mock_cls:
         instance = Mock()
         instance.attach = Mock()
         instance.default_config = Mock(return_value={"enabled": True, "timeout": 300})
@@ -205,7 +211,7 @@ def mock_occupancy_module_fixture() -> Generator[Mock]:
 @pytest.fixture(name="mock_automation_module")
 def mock_automation_module_fixture() -> Generator[Mock]:
     """Mock AutomationModule for testing."""
-    with patch("custom_components.home_topology.AutomationModule") as mock_cls:
+    with patch("custom_components.topomation.AutomationModule") as mock_cls:
         instance = Mock()
         instance.attach = Mock()
         instance.default_config = Mock(return_value={"enabled": False})
@@ -219,7 +225,7 @@ def mock_automation_module_fixture() -> Generator[Mock]:
 @pytest.fixture(name="mock_lighting_module")
 def mock_lighting_module_fixture() -> Generator[Mock]:
     """Mock LightingModule for testing."""
-    with patch("custom_components.home_topology.LightingModule") as mock_cls:
+    with patch("custom_components.topomation.LightingModule") as mock_cls:
         instance = Mock()
         instance.attach = Mock()
         instance.default_config = Mock(return_value={"enabled": False})
@@ -232,8 +238,8 @@ def mock_lighting_module_fixture() -> Generator[Mock]:
 
 @pytest.fixture(name="mock_coordinator")
 def mock_coordinator_fixture() -> Generator[Mock]:
-    """Mock HomeTopologyCoordinator for testing."""
-    with patch("custom_components.home_topology.HomeTopologyCoordinator") as mock_cls:
+    """Mock TopomationCoordinator for testing."""
+    with patch("custom_components.topomation.TopomationCoordinator") as mock_cls:
         instance = Mock()
         instance.schedule_next_timeout = Mock()
         mock_cls.return_value = instance
@@ -243,7 +249,7 @@ def mock_coordinator_fixture() -> Generator[Mock]:
 @pytest.fixture(name="mock_event_bridge")
 def mock_event_bridge_fixture() -> Generator[Mock]:
     """Mock EventBridge for testing."""
-    with patch("custom_components.home_topology.EventBridge") as mock_cls:
+    with patch("custom_components.topomation.EventBridge") as mock_cls:
         instance = Mock()
         instance.async_setup = AsyncMock()
         instance.async_teardown = AsyncMock()
@@ -256,7 +262,7 @@ def config_entry_fixture() -> MockConfigEntry:
     """Create a mock config entry."""
     return MockConfigEntry(
         domain=DOMAIN,
-        title="Home Topology",
+        title="Topomation",
         data={CONF_ID: "test"},
         entry_id="test_entry_id",
     )
@@ -274,7 +280,7 @@ async def setup_integration(
     mock_coordinator: Mock,
     mock_event_bridge: Mock,
 ) -> Generator[MockConfigEntry]:
-    """Set up the Home Topology integration for testing.
+    """Set up the Topomation integration for testing.
 
     This fixture provides a fully mocked integration setup for testing
     without requiring the actual home-topology library.
@@ -282,11 +288,11 @@ async def setup_integration(
     # Mock area and entity registries
     with (
         patch(
-            "custom_components.home_topology.async_register_panel",
+            "custom_components.topomation.async_register_panel",
             new_callable=AsyncMock,
         ),
-        patch("custom_components.home_topology.async_register_websocket_api"),
-        patch("custom_components.home_topology.async_register_services"),
+        patch("custom_components.topomation.async_register_websocket_api"),
+        patch("custom_components.topomation.async_register_services"),
     ):
         config_entry.add_to_hass(hass)
 

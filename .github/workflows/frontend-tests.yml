@@ -9,7 +9,7 @@ jobs:
         runs-on: ubuntu-latest
         defaults:
             run:
-                working-directory: custom_components/home_topology/frontend
+                working-directory: custom_components/topomation/frontend
         steps:
             - uses: actions/checkout@v4
 
@@ -17,7 +17,7 @@ jobs:
               with:
                   node-version: "20"
                   cache: "npm"
-                  cache-dependency-path: custom_components/home_topology/frontend/package-lock.json
+                  cache-dependency-path: custom_components/topomation/frontend/package-lock.json
 
             - name: Install dependencies
               run: npm ci

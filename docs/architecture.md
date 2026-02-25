@@ -1,16 +1,16 @@
-# home-topology-ha Integration Architecture
+# Topomation Integration Architecture
 
 **Version**: 1.0
-**Date**: 2025-12-09
-**Purpose**: Define the architecture of the Home Assistant integration for home-topology
+**Date**: 2026-02-24
+**Purpose**: Define the architecture of the Home Assistant integration for Topomation
 
-> **Note**: This document focuses on **integration-specific** architecture. For core kernel architecture (LocationManager, EventBus, Modules), see the [home-topology core library documentation](https://github.com/mjcumming/home-topology/blob/main/docs/architecture.md).
+> **Note**: This document focuses on **integration-specific** architecture. For core kernel architecture (LocationManager, EventBus, Modules), see the Topomation core library documentation.
 
 ---
 
 ## 1. Overview
 
-The `home-topology-ha` integration is a **thin adapter layer** that bridges Home Assistant and the platform-agnostic `home-topology` kernel.
+The `topomation` integration is a **thin adapter layer** that bridges Home Assistant and the platform-agnostic Topomation kernel.
 
 ### 1.1 Responsibilities
 
@@ -23,7 +23,7 @@ The `home-topology-ha` integration is a **thin adapter layer** that bridges Home
 - Persistence (config and state storage)
 - HA services (manual control)
 
-**The Kernel Provides** (from `home-topology` library):
+**The Kernel Provides** (from the Topomation core library):
 
 - Location hierarchy management
 - Event routing
@@ -47,7 +47,7 @@ The `home-topology-ha` integration is a **thin adapter layer** that bridges Home
 └─────────┼────────────────┼───────────────────┼─────────┘
           │                │                   │
 ┌─────────▼────────────────▼───────────────────▼─────────┐
-│              home-topology-ha Integration               │
+│              topomation Integration               │
 │                                                          │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐ │
 │  │EventBridge   │  │ Coordinator  │  │  WebSocket   │ │
@@ -60,7 +60,7 @@ The `home-topology-ha` integration is a **thin adapter layer** that bridges Home
 └─────────────────────────┬───────────────────────────────┘
                           │
 ┌─────────────────────────▼───────────────────────────────┐
-│          home-topology Kernel (Core Library)            │
+│           Topomation Kernel (Core Library)               │
 │                                                          │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐ │
 │  │ Location     │  │   EventBus   │  │   Modules    │ │
@@ -172,7 +172,7 @@ class OccupancyBinarySensor(BinarySensorEntity):
 **Pattern**:
 
 ```python
-class HomeTopologyCoordinator:
+class TopomationCoordinator:
     def schedule_next_timeout(self):
         # Find earliest timeout across all modules
         next_timeout = None
@@ -205,18 +205,25 @@ class HomeTopologyCoordinator:
 
 **Commands**:
 
-- `home_topology/locations/list` - Get all locations
-- `home_topology/locations/set_module_config` - Update module config
+- `topomation/locations/list` - Get all locations
+- `topomation/locations/set_module_config` - Update module config
 
-Per adapter policy (ADR-HA-017/018), location lifecycle mutation commands
-(`create` / `update` / `delete` / `reorder`) are intentionally rejected with
-`operation_not_supported`. Area/Floor lifecycle is managed in Home Assistant
-Settings and imported into topology.
+Location lifecycle is supported via the WebSocket API with guardrails:
+
+- `create`: can create integration-owned locations (`building`, `grounds`,
+  `subarea`) and HA-backed wrappers (`floor`, `area`) when valid parent rules
+  are met.
+- `update`: supports rename/icon/type-safe parent updates, with hierarchy
+  constraints enforced.
+- `delete`: supports deletion with child reparenting rules and explicit root
+  protection.
+- `reorder`: persists topology hierarchy and synchronizes HA `floor_id` for
+  HA-backed areas based on nearest floor ancestor (or clears to `null`).
 
 **Pattern**:
 
 ```python
-@websocket_api.websocket_command({vol.Required("type"): "home_topology/locations/list"})
+@websocket_api.websocket_command({vol.Required("type"): "topomation/locations/list"})
 @callback
 def handle_locations_list(hass, connection, msg):
     kernel = hass.data[DOMAIN][entry_id]
@@ -232,11 +239,11 @@ def handle_locations_list(hass, connection, msg):
 
 **Services**:
 
-- `home_topology.trigger` - Manual occupancy trigger (`occupancy.trigger`)
-- `home_topology.clear` - Manual occupancy clear (`occupancy.clear`, with legacy `release` fallback)
-- `home_topology.lock` - Lock location (prevent vacancy, source-aware)
-- `home_topology.unlock` - Unlock location (source-aware)
-- `home_topology.vacate_area` - Vacate location and descendants
+- `topomation.trigger` - Manual occupancy trigger (`occupancy.trigger`)
+- `topomation.clear` - Manual occupancy clear (`occupancy.clear`)
+- `topomation.lock` - Lock location (prevent vacancy, source-aware)
+- `topomation.unlock` - Unlock location (source-aware)
+- `topomation.vacate_area` - Vacate location and descendants
 
 **Wrapper Behavior**:
 
@@ -245,19 +252,38 @@ def handle_locations_list(hass, connection, msg):
 
 ### 3.7 Frontend Panel (`frontend/`)
 
-**Purpose**: Visual location manager UI
+**Purpose**: Visual manager workspace for topology, occupancy, and actions
 
 **Technology**: Lit (LitElement) - HA's native framework
 
+**Panel Routing**:
+
+- `Location Manager` (`/topomation`) is the single visible sidebar entry.
+- Alias routes are retained for deep linking and default-focus behavior:
+  - `/topomation-occupancy` (defaults inspector to `Detection`)
+  - `/topomation-actions` (defaults inspector to `On Occupied`)
+
+All routes use the same underlying `topomation-panel` frontend module and
+shared location tree selection context.
+
+**Workspace Behavior**:
+
+- Location tree is always present on the left; occupancy/actions use the same selected node context.
+- Inspector tabs are split into `Detection`, `On Occupied`, and `On Vacant`.
+- `On Occupied` / `On Vacant` rules are created as native Home Assistant automation entities (managed in HA's automation system).
+- Topomation tags those automations with panel metadata + labels/category so each location tab can filter only its own rules.
+- Integration-owned nodes (`building`, `grounds`, `subarea`) are configured through explicit source assignment in inspector.
+- HA-backed wrappers (`floor_*`, `area_*`) keep HA-linked entity discovery defaults.
+
 **Components**:
 
-- `home-topology-panel.ts` - Main panel container
+- `topomation-panel.ts` - Main panel container
 - `ht-location-tree.ts` - Tree navigation
 - `ht-location-inspector.ts` - Details/config panel
 - `ht-entity-config-dialog.ts` - Entity configuration
 - `ht-location-dialog.ts` - Create/edit location
 
-**See**: `docs/ui-design.md` for complete UI specification
+**See**: `docs/frontend-dev-workflow.md` and `docs/index.md` for current frontend workflow/document map
 
 ### 3.8 Platform Adapter for Ambient Light Module
 
@@ -296,9 +322,9 @@ class HAPlatformAdapter:
 
 **WebSocket Commands**:
 
-- `home_topology/ambient/get_reading` - Get ambient light reading for location
-- `home_topology/ambient/set_sensor` - Configure lux sensor for location
-- `home_topology/ambient/auto_discover` - Auto-discover illuminance sensors
+- `topomation/ambient/get_reading` - Get ambient light reading for location
+- `topomation/ambient/set_sensor` - Configure lux sensor for location
+- `topomation/ambient/auto_discover` - Auto-discover illuminance sensors
 
 **Features**:
 
@@ -347,15 +373,34 @@ class HAPlatformAdapter:
 7. Frontend: Receives success, updates UI
 ```
 
-### 4.4 Topology Rename Is Local (HA Registry Managed in HA Menus)
+### 4.4 HA Registry Is Source of Truth (With Topology Reorder Overlay)
 
 ```
-1. User renames a topology location in the panel
-2. Frontend sends update command to integration
-3. LocationManager updates topology location state
-4. HA area/floor registries are unchanged
-5. Any HA area/floor rename must be performed in HA Settings menus
+1. User renames an HA area/floor in HA Settings
+2. HA registry emits update event
+3. SyncManager updates topology location name
+4. User drags an HA-backed area under a different floor in topology UI
+5. WebSocket reorder updates topology parent and writes HA area.floor_id to match
+6. Create/rename/delete of HA areas/floors is not allowed via integration API
 ```
+
+### 4.5 Startup Merge and Reconciliation
+
+At startup, the integration performs a two-phase merge:
+
+1. Restore persisted topology/module config from `.storage/topomation.config`
+2. Reconcile HA-backed wrappers from current HA registries (floors/areas/entities)
+
+For HA-backed wrappers (`floor_*`, `area_*`), startup reconciliation enforces HA
+as canonical for:
+
+- floor/area names
+- floor parent linkage for areas
+- `ha_area_id` / `ha_floor_id` metadata
+- sync ownership flags (`sync_source=homeassistant`, `sync_enabled=true`)
+- area entity membership (entity mapping matches HA area assignments)
+
+Broken/invalid persisted payloads are ignored and do not block startup.
 
 ---
 
@@ -363,7 +408,7 @@ class HAPlatformAdapter:
 
 ### 5.1 Configuration Storage
 
-**File**: `.storage/home_topology_config.json`
+**Store Key / File**: `topomation.config` -> `.storage/topomation.config`
 
 **Contents**:
 
@@ -384,22 +429,9 @@ class HAPlatformAdapter:
 }
 ```
 
-### 5.3 Sync authority matrix
-
-Per-location metadata in `_meta` determines synchronization authority:
-
-- `sync_source=homeassistant` and `sync_enabled=true`
-  - HA changes -> topology updates are allowed
-  - Topology changes -> HA writeback is disabled by adapter policy (ADR-HA-017)
-- `sync_source=topology` and `sync_enabled=true`
-  - HA changes -> topology updates are blocked
-  - Topology changes -> HA writeback is blocked
-- `sync_enabled=false` (any source)
-  - Cross-boundary writes are blocked in both directions
-
 ### 5.2 Runtime State Storage
 
-**File**: `.storage/home_topology_state.json`
+**Store Key / File**: `topomation.state` -> `.storage/topomation.state`
 
 **Contents**:
 
@@ -420,14 +452,30 @@ Per-location metadata in `_meta` determines synchronization authority:
 **Save Triggers**:
 
 - On HA shutdown (EVENT_HOMEASSISTANT_STOP)
-- Periodic (every 5 minutes)
-- On config change
+- On integration unload
+- Debounced autosave after successful `locations/reorder`
+- Debounced autosave after successful `locations/set_module_config`
 
 **Restore**:
 
 - On integration startup
 - After config load
 - Modules reject stale state (>1 hour old)
+
+### 5.3 Sync authority matrix
+
+Per-location metadata in `_meta` determines synchronization authority:
+
+- `sync_source=homeassistant` and `sync_enabled=true`
+  - HA changes -> topology updates are allowed
+  - Topology changes -> lifecycle writeback is disabled, except area floor-link
+    sync on explicit reorder (updates HA `floor_id` for HA-backed areas)
+  - `sync/enable` toggle is not allowed for HA-backed floor/area wrappers
+- `sync_source=topology` and `sync_enabled=true`
+  - HA changes -> topology updates are blocked
+  - Topology changes -> HA writeback is blocked
+- `sync_source=topology` and `sync_enabled=false`
+  - Cross-boundary writes are blocked in both directions
 
 ---
 
@@ -440,7 +488,7 @@ loc_mgr.set_module_config(
     location_id="kitchen",
     module_id="_meta",
     config={
-        "type": "room",              # Structural type (floor, room, zone, suite, outdoor, building)
+        "type": "area",              # Structural type (floor|area|building|grounds|subarea)
         "category": "kitchen",       # Semantic category (for icon inference)
         "icon": None,                # Optional explicit override
     }
@@ -452,14 +500,41 @@ loc_mgr.set_module_config(
 1. Explicit override in `_meta.icon`
 2. Category-based (kitchen → `mdi:silverware-fork-knife`)
 3. Name inference (name contains "kitchen" → kitchen icon)
-4. Type fallback (room → `mdi:map-marker`)
+4. Type fallback marker (`floor`/`area`/`building`/`grounds`/`subarea`)
 
 **Hierarchy Enforcement** (UI responsibility):
 
-- Floors contain rooms/suites
-- Rooms contain zones
-- Zones are terminal (no children)
-- Suite contains rooms
+- Root-only wrappers: `building`, `grounds`
+- `floor` nodes may be root-level or nested under `building`
+- `area` nodes may be root-level or nested under `floor`, `area`, `building`, or `grounds`
+- `subarea` nodes may be root-level or nested under `floor`, `area`, `subarea`, `building`, or `grounds`
+- No synthetic `house` root is used
+- Drag/reorder constraints are enforced in frontend rules
+- ADR-HA-020 defines a phased extension for integration-owned structural nodes
+  while preserving floor/area compatibility and rootless operation as baseline
+
+### 6.1 Source and Scope Semantics (ADR-HA-020)
+
+- HA-backed wrappers (`sync_source=homeassistant`) keep HA-native linkage:
+  - `floor_*` and `area_*` wrappers continue to import from HA registries.
+  - Occupancy source discovery can use linked HA area entities.
+- Integration-owned nodes (`sync_source=topology`) require explicit source mapping:
+  - Sources are selected directly by entity ID (no implicit area linkage).
+  - This enables global/building/grounds scopes where HA has no native area parent.
+- Policy sources are modeled in `occupancy.policy_sources`:
+  - `entity_id`: policy device (for example `alarm_control_panel.home`)
+  - `source_id`: stable source identity used in vacate commands
+  - `targets`: location IDs or `all_roots`
+  - `state_map`: mapped states (`armed_away`) -> `vacate_area` action config
+- `all_roots` is resolved at execution time from current topology roots.
+- Unknown/invalid explicit targets degrade to the policy-owner location instead of failing.
+
+### 6.2 Current Limitations
+
+- Policy-source v1 ships only `vacate_area` actions; additional actions are not yet supported.
+- Only explicitly mapped policy states execute actions; unmapped states are ignored.
+- The integration assumes one HA instance/property context per install (no multi-instance orchestration).
+- Explicit source assignment is required for integration-owned nodes (no automatic HA-area inference).
 
 ---
 
@@ -525,18 +600,20 @@ loc_mgr.set_module_config(
 
 ### Core Library Docs
 
-- [Architecture](https://github.com/mjcumming/home-topology/blob/main/docs/architecture.md) - Kernel design
-- [Integration Guide](https://github.com/mjcumming/home-topology/blob/main/docs/integration/integration-guide.md) - How to integrate
-- [Occupancy Module](https://github.com/mjcumming/home-topology/blob/main/docs/modules/occupancy-integration.md) - Occupancy specifics
+- [Architecture](https://github.com/mjcumming/topomation/blob/main/docs/architecture.md) - Kernel design
+- [Integration Guide](https://github.com/mjcumming/topomation/blob/main/docs/integration/integration-guide.md) - How to integrate
+- [Occupancy Module](https://github.com/mjcumming/topomation/blob/main/docs/modules/occupancy-integration.md) - Occupancy specifics
 
 ### HA Integration Docs
 
 - `docs/coding-standards.md` - Python + TypeScript standards
 - `docs/adr-log.md` - Integration decisions
-- `docs/ui-design.md` - Frontend specification
+- `docs/frontend-dev-workflow.md` - Frontend workflow
+- `docs/index.md` - Active vs archived documentation map
+- `docs/bidirectional-sync-design.md` - Sync contract + WTF pre-change checks
 
 ---
 
 **Document Status**: Active
-**Last Updated**: 2025-12-09
+**Last Updated**: 2026-02-24
 **Maintainer**: Mike

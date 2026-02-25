@@ -1,8 +1,15 @@
-# home-topology Integration Guide
+# Topomation Integration Guide
 
 **Version**: 2.6  
 **Date**: 2026.02.24  
-**Audience**: Platform developers integrating home-topology into Home Assistant.
+**Audience**: Platform developers integrating Topomation into Home Assistant.
+
+> [!IMPORTANT]
+> This guide mixes general kernel integration patterns with HA adapter examples.
+> For current HA wrapper policy/contract, use:
+> - `docs/bidirectional-sync-design.md`
+> - `docs/architecture.md`
+> - `docs/index.md`
 
 > **v2.6 Changes**:
 > - Explicit light interaction signal keys (`power`, `level`, `color`)
@@ -226,154 +233,102 @@ occupancy.restore_state(state_dump)
 
 ## Location Types (Your Responsibility)
 
-The kernel is **type-agnostic** - it provides a tree structure but has no concept of "Floor", "Room", or "Zone". Your integration is responsible for:
+The kernel is **type-agnostic** - it provides a tree structure but has no built-in type system. The integration is responsible for:
 
 1. **Defining types** - What location types make sense for your platform
 2. **Storing type metadata** - Where to persist type information
 3. **Enforcing hierarchy rules** - What can parent what
 4. **UI representation** - Icons, labels, drag-and-drop constraints
 
-### Recommended Type Taxonomy
+### topomation Shipped Type Profile (ADR-HA-020)
 
-For home automation, we recommend these standard types:
+Current HA adapter behavior uses the following structural types:
 
 | Type | Description | Can Contain |
 |------|-------------|-------------|
-| **Building** | Separate structure (main house, garage) | Floor, Room |
-| **Floor** | A level of the building | Room, Suite |
-| **Suite** | Room group (e.g., Master Suite) | Room only |
-| **Room** | Standard room | Zone only |
-| **Zone** | Sub-room area (reading nook, kitchen island) | Nothing (terminal) |
-| **Outdoor** | Exterior location | Zone only |
+| **floor** | HA floor wrapper (`sync_source=homeassistant`) | `area`, `subarea` |
+| **area** | HA area wrapper or topology-owned area | `area`, `subarea` |
+| **building** | Integration-owned structural root | `area`, `subarea` |
+| **grounds** | Integration-owned outdoor/grounds root | `area`, `subarea` |
+| **subarea** | Integration-owned nested region | `subarea` |
 
 ### Hierarchy Rules
 
-Your UI should enforce these constraints:
+The frontend enforces these parent constraints:
 
-| Illegal Move | Why |
-|--------------|-----|
-| Floor → Room | Floors contain rooms, not vice versa |
-| Room → Room | Rooms are flat within floors (use Suite for grouping) |
-| Zone → anything | Zones are terminal nodes |
-| Anything → itself | Cannot be own parent |
-| Parent → descendant | Cannot create cycles |
+| Child Type | Allowed Parent Types |
+|------------|----------------------|
+| `floor` | `root` only |
+| `building` | `root` only |
+| `grounds` | `root` only |
+| `area` | `root`, `floor`, `area`, `building`, `grounds` |
+| `subarea` | `root`, `floor`, `area`, `subarea`, `building`, `grounds` |
 
-### Storing Type Metadata
+Additionally, moves must pass tree integrity checks (no self-parenting, no cycles).
 
-**Option A: Integration's own storage** (recommended)
+### Metadata Storage (`_meta`)
 
-```python
-class LocationTypeRegistry:
-    """Integration maintains type info separately from kernel."""
-    
-    def __init__(self):
-        self._types: dict[str, str] = {}  # location_id → type
-    
-    def get_type(self, location_id: str) -> str | None:
-        return self._types.get(location_id)
-    
-    def set_type(self, location_id: str, loc_type: str) -> None:
-        self._types[location_id] = loc_type
-    
-    def can_parent(self, parent_id: str, child_id: str) -> bool:
-        """Check if reparenting would violate hierarchy rules."""
-        parent_type = self.get_type(parent_id)
-        child_type = self.get_type(child_id)
-        
-        valid_children = {
-            "building": ["floor", "room"],
-            "floor": ["room", "suite"],
-            "suite": ["room"],
-            "room": ["zone"],
-            "zone": [],  # Terminal
-            "outdoor": ["zone"],
-        }
-        return child_type in valid_children.get(parent_type, [])
-```
-
-**Option B: Store in modules dict** (recommended for simpler integrations)
+The HA adapter stores structural metadata in `_meta`:
 
 ```python
-# Use reserved "_meta" module for integration metadata
 loc_mgr.set_module_config(
     location_id="kitchen",
     module_id="_meta",
     config={
-        "type": "room",
-        "category": "kitchen",      # Room category for icon selection
-        "icon": "mdi:stove",         # Explicit override (optional)
+        "type": "area",                  # floor|area|building|grounds|subarea
+        "sync_source": "homeassistant",  # or "topology"
+        "sync_enabled": True,
+        "category": "kitchen",
+        "icon": "mdi:stove",             # optional explicit override
     }
 )
 
-# Read back
 meta = loc_mgr.get_module_config("kitchen", "_meta")
-loc_type = meta.get("type", "room")  # Default to room
-category = meta.get("category")       # For icon inference
+loc_type = meta.get("type", "area")
+sync_source = meta.get("sync_source", "topology")
 ```
 
-### Icon Resolution Pattern
+### Source Assignment Semantics
 
-The integration is responsible for mapping locations to icons. Recommended approach:
+- HA-backed location wrappers (`sync_source=homeassistant`) can use entity discovery from linked HA area.
+- Integration-owned nodes (`sync_source=topology`) use explicit source assignment by `entity_id`.
+- Explicit assignment is required for custom structural nodes (`building`, `grounds`, `subarea`).
+
+### Policy Source Scope (Security v1)
+
+Global policy devices (for example alarm panels) are configured in occupancy config using `policy_sources`.
 
 ```python
-# Constants for icon mapping
-TYPE_ICONS = {
-    "floor": "mdi:layers",
-    "room": "mdi:map-marker",
-    "zone": "mdi:vector-square",
-    "suite": "mdi:home-group",
-    "outdoor": "mdi:home-outline",
-    "building": "mdi:warehouse",
-}
-
-CATEGORY_ICONS = {
-    "kitchen": "mdi:silverware-fork-knife",
-    "bedroom": "mdi:bed",
-    "bathroom": "mdi:shower",
-    "living": "mdi:sofa",
-    "dining": "mdi:table-furniture",
-    "office": "mdi:desk",
-    "garage": "mdi:garage",
-    "patio": "mdi:flower",
-    "utility": "mdi:washing-machine",
-}
-
-def get_location_icon(loc_mgr, location_id: str) -> str:
-    """Resolve icon for a location (integration responsibility)."""
-    meta = loc_mgr.get_module_config(location_id, "_meta") or {}
-    
-    # Priority 1: Explicit icon override
-    if meta.get("icon"):
-        return meta["icon"]
-    
-    # Priority 2: Category-based icon
-    category = meta.get("category")
-    if category and category in CATEGORY_ICONS:
-        return CATEGORY_ICONS[category]
-    
-    # Priority 3: Infer category from name
-    location = loc_mgr.get_location(location_id)
-    if location:
-        name_lower = location.name.lower()
-        for cat, icon in CATEGORY_ICONS.items():
-            if cat in name_lower:
-                return icon
-    
-    # Priority 4: Type-based fallback
-    loc_type = meta.get("type", "room")
-    return TYPE_ICONS.get(loc_type, "mdi:map-marker")
+loc_mgr.set_module_config(
+    location_id="building_main",
+    module_id="occupancy",
+    config={
+        "policy_sources": [
+            {
+                "entity_id": "alarm_control_panel.home",
+                "source_id": "security_panel",
+                "targets": ["all_roots"],  # or explicit location IDs
+                "state_map": {
+                    "armed_away": {
+                        "action": "vacate_area",
+                        "include_locked": True,
+                    }
+                },
+            }
+        ]
+    },
+)
 ```
 
-> **See also**: [UI Design Spec](./ui-design.md) section 3.1.3 for comprehensive icon tables.
+- `targets=["all_roots"]` resolves the current root set at execution time.
+- Invalid/unknown explicit targets degrade to the location that owns the mapping.
+- Startup reconciliation evaluates current policy-entity state once after setup.
 
-### Why the Kernel Stays Agnostic
+### Current Limits
 
-1. **Flexibility**: Your platform might have different type needs
-2. **Simplicity**: Kernel focuses on structure, not semantics
-3. **Power users**: API can bypass UI constraints if needed
-4. **Future-proof**: Add new types without kernel changes
-
-> **See also**: [UI Design Spec](./ui-design.md) section 5.3.1 for detailed UI enforcement rules.
+- v1 policy actions support `vacate_area` only.
+- Only explicitly mapped states execute actions.
+- The adapter assumes a single HA instance/property context.
 
 ---
 
@@ -850,7 +805,7 @@ class OccupancyModule(LocationModule):
 from homeassistant.helpers.event import async_track_point_in_time
 from datetime import datetime, UTC
 
-class HomeTopologyCoordinator:
+class TopomationCoordinator:
     def __init__(self, hass, modules):
         self.hass = hass
         self.modules = modules
@@ -1064,7 +1019,7 @@ def on_sensor_changed(self, event: Event):
 ### File Structure
 
 ```
-custom_components/home_topology/
+custom_components/topomation/
 ├── __init__.py           # Integration setup
 ├── manifest.json         # HA integration metadata
 ├── config_flow.py        # Configuration UI
@@ -1079,7 +1034,7 @@ custom_components/home_topology/
 ### `__init__.py` - Integration Setup
 
 ```python
-"""Home Topology integration for Home Assistant."""
+"""Topomation integration for Home Assistant."""
 import logging
 from datetime import timedelta
 
@@ -1097,7 +1052,7 @@ from home_topology import LocationManager, EventBus, Event
 from home_topology.modules.occupancy import OccupancyModule
 from home_topology.modules.actions import ActionsModule
 
-from .coordinator import HomeTopologyCoordinator
+from .coordinator import TopomationCoordinator
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -1135,7 +1090,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # TODO: Load from storage
     
     # 7. Create coordinator for timeout scheduling
-    coordinator = HomeTopologyCoordinator(hass, modules)
+    coordinator = TopomationCoordinator(hass, modules)
     
     # 8. Store kernel in hass.data
     hass.data.setdefault(DOMAIN, {})
@@ -1343,7 +1298,7 @@ from homeassistant.helpers.event import async_track_point_in_time
 _LOGGER = logging.getLogger(__name__)
 
 
-class HomeTopologyCoordinator:
+class TopomationCoordinator:
     """Coordinator for scheduling module timeout checks."""
     
     def __init__(self, hass: HomeAssistant, modules: Dict[str, Any]):
@@ -1492,7 +1447,7 @@ class OccupancyBinarySensor(BinarySensorEntity):
 ```python
 """Constants for home-topology integration."""
 
-DOMAIN = "home_topology"
+DOMAIN = "topomation"
 
 CONF_TOPOLOGY_CONFIG = "topology_config"
 CONF_MODULE_STATE = "module_state"
@@ -1504,9 +1459,9 @@ CONF_MODULE_STATE = "module_state"
 
 ```json
 {
-  "domain": "home_topology",
-  "name": "Home Topology",
-  "documentation": "https://github.com/mjcumming/home-topology",
+  "domain": "topomation",
+  "name": "Topomation",
+  "documentation": "https://github.com/mjcumming/topomation",
   "codeowners": ["@mjcumming"],
   "config_flow": true,
   "dependencies": [],
@@ -1535,11 +1490,11 @@ This guide covered:
 
 The HA wrapper services map directly to occupancy module APIs:
 
-- `home_topology.trigger` -> `occupancy.trigger(location_id, source_id, timeout)`
-- `home_topology.clear` -> `occupancy.clear(location_id, source_id, trailing_timeout)` (legacy fallback: `release`)
-- `home_topology.lock` -> `occupancy.lock(location_id, source_id)`
-- `home_topology.unlock` -> `occupancy.unlock(location_id, source_id)`
-- `home_topology.vacate_area` -> `occupancy.vacate_area(location_id, source_id, include_locked)`
+- `topomation.trigger` -> `occupancy.trigger(location_id, source_id, timeout)`
+- `topomation.clear` -> `occupancy.clear(location_id, source_id, trailing_timeout)`
+- `topomation.lock` -> `occupancy.lock(location_id, source_id)`
+- `topomation.unlock` -> `occupancy.unlock(location_id, source_id)`
+- `topomation.vacate_area` -> `occupancy.vacate_area(location_id, source_id, include_locked)`
 
 For multi-entry HA setups, service calls should include `entry_id`. If multiple
 entries are loaded and `entry_id` is omitted, the wrapper rejects the call to
@@ -1557,7 +1512,7 @@ avoid ambiguous dispatch.
 ### Next Steps
 
 - Read the [module specifications](../library/modules/)
-- Join the [discussions](https://github.com/mjcumming/home-topology/discussions)
+- Join the [discussions](https://github.com/mjcumming/topomation/discussions)
 - Build your integration!
 
 ---

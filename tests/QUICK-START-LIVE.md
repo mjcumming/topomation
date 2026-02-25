@@ -16,7 +16,7 @@
 ### Step 2: Configure Tests
 
 ```bash
-cd /workspaces/home-topology-ha/tests
+cd /workspaces/topomation/tests
 
 # Copy template
 cp ha-config.env.template ha-config.env
@@ -73,8 +73,8 @@ make test-ha-logs
 ### Step 3: Add Integration
 
 1. Settings → Devices & Services
-2. Add Integration → Search "Home Topology"
-3. Click "Home Topology" → Submit
+2. Add Integration → Search "Topomation"
+3. Click "Topomation" → Submit
 
 ### Step 4: Get Token
 
@@ -86,7 +86,7 @@ make test-ha-logs
 ### Step 5: Configure Tests
 
 ```bash
-cd /workspaces/home-topology-ha/tests
+cd /workspaces/topomation/tests
 cp ha-config.env.template ha-config.env
 nano ha-config.env
 ```

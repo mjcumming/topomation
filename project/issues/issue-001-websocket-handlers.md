@@ -17,11 +17,11 @@ Connect the existing WebSocket API handlers in `websocket_api.py` to the actual 
 
 ### Functional Requirements
 
-- WebSocket command `home_topology/locations/list` returns actual locations from LocationManager
-- WebSocket command `home_topology/locations/create` creates real locations in the hierarchy
-- WebSocket command `home_topology/locations/update` modifies existing locations
-- WebSocket command `home_topology/locations/delete` removes locations from the hierarchy
-- WebSocket command `home_topology/locations/move` changes parent-child relationships
+- WebSocket command `topomation/locations/list` returns actual locations from LocationManager
+- WebSocket command `topomation/locations/create` creates real locations in the hierarchy
+- WebSocket command `topomation/locations/update` modifies existing locations
+- WebSocket command `topomation/locations/delete` removes locations from the hierarchy
+- WebSocket command `topomation/locations/move` changes parent-child relationships
 - All WebSocket responses include proper error handling
 - Changes trigger appropriate events on the kernel's EventBus
 
@@ -58,19 +58,19 @@ Connect the existing WebSocket API handlers in `websocket_api.py` to the actual 
 
 **Affected Files**:
 
-- `custom_components/home_topology/__init__.py` - Store LocationManager in entry data
-- `custom_components/home_topology/websocket_api.py` - Replace stub handlers with real implementations
-- `custom_components/home_topology/const.py` - May need constants for data keys
+- `custom_components/topomation/__init__.py` - Store LocationManager in entry data
+- `custom_components/topomation/websocket_api.py` - Replace stub handlers with real implementations
+- `custom_components/topomation/const.py` - May need constants for data keys
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] `home_topology/locations/list` returns actual hierarchy from LocationManager
-- [ ] `home_topology/locations/create` creates location and returns new location data
-- [ ] `home_topology/locations/update` modifies location properties (name, parent, etc.)
-- [ ] `home_topology/locations/delete` removes location from hierarchy
-- [ ] `home_topology/locations/move` changes parent-child relationships
+- [ ] `topomation/locations/list` returns actual hierarchy from LocationManager
+- [ ] `topomation/locations/create` creates location and returns new location data
+- [ ] `topomation/locations/update` modifies location properties (name, parent, etc.)
+- [ ] `topomation/locations/delete` removes location from hierarchy
+- [ ] `topomation/locations/move` changes parent-child relationships
 - [ ] All handlers include proper error handling with meaningful messages
 - [ ] Location type metadata stored via `_meta` module per ADR-HA-005
 - [ ] Existing WebSocket contract tests pass (`tests/test_websocket_contract.py`)
@@ -83,7 +83,7 @@ Connect the existing WebSocket API handlers in `websocket_api.py` to the actual 
 
 1. Load this issue, EPIC-001, and relevant ADRs (ADR-HA-004, ADR-HA-005)
 2. Review existing code:
-   - `custom_components/home_topology/websocket_api.py` (current stubs)
+   - `custom_components/topomation/websocket_api.py` (current stubs)
    - `tests/test_websocket_contract.py` (contract expectations)
    - Home topology kernel LocationManager API
 3. Generate a plan for the implementation:

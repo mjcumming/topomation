@@ -63,7 +63,7 @@ home-assistant.log*
 ha_long_lived_token
 
 # Frontend generated artifacts
-custom_components/home_topology/frontend/coverage/
-custom_components/home_topology/frontend/test-results/
-custom_components/home_topology/frontend/dev-server.log
+custom_components/topomation/frontend/coverage/
+custom_components/topomation/frontend/test-results/
+custom_components/topomation/frontend/dev-server.log
 playwright-report/

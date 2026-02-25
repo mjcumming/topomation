@@ -1,7 +1,7 @@
 .PHONY: help install dev-install test test-cov lint format typecheck check clean
 
 help:
-	@echo "home-topology-ha - Home Assistant Integration"
+	@echo "topomation - Home Assistant Integration"
 	@echo ""
 	@echo "Available commands:"
 	@echo "  make install      Install integration in development mode"
@@ -25,7 +25,7 @@ test:
 	pytest tests/ -v
 
 test-cov:
-	pytest tests/ -v --cov=custom_components/home_topology --cov-report=term-missing --cov-report=html
+	pytest tests/ -v --cov=custom_components/topomation --cov-report=term-missing --cov-report=html
 	@echo "Coverage report: htmlcov/index.html"
 
 test-quick:
@@ -77,7 +77,7 @@ typecheck:
 
 pre-run:
 	@echo "🔍 Quick pre-run checks (before starting HA)..."
-	@python -m py_compile custom_components/home_topology/*.py
+	@python -m py_compile custom_components/topomation/*.py
 	@echo "✅ Syntax check passed"
 	@echo "💡 Run 'make lint' for full linting"
 
@@ -105,16 +105,16 @@ clean:
 symlink:
 	@echo "Creating symlink to HA config..."
 	@read -p "Enter path to HA config directory: " HA_CONFIG; \
-	ln -sf $(PWD)/custom_components/home_topology $$HA_CONFIG/custom_components/home_topology && \
-	echo "✅ Symlink created: $$HA_CONFIG/custom_components/home_topology"
+	ln -sf $(PWD)/custom_components/topomation $$HA_CONFIG/custom_components/topomation && \
+	echo "✅ Symlink created: $$HA_CONFIG/custom_components/topomation"
 
 # Frontend
 frontend-install:
-	cd custom_components/home_topology/frontend && npm install
+	cd custom_components/topomation/frontend && npm install
 
 frontend-build:
-	cd custom_components/home_topology/frontend && npm run build
+	cd custom_components/topomation/frontend && npm run build
 
 frontend-watch:
-	cd custom_components/home_topology/frontend && npm run dev
+	cd custom_components/topomation/frontend && npm run dev
 

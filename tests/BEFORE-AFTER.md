@@ -82,7 +82,7 @@ def test_normalize_state_light_brightness_zero(event_bridge: EventBridge) -> Non
 #### Before (16 lines)
 
 ```python
-"""Test configuration for Home Topology integration."""
+"""Test configuration for Topomation integration."""
 
 import pytest
 
@@ -250,7 +250,7 @@ All tests pass ✓ (and actually validate functionality!)
 
 ```python
 def test_coordinator_creation():
-    """Test HomeTopologyCoordinator can be created."""
+    """Test TopomationCoordinator can be created."""
     # Placeholder test
     assert True
 ```
@@ -264,7 +264,7 @@ def test_coordinator_creation():
 
 ```python
 def test_schedule_earliest_timeout(
-    coordinator: HomeTopologyCoordinator,
+    coordinator: TopomationCoordinator,
     mock_modules: dict[str, Mock],
 ) -> None:
     """Test coordinator picks the earliest timeout.
@@ -283,7 +283,7 @@ def test_schedule_earliest_timeout(
 
     # WHEN
     with patch(
-        "custom_components.home_topology.coordinator.async_track_point_in_time"
+        "custom_components.topomation.coordinator.async_track_point_in_time"
     ) as mock_track:
         mock_track.return_value = Mock()
         coordinator.schedule_next_timeout()

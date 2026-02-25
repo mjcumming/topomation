@@ -151,7 +151,7 @@ The new test:
 
 ```bash
 # Install core library (from adjacent workspace or pip)
-pip install -e /workspaces/home-topology
+pip install -e /workspaces/topomation
 
 # Run all tests
 pytest tests/ -v
@@ -160,7 +160,7 @@ pytest tests/ -v
 pytest tests/test_event_bridge.py -v
 
 # Run with coverage
-pytest tests/ --cov=custom_components.home_topology
+pytest tests/ --cov=custom_components.topomation
 ```
 
 ## What's Still Missing

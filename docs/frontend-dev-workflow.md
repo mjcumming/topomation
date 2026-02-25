@@ -1,6 +1,6 @@
 # Frontend Development Workflow
 
-> Optimized development methodology for Home Topology custom panel using Cursor AI, Vite, and Lit.
+> Optimized development methodology for Topomation custom panel using Cursor AI, Vite, and Lit.
 
 ## Goals
 
@@ -18,7 +18,7 @@
 No Home Assistant required. Full state simulation with theme switching.
 
 ```bash
-cd custom_components/home_topology/frontend
+cd custom_components/topomation/frontend
 npm install
 npm run dev
 ```
@@ -38,7 +38,7 @@ Features:
 For testing with real Home Assistant data:
 
 ```bash
-cd custom_components/home_topology/frontend
+cd custom_components/topomation/frontend
 npm run dev -- --host 0.0.0.0 --port 5173
 ```
 
@@ -46,7 +46,7 @@ Then update panel config in HA to use dev server:
 
 ```yaml
 # In HA configuration (temporary for dev)
-module_url: http://localhost:5173/home-topology-panel.ts
+module_url: http://localhost:5173/topomation-panel.ts
 ```
 
 HMR keeps your UI state while you edit code.
@@ -100,7 +100,7 @@ getReactiveHass: () => {
 frontend/
 ├── mock-harness.html    # Development harness page
 ├── mock-hass.ts         # Mock hass factory with reactive patterns
-├── home-topology-panel.ts
+├── topomation-panel.ts
 └── ...components
 ```
 
@@ -130,27 +130,19 @@ Edit `mock-hass.ts` to add:
 
 ### What Are We Testing?
 
-**In the Mock Harness, we're testing Home Topology locations, NOT Home Assistant areas/floors.**
+The mock harness should mirror adapter policy:
 
-- **Home Topology Locations**: Custom hierarchy managed by the integration (House → Floors → Rooms → Zones)
-- **Home Assistant Areas**: Native HA area registry (used for device organization)
-- **Mock Data**: `MOCK_LOCATIONS` in `mock-hass.ts` provides 8 sample locations:
-  - House (root)
-  - Main Floor, Second Floor
-  - Kitchen, Living Room, Primary Bedroom, Guest Bedroom
-  - Unassigned Room
+- HA owns floor/area lifecycle (create/rename/delete in HA menus only).
+- Panel behavior focuses on hierarchy overlay reorder and module configuration.
+- HA-backed area moves must sync `floor_id` from nearest floor ancestor (or `null` at root).
 
-The mock WebSocket API (`callWS` in `mock-hass.ts`) simulates the backend, so you can:
+The mock WebSocket API (`callWS` in `mock-hass.ts`) is used to:
 
-- Create/edit/delete locations
-- Test the UI without a live HA instance
-- Develop offline
+- Validate drag-and-drop reorder behavior
+- Validate inspector/config interactions
+- Validate state/notification/error handling
 
-**To add more locations:**
-
-1. Click "⚡ Seed Demo Data" button (when no locations exist)
-2. Or use "New Location" to create manually
-3. Or edit `MOCK_LOCATIONS` in `mock-hass.ts` for permanent test data
+To adjust scenarios, edit `MOCK_LOCATIONS`, `MOCK_AREAS`, and `MOCK_STATES` in `mock-hass.ts`.
 
 ---
 
@@ -237,7 +229,7 @@ const { HtEntityConfigDialog } = await import("./ht-entity-config-dialog");
 These tests run fast and should focus on **pure logic** (hierarchy rules, icon resolution, tree transforms).
 
 ```bash
-cd custom_components/home_topology/frontend
+cd custom_components/topomation/frontend
 npm run test:unit
 npm run test:unit:watch
 ```
@@ -248,7 +240,7 @@ These tests run a real browser against the mock harness, which is the only relia
 **drag-and-drop** and complex **dialog** flows.
 
 ```bash
-cd custom_components/home_topology/frontend
+cd custom_components/topomation/frontend
 npm run test:e2e
 npm run test:e2e:ui
 ```
@@ -268,7 +260,7 @@ import { fixture, html, expect } from "@open-wc/testing";
 
 it("renders locations", async () => {
   const el = await fixture(html`
-    <home-topology-panel .hass=${mockHass}></home-topology-panel>
+    <topomation-panel .hass=${mockHass}></topomation-panel>
   `);
 
   await el.updateComplete;
@@ -293,10 +285,10 @@ it("renders locations", async () => {
 npm run build
 ```
 
-Outputs `home-topology-panel.js` in place. The panel loads this from:
+Outputs `topomation-panel.js` in place. The panel loads this from:
 
 ```
-/local/custom_components/home_topology/frontend/home-topology-panel.js
+/local/custom_components/topomation/frontend/topomation-panel.js
 ```
 
 ### Cache Busting
@@ -304,7 +296,7 @@ Outputs `home-topology-panel.js` in place. The panel loads this from:
 Update version in `const.py` or append timestamp:
 
 ```yaml
-module_url: /local/.../home-topology-panel.js?v=20251210
+module_url: /local/.../topomation-panel.js?v=20251210
 ```
 
 ---
@@ -320,7 +312,7 @@ $0.shadowRoot; // Access Shadow DOM
 $0._locations; // Check internal state
 
 // Check if element is registered
-customElements.get("home-topology-panel");
+customElements.get("topomation-panel");
 ```
 
 ### Vite Source Maps
@@ -385,17 +377,17 @@ Before committing any frontend changes:
 2. **Build**: `npm run build` (must succeed)
 3. **Verify harness manually** (http://localhost:5173/):
    - [ ] Icons render correctly (▶ ⋮⋮ 🗑️, not "?")
-   - [ ] Click "+ New Location" → dialog opens, form accepts input
-   - [ ] Double-click location name → inline edit works
    - [ ] Drag location → drop works
-   - [ ] Create nested locations (3+ levels)
+   - [ ] Move area under another floor updates `ha_floor_id` in mock response
+   - [ ] Move area to root clears `ha_floor_id` in mock response
+   - [ ] Blocked lifecycle ops (`create/update/delete`) show expected policy error
    - [ ] Theme toggle works (Ctrl+Shift+T)
 4. **Check for regressions**: Did any previously working feature break?
 
 ### Why Manual Verification?
 
 Unit tests use `@open-wc/testing` which loads modules differently than Vite dev mode.
-A test can pass while the harness is completely broken (see `lessons-learned-2025-12-28.md`).
+A test can pass while the harness is completely broken (see `docs/history/2026.02.24-lessons-learned-2025-12-28.md`).
 
 ---
 
@@ -422,7 +414,7 @@ A test can pass while the harness is completely broken (see `lessons-learned-202
 ├─────────────────────────────────────────────────────────────┤
 │  5. Build & Deploy                                          │
 │     npm run build                                            │
-│     Commit home-topology-panel.js                           │
+│     Commit topomation-panel.js                           │
 └─────────────────────────────────────────────────────────────┘
 ```
 

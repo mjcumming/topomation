@@ -78,10 +78,10 @@ This epic is complete when:
 
 **Key Files**:
 
-- `custom_components/home_topology/__init__.py` - Integration setup
-- `custom_components/home_topology/websocket_api.py` - WS handlers
-- `custom_components/home_topology/coordinator.py` - Timeout scheduling
-- `custom_components/home_topology/event_bridge.py` - Event translation
+- `custom_components/topomation/__init__.py` - Integration setup
+- `custom_components/topomation/websocket_api.py` - WS handlers
+- `custom_components/topomation/coordinator.py` - Timeout scheduling
+- `custom_components/topomation/event_bridge.py` - Event translation
 
 **Dependencies**:
 

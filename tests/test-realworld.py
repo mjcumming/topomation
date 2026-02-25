@@ -1,4 +1,4 @@
-"""Real-world integration tests for Home Topology.
+"""Real-world integration tests for Topomation.
 
 These tests simulate realistic scenarios with actual data flows:
 - Bidirectional sync between HA areas/floors and topology locations
@@ -486,7 +486,7 @@ class TestEventFlowIntegration:
     ):
         """Test EventBridge translates HA state changes to kernel events."""
         from home_topology import EventBus, LocationManager  # noqa: PLC0415
-        from custom_components.home_topology.event_bridge import EventBridge  # noqa: PLC0415
+        from custom_components.topomation.event_bridge import EventBridge  # noqa: PLC0415
 
         loc_mgr = LocationManager()
         bus = EventBus()
@@ -600,8 +600,8 @@ class TestTimeoutHandling:
     ):
         """Test that coordinator schedules the next timeout check."""
         from home_topology.modules.occupancy import OccupancyModule  # noqa: PLC0415
-        from custom_components.home_topology.coordinator import (  # noqa: PLC0415
-            HomeTopologyCoordinator,
+        from custom_components.topomation.coordinator import (  # noqa: PLC0415
+            TopomationCoordinator,
         )
 
         # Mock occupancy module with timeout
@@ -611,7 +611,7 @@ class TestTimeoutHandling:
         occupancy.check_timeouts = Mock()
 
         modules = {"occupancy": occupancy}
-        coordinator = HomeTopologyCoordinator(hass, modules)
+        coordinator = TopomationCoordinator(hass, modules)
 
         # Schedule
         with patch(
@@ -630,8 +630,8 @@ class TestTimeoutHandling:
         hass: HomeAssistant,
     ):
         """Test coordinator finds earliest timeout across multiple modules."""
-        from custom_components.home_topology.coordinator import (  # noqa: PLC0415
-            HomeTopologyCoordinator,
+        from custom_components.topomation.coordinator import (  # noqa: PLC0415
+            TopomationCoordinator,
         )
 
         now = dt_util.utcnow()
@@ -654,7 +654,7 @@ class TestTimeoutHandling:
             "module3": module3,
         }
 
-        coordinator = HomeTopologyCoordinator(hass, modules)
+        coordinator = TopomationCoordinator(hass, modules)
 
         with patch(
             "homeassistant.helpers.event.async_track_point_in_time"

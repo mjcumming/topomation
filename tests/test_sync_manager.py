@@ -13,7 +13,7 @@ from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import floor_registry as fr
 
-from custom_components.home_topology.sync_manager import SyncManager
+from custom_components.topomation.sync_manager import SyncManager
 
 # =============================================================================
 # Fixtures
@@ -24,8 +24,6 @@ from custom_components.home_topology.sync_manager import SyncManager
 def loc_mgr():
     """Create a LocationManager instance."""
     mgr = LocationManager()
-    # Create root location
-    mgr.create_location(id="house", name="House", is_explicit_root=True)
     return mgr
 
 
@@ -80,17 +78,16 @@ class TestInitialImport:
         loc_mgr: LocationManager,
         clean_registries,
     ):
-        """Test importing from empty HA creates only root.
+        """Test importing from empty HA creates no locations.
 
         GIVEN: Empty HA with no areas
         WHEN: Import runs
-        THEN: Only root "house" location exists
+        THEN: No topology locations exist
         """
         await sync_manager.import_all_areas_and_floors()
 
         locations = loc_mgr.all_locations()
-        assert len(locations) == 1
-        assert locations[0].id == "house"
+        assert len(locations) == 0
 
     async def test_import_single_area(
         self,
@@ -113,7 +110,7 @@ class TestInitialImport:
         location = loc_mgr.get_location(f"area_{kitchen.id}")
         assert location is not None
         assert location.name == "Kitchen"
-        assert location.parent_id == "house"
+        assert location.parent_id is None
 
         # Check metadata
         meta = location.modules.get("_meta", {})
@@ -206,12 +203,178 @@ class TestInitialImport:
         floor_loc = loc_mgr.get_location(f"floor_{floor.floor_id}")
         assert floor_loc is not None
         assert floor_loc.name == "Ground Floor"
-        assert floor_loc.parent_id == "house"
+        assert floor_loc.parent_id is None
 
         # Check area location
         area_loc = loc_mgr.get_location(f"area_{kitchen.id}")
         assert area_loc is not None
         assert area_loc.parent_id == f"floor_{floor.floor_id}"
+
+    async def test_new_floor_defaults_under_home_building_when_present(
+        self,
+        hass: HomeAssistant,
+        sync_manager: SyncManager,
+        loc_mgr: LocationManager,
+        clean_registries,
+    ):
+        """New floor wrappers should default under integration Home building when it exists."""
+        loc_mgr.create_location(
+            id="building_main",
+            name="Home",
+            parent_id=None,
+            is_explicit_root=False,
+        )
+        loc_mgr.set_module_config(
+            "building_main",
+            "_meta",
+            {
+                "type": "building",
+                "sync_source": "topology",
+                "sync_enabled": True,
+            },
+        )
+
+        floor_reg = fr.async_get(hass)
+        floor = floor_reg.async_create("Upper Floor")
+
+        sync_manager._ensure_floor_location(floor.floor_id, floor.name)
+
+        floor_loc = loc_mgr.get_location(f"floor_{floor.floor_id}")
+        assert floor_loc is not None
+        assert floor_loc.parent_id == "building_main"
+
+    async def test_import_reconciles_existing_area_wrapper_to_ha_truth(
+        self,
+        hass: HomeAssistant,
+        sync_manager: SyncManager,
+        loc_mgr: LocationManager,
+        clean_registries,
+    ):
+        """Startup import should normalize stale persisted HA-area wrappers."""
+        area_reg = ar.async_get(hass)
+        floor_reg = fr.async_get(hass)
+        floor = floor_reg.async_create("Ground Floor")
+        kitchen = area_reg.async_create("Kitchen", floor_id=floor.floor_id)
+
+        # Simulate stale persisted topology state.
+        loc_mgr.create_location(
+            id=f"area_{kitchen.id}",
+            name="Old Kitchen Name",
+            parent_id=None,
+            is_explicit_root=False,
+            ha_area_id=None,
+        )
+        loc_mgr.set_module_config(
+            f"area_{kitchen.id}",
+            "_meta",
+            {
+                "type": "area",
+                "ha_area_id": kitchen.id,
+                "sync_source": "topology",
+                "sync_enabled": False,
+            },
+        )
+
+        await sync_manager.import_all_areas_and_floors()
+
+        location = loc_mgr.get_location(f"area_{kitchen.id}")
+        assert location is not None
+        assert location.name == "Kitchen"
+        assert location.parent_id == f"floor_{floor.floor_id}"
+        assert location.ha_area_id == kitchen.id
+
+        meta = location.modules.get("_meta", {})
+        assert meta["type"] == "area"
+        assert meta["ha_area_id"] == kitchen.id
+        assert meta["ha_floor_id"] == floor.floor_id
+        assert meta["sync_source"] == "homeassistant"
+        assert meta["sync_enabled"] is True
+
+    async def test_import_reconciles_existing_floor_wrapper_to_ha_truth(
+        self,
+        hass: HomeAssistant,
+        sync_manager: SyncManager,
+        loc_mgr: LocationManager,
+        clean_registries,
+    ):
+        """Startup import should normalize stale persisted HA-floor wrappers."""
+        floor_reg = fr.async_get(hass)
+        floor = floor_reg.async_create("Ground Floor")
+
+        location_id = f"floor_{floor.floor_id}"
+        loc_mgr.create_location(
+            id=location_id,
+            name="Old Floor Name",
+            parent_id=None,
+            is_explicit_root=False,
+        )
+        loc_mgr.set_module_config(
+            location_id,
+            "_meta",
+            {
+                "type": "floor",
+                "ha_floor_id": floor.floor_id,
+                "sync_source": "topology",
+                "sync_enabled": False,
+            },
+        )
+
+        await sync_manager.import_all_areas_and_floors()
+
+        location = loc_mgr.get_location(location_id)
+        assert location is not None
+        assert location.name == "Ground Floor"
+        meta = location.modules.get("_meta", {})
+        assert meta["type"] == "floor"
+        assert meta["ha_floor_id"] == floor.floor_id
+        assert meta["sync_source"] == "homeassistant"
+        assert meta["sync_enabled"] is True
+
+    async def test_import_reconciles_entity_mapping_for_area_wrappers(
+        self,
+        hass: HomeAssistant,
+        sync_manager: SyncManager,
+        loc_mgr: LocationManager,
+        clean_registries,
+    ):
+        """Startup import should reconcile entity mappings to HA area assignments."""
+        area_reg = ar.async_get(hass)
+        entity_reg = er.async_get(hass)
+        kitchen = area_reg.async_create("Kitchen")
+
+        location_id = f"area_{kitchen.id}"
+        loc_mgr.create_location(
+            id=location_id,
+            name="Kitchen",
+            parent_id=None,
+            is_explicit_root=False,
+            ha_area_id=kitchen.id,
+        )
+        loc_mgr.set_module_config(
+            location_id,
+            "_meta",
+            {
+                "type": "area",
+                "ha_area_id": kitchen.id,
+                "sync_source": "homeassistant",
+                "sync_enabled": True,
+            },
+        )
+        loc_mgr.add_entity_to_location("light.stale_assignment", location_id)
+
+        light = entity_reg.async_get_or_create(
+            domain="light",
+            platform="test",
+            unique_id="light_kitchen_reconciled",
+            suggested_object_id="kitchen_reconciled",
+        )
+        entity_reg.async_update_entity(light.entity_id, area_id=kitchen.id)
+
+        await sync_manager.import_all_areas_and_floors()
+
+        location = loc_mgr.get_location(location_id)
+        assert location is not None
+        assert set(location.entity_ids) == {light.entity_id}
 
 
 # =============================================================================
@@ -248,6 +411,101 @@ class TestHAToTopologySync:
         # Verify location updated
         location = loc_mgr.get_location(f"area_{kitchen.id}")
         assert location.name == "Culinary Space"
+
+    async def test_floor_rename_updates_location(
+        self,
+        hass: HomeAssistant,
+        sync_manager: SyncManager,
+        loc_mgr: LocationManager,
+        clean_registries,
+    ):
+        """Test HA floor rename updates floor location name."""
+        floor_reg = fr.async_get(hass)
+        floor = floor_reg.async_create("Ground Floor")
+
+        await sync_manager.import_all_areas_and_floors()
+        await sync_manager.async_setup()
+
+        floor_reg.async_update(floor.floor_id, name="Main Level")
+        await hass.async_block_till_done()
+
+        floor_loc = loc_mgr.get_location(f"floor_{floor.floor_id}")
+        assert floor_loc is not None
+        assert floor_loc.name == "Main Level"
+
+    async def test_area_floor_reassignment_updates_parent_and_meta(
+        self,
+        hass: HomeAssistant,
+        sync_manager: SyncManager,
+        loc_mgr: LocationManager,
+        clean_registries,
+    ):
+        """Test HA area floor moves are reflected in topology parent and metadata."""
+        area_reg = ar.async_get(hass)
+        floor_reg = fr.async_get(hass)
+        ground = floor_reg.async_create("Ground Floor")
+        upper = floor_reg.async_create("Upper Floor")
+        kitchen = area_reg.async_create("Kitchen", floor_id=ground.floor_id)
+
+        await sync_manager.import_all_areas_and_floors()
+        await sync_manager.async_setup()
+
+        area_reg.async_update(kitchen.id, floor_id=upper.floor_id)
+        await hass.async_block_till_done()
+
+        location = loc_mgr.get_location(f"area_{kitchen.id}")
+        assert location is not None
+        assert location.parent_id == f"floor_{upper.floor_id}"
+        assert location.modules.get("_meta", {}).get("ha_floor_id") == upper.floor_id
+
+    async def test_area_floor_clear_moves_to_root_and_clears_meta(
+        self,
+        hass: HomeAssistant,
+        sync_manager: SyncManager,
+        loc_mgr: LocationManager,
+        clean_registries,
+    ):
+        """Test clearing an HA area floor removes floor parent link in topology."""
+        area_reg = ar.async_get(hass)
+        floor_reg = fr.async_get(hass)
+        ground = floor_reg.async_create("Ground Floor")
+        kitchen = area_reg.async_create("Kitchen", floor_id=ground.floor_id)
+
+        await sync_manager.import_all_areas_and_floors()
+        await sync_manager.async_setup()
+
+        area_reg.async_update(kitchen.id, floor_id=None)
+        await hass.async_block_till_done()
+
+        location = loc_mgr.get_location(f"area_{kitchen.id}")
+        assert location is not None
+        assert location.parent_id is None
+        assert "ha_floor_id" not in location.modules.get("_meta", {})
+
+    async def test_floor_delete_reparents_children_and_clears_floor_meta(
+        self,
+        hass: HomeAssistant,
+        sync_manager: SyncManager,
+        loc_mgr: LocationManager,
+        clean_registries,
+    ):
+        """Deleting an HA floor reparents areas and drops floor linkage metadata."""
+        area_reg = ar.async_get(hass)
+        floor_reg = fr.async_get(hass)
+        ground = floor_reg.async_create("Ground Floor")
+        kitchen = area_reg.async_create("Kitchen", floor_id=ground.floor_id)
+
+        await sync_manager.import_all_areas_and_floors()
+        await sync_manager.async_setup()
+
+        floor_reg.async_delete(ground.floor_id)
+        await hass.async_block_till_done()
+
+        assert loc_mgr.get_location(f"floor_{ground.floor_id}") is None
+        kitchen_loc = loc_mgr.get_location(f"area_{kitchen.id}")
+        assert kitchen_loc is not None
+        assert kitchen_loc.parent_id is None
+        assert "ha_floor_id" not in kitchen_loc.modules.get("_meta", {})
 
     async def test_area_delete_removes_location(
         self,
@@ -441,7 +699,7 @@ class TestTopologyToHASync:
         loc_mgr.create_location(
             id="custom_zone",
             name="Custom Zone",
-            parent_id="house",
+            parent_id=None,
         )
 
         # Mark as topology-only
@@ -660,4 +918,4 @@ class TestSyncPerformance:
 
         # Should complete in under 2 seconds
         assert duration < 2.0
-        assert len(loc_mgr.all_locations()) == 51  # 50 areas + root
+        assert len(loc_mgr.all_locations()) == 50

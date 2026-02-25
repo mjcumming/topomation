@@ -1,4 +1,4 @@
-"""Tests for the Home Topology timeout coordinator.
+"""Tests for the Topomation timeout coordinator.
 
 Following HA integration testing best practices:
 - Test timeout scheduling logic
@@ -15,7 +15,7 @@ from unittest.mock import Mock, patch
 import pytest
 from homeassistant.core import HomeAssistant
 
-from custom_components.home_topology.coordinator import HomeTopologyCoordinator
+from custom_components.topomation.coordinator import TopomationCoordinator
 
 
 @pytest.fixture(name="mock_modules")
@@ -39,13 +39,13 @@ def mock_modules_fixture() -> dict[str, Mock]:
 def coordinator_fixture(
     hass: HomeAssistant,
     mock_modules: dict[str, Mock],
-) -> HomeTopologyCoordinator:
+) -> TopomationCoordinator:
     """Create a coordinator instance for testing."""
-    return HomeTopologyCoordinator(hass, mock_modules)
+    return TopomationCoordinator(hass, mock_modules)
 
 
 def test_coordinator_initialization(
-    coordinator: HomeTopologyCoordinator,
+    coordinator: TopomationCoordinator,
 ) -> None:
     """Test coordinator initializes correctly.
 
@@ -60,7 +60,7 @@ def test_coordinator_initialization(
 
 
 def test_schedule_with_no_timeouts(
-    coordinator: HomeTopologyCoordinator,
+    coordinator: TopomationCoordinator,
     mock_modules: dict[str, Mock],
 ) -> None:
     """Test scheduling when no modules have timeouts.
@@ -81,7 +81,7 @@ def test_schedule_with_no_timeouts(
 
 
 def test_schedule_with_single_timeout(
-    coordinator: HomeTopologyCoordinator,
+    coordinator: TopomationCoordinator,
     mock_modules: dict[str, Mock],
 ) -> None:
     """Test scheduling when one module has a timeout.
@@ -98,7 +98,7 @@ def test_schedule_with_single_timeout(
 
     # WHEN
     with patch(
-        "custom_components.home_topology.coordinator.async_track_point_in_time"
+        "custom_components.topomation.coordinator.async_track_point_in_time"
     ) as mock_track:
         mock_track.return_value = Mock()
         coordinator.schedule_next_timeout()
@@ -111,7 +111,7 @@ def test_schedule_with_single_timeout(
 
 
 def test_schedule_earliest_timeout(
-    coordinator: HomeTopologyCoordinator,
+    coordinator: TopomationCoordinator,
     mock_modules: dict[str, Mock],
 ) -> None:
     """Test coordinator picks the earliest timeout.
@@ -130,7 +130,7 @@ def test_schedule_earliest_timeout(
 
     # WHEN
     with patch(
-        "custom_components.home_topology.coordinator.async_track_point_in_time"
+        "custom_components.topomation.coordinator.async_track_point_in_time"
     ) as mock_track:
         mock_track.return_value = Mock()
         coordinator.schedule_next_timeout()
@@ -141,7 +141,7 @@ def test_schedule_earliest_timeout(
 
 
 def test_cancel_existing_timeout_on_reschedule(
-    coordinator: HomeTopologyCoordinator,
+    coordinator: TopomationCoordinator,
     mock_modules: dict[str, Mock],
 ) -> None:
     """Test existing timeout is cancelled when rescheduling.
@@ -158,7 +158,7 @@ def test_cancel_existing_timeout_on_reschedule(
     mock_modules["occupancy"].get_next_timeout.return_value = timeout1
 
     with patch(
-        "custom_components.home_topology.coordinator.async_track_point_in_time"
+        "custom_components.topomation.coordinator.async_track_point_in_time"
     ) as mock_track:
         # First schedule
         mock_cancel1 = Mock()
@@ -178,7 +178,7 @@ def test_cancel_existing_timeout_on_reschedule(
 
 
 def test_timeout_callback_checks_all_modules(
-    coordinator: HomeTopologyCoordinator,
+    coordinator: TopomationCoordinator,
     mock_modules: dict[str, Mock],
 ) -> None:
     """Test timeout callback calls check_timeouts on all modules.
@@ -191,7 +191,7 @@ def test_timeout_callback_checks_all_modules(
     now = datetime.now(UTC)
 
     # WHEN
-    with patch("custom_components.home_topology.coordinator.async_track_point_in_time"):
+    with patch("custom_components.topomation.coordinator.async_track_point_in_time"):
         coordinator._handle_timeout(now)
 
         # THEN
@@ -200,7 +200,7 @@ def test_timeout_callback_checks_all_modules(
 
 
 def test_timeout_callback_reschedules(
-    coordinator: HomeTopologyCoordinator,
+    coordinator: TopomationCoordinator,
     mock_modules: dict[str, Mock],
 ) -> None:
     """Test coordinator reschedules after timeout fires.
@@ -216,7 +216,7 @@ def test_timeout_callback_reschedules(
 
     # WHEN
     with patch(
-        "custom_components.home_topology.coordinator.async_track_point_in_time"
+        "custom_components.topomation.coordinator.async_track_point_in_time"
     ) as mock_track:
         mock_track.return_value = Mock()
         coordinator._handle_timeout(now)
@@ -226,7 +226,7 @@ def test_timeout_callback_reschedules(
 
 
 def test_get_next_timeout_error_handling(
-    coordinator: HomeTopologyCoordinator,
+    coordinator: TopomationCoordinator,
     mock_modules: dict[str, Mock],
 ) -> None:
     """Test errors in get_next_timeout are handled gracefully.
@@ -243,7 +243,7 @@ def test_get_next_timeout_error_handling(
 
     # WHEN / THEN - Should not raise
     with patch(
-        "custom_components.home_topology.coordinator.async_track_point_in_time"
+        "custom_components.topomation.coordinator.async_track_point_in_time"
     ) as mock_track:
         mock_track.return_value = Mock()
         coordinator.schedule_next_timeout()
@@ -253,7 +253,7 @@ def test_get_next_timeout_error_handling(
 
 
 def test_check_timeouts_error_handling(
-    coordinator: HomeTopologyCoordinator,
+    coordinator: TopomationCoordinator,
     mock_modules: dict[str, Mock],
 ) -> None:
     """Test errors in check_timeouts are handled gracefully.
@@ -267,7 +267,7 @@ def test_check_timeouts_error_handling(
     mock_modules["occupancy"].check_timeouts.side_effect = Exception("Test error")
 
     # WHEN / THEN - Should not raise
-    with patch("custom_components.home_topology.coordinator.async_track_point_in_time"):
+    with patch("custom_components.topomation.coordinator.async_track_point_in_time"):
         coordinator._handle_timeout(now)
 
         # Both modules should have been attempted
@@ -276,7 +276,7 @@ def test_check_timeouts_error_handling(
 
 
 def test_module_without_timeout_support(
-    coordinator: HomeTopologyCoordinator,
+    coordinator: TopomationCoordinator,
 ) -> None:
     """Test modules without timeout methods are skipped.
 
@@ -289,5 +289,5 @@ def test_module_without_timeout_support(
     coordinator.modules["lighting"] = mock_lighting
 
     # WHEN / THEN - Should not raise
-    with patch("custom_components.home_topology.coordinator.async_track_point_in_time"):
+    with patch("custom_components.topomation.coordinator.async_track_point_in_time"):
         coordinator.schedule_next_timeout()

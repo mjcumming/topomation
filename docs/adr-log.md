@@ -1,7 +1,7 @@
-# Architecture Decision Records (ADR) - home-topology-ha
+# Architecture Decision Records (ADR) - topomation
 
 > Decisions specific to the Home Assistant integration layer.
-> For core library decisions, see [home-topology ADR log](https://github.com/mjcumming/home-topology/blob/main/docs/adr-log.md).
+> For core library decisions, see the Topomation core ADR log.
 
 **Purpose**: Track significant decisions for the HA integration.
 
@@ -46,7 +46,7 @@ Use Lit (LitElement) for all frontend components.
 
 ### ADR-HA-002: Entity Scope - Area Entities Only (2025-12-09)
 
-**Status**: ✅ APPROVED
+**Status**: ⚠️ SUPERSEDED (see ADR-HA-020)
 
 **Context**:
 When configuring occupancy sources (entities that generate events), which entities should be available?
@@ -55,8 +55,8 @@ When configuring occupancy sources (entities that generate events), which entiti
 - Option B: Any entity from anywhere
 - Option C: Default to area, allow adding from elsewhere
 
-**Decision**:
-Option A - Strict: Only entities assigned to this HA area.
+**Decision** (historical):
+Option A - strict area-only source selection for HA-backed locations.
 
 **Rationale**:
 
@@ -75,12 +75,16 @@ template:
         state: "{{ states('binary_sensor.hallway_motion') }}"
 ```
 
-**Consequences**:
+**Consequences** (historical):
 
 - ✅ Simple UI (only show area entities)
 - ✅ Clear relationships
 - ⚠️ Requires proper HA area assignments
 - ⚠️ Edge cases need template sensors
+
+**Superseded By**:
+- ADR-HA-020 narrows this rule: HA-backed nodes retain area-first defaults, while
+  integration-owned nodes (`building`/`grounds`/`subarea`) support explicit source assignment.
 
 ---
 
@@ -164,7 +168,7 @@ Integration provides scheduling via `coordinator.py`:
 **Status**: ✅ APPROVED
 
 **Context**:
-Kernel is type-agnostic (no concept of floor/room/zone). Where to store type metadata?
+Kernel is type-agnostic (no concept of floor/area/building). Where to store type metadata?
 
 **Decision**:
 Use the `_meta` module convention:
@@ -174,7 +178,7 @@ loc_mgr.set_module_config(
     location_id="kitchen",
     module_id="_meta",
     config={
-        "type": "room",
+        "type": "area",
         "category": "kitchen",
         "icon": "mdi:silverware-fork-knife"
     }
@@ -202,18 +206,18 @@ loc_mgr.set_module_config(
 **Status**: ✅ APPROVED
 
 **Context**:
-Should the kernel enforce hierarchy rules (floors contain rooms, rooms contain zones)?
+Should the kernel enforce hierarchy rules (for example floor/area/subarea relationships)?
 
 **Decision**:
 NO - Kernel accepts any tree structure. UI enforces sensible constraints.
 
-**Valid Hierarchy (UI enforced)**:
+**Valid Hierarchy (UI enforced at the time)**:
 
 ```
 Building/Root
   └── Floor
-        └── Room / Suite
-              └── Zone (terminal)
+        └── Area
+              └── Subarea
 ```
 
 **Rationale**:
@@ -229,6 +233,10 @@ Building/Root
 - ✅ User-friendly UI
 - ✅ API power available
 - ℹ️ UI must validate moves before committing
+
+**Follow-up Evolution**:
+- Later ADRs (ADR-HA-010, ADR-HA-020) refined concrete type sets and parent rules,
+  while preserving this core principle: hierarchy constraints live in UI, not kernel.
 
 ---
 
@@ -278,7 +286,7 @@ The location tree component (`ht-location-tree.ts`) was implemented using **nest
 3. **Bandaid fixes**: Each bug fix added complexity without addressing the root cause
 4. **Hours of wasted iteration**: The architecture was fundamentally flawed
 
-**The original design documents (`ui-design.md` Section 10.3, `drag-drop-design-pattern.md`) actually specified the correct approach but it wasn't implemented:**
+**The original design documents (`docs/history/2026.02.24-ui-design.md` Section 10.3, `docs/history/2026.02.24-drag-drop-design-pattern.md`) actually specified the correct approach but it wasn't implemented:**
 
 > "Render flat list with visual indentation (not nested DOM)"
 > "Use CSS padding-left for depth (simpler than nested components)"
@@ -354,9 +362,13 @@ function computeNewParent(flatNodes, draggedId, newIndex): string | null {
 
 **Context**: Entity selection scope
 
-**Decision**: Restrict to area entities only
+**Decision** (historical): Restrict to area entities only
 
 **Reason**: Simplicity, follows HA paradigm, clear relationships
+
+**Note**: ADR-HA-020 later introduced explicit cross-area/entity selection for
+integration-owned structural nodes, while keeping area-first defaults for
+HA-backed wrappers.
 
 **Date**: 2025-12-09
 
@@ -450,7 +462,7 @@ Transition to a "User-First" organizational model:
 3. **CONSTRAINT**: A Floor CANNOT be nested inside another Floor (logically blocked).
 
 **Rationale**:
-1. **HT vs HA**: Home Topology is for *behavior* and *organization*; Home Assistant is for *physical registry*. HT should not be limited by HA's flat model.
+1. **HT vs HA**: Topomation is for *behavior* and *organization*; Home Assistant is for *physical registry*. HT should not be limited by HA's flat model.
 2. **User Control**: Users can create arbitrary groupings (e.g., "Main House", "Guest House") using Areas as containers.
 
 **Consequences**:
@@ -570,7 +582,7 @@ Adopt and document authority rules:
 
 **Context**:
 The HA service wrapper drifted from the core occupancy API:
-- `home_topology.clear` called `occupancy.clear(...)`, which does not exist in
+- `topomation.clear` called `occupancy.clear(...)`, which does not exist in
   the core module (the correct call is `release(...)`).
 - Lock/unlock/vacate calls omitted `source_id`, reducing determinism for
   multi-source lock semantics.
@@ -644,7 +656,9 @@ increases conflict risk between HA-native settings and topology UI operations.
 Treat Home Assistant Area/Floor registries as **read-only** in this adapter:
 1. Users create/rename/manage Areas and Floors in HA Settings menus only.
 2. This adapter imports and reflects HA registry state into topology.
-3. Topology-originated mutations no longer write back to HA area/floor registry.
+3. Topology-originated lifecycle mutations no longer write back to HA
+   area/floor registry, except floor-link synchronization for HA-backed areas
+   during explicit hierarchy reorder.
 4. UI flows no longer call HA registry create/update endpoints directly.
 
 **Rationale**:
@@ -658,6 +672,7 @@ Treat Home Assistant Area/Floor registries as **read-only** in this adapter:
 - ✅ Lower risk of loop/conflict behavior from bidirectional write paths
 - ✅ Simpler support/debugging for naming and floor-link discrepancies
 - ✅ Legacy topology→HA rename/delete/floor-writeback handlers removed from adapter code
+- ✅ Explicit hierarchy reorder path syncs HA-backed area `floor_id` from nearest floor ancestor (or `null` at root/no-floor)
 - ⚠️ Less convenience: no one-click HA area creation/rename from topology panel
 - ⚠️ Users may switch between HA Settings and topology UI during setup
 
@@ -706,6 +721,407 @@ IDs: `{entity_id}::{signal_key}`.
 - ✅ Advanced light/media interactions are first-class occupancy sources
 - ⚠️ More rows in source lists for rich entities
 - ⚠️ Existing assumptions that one entity equals one source are no longer valid
+
+---
+
+### ADR-HA-019: Single Integration with Internal Module Boundaries (2026-02-24)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+A design review session raised the question of whether the integration should be
+split into separate HA integrations: one for topology hierarchy, one for occupancy
+detection, and a future one for actions. The question was motivated by the
+observation that topology is infrastructure that occupancy needs, occupancy is
+infrastructure that actions need, and each layer has independent value.
+
+Three structural options were considered:
+1. **Split**: Separate HA integrations (`topomation_topology`, `topomation_occupancy`, `topomation_actions`)
+2. **One integration, add actions later as a module within it**
+3. **Expose state only**: Integration produces HA entities; users write native HA automations
+
+**Decision**:
+Keep this as a **single HA integration** with **internal module boundaries**:
+
+1. **Topology layer** (current scope): Location hierarchy, HA area/floor sync, panel UI
+2. **Occupancy module** (current scope): Source config, occupancy sensors, timeout coordination
+3. **Actions module** (v0.2+): Rules triggered by occupancy state — deferred; design TBD
+4. **Naming**: "Topomation" retained for now; a more descriptive name is an open question for a future decision when the full feature set is clearer
+
+**Rationale**:
+1. **Topology enables occupancy**: Hierarchical rollup (child → parent propagation) is the primary
+   reason occupancy needs topology. They are correctly coupled.
+2. **Single install**: Users install one HACS component. No dependency ordering, no
+   split configuration across multiple Devices & Services entries.
+3. **HA integration dependencies are fragile**: Cross-integration data sharing via
+   `manifest.json` dependencies is unusual in HA and creates lifecycle complexity.
+4. **Module split is internal, not external**: The kernel already structures this
+   as modules. The HA integration mirrors that internally without exposing the
+   split as a user-facing install decision.
+5. **Actions can be additive**: A future Actions tab in the existing panel is less
+   friction than a second integration that users must discover and install separately.
+
+**Consequences**:
+- ✅ Single install, single Devices & Services entry, single panel
+- ✅ Clean internal module boundaries still maintained (topology layer, occupancy module)
+- ✅ Actions deferred without blocking v0.1.0
+- ✅ Native HA automations can consume occupancy sensors in the interim (no gap)
+- ⚠️ Integration name "Topomation" undersells the occupancy value — naming review deferred
+- ⚠️ Actions module design needs a dedicated session before v0.2+ scoping
+
+**Open Question (not decided)**:
+What does the Actions module provide that standard HA automations consuming
+`binary_sensor.occupancy_*` entities cannot? The answer to this question should
+drive v0.2+ scoping.
+
+---
+
+### ADR-HA-020: Integration-Owned Building/Grounds Topology with HA Floor/Area Import (2026-02-24)
+
+**Status**: ✅ APPROVED (phased, non-breaking rollout)
+
+**Context**:
+The integration already treats area-with-children as a core behavior model for
+occupancy rollup, while Home Assistant registry structure remains floor/area
+focused and intentionally limited. Design discussion identified two practical
+needs:
+
+1. Support homes where users need multiple top-level structures (for example
+   main building plus detached spaces/grounds) without introducing full
+   multi-property orchestration complexity.
+2. Support global/building-level policy devices (for example security panel
+   `arm_away`) that should apply occupancy actions across a selected subtree.
+
+At the same time, we do not want a synthetic "property root" requirement or a
+schema that forces users to model remote/multi-instance properties.
+
+**Decision**:
+Keep Home Assistant and integration responsibilities split, and extend topology
+with integration-owned structure where HA has no native concept.
+
+1. **No mandatory property root**:
+   - Keep rootless behavior (multiple top-level roots allowed).
+   - Do not require a synthetic `house`/`property` node.
+
+2. **HA-native structures remain imported**:
+   - Continue importing HA `floor` and `area` wrappers.
+   - HA remains lifecycle authority for floor/area create/rename/delete.
+
+3. **Integration-owned location types are allowed**:
+   - Add optional topology-owned nodes for `building`, `grounds`, and `subarea`
+     (or equivalent naming, finalized in implementation).
+   - These nodes are behavioral containers and do not imply HA registry objects.
+
+4. **Area-child hierarchy stays core**:
+   - HA-backed areas may continue to have child areas/subareas in integration
+     topology even though HA registry is flat.
+   - Occupancy/security behaviors execute against the integration tree.
+
+5. **Source assignment model by node capability**:
+   - HA-backed area nodes: retain area-entity discovery flow.
+   - Integration-owned nodes (`building`/`grounds`/`subarea`): use explicit
+     "Add Source" assignment from HA entities.
+
+6. **Policy-source scope for global devices**:
+   - Global entities (alarm panel, mode switches, etc.) are configured as
+     scoped policy bindings targeting one or more topology roots/subtrees.
+   - Example policy mapping: `armed_away -> vacate subtree`.
+
+7. **Outdoors/grounds are first-class integration nodes**:
+   - Do not require "outside" to be represented as an HA floor.
+   - Outdoor HA areas may be mapped under `grounds` when desired.
+
+8. **Migration posture**:
+   - Existing floor/area-only topologies remain valid.
+   - New node types and policy bindings are opt-in and additive.
+
+**Rationale**:
+1. Preserves HA alignment where HA is strong (`floor`/`area` metadata and
+   entity assignment).
+2. Preserves integration differentiation where HA is weak (hierarchical areas,
+   global policy scoping, grounds/building semantics).
+3. Avoids forcing multi-property abstraction for users running one local HA
+   instance.
+4. Minimizes migration risk by keeping the current model as a valid subset.
+
+**Consequences**:
+- ✅ Supports detached structures and grounds without abusing HA floors
+- ✅ Keeps area-with-children as a first-class occupancy feature
+- ✅ Enables deterministic scope for security/global policy devices
+- ✅ Avoids mandatory synthetic property roots
+- ⚠️ Introduces additional node types that require clear UI affordances
+- ⚠️ Explicit source assignment is required for integration-owned nodes
+- ℹ️ This decision narrows/supersedes ADR-HA-002's strict "area entities only"
+  rule by allowing explicit cross-area assignment for integration-owned nodes
+  while preserving area-local discovery defaults for HA-backed areas
+
+**Alternatives Considered**:
+- Synthetic property root everywhere: rejected (extra complexity, weak HA fit)
+- Ignore HA floors entirely: rejected (loses useful HA-native structure)
+- Model outdoors as HA floor by default: rejected (semantic mismatch)
+
+---
+
+### ADR-HA-021: Three Sidebar Managers with Shared Panel Core (2026-02-24)
+
+**Status**: ⚠️ SUPERSEDED
+
+**Context**:
+The single "Location Manager" panel currently mixes three concerns in one view:
+topology structure, occupancy tuning, and action-rule authoring. In live usage,
+occupancy and actions are conceptually distinct operator workflows, while
+topology management is structural and less frequent.
+
+**Decision** (original trial):
+Expose three HA sidebar entries that share one frontend implementation:
+
+1. `Location Manager` (`/topomation`)
+2. `Occupancy Manager` (`/topomation-occupancy`)
+3. `Actions Manager` (`/topomation-actions`)
+
+Each entry loads the same `topomation-panel` module and location tree; the
+selected manager determines the default/right-panel focus (topology, occupancy,
+or actions).
+
+**Rationale**:
+1. Keeps one integration and one code path while improving task-oriented UX.
+2. Reduces context-switching for operators focused on occupancy tuning.
+3. Keeps actions discoverable without forcing users through topology-first flow.
+4. Avoids split integrations or duplicated frontend stacks.
+
+**Consequences** (trial):
+- ✅ Better information architecture in the HA sidebar for day-to-day workflows
+- ✅ Reuse of existing panel/tree/state subscriptions (low implementation risk)
+- ✅ No migration required for stored topology/module config data
+- ⚠️ Slightly higher sidebar surface area (three entries instead of one)
+- ℹ️ This is a UX decomposition, not a backend architecture split
+
+**Superseded By**:
+- Follow-up UX decision (2026-02-25): keep one visible sidebar entry
+  (`Location Manager`) and preserve `/topomation-occupancy` and
+  `/topomation-actions` as deep-link aliases that set default view focus.
+
+**Why Superseded**:
+- Occupancy and actions workflows still require shared tree selection context.
+- Multiple sidebar entries introduced navigation duplication without reducing
+  panel complexity.
+
+**Alternatives Considered**:
+- Keep single panel with tabs only: adopted (with alias routes for deep links)
+- Split into separate integrations: rejected (installation/lifecycle complexity)
+
+---
+
+### ADR-HA-022: Startup Reconciliation Makes HA Canonical for HA-Backed Wrappers (2026-02-24)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+The integration restores persisted topology/config at startup before syncing from
+Home Assistant registries. Without explicit boot-time reconciliation, stale
+persisted values for HA-backed wrappers (`floor_*`, `area_*`) can survive until a
+later registry event occurs.
+
+**Decision**:
+After loading persisted configuration, run startup reconciliation against current
+HA floor/area/entity registries and force canonical HA values for HA-backed
+wrappers:
+
+1. Floor/area names are updated from HA registry values.
+2. Area parent linkage is updated from HA `floor_id` (or root when no floor).
+3. Wrapper metadata is normalized:
+   - `sync_source=homeassistant`
+   - `sync_enabled=true`
+   - current `ha_area_id` / `ha_floor_id`
+4. Area entity membership is reconciled to exact HA area assignments.
+5. Invalid persisted payloads remain non-fatal (ignored).
+
+**Rationale**:
+1. Enforces the ownership boundary from ADR-HA-017 at startup, not only during
+   later live events.
+2. Prevents stale local state from appearing authoritative after restart.
+3. Produces deterministic startup behavior for validation and operations.
+
+**Consequences**:
+- ✅ HA-backed wrappers converge to HA truth immediately on boot
+- ✅ Reduced drift between `.storage` state and HA registries
+- ✅ Sync ownership flags cannot persist in an invalid state for HA wrappers
+- ⚠️ Manual edits to HA-wrapper records in storage are overwritten at startup
+- ℹ️ Topology-only nodes remain additive and unaffected by this reconciliation
+
+**Alternatives Considered**:
+- Lazy reconciliation only via later registry events: rejected (non-deterministic boot)
+- Trust persisted wrapper state over HA registries: rejected (violates adapter ownership model)
+
+---
+
+### ADR-HA-023: Location-First Workspace with Building/Grounds Structural Context (2026-02-25)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+ADR-HA-020 introduced integration-owned structural nodes (`building`, `grounds`,
+`subarea`). Occupancy and actions workflows still require the same location tree
+selection context as topology management. A split-manager sidebar experiment
+was already superseded in ADR-HA-021.
+
+**Decision**:
+Keep a location-first workspace model:
+
+1. One visible sidebar entry (`Location Manager`) with shared tree context.
+2. Occupancy/actions are right-panel concerns (tab/alias driven), not separate trees.
+3. Building/grounds/subarea behavior is validated and documented as baseline
+   fixture/test topology, not treated as edge-case examples.
+
+**Rationale**:
+1. Prevents duplicated navigation while preserving deep-link entry points.
+2. Keeps global policy and source assignment workflows anchored to one selected node.
+3. Aligns test fixtures, harness data, and docs with the actual post-ADR-020 model.
+
+**Consequences**:
+- ✅ UI flow stays coherent for topology + occupancy + actions
+- ✅ Building/grounds scenarios are first-class in tests and validation checklists
+- ✅ No migration required for persisted data or routes
+- ⚠️ Tree/inspector UX must stay clear for both HA-backed and integration-owned nodes
+
+---
+
+### ADR-HA-024: Floor Parenting Constraint (Root or Building Only) (2026-02-25)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+With `building` and `grounds` wrappers now first-class, floor placement needed an
+explicit and stable constraint for UI validation and drag/drop behavior.
+
+**Decision**:
+For frontend hierarchy validation:
+
+1. `floor` nodes may be either:
+   - root-level (`parent_id = null`), or
+   - children of `building` nodes.
+2. `floor` nodes cannot be children of `grounds`, `area`, `subarea`, or other `floor` nodes.
+3. `building` and `grounds` remain root-only wrappers.
+
+**Rationale**:
+1. Matches the structural intent of `building` as the indoor container for floor stacks.
+2. Prevents invalid semantics such as floors under outdoor/grounds branches.
+3. Preserves a useful rootless mode for users who do not model buildings explicitly.
+
+**Consequences**:
+- ✅ Clear floor placement contract in UI and tests
+- ✅ Predictable drag/drop outcomes for mixed building/grounds topologies
+- ✅ Backward compatible with existing root-level floor installs
+- ⚠️ Legacy explicit-root patterns with floors under non-building wrappers are no longer valid move targets
+
+---
+
+### ADR-HA-025: Inspector Tab Model — Detection + Split Occupied/Vacant Actions (2026-02-25)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+The inspector previously used two tabs (`Occupancy`, `Actions`). In practice this
+mixed occupancy-source configuration with two distinct automation intents
+(`occupied` vs `vacant`) in one actions surface.
+
+**Decision**:
+Adopt a three-tab inspector model:
+
+1. `Detection` — occupancy source assignment and timeout behavior
+2. `On Occupied` — automation rules with trigger `occupied`
+3. `On Vacant` — automation rules with trigger `vacant`
+
+Route aliases continue to work as default-focus helpers:
+
+- `/topomation-occupancy` defaults to `Detection`
+- `/topomation-actions` defaults to `On Occupied`
+
+Users can still switch tabs after landing.
+
+**Rationale**:
+1. Keeps sensor/detection concerns separate from action execution concerns.
+2. Reduces ambiguity in the actions UI by separating trigger intent.
+3. Preserves existing deep links without introducing sidebar duplication.
+
+**Consequences**:
+- ✅ Clearer operator workflow in the inspector
+- ✅ Faster rule authoring for occupied/vacant-specific behavior
+- ✅ Backward-compatible route aliases and shared tree selection context
+- ⚠️ Frontend tests/docs must track updated tab labels
+
+---
+
+### ADR-HA-026: Location Lifecycle in Panel — Rename Everywhere, Delete for Non-Root Nodes (2026-02-25)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+The panel already supported hierarchy edits and creation, but delete was blocked
+and rename/delete behavior was inconsistent with the topology-owned
+`building`/`grounds` model.
+
+**Decision**:
+Enable lifecycle operations with explicit ownership boundaries:
+
+1. `rename` remains supported via `locations/update` for both topology-owned and
+   HA-backed wrappers (HA-backed rename is synced to HA registry where applicable).
+2. `delete` is enabled for all non-root locations (including HA-backed floor/area wrappers).
+3. `delete` is blocked only for explicit Home root location.
+4. When deleting any node with children, direct children are
+   reparented to the deleted node's parent (one-level lift), then the node is deleted.
+5. For HA-backed wrappers, delete is forwarded to HA area/floor registries first;
+   topology wrappers are then removed by sync (or fallback direct delete).
+
+**Rationale**:
+1. Supports real topology maintenance workflows (cleanup, restructuring).
+2. Preserves HA ownership of floor/area lifecycle while allowing panel-originated lifecycle requests.
+3. Avoids destructive subtree cascades as default behavior.
+
+**Consequences**:
+- ✅ Inline rename + delete now work end-to-end from the panel
+- ✅ HA-backed lifecycle authority remains intact (delete forwarded to HA registries)
+- ✅ Building/grounds cleanup no longer requires backend hacks
+- ⚠️ Delete semantics now include implicit child reparenting; UI messaging must remain clear
+
+---
+
+### ADR-HA-027: Actions Persisted as Native HA Automations (2026-02-25)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+The inspector already split action intent by trigger (`On Occupied` / `On Vacant`),
+but action tabs did not create first-class HA automations. That created two
+problems:
+
+1. Rules were not first-class Home Assistant automations (limited interoperability).
+2. Long-term product direction remained open on whether actions should duplicate HA's
+   automation system or layer on top of it.
+
+**Decision**:
+For inspector action tabs, persist and manage rules as native Home Assistant
+automations:
+
+1. `+ Add Rule` creates a real HA automation (`automations.yaml` / automation entity).
+2. `On Occupied` and `On Vacant` tabs filter by Topomation metadata embedded in
+   automation description (`location_id`, `trigger_type`).
+3. Topomation assigns automation labels/category for organization and discoverability.
+4. Delete/toggle operations act on HA automation entities/config entries directly.
+5. No separate integration-local rule store is introduced.
+
+**Rationale**:
+1. Keeps automation lifecycle inside HA's native, well-supported rules system.
+2. Avoids building a parallel rule domain with overlapping semantics.
+3. Lets users inspect/edit/run rules from standard HA automation tooling.
+4. Preserves inspector UX while reducing backend-specific action state.
+
+**Consequences**:
+- ✅ Occupied/vacant actions are first-class HA automations
+- ✅ Better interoperability with existing HA tooling (automation editor, traces, labels/search)
+- ✅ Clear ownership model: Topology selects scope/context, HA executes automations
+- ⚠️ Requires admin permissions for automation config APIs
+- ⚠️ Metadata marker must remain stable for robust tab filtering
 
 ---
 

@@ -1,6 +1,6 @@
-# Home Topology Tests
+# Topomation Tests
 
-Comprehensive test suite for the Home Topology Home Assistant integration.
+Comprehensive test suite for the Topomation Home Assistant integration.
 
 ## Test Files
 
@@ -42,7 +42,7 @@ Comprehensive test suite for the Home Topology Home Assistant integration.
 
 ```bash
 # Install core library
-pip install -e /workspaces/home-topology
+pip install -e /workspaces/topomation
 
 # Install test dependencies
 pip install pytest pytest-asyncio pytest-homeassistant-custom-component
@@ -69,7 +69,7 @@ pytest tests/test-realworld.py -v
 pytest tests/test-ambient.py -v
 
 # With coverage
-pytest tests/ --cov=custom_components.home_topology --cov-report=html
+pytest tests/ --cov=custom_components.topomation --cov-report=html
 ```
 
 #### Live HA Tests (Real Integration)
@@ -251,8 +251,8 @@ async def test_my_scenario(self, hass: HomeAssistant):  # noqa: ARG002
 ### Import Errors
 
 ```bash
-# Error: ModuleNotFoundError: No module named 'home_topology'
-pip install -e /workspaces/home-topology
+# Error: ModuleNotFoundError: No module named 'topomation'
+pip install -e /workspaces/topomation
 ```
 
 ### Async Warnings
@@ -267,7 +267,7 @@ Tests use simulated time - no actual waiting needed
 
 ```bash
 pip install pytest-cov
-pytest tests/ --cov=custom_components.home_topology --cov-report=html
+pytest tests/ --cov=custom_components.topomation --cov-report=html
 ```
 
 ## CI/CD Integration
@@ -288,10 +288,10 @@ jobs:
           python-version: "3.11"
       - name: Install dependencies
         run: |
-          pip install -e /workspaces/home-topology
+          pip install -e /workspaces/topomation
           pip install pytest pytest-asyncio pytest-cov
       - name: Run tests
-        run: pytest tests/ -v --cov=custom_components.home_topology
+        run: pytest tests/ -v --cov=custom_components.topomation
 ```
 
 ## Best Practices

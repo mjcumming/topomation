@@ -1,4 +1,4 @@
-"""Tests for the Home Topology event bridge.
+"""Tests for the Topomation event bridge.
 
 Following HA integration testing best practices:
 - Test event translation logic
@@ -16,7 +16,7 @@ from home_topology import Event, EventBus, EventFilter, LocationManager
 from homeassistant.const import EVENT_STATE_CHANGED, STATE_OFF, STATE_ON, STATE_PAUSED, STATE_PLAYING
 from homeassistant.core import HomeAssistant, State
 
-from custom_components.home_topology.event_bridge import EventBridge
+from custom_components.topomation.event_bridge import EventBridge
 
 
 @pytest.fixture(name="location_manager")
@@ -728,3 +728,214 @@ async def test_media_state_changed_end_to_end_with_module_config(
     assert emitted.payload["signal_key"] == "volume"
 
     await bridge.async_teardown()
+
+
+async def test_policy_source_arm_away_vacates_scoped_target(
+    hass: HomeAssistant,
+) -> None:
+    """Policy source mapping should execute scoped vacate on armed_away."""
+    bus = Mock(spec=EventBus)
+    bus.publish = Mock()
+
+    loc_mgr = LocationManager()
+    loc_mgr.create_location(id="building_main", name="Main Building", parent_id=None)
+    loc_mgr.set_module_config(
+        "building_main",
+        "occupancy",
+        {
+            "policy_sources": [
+                {
+                    "entity_id": "alarm_control_panel.home",
+                    "source_id": "security_panel",
+                    "targets": ["building_main"],
+                    "state_map": {
+                        "armed_away": {
+                            "action": "vacate_area",
+                            "include_locked": True,
+                        }
+                    },
+                }
+            ]
+        },
+    )
+
+    occupancy = Mock()
+    bridge = EventBridge(hass, bus, loc_mgr, occupancy_module=occupancy)
+
+    ha_event = Mock()
+    ha_event.data = {
+        "entity_id": "alarm_control_panel.home",
+        "old_state": State("alarm_control_panel.home", "disarmed"),
+        "new_state": State("alarm_control_panel.home", "armed_away"),
+    }
+
+    bridge._state_changed_listener(ha_event)
+
+    occupancy.vacate_area.assert_called_once_with("building_main", "security_panel", True)
+    bus.publish.assert_not_called()
+
+
+async def test_policy_source_supports_all_roots_target_scope(
+    hass: HomeAssistant,
+) -> None:
+    """all_roots target should vacate each top-level root location."""
+    bus = Mock(spec=EventBus)
+    bus.publish = Mock()
+
+    loc_mgr = LocationManager()
+    loc_mgr.create_location(id="building_main", name="Main Building", parent_id=None)
+    loc_mgr.create_location(id="grounds", name="Grounds", parent_id=None)
+    loc_mgr.create_location(id="kitchen", name="Kitchen", parent_id="building_main")
+    loc_mgr.set_module_config(
+        "kitchen",
+        "occupancy",
+        {
+            "policy_sources": [
+                {
+                    "entity_id": "alarm_control_panel.home",
+                    "source_id": "security_panel",
+                    "targets": ["all_roots"],
+                    "state_map": {"armed_away": {"action": "vacate_area", "include_locked": True}},
+                }
+            ]
+        },
+    )
+
+    occupancy = Mock()
+    bridge = EventBridge(hass, bus, loc_mgr, occupancy_module=occupancy)
+
+    ha_event = Mock()
+    ha_event.data = {
+        "entity_id": "alarm_control_panel.home",
+        "old_state": State("alarm_control_panel.home", "disarmed"),
+        "new_state": State("alarm_control_panel.home", "armed_away"),
+    }
+
+    bridge._state_changed_listener(ha_event)
+
+    calls = occupancy.vacate_area.call_args_list
+    assert len(calls) == 2
+    called_locations = sorted(call.args[0] for call in calls)
+    assert called_locations == ["building_main", "grounds"]
+
+
+async def test_policy_reconciliation_applies_current_alarm_state_on_startup(
+    hass: HomeAssistant,
+) -> None:
+    """Startup reconciliation should evaluate current alarm state once."""
+    bus = Mock(spec=EventBus)
+    bus.publish = Mock()
+
+    loc_mgr = LocationManager()
+    loc_mgr.create_location(id="building_main", name="Main Building", parent_id=None)
+    loc_mgr.set_module_config(
+        "building_main",
+        "occupancy",
+        {
+            "policy_sources": [
+                {
+                    "entity_id": "alarm_control_panel.home",
+                    "source_id": "security_panel",
+                    "targets": ["building_main"],
+                    "state_map": {"armed_away": {"action": "vacate_area", "include_locked": True}},
+                }
+            ]
+        },
+    )
+
+    occupancy = Mock()
+    bridge = EventBridge(hass, bus, loc_mgr, occupancy_module=occupancy)
+
+    hass.states.async_set("alarm_control_panel.home", "armed_away")
+    await hass.async_block_till_done()
+
+    await bridge.async_reconcile_policy_sources()
+
+    occupancy.vacate_area.assert_called_once_with("building_main", "security_panel", True)
+
+
+async def test_policy_source_invalid_targets_falls_back_to_configured_location(
+    hass: HomeAssistant,
+) -> None:
+    """Unknown targets should fall back to the location that owns the policy mapping."""
+    bus = Mock(spec=EventBus)
+    bus.publish = Mock()
+
+    loc_mgr = LocationManager()
+    loc_mgr.create_location(id="building_main", name="Main Building", parent_id=None)
+    loc_mgr.create_location(id="kitchen", name="Kitchen", parent_id="building_main")
+    loc_mgr.set_module_config(
+        "kitchen",
+        "occupancy",
+        {
+            "policy_sources": [
+                {
+                    "entity_id": "alarm_control_panel.home",
+                    "source_id": "security_panel",
+                    "targets": ["missing_location", ""],
+                    "state_map": {"armed_away": {"action": "vacate_area", "include_locked": True}},
+                }
+            ]
+        },
+    )
+
+    occupancy = Mock()
+    bridge = EventBridge(hass, bus, loc_mgr, occupancy_module=occupancy)
+
+    ha_event = Mock()
+    ha_event.data = {
+        "entity_id": "alarm_control_panel.home",
+        "old_state": State("alarm_control_panel.home", "disarmed"),
+        "new_state": State("alarm_control_panel.home", "armed_away"),
+    }
+
+    bridge._state_changed_listener(ha_event)
+
+    occupancy.vacate_area.assert_called_once_with("kitchen", "security_panel", True)
+
+
+async def test_policy_source_all_roots_re_evaluates_after_topology_changes(
+    hass: HomeAssistant,
+) -> None:
+    """all_roots target should resolve current roots on each policy evaluation."""
+    bus = Mock(spec=EventBus)
+    bus.publish = Mock()
+
+    loc_mgr = LocationManager()
+    loc_mgr.create_location(id="building_main", name="Main Building", parent_id=None)
+    loc_mgr.create_location(id="kitchen", name="Kitchen", parent_id="building_main")
+    loc_mgr.set_module_config(
+        "kitchen",
+        "occupancy",
+        {
+            "policy_sources": [
+                {
+                    "entity_id": "alarm_control_panel.home",
+                    "source_id": "security_panel",
+                    "targets": ["all_roots"],
+                    "state_map": {"armed_away": {"action": "vacate_area", "include_locked": True}},
+                }
+            ]
+        },
+    )
+
+    occupancy = Mock()
+    bridge = EventBridge(hass, bus, loc_mgr, occupancy_module=occupancy)
+
+    ha_event = Mock()
+    ha_event.data = {
+        "entity_id": "alarm_control_panel.home",
+        "old_state": State("alarm_control_panel.home", "disarmed"),
+        "new_state": State("alarm_control_panel.home", "armed_away"),
+    }
+
+    bridge._state_changed_listener(ha_event)
+    first_targets = sorted(call.args[0] for call in occupancy.vacate_area.call_args_list)
+    assert first_targets == ["building_main"]
+
+    occupancy.vacate_area.reset_mock()
+    loc_mgr.create_location(id="grounds", name="Grounds", parent_id=None)
+
+    bridge._state_changed_listener(ha_event)
+    second_targets = sorted(call.args[0] for call in occupancy.vacate_area.call_args_list)
+    assert second_targets == ["building_main", "grounds"]

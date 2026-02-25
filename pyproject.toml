@@ -3,16 +3,16 @@ requires = ["setuptools>=65.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "home-topology-ha"
+name = "topomation"
 version = "0.1.0"
-description = "Home Assistant integration for home-topology"
+description = "Home Assistant integration for Topomation"
 readme = "README.md"
 requires-python = ">=3.12"
 license = {text = "MIT"}
 authors = [
     {name = "Michael Cumming", email = "mike@4831.com"}
 ]
-keywords = ["homeassistant", "home-topology", "occupancy", "automation"]
+keywords = ["homeassistant", "topomation", "occupancy", "automation"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -39,10 +39,10 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/mjcumming/home-topology-ha"
-Documentation = "https://github.com/mjcumming/home-topology-ha/blob/main/README.md"
-Repository = "https://github.com/mjcumming/home-topology-ha"
-Issues = "https://github.com/mjcumming/home-topology-ha/issues"
+Homepage = "https://github.com/mjcumming/topomation"
+Documentation = "https://github.com/mjcumming/topomation/blob/main/README.md"
+Repository = "https://github.com/mjcumming/topomation"
+Issues = "https://github.com/mjcumming/topomation/issues"
 
 [tool.black]
 line-length = 100
@@ -116,13 +116,13 @@ python_functions = ["test_*"]
 asyncio_mode = "auto"
 addopts = """
     --strict-markers
-    --cov=custom_components/home_topology
+    --cov=custom_components/topomation
     --cov-report=term-missing
     --cov-report=html
 """
 
 [tool.coverage.run]
-source = ["custom_components/home_topology"]
+source = ["custom_components/topomation"]
 omit = [
     "*/tests/*",
     "*/__pycache__/*",

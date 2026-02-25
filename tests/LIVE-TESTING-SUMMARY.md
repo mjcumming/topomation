@@ -234,7 +234,7 @@ async def test_import_real_areas(hass_live):
     area = await hass_live.create_area(name="Test Living Room")
 
     # Reload integration
-    await hass_live.reload_integration("home_topology")
+    await hass_live.reload_integration("topomation")
 
     # Verify area imported as location
     # ...
@@ -269,7 +269,7 @@ async def test_bidirectional_rename(hass_live):
 
     # Rename via topology
     await hass_live.call_websocket(
-        "home_topology/location/rename",
+        "topomation/location/rename",
         location_id=location_id,
         name="Updated Kitchen"
     )
@@ -306,7 +306,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install -e /workspaces/home-topology
+          pip install -e /workspaces/topomation
           pip install -e .
           pip install pytest homeassistant-api
 
@@ -342,14 +342,14 @@ curl http://host.docker.internal:8123/api/
 
 ### Integration Not Loaded
 
-**Via UI**: Settings → Devices & Services → Add Integration → Home Topology
+**Via UI**: Settings → Devices & Services → Add Integration → Topomation
 
 **Via API**:
 
 ```bash
 curl -X POST \
      -H "Authorization: Bearer $HA_TOKEN" \
-     $HA_URL/api/config/integrations/home_topology/reload
+     $HA_URL/api/config/integrations/topomation/reload
 ```
 
 ### Tests Hang

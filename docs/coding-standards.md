@@ -1,6 +1,6 @@
-# Coding Standards for home-topology-ha
+# Coding Standards for topomation
 
-> Standards specific to the Home Assistant integration. For core kernel standards, see [home-topology coding standards](https://github.com/mjcumming/home-topology/blob/main/docs/coding-standards.md).
+> Standards specific to the Home Assistant integration. For core kernel standards, see [home-topology coding standards](https://github.com/mjcumming/topomation/blob/main/docs/coding-standards.md).
 
 ---
 
@@ -27,7 +27,7 @@ We follow **Home Assistant's coding standards**:
 ### 2.2 File Naming
 
 ```
-custom_components/home_topology/
+custom_components/topomation/
 ├── __init__.py          # Integration setup
 ├── event_bridge.py      # snake_case
 ├── coordinator.py
@@ -154,7 +154,7 @@ except:
 
 ```
 frontend/
-├── home-topology-panel.ts      # kebab-case
+├── topomation-panel.ts      # kebab-case
 ├── ht-location-tree.ts
 └── types.ts
 ```
@@ -238,22 +238,24 @@ private _handleLocationSelected(locationId: string): void {
 ```typescript
 async function fetchLocations(hass: HomeAssistant): Promise<Location[]> {
   const result = await hass.callWS<{ locations: Location[] }>({
-    type: "home_topology/locations/list",
+    type: "topomation/locations/list",
   });
   return result.locations;
 }
 
-async function createLocation(
+async function reorderLocation(
   hass: HomeAssistant,
-  name: string,
-  parent_id: string | null
-): Promise<Location> {
-  const result = await hass.callWS<{ location: Location }>({
-    type: "home_topology/locations/create",
-    name,
-    parent_id,
+  location_id: string,
+  new_parent_id: string | null,
+  new_index: number
+): Promise<{ success: boolean; parent_id: string | null }> {
+  const result = await hass.callWS<{ success: boolean; parent_id: string | null }>({
+    type: "topomation/locations/reorder",
+    location_id,
+    new_parent_id,
+    new_index,
   });
-  return result.location;
+  return result;
 }
 ```
 
@@ -279,11 +281,7 @@ export interface ModuleConfig {
 
 export type LocationType =
   | "floor"
-  | "room"
-  | "zone"
-  | "suite"
-  | "outdoor"
-  | "building";
+  | "area";
 ```
 
 ### 3.7 Accessibility

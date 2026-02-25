@@ -63,7 +63,7 @@ This integration is a **thin adapter layer** between Home Assistant and the home
 Maintain a clean separation of concerns for documentation:
 
 1.  **`project/`**: Agentic Framework for AI planning (Roadmap, Epics, Issues).
-2.  **`docs/`**: Permanent technical reference (Architecture, UI Design, Coding Standards).
+2.  **`docs/`**: Permanent technical reference (Architecture, Sync Contract, Coding Standards).
 3.  **`docs/history/`**: Chronological archive for past summaries, milestone logs, and snapshots.
 
 ### Read Core Library Docs First
@@ -164,7 +164,7 @@ protected shouldUpdate(changedProps: PropertyValues): boolean {
 **Development Workflow:**
 
 ```bash
-cd custom_components/home_topology/frontend
+cd custom_components/topomation/frontend
 npm run dev                    # Start Vite with HMR
 # Open http://localhost:5173/mock-harness.html
 ```
@@ -232,7 +232,7 @@ home-topology-ha/
 │   ├── ha-components.mdc    # HA web components reference
 │   ├── frontend-patterns.mdc # Lit patterns & lifecycle
 │   └── styling.mdc          # CSS theming rules
-├── custom_components/home_topology/
+├── custom_components/topomation/
 │   ├── __init__.py          # Integration setup
 │   ├── config_flow.py       # Setup wizard
 │   ├── coordinator.py       # Timeout scheduling
@@ -242,7 +242,7 @@ home-topology-ha/
 │   └── frontend/            # Lit components (kebab-case)
 │       ├── mock-harness.html # Dev harness
 │       ├── mock-hass.ts     # Mock hass factory
-│       ├── home-topology-panel.ts
+│       ├── topomation-panel.ts
 │       └── ...components
 ├── docs/
 │   ├── cursor-guide.md      # Detailed patterns & examples
@@ -265,7 +265,7 @@ home-topology-ha/
 5. **Type hints are mandatory**
 6. **Log errors, don't crash**
 7. **Test event translation thoroughly**
-8. **Use 2025 for current dates (NOT 2024!)** ⚠️
+8. **Use real current dates; do not hardcode year assumptions** ⚠️
 9. **Update `docs/work-tracking.md` as you work**
 10. **Reference existing code, don't duplicate patterns**
 11. **Leverage HA's components and conventions, don't reinvent**
@@ -294,7 +294,7 @@ To maintain a high-signal workspace, follow these document management rules:
 | Event translation  | Core: integration-guide.md, Local: cursor-guide.md  |
 | State exposure     | Core: integration-guide.md, HA: binary_sensor.py    |
 | Timeout scheduling | Core: integration-guide.md, HA: coordinator.py      |
-| UI components      | `.cursor/rules/ha-components.mdc`, ui-design.md     |
+| UI components      | `.cursor/rules/ha-components.mdc`, `docs/frontend-dev-workflow.md`, `docs/index.md` |
 | WebSocket API      | Local: cursor-guide.md, HA: websocket_api.py        |
 | Location types     | Core: integration-guide.md (Location Types section) |
 | Frontend workflow  | `docs/frontend-dev-workflow.md`                     |

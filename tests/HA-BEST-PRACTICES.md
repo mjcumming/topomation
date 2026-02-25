@@ -6,7 +6,7 @@
 
 ## Overview
 
-Completely rewrote the Home Topology integration test suite following **official Home Assistant integration testing best practices**. Transformed from placeholder tests to production-quality tests that actually validate functionality.
+Completely rewrote the Topomation integration test suite following **official Home Assistant integration testing best practices**. Transformed from placeholder tests to production-quality tests that actually validate functionality.
 
 ## Home Assistant Best Practices Applied
 
@@ -79,7 +79,7 @@ All external dependencies (home-topology kernel) are properly mocked:
 @pytest.fixture(name="mock_occupancy_module")
 def mock_occupancy_module_fixture() -> Generator[Mock]:
     """Mock OccupancyModule for testing."""
-    with patch("custom_components.home_topology.OccupancyModule") as mock_cls:
+    with patch("custom_components.topomation.OccupancyModule") as mock_cls:
         instance = Mock()
         instance.attach = Mock()
         instance.default_config = Mock(return_value={"enabled": True})
@@ -349,7 +349,7 @@ pytest tests/ -v
 pytest tests/test_event_bridge.py -v
 
 # With coverage
-pytest tests/ --cov=custom_components.home_topology --cov-report=html
+pytest tests/ --cov=custom_components.topomation --cov-report=html
 
 # Single test
 pytest tests/test_coordinator.py::test_schedule_earliest_timeout -v
@@ -454,7 +454,7 @@ These tests help achieve **Gold** level on HA's Integration Quality Scale:
        client = await hass_ws_client(hass)
        await client.send_json({
            "id": 1,
-           "type": "home_topology/locations/list"
+           "type": "topomation/locations/list"
        })
    ```
 

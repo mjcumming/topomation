@@ -1,232 +1,78 @@
-# Work Tracking - home-topology-ha
-
-**Last Updated**: 2026-02-23
-
-> Status note: this file contains historical sprint notes from December 2025.
-> For current implementation status, treat `README.md` and code under
-> `custom_components/home_topology/` as the source of truth.
-
-## Current Snapshot (2026-02-23)
-
-- Backend integration is largely complete and aligned to core v3 APIs.
-- Event bridge now publishes `occupancy.signal` with `event_type` and `source_id`.
-- Persistence, sync manager, service wrappers, and WS contracts are implemented.
-- Backend test suites pass locally in the current environment (with `--no-cov`).
-- Next focus is UI reliability and expanded frontend test coverage.
-
----
-
-## 🎯 Current Sprint: UI Reliability + v3 Validation
-
-**Sprint Goal**: Resolve panel UX issues and complete v3 live validation
-**Dates**: 2026-02-23 onward
-**Status**: 🟢 IN PROGRESS
-
----
-
-## 📊 Work Status Dashboard
-
-### ✅ Completed
-
-#### Phase 1: Documentation Infrastructure (100%)
-
-- [x] `.cursorrules` created (adapted from core library)
-- [x] `docs/architecture.md` - Integration architecture
-- [x] `docs/coding-standards.md` - Python + TypeScript standards
-- [x] `docs/adr-log.md` - Integration-specific decisions
-- [x] `docs/work-tracking.md` - This file
-
-#### Phase 2: Core Frontend Components (100%)
-
-- [x] `home-topology-panel.ts` - Main panel with two-column layout
-- [x] `ht-location-tree.ts` - Hierarchical tree with expand/collapse
-- [x] `ht-location-inspector.ts` - Details panel with tabs
-- [x] `ht-location-dialog.ts` - Create/edit location with ha-form
-- [x] `ht-add-device-dialog.ts` - Multi-step entity wizard
-- [x] `ht-entity-config-dialog.ts` - ON/OFF state configuration
-
-#### Phase 3: Advanced UI Interactions (100%)
-
-- [x] Drag & drop with SortableJS
-- [x] Inline rename (double-click to edit)
-- [x] Real-time occupancy indicators (WebSocket subscription)
-- [x] Delete location with confirmation
-- [x] Keyboard shortcuts (Ctrl+S, Escape, ?)
-- [x] Batch save/discard changes
-
-#### Phase 4: Developer Infrastructure (100%)
-
-- [x] `mock-harness.html` - Enhanced dev harness with controls
-- [x] `mock-hass.ts` - Mock factory with reactive patterns
-- [x] `.cursor/rules/ha-components.mdc` - HA component reference
-- [x] `.cursor/rules/frontend-patterns.mdc` - Lit patterns
-- [x] `.cursor/rules/styling.mdc` - CSS theming rules
-- [x] `docs/frontend-dev-workflow.md` - Updated workflow guide
-
-#### Phase 5: UI Fixes (100%)
-
-- [x] "New Location" button now opens dialog
-- [x] "Add Source" button in inspector works
-- [x] `ht-rule-dialog.ts` - Rule editor for automation tab
-- [x] Toast notifications via hass-notification event
-- [x] `OccupancySourceConfig` type alias added
-
----
-
-### 🔨 In Progress
-
-#### Backend Integration (90%)
-
-- [x] Wire WebSocket handlers to actual LocationManager ✅
-- [x] Location persistence to storage
-- [x] Event bridge (HA state → kernel occupancy.signal)
-- [x] Coordinator for timeout scheduling
-- [ ] Live HA manual validation of v3 flow
-
----
-
-### 📅 Planned
-
-#### Testing (65%)
-
-- [x] Unit tests for event bridge
-- [x] Unit tests for coordinator
-- [ ] Integration tests for full live-HA flow
-- [ ] Frontend component tests (expand coverage)
-- [ ] Visual regression with Playwright
-
-#### Production Readiness (0%)
-
-- [ ] HACS manifest
-- [ ] Installation documentation
-- [ ] Configuration examples
-- [ ] Release workflow
-
----
-
-### 🚫 Blocked
-
-**None currently**
-
----
-
-## 🐛 Known Issues
-
-### Low Priority
-
-- ha-icon vs emoji icons in tree (cosmetic)
-- Undo/redo not implemented (commented TODO)
-
----
-
-## 📈 Progress Metrics
-
-### Overall Project
-
-- **Completion**: ~82%
-- **Documentation**: 90% ✅
-- **Frontend UI**: 95% ✅
-- **Frontend Infrastructure**: 100% ✅
-- **Backend Integration**: 90% 🔨
-- **Tests**: 65% ⚠️
-
-### Code Stats
-
-- **Python**: ~500 lines (WebSocket stubs + integration scaffolding)
-- **TypeScript**: ~3,500 lines (all frontend components)
-- **Documentation**: ~4,000 lines
-- **Tests**: ~400 lines
-
----
-
-## 📝 Decision Log
-
-### 2025-12-10
-
-#### Decision: Enhanced Mock Harness
-
-- **Context**: Need faster frontend iteration without live HA
-- **Decision**: Create full mock harness with state simulation, theme toggle, console logging
-- **Rationale**: Matches guide recommendations, enables offline development
-- **Impact**: High (10x faster UI iteration)
-
-#### Decision: Granular Cursor Rules
-
-- **Context**: Single .cursorrules insufficient for frontend context
-- **Decision**: Create `.cursor/rules/*.mdc` files for ha-components, patterns, styling
-- **Rationale**: File-scoped AI context improves code generation accuracy
-- **Impact**: Medium (better AI assistance)
-
-### 2025-12-09
-
-#### Decision: Documentation Structure
-
-- **Context**: Need consistent docs that reference core library
-- **Decision**: Create minimal docs that link to core library for kernel concepts
-- **Rationale**: Avoid duplication, single source of truth for kernel
-- **Impact**: Medium (better maintainability)
-- **See**: ADR-HA-001 through ADR-HA-006
-
----
-
-## 🎯 Milestones
-
-### v0.1.0 - Alpha Release (Target: Week of 2025-12-16)
-
-- [x] Documentation infrastructure complete
-- [x] Frontend UI complete
-- [x] Developer infrastructure complete
-- [ ] Backend integration working
-- [ ] Manual testing successful
-
-### v0.2.0 - Beta Release (Target: TBD)
-
-- [ ] All modules integrated (Occupancy, Automation, Lighting)
-- [ ] Full UI with entity configuration
-- [ ] State persistence
-- [ ] HACS compatible
-
-### v1.0.0 - Stable Release (Target: TBD)
-
-- [ ] Production-ready
-- [ ] Comprehensive tests
-- [ ] Documentation site
-- [ ] HACS default repository
-
----
-
-## 📅 Next Actions (Immediate)
-
-### This Session
-
-1. [x] Fix "New Location" button ✅
-2. [x] Fix "Add Source" button ✅
-3. [x] Create Rule Editor dialog ✅
-4. [x] Add toast notifications ✅
-5. [x] Update work-tracking.md ✅
-
-### Next Session
-
-1. [ ] Resolve current UI interaction issues in panel/tree/dialog flow
-2. [ ] Expand frontend tests for those interaction fixes
-3. [ ] Run live-HA validation of v3 occupancy signal flow
-
----
-
-## 🛠️ Frontend Component Status
-
-| Component                    | Status      | Features                            |
-| ---------------------------- | ----------- | ----------------------------------- |
-| `home-topology-panel.ts`     | ✅ Complete | Layout, loading, keyboard shortcuts |
-| `ht-location-tree.ts`        | ✅ Complete | Hierarchy, drag-drop, inline rename |
-| `ht-location-inspector.ts`   | ✅ Complete | Tabs, occupancy config, actions     |
-| `ht-location-dialog.ts`      | ✅ Complete | Create/edit with ha-form            |
-| `ht-add-device-dialog.ts`    | ✅ Complete | Multi-step wizard                   |
-| `ht-entity-config-dialog.ts` | ✅ Complete | ON/OFF state config                 |
-| `ht-rule-dialog.ts`          | ✅ Complete | Automation rule editor              |
-
----
-
-**Status**: Active
-**Owner**: Mike
-**Next Review**: Daily
+# Work Tracking - topomation
+
+**Last Updated**: 2026-02-25
+**Purpose**: operational execution tracker for the active sprint.
+
+Canonical separation:
+- Strategy and release sequencing: `project/roadmap.md`
+- Task-level scope and acceptance criteria: `project/issues/*.md`
+- Architecture/contracts: `docs/architecture.md`, `docs/bidirectional-sync-design.md`, `docs/adr-log.md`
+
+## Current Sprint
+
+**Name**: Live HA Validation + v0.1.0 Release Gate  
+**Dates**: 2026-02-24 onward  
+**Status**: Complete
+
+### Sprint Goal
+
+Stand up a live HA test environment and execute the end-to-end validation checklist to clear the v0.1.0 release blocker.
+
+### Active Work Items
+
+1. [x] Build `tests/test-ha-config/configuration.yaml` for simulated entities  
+   Source: `project/issues/issue-052-live-ha-test-environment.md`
+2. [x] Start HA dev runtime and complete onboarding (`hass -c /workspaces/core/config`)  
+   Source: `project/issues/issue-052-live-ha-test-environment.md`
+3. [x] Complete ISSUE-052 entity assignment set (motion/presence/lights/media player)  
+   Source: `project/issues/issue-052-live-ha-test-environment.md`
+4. [x] Execute API-assisted live validation checks and record results in ISSUE-051  
+   Source: `project/issues/issue-051-floor-area-sync-validation.md`
+5. [x] Final manual UI confirmation: topology panel opens and visual hierarchy matches imported floors/areas  
+   Source: `project/issues/issue-051-floor-area-sync-validation.md`
+6. [x] Add debounced persistence for topology/module-config edits (`reorder`, `set_module_config`)  
+   Source: implementation hardening (2026-02-24)
+7. [x] Enforce startup reconciliation (HA canonical for `floor_*` / `area_*` wrappers) and record ADR-HA-022  
+   Source: implementation hardening (2026-02-24)
+
+### v0.1.0 Release Gate Checklist
+
+- [x] All sections of `docs/live-ha-validation-checklist.md` pass
+- [x] Results documented in `project/issues/issue-051-floor-area-sync-validation.md`
+- [x] No blocking errors in HA logs during validation
+- [x] `CHANGELOG.md` updated
+
+## Post-v0.1 Backlog (ADR-HA-020)
+
+1. [x] ISSUE-053: ADR-HA-020 Topology Model Foundation  
+   Source: `project/issues/issue-053-adr-ha-020-topology-model-foundation.md`
+2. [x] ISSUE-054: Scoped Policy Bindings for Global Devices (Security v1)  
+   Source: `project/issues/issue-054-scoped-policy-bindings-security-v1.md`
+3. [x] ISSUE-055: Frontend Support for Custom Structural Nodes + Explicit Sources  
+   Source: `project/issues/issue-055-frontend-support-custom-structural-nodes.md`
+4. [x] ISSUE-056: ADR-HA-020 Validation Matrix and Documentation Alignment  
+   Source: `project/issues/issue-056-adr-ha-020-validation-and-docs.md`
+5. [x] Building/grounds paradigm rollout in docs + frontend fixtures/tests  
+   Source: implementation follow-up (2026-02-25)
+6. [x] Inspector IA refinement: `Detection`, `On Occupied`, `On Vacant` tabs + route-default mapping  
+   Source: UX follow-up (2026-02-25)
+7. [x] Enable location lifecycle actions in panel: rename + delete (all non-root nodes), with root-only delete guardrail  
+   Source: implementation follow-up (2026-02-25)
+8. [x] Occupied/Vacant actions moved to native Home Assistant automations (with Topomation metadata labels/category + inspector integration)  
+   Source: implementation follow-up (2026-02-25)
+
+## Previous Sprint Summary
+
+**Name**: v3 Alignment + Documentation Hardening  
+**Window**: 2026-02-23 to 2026-02-24  
+**Result**: Completed
+
+- Sync contract hardened (`docs/bidirectional-sync-design.md`)
+- Active docs map established (`docs/index.md`)
+- Legacy docs moved under `docs/history/`
+- Backend integration status: substantially complete pending live HA validation
+
+## Archive Policy
+
+Historical, phase-by-phase, and long-form status logs are archived.
+See `docs/history/` for older implementation narratives.

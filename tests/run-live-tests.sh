@@ -13,7 +13,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-echo -e "${BLUE}🏠 Home Topology - Live HA Testing${NC}\n"
+echo -e "${BLUE}🏠 Topomation - Live HA Testing${NC}\n"
 
 # Check if ha-config.env exists
 if [ ! -f "tests/ha-config.env" ]; then
@@ -64,20 +64,20 @@ fi
 echo -e "${GREEN}✅ Home Assistant is accessible${NC}"
 
 # Check if integration is loaded
-echo -e "${BLUE}🔍 Checking if home_topology integration is loaded...${NC}"
-INTEGRATIONS=$(curl -s -H "Authorization: Bearer $HA_TOKEN" "$HA_URL/api/config/integrations" | grep -c "home_topology" || true)
+echo -e "${BLUE}🔍 Checking if topomation integration is loaded...${NC}"
+INTEGRATIONS=$(curl -s -H "Authorization: Bearer $HA_TOKEN" "$HA_URL/api/config/integrations" | grep -c "topomation" || true)
 if [ "$INTEGRATIONS" -eq "0" ]; then
-    echo -e "${YELLOW}⚠️  home_topology integration not loaded in HA${NC}"
+    echo -e "${YELLOW}⚠️  topomation integration not loaded in HA${NC}"
     echo ""
     echo "To load the integration:"
     echo "  1. Visit: $HA_URL/config/integrations"
     echo "  2. Click: Add Integration"
-    echo "  3. Search: Home Topology"
-    echo "  4. Click: Home Topology"
+    echo "  3. Search: Topomation"
+    echo "  4. Click: Topomation"
     echo ""
     echo "Continuing anyway (some tests may fail)..."
 else
-    echo -e "${GREEN}✅ home_topology integration is loaded${NC}"
+    echo -e "${GREEN}✅ topomation integration is loaded${NC}"
 fi
 
 # Install test dependencies if needed
@@ -124,4 +124,3 @@ echo -e "${YELLOW}💡 Tip: Check for test artifacts in HA:${NC}"
 echo "   $HA_URL/config/areas"
 echo "   Look for areas/entities starting with 'Test'"
 echo ""
-

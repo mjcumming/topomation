@@ -1,4 +1,4 @@
-"""Test utilities and helpers for Home Topology integration tests.
+"""Test utilities and helpers for Topomation integration tests.
 
 Provides common helper functions used across test files to reduce boilerplate
 and improve test readability.
@@ -100,7 +100,7 @@ async def wait_for_occupancy(
     Returns:
         True if state reached, False if timeout
     """
-    entity_id = f"binary_sensor.home_topology_{location_id}_occupancy"
+    entity_id = f"binary_sensor.topomation_{location_id}_occupancy"
     expected = "on" if occupied else "off"
     return await wait_for_state(hass, entity_id, expected, timeout)
 
@@ -146,7 +146,7 @@ def get_integration_data(hass: HomeAssistant, entry_id: str) -> dict:
     Raises:
         KeyError: If integration not loaded
     """
-    from custom_components.home_topology.const import DOMAIN
+    from custom_components.topomation.const import DOMAIN
 
     if DOMAIN not in hass.data:
         raise KeyError(f"Integration {DOMAIN} not loaded")

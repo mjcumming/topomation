@@ -1,8 +1,8 @@
 {
-  "name": "Home Topology",
+  "name": "Topomation",
   "homeassistant": "2024.1.0",
   "render_readme": true,
   "zip_release": true,
-  "filename": "home_topology.zip"
+  "filename": "topomation.zip"
 }
 

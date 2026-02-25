@@ -40,7 +40,7 @@ Tests against a running Home Assistant instance - validates real integration beh
 
 #### 2. Create Test Configuration
 
-Create `/workspaces/home-topology-ha/tests/ha-config.env`:
+Create `/workspaces/topomation/tests/ha-config.env`:
 
 ```bash
 # Home Assistant Connection
@@ -109,13 +109,13 @@ docker-compose -f docker-compose.test-ha.yml logs -f
 # From dev container, symlink integration
 docker-compose -f docker-compose.test-ha.yml exec test-ha bash
 cd /config/custom_components
-ln -s /workspace/custom_components/home_topology home_topology
+ln -s /workspace/custom_components/topomation home_topology
 
 # Restart HA
 docker-compose -f docker-compose.test-ha.yml restart
 
 # Add integration via UI
-# Settings → Devices & Services → Add Integration → Home Topology
+# Settings → Devices & Services → Add Integration → Topomation
 ```
 
 ## Running Tests
@@ -224,7 +224,7 @@ async def test_import_real_areas(hass_live):
     area = await hass_live.create_area(name="Test Living Room")
 
     # 2. Trigger integration reload
-    await hass_live.reload_integration("home_topology")
+    await hass_live.reload_integration("topomation")
 
     # 3. Verify area imported as location
     # (check via WebSocket API)
@@ -259,7 +259,7 @@ async def test_real_motion_sensor(hass_live):
 
     # 5. Check occupancy binary sensor
     occupancy_state = await hass_live.get_state(
-        f"binary_sensor.home_topology_{area.id}_occupancy"
+        f"binary_sensor.topomation_{area.id}_occupancy"
     )
     assert occupancy_state == "on"
 
@@ -279,7 +279,7 @@ async def test_bidirectional_area_rename(hass_live):
     area = await hass_live.create_area(name="Kitchen")
 
     # 2. Reload integration
-    await hass_live.reload_integration("home_topology")
+    await hass_live.reload_integration("topomation")
 
     # 3. Rename via HA
     await hass_live.update_area(area.id, name="New Kitchen")
@@ -289,7 +289,7 @@ async def test_bidirectional_area_rename(hass_live):
 
     # 5. Rename via topology WebSocket API
     await hass_live.call_websocket(
-        "home_topology/location/rename",
+        "topomation/location/rename",
         location_id=f"area_{area.id}",
         name="Updated Kitchen"
     )
@@ -403,7 +403,7 @@ curl -H "Authorization: Bearer $HA_TOKEN" \
 # Reload integration
 curl -X POST \
      -H "Authorization: Bearer $HA_TOKEN" \
-     $HA_URL/api/config/integrations/home_topology/reload
+     $HA_URL/api/config/integrations/topomation/reload
 ```
 
 ### Tests Hanging
@@ -451,7 +451,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install -e /workspaces/home-topology
+          pip install -e /workspaces/topomation
           pip install -e .
           pip install pytest pytest-asyncio homeassistant-api
 

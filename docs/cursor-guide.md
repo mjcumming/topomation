@@ -1,7 +1,9 @@
-# Cursor AI Detailed Guide for home-topology-ha
+# Cursor AI Detailed Guide for topomation
 
 > This document contains detailed patterns, code examples, and comprehensive guidelines.
 > For the essential rules loaded in every conversation, see `.cursorrules`.
+> Contract/policy source of truth is `docs/bidirectional-sync-design.md` and
+> `docs/architecture.md`. If examples here differ, those docs win.
 
 Last Updated: 2026-02-23
 
@@ -455,7 +457,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up binary sensor platform."""
-    coordinator: HomeTopologyCoordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator: TopomationCoordinator = hass.data[DOMAIN][entry.entry_id]
 
     entities = []
     for location_id in coordinator.loc_mgr.get_all_locations():
@@ -468,7 +470,7 @@ async def async_setup_entry(
 
 ```python
 @websocket_api.websocket_command({
-    vol.Required("type"): "home_topology/locations/list"
+    vol.Required("type"): "topomation/locations/list"
 })
 @callback
 def handle_locations_list(
@@ -477,7 +479,7 @@ def handle_locations_list(
     msg: dict[str, Any],
 ) -> None:
     """Handle locations list command."""
-    coordinator: HomeTopologyCoordinator = hass.data[DOMAIN][msg["config_entry_id"]]
+    coordinator: TopomationCoordinator = hass.data[DOMAIN][msg["config_entry_id"]]
 
     locations = []
     for loc_id in coordinator.loc_mgr.get_all_locations():
@@ -493,7 +495,7 @@ def handle_locations_list(
 
 
 @websocket_api.websocket_command({
-    vol.Required("type"): "home_topology/locations/update",
+    vol.Required("type"): "topomation/locations/update",
     vol.Required("location_id"): str,
     vol.Optional("name"): str,
     vol.Optional("parent_id"): str,
@@ -505,7 +507,7 @@ def handle_location_update(
     msg: dict[str, Any],
 ) -> None:
     """Handle location update command."""
-    coordinator: HomeTopologyCoordinator = hass.data[DOMAIN][msg["config_entry_id"]]
+    coordinator: TopomationCoordinator = hass.data[DOMAIN][msg["config_entry_id"]]
 
     try:
         coordinator.loc_mgr.update_location(
@@ -567,7 +569,7 @@ class OccupancyBinarySensor(CoordinatorEntity, BinarySensorEntity):
     _attr_device_class = BinarySensorDeviceClass.OCCUPANCY
     _attr_has_entity_name = True
 
-    def __init__(self, coordinator: HomeTopologyCoordinator, location_id: str) -> None:
+    def __init__(self, coordinator: TopomationCoordinator, location_id: str) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
         self._location_id = location_id
@@ -695,7 +697,7 @@ def handle_occupancy_changed(event: Event) -> None:
 The kernel is time-agnostic. The integration schedules timeout checks:
 
 ```python
-class HomeTopologyCoordinator:
+class TopomationCoordinator:
     """Coordinates timeout scheduling for kernel modules."""
 
     def __init__(
@@ -828,7 +830,7 @@ export class HtLocationTree extends LitElement {
 
   private async _fetchLocations() {
     const result = await this.hass.callWS({
-      type: "home_topology/locations/list",
+      type: "topomation/locations/list",
     });
     this._locations = result.locations;
   }
@@ -868,8 +870,8 @@ export class HtLocationTree extends LitElement {
 ### 5.2 State Management Pattern
 
 ```typescript
-@customElement("home-topology-panel")
-export class HomeTopologyPanel extends LitElement {
+@customElement("topomation-panel")
+export class TopomationPanel extends LitElement {
   @property({ attribute: false }) public hass!: HomeAssistant;
   @state() private _locations: Location[] = [];
   @state() private _selectedLocationId?: string;
@@ -891,7 +893,7 @@ export class HomeTopologyPanel extends LitElement {
 
   private async _fetchData() {
     const result = await this.hass.callWS({
-      type: "home_topology/locations/list",
+      type: "topomation/locations/list",
     });
     this._locations = result.locations;
   }
@@ -913,7 +915,7 @@ export class HomeTopologyPanel extends LitElement {
 
       // Send to backend
       await this.hass.callWS({
-        type: "home_topology/locations/update",
+        type: "topomation/locations/update",
         location_id: location.id,
         ...location,
       });
@@ -1082,8 +1084,8 @@ async def test_motion_triggers_occupancy(hass: HomeAssistant):
 ```bash
 # 1. Symlink into HA config
 cd /path/to/home-assistant/config
-ln -s /workspaces/home-topology-ha/custom_components/home_topology \
-      custom_components/home_topology
+ln -s /workspaces/topomation-ha/custom_components/topomation \
+      custom_components/topomation
 
 # 2. Restart HA
 ha core restart
@@ -1092,7 +1094,7 @@ ha core restart
 tail -f home-assistant.log | grep home_topology
 
 # 4. Test in browser
-# Navigate to http://localhost:8123/home-topology
+# Navigate to http://localhost:8123/topomation
 ```
 
 ---
@@ -1154,9 +1156,9 @@ Updated docs/work-tracking.md: tree-keyboard task complete
 ## 9. Complete File Organization
 
 ```
-home-topology-ha/
+topomation/
 ├── custom_components/
-│   └── home_topology/
+│   └── topomation/
 │       ├── __init__.py              # Integration entry point
 │       ├── config_flow.py           # Setup wizard UI
 │       ├── const.py                 # Constants and defaults
@@ -1172,7 +1174,7 @@ home-topology-ha/
 │       ├── translations/
 │       │   └── en.json              # English translations
 │       └── frontend/
-│           ├── home-topology-panel.ts       # Main panel component
+│           ├── topomation-panel.ts       # Main panel component
 │           ├── ht-location-tree.ts          # Tree view
 │           ├── ht-location-inspector.ts     # Details panel
 │           ├── ht-entity-config-dialog.ts   # Entity mapping dialog
@@ -1213,7 +1215,7 @@ home-topology-ha/
 
 - **Home Assistant Docs**: https://developers.home-assistant.io/
 - **Lit Documentation**: https://lit.dev/docs/
-- **Core Library Docs**: `/workspaces/home-topology/docs/`
+- **Core Library Docs**: `/workspaces/topomation/docs/`
 
 ---
 

@@ -356,7 +356,7 @@ def bypass_get_data_fixture(hass):
 
 ---
 
-## Application to Home Topology
+## Application to Topomation
 
 ### What We Should Adopt
 
@@ -418,7 +418,7 @@ python_functions = test_*
 addopts =
     --strict-markers
     --disable-warnings
-    --cov=custom_components.home_topology
+    --cov=custom_components.topomation
     --cov-report=term-missing
     --cov-report=xml:build/coverage.xml
     --cov-report=html:htmlcov
@@ -440,7 +440,7 @@ test-quick:
 # Add pre-run checks
 pre-run:
 	@echo "🔍 Quick pre-run checks..."
-	python -m py_compile custom_components/home_topology/*.py
+	python -m py_compile custom_components/topomation/*.py
 	@echo "✅ Syntax OK"
 
 # Add pre-commit
@@ -458,7 +458,7 @@ Following WiiM's pattern, create `scripts/test-smoke.py`:
 
 ```python
 #!/usr/bin/env python3
-"""Home Topology - Smoke Tests
+"""Topomation - Smoke Tests
 
 Quick validation (2-3 minutes) for critical functionality.
 """
@@ -536,7 +536,7 @@ def wait_for_occupancy(hass, location_id: str, timeout: float = 1.0):
 
 ---
 
-## Differences Between WiiM & Home Topology
+## Differences Between WiiM & Topomation
 
 ### WiiM Characteristics
 
@@ -545,7 +545,7 @@ def wait_for_occupancy(hass, location_id: str, timeout: float = 1.0):
 - **Device discovery**: Network scanning, capability detection
 - **State polling**: Regular HTTP requests to devices
 
-### Home Topology Characteristics
+### Topomation Characteristics
 
 - **Virtual integration**: No hardware, pure HA abstraction
 - **Core library**: `home-topology` kernel (LocationManager, EventBus)
@@ -554,7 +554,7 @@ def wait_for_occupancy(hass, location_id: str, timeout: float = 1.0):
 
 ### Testing Implications
 
-| Aspect              | WiiM                                 | Home Topology                   |
+| Aspect              | WiiM                                 | Topomation                   |
 | ------------------- | ------------------------------------ | ------------------------------- |
 | **API mocking**     | Extensive (avoid 100+ HTTP requests) | Minimal (kernel is lightweight) |
 | **Device fixtures** | Complex (50+ properties)             | Simpler (areas/locations)       |

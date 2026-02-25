@@ -1,6 +1,6 @@
 # Development Protocol - How Cursor Writes Code
 
-> Standards and practices for code generation in home-topology-ha.
+> Standards and practices for code generation in topomation.
 
 ---
 

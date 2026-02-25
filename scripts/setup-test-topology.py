@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bootstrap test topology for Home Topology integration.
+"""Bootstrap test topology for Topomation integration.
 
 This creates a realistic house structure:
 - Home (root)
@@ -58,7 +58,7 @@ async def setup_topology():
                 await ws.send_json(
                     {
                         "id": loc["id"],
-                        "type": "home_topology/locations/create",
+                        "type": "topomation/locations/create",
                         "name": loc["name"],
                         "parent_id": loc["parent_id"],
                     }

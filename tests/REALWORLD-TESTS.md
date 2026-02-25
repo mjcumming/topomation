@@ -225,7 +225,7 @@ t=14s:  (all timeouts)   → All vacant
 
 ```bash
 # Install dependencies
-pip install -e /workspaces/home-topology  # Core library
+pip install -e /workspaces/topomation  # Core library
 pip install pytest pytest-asyncio pytest-homeassistant-custom-component
 
 # Verify installation
@@ -252,7 +252,7 @@ pytest tests/test-realworld.py::TestEndToEndScenarios::test_morning_routine_scen
 
 ```bash
 # Generate coverage report
-pytest tests/test-realworld.py --cov=custom_components.home_topology --cov-report=html
+pytest tests/test-realworld.py --cov=custom_components.topomation --cov-report=html
 
 # View coverage
 open htmlcov/index.html  # macOS
@@ -329,18 +329,18 @@ E     3. No event received (check event subscriptions?)
 **Error**:
 
 ```
-ModuleNotFoundError: No module named 'home_topology'
+ModuleNotFoundError: No module named 'topomation'
 ```
 
 **Solution**:
 
 ```bash
 # Install core library
-pip install -e /workspaces/home-topology
+pip install -e /workspaces/topomation
 
 # Or if using venv
 source venv/bin/activate
-pip install -e /workspaces/home-topology
+pip install -e /workspaces/topomation
 ```
 
 ### Issue 2: Async Test Warnings
@@ -412,7 +412,7 @@ jobs:
           python-version: "3.11"
       - name: Install dependencies
         run: |
-          pip install -e /workspaces/home-topology
+          pip install -e /workspaces/topomation
           pip install pytest pytest-asyncio
       - name: Run real-world tests
         run: pytest tests/test-realworld.py -v

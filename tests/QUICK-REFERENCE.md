@@ -6,7 +6,7 @@ One-page reference for running real-world integration tests.
 
 ```bash
 # Install core library
-pip install -e /workspaces/home-topology
+pip install -e /workspaces/topomation
 
 # Install test dependencies
 pip install pytest pytest-asyncio pytest-homeassistant-custom-component
@@ -83,7 +83,7 @@ pytest tests/test-realworld.py -v --lf
 ### Coverage Report
 
 ```bash
-pytest tests/test-realworld.py --cov=custom_components.home_topology --cov-report=html
+pytest tests/test-realworld.py --cov=custom_components.topomation --cov-report=html
 ```
 
 ### Watch Mode (Auto-rerun)
@@ -149,9 +149,9 @@ House
 ### Import Error
 
 ```bash
-# Error: ModuleNotFoundError: No module named 'home_topology'
+# Error: ModuleNotFoundError: No module named 'topomation'
 # Fix:
-pip install -e /workspaces/home-topology
+pip install -e /workspaces/topomation
 ```
 
 ### Hanging Tests
@@ -240,7 +240,7 @@ pytest tests/test_init.py tests/test_coordinator.py tests/test_event_bridge.py -
 ```yaml
 - name: Run real-world tests
   run: |
-    pip install -e /workspaces/home-topology
+    pip install -e /workspaces/topomation
     pytest tests/test-realworld.py -v
 ```
 

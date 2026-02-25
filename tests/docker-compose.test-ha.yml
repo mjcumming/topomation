@@ -13,10 +13,10 @@ services:
       - ./test-ha-config:/config
 
       # Mount the integration for testing
-      - ../custom_components/home_topology:/config/custom_components/home_topology:ro
+      - ../custom_components/topomation:/config/custom_components/topomation:ro
 
       # Mount core library if needed
-      - ../../home-topology:/workspace/home-topology:ro
+      - ../../topomation:/workspace/topomation:ro
 
     environment:
       - TZ=America/New_York

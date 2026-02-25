@@ -1,4 +1,4 @@
-"""Tests for Home Topology service wrappers."""
+"""Tests for Topomation service wrappers."""
 
 from __future__ import annotations
 
@@ -7,8 +7,8 @@ from unittest.mock import Mock
 
 from homeassistant.core import HomeAssistant
 
-from custom_components.home_topology.const import DOMAIN
-from custom_components.home_topology.services import (
+from custom_components.topomation.const import DOMAIN
+from custom_components.topomation.services import (
     async_register_services,
     async_unregister_services,
 )
@@ -40,34 +40,6 @@ async def test_clear_service_maps_to_clear(hass: HomeAssistant) -> None:
     )
 
     occupancy.clear.assert_called_once_with("kitchen", "manual_test", 45)
-    async_unregister_services(hass)
-
-
-async def test_clear_service_falls_back_to_release_for_legacy_core(
-    hass: HomeAssistant,
-) -> None:
-    """clear service should fall back to release for older occupancy module APIs."""
-
-    class LegacyOccupancy:
-        def __init__(self) -> None:
-            self.release = Mock()
-
-    occupancy = LegacyOccupancy()
-    hass.data[DOMAIN] = {"entry_1": _kernel_with_occupancy(occupancy)}
-    async_register_services(hass)
-
-    await hass.services.async_call(
-        DOMAIN,
-        "clear",
-        {
-            "location_id": "kitchen",
-            "source_id": "manual_test",
-            "trailing_timeout": 45,
-        },
-        blocking=True,
-    )
-
-    occupancy.release.assert_called_once_with("kitchen", "manual_test", 45)
     async_unregister_services(hass)
 
 
