@@ -1251,6 +1251,44 @@ from automation config on load. Lux/entity-based dark guards are deferred.
 
 ---
 
+### ADR-HA-031: CI Gate De-duplication with Runtime Bundle Parity Contract (2026-02-26)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+CI and release latency increased because the pipeline executed duplicated work:
+
+1. Backend checks ran in the `backend` job and again inside the comprehensive job.
+2. Frontend unit/build checks ran in the `frontend` job and again inside the comprehensive job.
+3. A stale committed runtime bundle (`frontend/topomation-panel.js`) can pass local tests
+   unless parity with `dist/topomation-panel.js` is explicitly verified.
+
+This caused slow release feedback loops and allowed bundle drift until CI failed.
+
+**Decision**:
+Split CI responsibilities and make parity explicit:
+
+1. Keep `backend` job as the single source for Python checks (`hassfest`, lint, mypy, pytest).
+2. Keep `frontend` job as the single source for frontend unit/build/parity checks.
+3. Keep `comprehensive` job, but scope it to browser suites only (`Web Test Runner` + `Playwright`).
+4. Add workflow `concurrency` cancellation for CI and auto-release to avoid stale queued runs.
+5. Preserve full local `./scripts/test-comprehensive.sh` for release-candidate validation.
+
+**Rationale**:
+1. Maintains test coverage while removing redundant environment bootstrap.
+2. Reduces wall-clock release time on push-to-main.
+3. Converts bundle drift into a deterministic, early failure condition.
+4. Improves contributor feedback speed without weakening gates.
+
+**Consequences**:
+- ✅ Faster CI and release turnaround with no loss of test categories.
+- ✅ Clear contract: `dist/topomation-panel.js` must match committed runtime bundle.
+- ✅ Less duplicated Python/Node setup in GitHub Actions.
+- ⚠️ Browser-suite failures now isolate to comprehensive job and require Playwright/WTR triage.
+- ℹ️ Local contributors should run `./scripts/test-comprehensive.sh` before release-cut commits.
+
+---
+
 ## How to Use This Log
 
 ### When to Create an ADR

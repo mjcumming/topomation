@@ -13,6 +13,10 @@ on:
         required: false
         type: string
 
+concurrency:
+  group: auto-release-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   check-version:
     runs-on: ubuntu-latest

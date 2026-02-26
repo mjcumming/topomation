@@ -285,10 +285,23 @@ it("renders locations", async () => {
 npm run build
 ```
 
-Outputs `topomation-panel.js` in place. The panel loads this from:
+Build output is written to:
+
+```
+dist/topomation-panel.js
+```
+
+The runtime artifact loaded by Home Assistant is:
 
 ```
 /local/custom_components/topomation/frontend/topomation-panel.js
+```
+
+After `npm run build`, sync the runtime artifact and verify parity:
+
+```bash
+cp dist/topomation-panel.js topomation-panel.js
+diff -u dist/topomation-panel.js topomation-panel.js
 ```
 
 ### Cache Busting
@@ -375,14 +388,18 @@ Before committing any frontend changes:
 
 1. **Run tests**: `npm test` (all must pass)
 2. **Build**: `npm run build` (must succeed)
-3. **Verify harness manually** (http://localhost:5173/):
+3. **Verify runtime bundle parity**:
+   - [ ] `diff -u dist/topomation-panel.js topomation-panel.js` returns no differences
+4. **Verify harness manually** (http://localhost:5173/):
    - [ ] Icons render correctly (▶ ⋮⋮ 🗑️, not "?")
    - [ ] Drag location → drop works
    - [ ] Move area under another floor updates `ha_floor_id` in mock response
    - [ ] Move area to root clears `ha_floor_id` in mock response
    - [ ] Blocked lifecycle ops (`create/update/delete`) show expected policy error
    - [ ] Theme toggle works (Ctrl+Shift+T)
-4. **Check for regressions**: Did any previously working feature break?
+5. **Run full local gate before release**:
+   - [ ] `cd /workspaces/topomation && ./scripts/test-comprehensive.sh`
+6. **Check for regressions**: Did any previously working feature break?
 
 ### Why Manual Verification?
 
@@ -414,10 +431,12 @@ A test can pass while the harness is completely broken (see `docs/history/2026.0
 ├─────────────────────────────────────────────────────────────┤
 │  5. Build & Deploy                                          │
 │     npm run build                                            │
-│     Commit topomation-panel.js                           │
+│     cp dist/topomation-panel.js topomation-panel.js          │
+│     diff -u dist/topomation-panel.js topomation-panel.js     │
+│     Commit topomation-panel.js                               │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-_Last Updated: 2025-12-28_
+_Last Updated: 2026-02-26_

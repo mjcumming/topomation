@@ -43,6 +43,12 @@ make typecheck
 # Frontend checks
 cd custom_components/topomation/frontend
 npm run test:unit
+npm run build
+diff -u dist/topomation-panel.js topomation-panel.js
+
+# Full local release gate (mirrors CI breadth)
+cd /workspaces/topomation
+./scripts/test-comprehensive.sh
 ```
 
 - Dependency release workflow (version pin + smoke validation):
