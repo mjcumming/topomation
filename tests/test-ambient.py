@@ -131,155 +131,68 @@ class TestHAPlatformAdapter:
         assert result == "lx"
 
 
-class TestAmbientLightSensorEntity:
-    """Test AmbientLightSensor entity."""
+class TestAmbientEntityPlatforms:
+    """Test ambient-related platform behavior."""
 
     @pytest.mark.asyncio
-    async def test_sensor_creation(self, mock_hass):
-        """Test that ambient light sensor is created correctly."""
-        from custom_components.topomation.sensor import AmbientLightSensor
-        from home_topology.modules.ambient import AmbientLightModule
-        from home_topology.core.bus import EventBus
+    async def test_sensor_platform_publishes_no_entities(self, mock_hass):
+        """Sensor platform should not expose ambient entities."""
+        from custom_components.topomation.sensor import async_setup_entry
 
-        # Setup
-        bus = EventBus()
-        platform_adapter = HAPlatformAdapter(mock_hass)
-        ambient_module = AmbientLightModule(platform_adapter)
+        entry = Mock(entry_id="test_entry")
+        location_manager = Mock()
+        location_manager.all_locations.return_value = [Mock(id="kitchen", name="Kitchen")]
+        mock_hass.data = {
+            DOMAIN: {
+                "test_entry": {
+                    "location_manager": location_manager,
+                    "event_bus": Mock(),
+                    "modules": {"ambient": Mock()},
+                }
+            }
+        }
 
-        # Create sensor
-        sensor = AmbientLightSensor(
-            "kitchen", "Kitchen", ambient_module, bus, mock_hass
-        )
+        captured: list = []
 
-        # Assert
-        assert sensor._location_id == "kitchen"
-        assert sensor._location_name == "Kitchen"
-        assert sensor._attr_unique_id == "ambient_light_kitchen"
-        assert sensor._attr_name == "Kitchen Ambient Light"
-        assert sensor._attr_device_class == "illuminance"
-        assert sensor._attr_native_unit_of_measurement == "lx"
+        def add_entities(entities):
+            captured.extend(entities)
 
-    @pytest.mark.asyncio
-    async def test_sensor_update_reading(self, mock_hass):
-        """Test sensor updates reading from module."""
-        from custom_components.topomation.sensor import AmbientLightSensor
-        from home_topology.modules.ambient import (
-            AmbientLightModule,
-            AmbientLightReading,
-        )
-        from home_topology.core.bus import EventBus
-        from datetime import datetime
-
-        # Setup
-        bus = EventBus()
-        platform_adapter = HAPlatformAdapter(mock_hass)
-        ambient_module = Mock(spec=AmbientLightModule)
-
-        # Mock reading
-        mock_reading = AmbientLightReading(
-            lux=100.0,
-            source_sensor="sensor.kitchen_lux",
-            source_location="kitchen",
-            is_inherited=False,
-            is_dark=False,
-            is_bright=False,
-            dark_threshold=50.0,
-            bright_threshold=500.0,
-            fallback_method=None,
-            timestamp=datetime.now(),
-        )
-        ambient_module.get_ambient_light.return_value = mock_reading
-
-        # Create sensor
-        sensor = AmbientLightSensor(
-            "kitchen", "Kitchen", ambient_module, bus, mock_hass
-        )
-
-        # Update reading
-        sensor.update_reading()
-
-        # Assert
-        assert sensor._attr_native_value == 100.0
-        assert (
-            sensor._attr_extra_state_attributes["source_sensor"] == "sensor.kitchen_lux"
-        )
-        assert sensor._attr_extra_state_attributes["is_dark"] is False
-        assert sensor._attr_extra_state_attributes["is_bright"] is False
-
-
-class TestAmbientLightBinarySensor:
-    """Test AmbientLightBinarySensor entity."""
+        await async_setup_entry(mock_hass, entry, add_entities)
+        assert captured == []
 
     @pytest.mark.asyncio
-    async def test_is_dark_sensor_creation(self, mock_hass):
-        """Test that is_dark binary sensor is created correctly."""
-        from custom_components.topomation.binary_sensor import (
-            AmbientLightBinarySensor,
-        )
-        from home_topology.modules.ambient import AmbientLightModule
-        from home_topology.core.bus import EventBus
+    async def test_binary_sensor_platform_publishes_occupancy_only(self, mock_hass):
+        """Binary sensor platform should expose occupancy entities only."""
+        from custom_components.topomation.binary_sensor import async_setup_entry
 
-        # Setup
-        bus = EventBus()
-        platform_adapter = HAPlatformAdapter(mock_hass)
-        ambient_module = AmbientLightModule(platform_adapter)
+        entry = Mock(entry_id="test_entry")
+        location_manager = Mock()
+        location_manager.all_locations.return_value = [
+            Mock(id="kitchen", name="Kitchen"),
+            Mock(id="hallway", name="Hallway"),
+        ]
+        mock_hass.data = {
+            DOMAIN: {
+                "test_entry": {
+                    "location_manager": location_manager,
+                    "event_bus": Mock(),
+                    "modules": {"occupancy": Mock(), "ambient": Mock()},
+                }
+            }
+        }
 
-        # Create sensor
-        sensor = AmbientLightBinarySensor(
-            "kitchen", "Kitchen", "is_dark", ambient_module, bus, mock_hass
-        )
+        captured: list = []
 
-        # Assert
-        assert sensor._location_id == "kitchen"
-        assert sensor._sensor_type == "is_dark"
-        assert sensor._attr_unique_id == "ambient_is_dark_kitchen"
-        assert sensor._attr_name == "Kitchen Is Dark"
-        assert sensor._attr_device_class == "light"
+        def add_entities(entities):
+            captured.extend(entities)
 
-    @pytest.mark.asyncio
-    async def test_is_dark_update_reading(self, mock_hass):
-        """Test is_dark sensor updates correctly."""
-        from custom_components.topomation.binary_sensor import (
-            AmbientLightBinarySensor,
-        )
-        from home_topology.modules.ambient import (
-            AmbientLightModule,
-            AmbientLightReading,
-        )
-        from home_topology.core.bus import EventBus
-        from datetime import datetime
+        await async_setup_entry(mock_hass, entry, add_entities)
 
-        # Setup
-        bus = EventBus()
-        platform_adapter = HAPlatformAdapter(mock_hass)
-        ambient_module = Mock(spec=AmbientLightModule)
-
-        # Mock reading - dark
-        mock_reading = AmbientLightReading(
-            lux=30.0,
-            source_sensor="sensor.kitchen_lux",
-            source_location="kitchen",
-            is_inherited=False,
-            is_dark=True,
-            is_bright=False,
-            dark_threshold=50.0,
-            bright_threshold=500.0,
-            fallback_method=None,
-            timestamp=datetime.now(),
-        )
-        ambient_module.get_ambient_light.return_value = mock_reading
-
-        # Create sensor
-        sensor = AmbientLightBinarySensor(
-            "kitchen", "Kitchen", "is_dark", ambient_module, bus, mock_hass
-        )
-
-        # Update reading
-        sensor.update_reading()
-
-        # Assert
-        assert sensor._attr_is_on is True
-        assert sensor._attr_extra_state_attributes["lux"] == 30.0
+        assert len(captured) == 2
+        assert {entity.unique_id for entity in captured} == {
+            "occupancy_kitchen",
+            "occupancy_hallway",
+        }
 
 
 class TestAmbientWebSocketAPI:

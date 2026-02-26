@@ -27,6 +27,19 @@ async function kitchenReapplyFlag(page: any): Promise<boolean> {
   });
 }
 
+async function kitchenManagedRuleCount(page: any): Promise<number> {
+  return await page.evaluate(async () => {
+    const mock = (window as any).mockHass;
+    const entries = await mock.hass.callWS({ type: "config/entity_registry/list" });
+    return entries.filter(
+      (entry: any) =>
+        entry?.domain === "automation" &&
+        typeof entry?.unique_id === "string" &&
+        entry.unique_id.startsWith("topomation_kitchen_occupied")
+    ).length;
+  });
+}
+
 test.describe("Production profile smoke", () => {
   test.beforeEach(async ({ page }) => {
     await openProductionProfile(page);
@@ -123,5 +136,67 @@ test.describe("Production profile smoke", () => {
         })
       )
       .toBe(true);
+  });
+
+  test("managed action toggle survives delayed automation registry visibility", async ({ page }) => {
+    await selectKitchen(page);
+    await page.getByRole("button", { name: "On Occupied" }).click();
+
+    // Simulate production lag where automation registry/config reads briefly
+    // return stale data right after a create call.
+    await page.evaluate(() => {
+      const mock = (window as any).mockHass;
+      const originalCallWs = mock.hass.callWS.bind(mock.hass);
+      const originalCallApi = mock.hass.callApi.bind(mock.hass);
+      let staleReadsRemaining = 4;
+      let createdSincePatch = false;
+
+      mock.hass.callApi = async (method: string, endpoint: string, parameters: any) => {
+        const result = await originalCallApi(method, endpoint, parameters);
+        if (
+          String(method || "").toLowerCase() === "post" &&
+          String(endpoint || "").startsWith("config/automation/config/topomation_kitchen_occupied")
+        ) {
+          createdSincePatch = true;
+        }
+        return result;
+      };
+
+      mock.hass.callWS = async (request: any) => {
+        if (
+          createdSincePatch &&
+          staleReadsRemaining > 0 &&
+          (request?.type === "config/entity_registry/list" || request?.type === "automation/config")
+        ) {
+          staleReadsRemaining -= 1;
+          if (request.type === "config/entity_registry/list") {
+            return [];
+          }
+          throw new Error("automation registry stale");
+        }
+        return originalCallWs(request);
+      };
+    });
+
+    const row = page
+      .locator("ht-location-inspector .action-device-row", { hasText: "Kitchen Main Light" })
+      .first();
+    const toggle = row.locator('input[type="checkbox"]').first();
+    await expect(row).toBeVisible();
+    await toggle.check();
+
+    await expect.poll(async () => await kitchenManagedRuleCount(page)).toBeGreaterThan(0);
+
+    await page.reload();
+    await expect(page.locator("topomation-panel")).toBeVisible();
+    await selectKitchen(page);
+    await page.getByRole("button", { name: "On Occupied" }).click();
+    await expect(
+      page
+        .locator("ht-location-inspector .action-device-row", { hasText: "Kitchen Main Light" })
+        .first()
+        .locator('input[type="checkbox"]')
+        .first()
+    ).toBeChecked();
   });
 });

@@ -78,7 +78,9 @@ Quick path via HACS:
 3. Build your location hierarchy.
 4. Add occupancy sources under the `Detection` tab.
 5. Configure actions under `On Occupied` and `On Vacant`.
-6. Validate behavior using occupancy entities and service calls.
+6. Optional: enable `Only when dark` per action row to gate runs to nighttime
+   (`sun.sun` below horizon).
+7. Validate behavior using occupancy entities and service calls.
 
 Example automation trigger:
 
@@ -124,6 +126,8 @@ Key decisions include:
 ## Current Scope and Tradeoffs (v0.1.0-alpha)
 
 - Occupancy and actions workflow is available and usable.
+- `Only when dark` currently uses sun position as a coarse guard. Lux/room-darkness
+  gating is planned as a future enhancement.
 - Integration and service namespaces are now `topomation`.
 - Some advanced UX polish and broader module surface are still in progress.
 

@@ -455,8 +455,19 @@ type EventualConsistencyOptions = {
   emit_apply_event?: boolean;
 };
 
+type PersistedAutomationEntry = {
+  entity_id: string;
+  unique_id: string;
+  domain: string;
+  platform: string;
+  labels: string[];
+  categories: Record<string, string>;
+};
+
 type PersistedMockSnapshot = {
   locations?: Location[];
+  automation_configs?: Record<string, Record<string, any>>;
+  automation_entries?: PersistedAutomationEntry[];
 };
 
 function cloneLocations(list: Location[]): Location[] {
@@ -518,7 +529,13 @@ export function createMockHass(options: any = {}): any {
   const categoryRegistry: Record<string, Array<{ category_id: string; name: string; icon?: string }>> = {
     automation: [],
   };
+  const persistedAutomationConfigs =
+    persistedSnapshot?.automation_configs &&
+    typeof persistedSnapshot.automation_configs === "object"
+      ? persistedSnapshot.automation_configs
+      : {};
   const automationConfigsById: Record<string, Record<string, any>> = {
+    ...persistedAutomationConfigs,
     ...(options.automation_configs || {}),
   };
   const automationEntryByConfigId = new Map<
@@ -532,6 +549,44 @@ export function createMockHass(options: any = {}): any {
       categories: Record<string, string>;
     }
   >();
+  const persistedAutomationEntries = Array.isArray(persistedSnapshot?.automation_entries)
+    ? persistedSnapshot.automation_entries
+    : [];
+  for (const entry of persistedAutomationEntries) {
+    if (
+      !entry ||
+      typeof entry.unique_id !== "string" ||
+      typeof entry.entity_id !== "string"
+    ) {
+      continue;
+    }
+    automationEntryByConfigId.set(entry.unique_id, {
+      entity_id: entry.entity_id,
+      unique_id: entry.unique_id,
+      domain: entry.domain || "automation",
+      platform: entry.platform || "automation",
+      labels: Array.isArray(entry.labels) ? [...entry.labels] : [],
+      categories:
+        entry.categories && typeof entry.categories === "object"
+          ? { ...entry.categories }
+          : {},
+    });
+  }
+  if (automationEntryByConfigId.size > 0) {
+    const nextStates = { ...states };
+    for (const entry of automationEntryByConfigId.values()) {
+      if (nextStates[entry.entity_id]) continue;
+      nextStates[entry.entity_id] = {
+        entity_id: entry.entity_id,
+        state: "on",
+        attributes: {
+          friendly_name:
+            automationConfigsById[entry.unique_id]?.alias || entry.unique_id,
+        },
+      };
+    }
+    states = nextStates;
+  }
 
   const findAutomationEntryByEntityId = (entityId: string) => {
     for (const entry of automationEntryByConfigId.values()) {
@@ -545,6 +600,15 @@ export function createMockHass(options: any = {}): any {
     try {
       const snapshot: PersistedMockSnapshot = {
         locations: cloneLocations(locations),
+        automation_configs: JSON.parse(JSON.stringify(automationConfigsById)),
+        automation_entries: Array.from(automationEntryByConfigId.values()).map((entry) => ({
+          entity_id: entry.entity_id,
+          unique_id: entry.unique_id,
+          domain: entry.domain,
+          platform: entry.platform,
+          labels: [...entry.labels],
+          categories: { ...entry.categories },
+        })),
       };
       window.localStorage.setItem(persistenceKey, JSON.stringify(snapshot));
     } catch (err) {
@@ -689,7 +753,7 @@ export function createMockHass(options: any = {}): any {
         modified_at: Date.now() / 1000,
       };
     }
-    if (request.type === "config/entity_registry/update") {
+      if (request.type === "config/entity_registry/update") {
       const entry = findAutomationEntryByEntityId(String(request.entity_id || ""));
       if (!entry) {
         throw new Error(`Entity not found: ${request.entity_id}`);
@@ -698,14 +762,15 @@ export function createMockHass(options: any = {}): any {
       if (Array.isArray(request.labels)) {
         entry.labels = request.labels.map((label: any) => String(label)).filter(Boolean);
       }
-      if (request.categories && typeof request.categories === "object") {
-        entry.categories = {
-          ...entry.categories,
-          ...request.categories,
-        };
+        if (request.categories && typeof request.categories === "object") {
+          entry.categories = {
+            ...entry.categories,
+            ...request.categories,
+          };
+        }
+        persistSnapshot();
+        return { ...entry };
       }
-      return { ...entry };
-    }
     if (
       request.type === "call_service" &&
       request.domain === "automation" &&
@@ -1120,6 +1185,7 @@ export function createMockHass(options: any = {}): any {
           entity_id: entry.entity_id,
           new_state: states[entry.entity_id],
         });
+        persistSnapshot();
         return { result: "ok" };
       }
 
@@ -1136,6 +1202,7 @@ export function createMockHass(options: any = {}): any {
             new_state: null,
           });
         }
+        persistSnapshot();
         return { result: "ok" };
       }
     }

@@ -17,7 +17,7 @@ The Topomation integration is a Home Assistant custom component that bridges HA 
 | **SyncManager** | Imports HA areas/floors/entities into topology; subscribes to area/floor/entity registry changes for live sync. |
 | **EventBridge** | Listens to `state_changed`; maps entity state to occupancy v3 signals (trigger/clear) and policy actions (e.g. vacate_area). |
 | **Coordinator** | Schedules next timeout across modules via `get_next_timeout` / `check_timeouts(now)`. |
-| **Platforms** | binary_sensor (occupancy + ambient is_dark/is_bright), sensor (ambient light level). |
+| **Platforms** | binary_sensor (occupancy only). Ambient entities are not exposed. |
 | **Panel / WebSocket / Services** | Location Manager panel, WebSocket API for CRUD and ambient/sync, and services (trigger, clear, lock, unlock, vacate_area). |
 
 ---
@@ -65,6 +65,6 @@ See `docs/live-ha-validation-checklist.md` for the full validation list.
 | `coordinator.py` | Timeout scheduling. |
 | `event_bridge.py` | state_changed → occupancy.signal + policy vacate. |
 | `sync_manager.py` | HA areas/floors/entities → topology; live registry listeners. |
-| `binary_sensor.py` | Occupancy + ambient (is_dark, is_bright) entities. |
-| `sensor.py` | Ambient light level entities. |
+| `binary_sensor.py` | Occupancy entities used by Topomation and user automations. |
+| `sensor.py` | Reserved/no-op (no entities published). |
 | `panel.py` / `websocket_api.py` / `services.py` | UI and API. |

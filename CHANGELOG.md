@@ -9,6 +9,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Integration options dialog with about/info metadata (version, panel route, docs,
+  issues) from the Devices & Services integration entry.
+- Production-smoke coverage for managed action toggles under delayed automation
+  registry/config visibility.
+- Inline `Only when dark` action-row guard that writes a sun-based condition
+  (`sun.sun` below horizon) to managed occupied/vacant automations.
+
+### Changed
+
+- Managed automation rule UI now performs bounded retry/reload convergence checks
+  after inline include/service edits to tolerate eventual consistency in larger
+  live Home Assistant installs.
+- Action-rule discovery now prioritizes likely Topomation automation registry
+  entries and waits longer for newly-created automations to appear.
+- Topomation now only exposes occupancy binary sensors as entities.
+- Mock harness persistence now keeps managed automation configs/registry entries
+  across reloads in production profile.
+
+### Fixed
+
+- Inline action toggles/selectors in `On Occupied`/`On Vacant` no longer
+  frequently revert after showing `Saving...` when backend entity registry or
+  automation config updates are delayed.
+- Existing ambient entities are pruned from the entity registry on startup.
+
 ## [0.1.2] - 2026-02-26
 
 ### Added

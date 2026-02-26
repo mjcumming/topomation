@@ -13,6 +13,7 @@ from home_topology.modules.automation import AutomationModule
 from home_topology.modules.occupancy import OccupancyModule
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP, Platform
 from homeassistant.core import Event, HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.storage import Store
 
@@ -42,8 +43,26 @@ _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [
     Platform.BINARY_SENSOR,  # Occupancy binary sensors
-    Platform.SENSOR,  # Occupancy state sensors
 ]
+
+
+@callback
+def _prune_hidden_entities(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Remove previously-created ambient entities no longer exposed by Topomation."""
+    registry = er.async_get(hass)
+    for reg_entry in list(er.async_entries_for_config_entry(registry, entry.entry_id)):
+        unique_id = str(reg_entry.unique_id or "")
+        if (
+            unique_id.startswith("ambient_light_")
+            or unique_id.startswith("ambient_is_dark_")
+            or unique_id.startswith("ambient_is_bright_")
+        ):
+            registry.async_remove(reg_entry.entity_id)
+
+
+async def _async_handle_options_update(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Reload integration when options change."""
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 class HAPlatformAdapter:
@@ -239,6 +258,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "schedule_persist": _schedule_persist,
         "cancel_pending_persist": _cancel_pending_persist,
     }
+
+    # Apply options to existing registry entries before platform setup.
+    _prune_hidden_entities(hass, entry)
+
+    entry.async_on_unload(entry.add_update_listener(_async_handle_options_update))
 
     # 13. Register panel, WebSocket API, and services
     await async_register_panel(hass)

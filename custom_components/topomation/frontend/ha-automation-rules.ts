@@ -9,6 +9,7 @@ export interface TopomationActionRule {
   trigger_type: ActionTriggerType;
   action_entity_id?: string;
   action_service?: string;
+  require_dark: boolean;
   enabled: boolean;
 }
 
@@ -16,6 +17,7 @@ interface TopomationRuleMetadata {
   version: number;
   location_id: string;
   trigger_type: ActionTriggerType;
+  require_dark?: boolean;
 }
 
 interface AutomationRegistryEntry {
@@ -106,6 +108,7 @@ function parseRuleMetadata(description: unknown): TopomationRuleMetadata | null 
           version: Number(parsed.version) || 1,
           location_id: parsed.location_id,
           trigger_type: parsed.trigger_type,
+          require_dark: typeof parsed.require_dark === "boolean" ? parsed.require_dark : undefined,
         };
       }
     } catch {
@@ -161,6 +164,31 @@ function extractActionSummary(config: Record<string, any>): {
   };
 }
 
+function hasSunDarkCondition(config: Record<string, any>): boolean {
+  const root = config?.conditions ?? config?.condition;
+  const stack = Array.isArray(root) ? [...root] : root ? [root] : [];
+
+  while (stack.length > 0) {
+    const condition = stack.pop();
+    if (!condition || typeof condition !== "object") continue;
+
+    if (
+      condition.condition === "state" &&
+      condition.entity_id === "sun.sun" &&
+      condition.state === "below_horizon"
+    ) {
+      return true;
+    }
+
+    const nested = condition.conditions;
+    if (Array.isArray(nested)) {
+      stack.push(...nested);
+    }
+  }
+
+  return false;
+}
+
 function findOccupancyEntityId(hass: HomeAssistant, locationId: string): string | undefined {
   const states = hass.states || {};
   for (const [entityId, stateObj] of Object.entries(states)) {
@@ -192,8 +220,8 @@ async function listAutomationRegistryEntries(
 async function waitForAutomationRegistryEntry(
   hass: HomeAssistant,
   automationId: string,
-  maxAttempts = 8,
-  waitMs = 200
+  maxAttempts = 20,
+  waitMs = 250
 ): Promise<AutomationRegistryEntry | undefined> {
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     const entries = await listAutomationRegistryEntries(hass);
@@ -225,6 +253,37 @@ function resolveAutomationConfigId(
   if (uniqueId) return uniqueId;
 
   return undefined;
+}
+
+function looksLikeTopomationAutomationEntry(entry: AutomationRegistryEntry): boolean {
+  const uniqueId = typeof entry.unique_id === "string" ? entry.unique_id.trim().toLowerCase() : "";
+  if (uniqueId.startsWith(TOPOMATION_AUTOMATION_ID_PREFIX)) {
+    return true;
+  }
+
+  const labels = Array.isArray(entry.labels) ? entry.labels : [];
+  if (
+    labels.some(
+      (label) =>
+        typeof label === "string" &&
+        label.toLowerCase().includes("topomation")
+    )
+  ) {
+    return true;
+  }
+
+  const categoryValues = Object.values(entry.categories || {});
+  if (
+    categoryValues.some(
+      (value) =>
+        typeof value === "string" &&
+        value.toLowerCase().includes("topomation")
+    )
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
 async function findAutomationRegistryEntryByConfigId(
@@ -372,8 +431,11 @@ export async function listTopomationActionRules(
   locationId: string
 ): Promise<TopomationActionRule[]> {
   const registryEntries = await listAutomationRegistryEntries(hass);
+  const likelyTopomationEntries = registryEntries.filter(looksLikeTopomationAutomationEntry);
+  const candidates =
+    likelyTopomationEntries.length > 0 ? likelyTopomationEntries : registryEntries;
   const loaded = await Promise.all(
-    registryEntries.map(async (entry) => {
+    candidates.map(async (entry) => {
       if (!entry.entity_id) return undefined;
 
       try {
@@ -408,6 +470,10 @@ export async function listTopomationActionRules(
           trigger_type: metadata.trigger_type,
           action_entity_id: summary.action_entity_id,
           action_service: summary.action_service,
+          require_dark:
+            typeof metadata.require_dark === "boolean"
+              ? metadata.require_dark
+              : hasSunDarkCondition(config),
           enabled,
         } satisfies TopomationActionRule;
       } catch (err) {
@@ -430,6 +496,7 @@ export async function createTopomationActionRule(
     trigger_type: ActionTriggerType;
     action_entity_id: string;
     action_service: string;
+    require_dark?: boolean;
   }
 ): Promise<TopomationActionRule> {
   const occupancyEntityId = findOccupancyEntityId(hass, args.location.id);
@@ -446,9 +513,10 @@ export async function createTopomationActionRule(
     : "homeassistant";
 
   const metadata: TopomationRuleMetadata = {
-    version: 1,
+    version: 2,
     location_id: args.location.id,
     trigger_type: args.trigger_type,
+    require_dark: Boolean(args.require_dark),
   };
 
   await callAutomationConfigApi<{ result: string }>(hass, "post", automationId, {
@@ -461,7 +529,15 @@ export async function createTopomationActionRule(
         to: triggerState,
       },
     ],
-    conditions: [],
+    conditions: args.require_dark
+      ? [
+          {
+            condition: "state",
+            entity_id: "sun.sun",
+            state: "below_horizon",
+          },
+        ]
+      : [],
     actions: [
       {
         action: `${actionDomain}.${args.action_service}`,
@@ -485,6 +561,7 @@ export async function createTopomationActionRule(
     trigger_type: args.trigger_type,
     action_entity_id: args.action_entity_id,
     action_service: args.action_service,
+    require_dark: Boolean(args.require_dark),
     enabled: true,
   };
 }

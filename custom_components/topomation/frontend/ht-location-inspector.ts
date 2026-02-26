@@ -74,6 +74,7 @@ export class HtLocationInspector extends LitElement {
   @state() private _nowEpochMs = Date.now();
   @state() private _actionToggleBusy: Record<string, boolean> = {};
   @state() private _actionServiceSelections: Record<string, string> = {};
+  @state() private _actionDarkSelections: Record<string, boolean> = {};
   private _onTimeoutMemory: Record<string, number> = {};
   private _entityAreaLoadPromise?: Promise<void>;
   private _actionRulesLoadSeq = 0;
@@ -486,7 +487,8 @@ export class HtLocationInspector extends LitElement {
 
       .action-controls {
         display: flex;
-        align-items: center;
+        flex-direction: column;
+        align-items: flex-end;
         gap: 10px;
       }
 
@@ -498,6 +500,23 @@ export class HtLocationInspector extends LitElement {
         font-size: 12px;
         background: var(--card-background-color);
         color: var(--primary-text-color);
+      }
+
+      .action-dark-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        color: var(--text-secondary-color);
+        cursor: pointer;
+        user-select: none;
+      }
+
+      .action-dark-input {
+        width: 14px;
+        height: 14px;
+        cursor: pointer;
+        accent-color: var(--primary-color);
       }
 
       .service-pill {
@@ -1043,14 +1062,14 @@ export class HtLocationInspector extends LitElement {
     }
   }
 
-  private async _loadActionRules(): Promise<void> {
+  private async _loadActionRules(): Promise<boolean> {
     const loadSeq = ++this._actionRulesLoadSeq;
     const locationId = this.location?.id;
     if (!locationId || !this.hass) {
       this._actionRules = [];
       this._loadingActionRules = false;
       this._actionRulesError = undefined;
-      return;
+      return true;
     }
 
     this._loadingActionRules = true;
@@ -1059,12 +1078,14 @@ export class HtLocationInspector extends LitElement {
 
     try {
       const rules = await listTopomationActionRules(this.hass, locationId);
-      if (loadSeq !== this._actionRulesLoadSeq) return;
+      if (loadSeq !== this._actionRulesLoadSeq) return false;
       this._actionRules = rules;
+      return true;
     } catch (err: any) {
-      if (loadSeq !== this._actionRulesLoadSeq) return;
+      if (loadSeq !== this._actionRulesLoadSeq) return false;
       this._actionRules = [];
       this._actionRulesError = err?.message || "Failed to load automation rules";
+      return false;
     } finally {
       if (loadSeq === this._actionRulesLoadSeq) {
         this._loadingActionRules = false;
@@ -1998,6 +2019,7 @@ export class HtLocationInspector extends LitElement {
                     const busyKey = this._actionToggleKey(entityId, triggerType);
                     const busy = Boolean(this._actionToggleBusy[busyKey]);
                     const service = this._selectedManagedActionService(entityId, triggerType);
+                    const requireDark = this._selectedManagedActionRequireDark(entityId, triggerType);
                     const serviceOptions = this._actionServiceOptions(entityId, triggerType);
                     return html`
                     <div class="source-item action-device-row ${enabled ? "enabled" : ""}">
@@ -2045,6 +2067,21 @@ export class HtLocationInspector extends LitElement {
                               html`<option value=${option.value}>${option.label}</option>`
                           )}
                         </select>
+                        <label class="action-dark-toggle">
+                          <input
+                            type="checkbox"
+                            class="action-dark-input"
+                            .checked=${requireDark}
+                            ?disabled=${busy || this._loadingActionRules}
+                            @change=${(ev: Event) =>
+                              this._handleManagedActionDarkChange(
+                                entityId,
+                                triggerType,
+                                (ev.target as HTMLInputElement).checked
+                              )}
+                          />
+                          Only when dark
+                        </label>
                         ${busy ? html`<span class="text-muted">Saving...</span>` : ""}
                       </div>
                     </div>
@@ -2242,6 +2279,29 @@ export class HtLocationInspector extends LitElement {
     return this._defaultManagedActionService(entityId, triggerType);
   }
 
+  private _selectedManagedActionRequireDark(
+    entityId: string,
+    triggerType: "occupied" | "vacant"
+  ): boolean {
+    const key = this._actionToggleKey(entityId, triggerType);
+    if (Object.prototype.hasOwnProperty.call(this._actionDarkSelections, key)) {
+      return Boolean(this._actionDarkSelections[key]);
+    }
+
+    const matchingRules = this._rulesForManagedActionEntity(entityId, triggerType);
+    const enabledRule = matchingRules.find((rule) => rule.enabled);
+    if (enabledRule) {
+      return Boolean(enabledRule.require_dark);
+    }
+
+    const fallbackRule = matchingRules[0];
+    if (fallbackRule) {
+      return Boolean(fallbackRule.require_dark);
+    }
+
+    return false;
+  }
+
   private _rulesForManagedActionEntity(
     entityId: string,
     triggerType: "occupied" | "vacant"
@@ -2255,6 +2315,43 @@ export class HtLocationInspector extends LitElement {
 
   private _isManagedActionEnabled(entityId: string, triggerType: "occupied" | "vacant"): boolean {
     return this._rulesForManagedActionEntity(entityId, triggerType).some((rule) => rule.enabled);
+  }
+
+  private _isManagedActionServiceSelected(
+    entityId: string,
+    triggerType: "occupied" | "vacant",
+    actionService: string
+  ): boolean {
+    return this._rulesForManagedActionEntity(entityId, triggerType).some(
+      (rule) => rule.enabled && rule.action_service === actionService
+    );
+  }
+
+  private _isManagedActionRequireDarkSelected(
+    entityId: string,
+    triggerType: "occupied" | "vacant",
+    requireDark: boolean
+  ): boolean {
+    return this._rulesForManagedActionEntity(entityId, triggerType).some(
+      (rule) => rule.enabled && Boolean(rule.require_dark) === requireDark
+    );
+  }
+
+  private async _reloadActionRulesUntil(
+    predicate: () => boolean,
+    attempts = 8,
+    delayMs = 250
+  ): Promise<boolean> {
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      const ok = await this._loadActionRules();
+      if (ok && predicate()) {
+        return true;
+      }
+      if (attempt < attempts - 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, delayMs));
+      }
+    }
+    return false;
   }
 
   private _deviceIcon(entityId: string): string {
@@ -2279,7 +2376,8 @@ export class HtLocationInspector extends LitElement {
   private async _replaceManagedActionRules(
     entityId: string,
     triggerType: "occupied" | "vacant",
-    actionService: string
+    actionService: string,
+    requireDark: boolean
   ): Promise<void> {
     if (!this.location) return;
 
@@ -2294,6 +2392,7 @@ export class HtLocationInspector extends LitElement {
       trigger_type: triggerType,
       action_entity_id: entityId,
       action_service: actionService,
+      require_dark: requireDark,
     });
   }
 
@@ -2318,10 +2417,53 @@ export class HtLocationInspector extends LitElement {
     this.requestUpdate();
 
     try {
-      await this._replaceManagedActionRules(entityId, triggerType, actionService);
-      await this._loadActionRules();
+      const requireDark = this._selectedManagedActionRequireDark(entityId, triggerType);
+      await this._replaceManagedActionRules(entityId, triggerType, actionService, requireDark);
+      await this._reloadActionRulesUntil(
+        () =>
+          this._isManagedActionServiceSelected(entityId, triggerType, actionService) &&
+          this._isManagedActionRequireDarkSelected(entityId, triggerType, requireDark)
+      );
     } catch (err: any) {
       console.error("Failed to update managed action service:", err);
+      this._showToast(err?.message || "Failed to update automation", "error");
+    } finally {
+      const { [key]: _omit, ...remaining } = this._actionToggleBusy;
+      this._actionToggleBusy = remaining;
+      this.requestUpdate();
+    }
+  }
+
+  private async _handleManagedActionDarkChange(
+    entityId: string,
+    triggerType: "occupied" | "vacant",
+    requireDark: boolean
+  ): Promise<void> {
+    const key = this._actionToggleKey(entityId, triggerType);
+    this._actionDarkSelections = {
+      ...this._actionDarkSelections,
+      [key]: requireDark,
+    };
+
+    const enabled = this._isManagedActionEnabled(entityId, triggerType);
+    if (!enabled) {
+      this.requestUpdate();
+      return;
+    }
+
+    this._actionToggleBusy = { ...this._actionToggleBusy, [key]: true };
+    this.requestUpdate();
+
+    try {
+      const actionService = this._selectedManagedActionService(entityId, triggerType);
+      await this._replaceManagedActionRules(entityId, triggerType, actionService, requireDark);
+      await this._reloadActionRulesUntil(
+        () =>
+          this._isManagedActionServiceSelected(entityId, triggerType, actionService) &&
+          this._isManagedActionRequireDarkSelected(entityId, triggerType, requireDark)
+      );
+    } catch (err: any) {
+      console.error("Failed to update managed action dark condition:", err);
       this._showToast(err?.message || "Failed to update automation", "error");
     } finally {
       const { [key]: _omit, ...remaining } = this._actionToggleBusy;
@@ -2343,13 +2485,20 @@ export class HtLocationInspector extends LitElement {
     try {
       const rules = this._rulesForManagedActionEntity(entityId, triggerType);
       const actionService = this._selectedManagedActionService(entityId, triggerType);
+      const requireDark = this._selectedManagedActionRequireDark(entityId, triggerType);
       if (nextEnabled) {
-        await this._replaceManagedActionRules(entityId, triggerType, actionService);
+        await this._replaceManagedActionRules(entityId, triggerType, actionService, requireDark);
       } else if (rules.length > 0) {
         await Promise.all(rules.map((rule) => deleteTopomationActionRule(this.hass, rule)));
       }
 
-      await this._loadActionRules();
+      await this._reloadActionRulesUntil(
+        () =>
+          this._isManagedActionEnabled(entityId, triggerType) === nextEnabled &&
+          (!nextEnabled ||
+            (this._isManagedActionServiceSelected(entityId, triggerType, actionService) &&
+              this._isManagedActionRequireDarkSelected(entityId, triggerType, requireDark)))
+      );
     } catch (err: any) {
       console.error("Failed to update managed action rule:", err);
       this._showToast(err?.message || "Failed to update automation", "error");

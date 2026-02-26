@@ -86,3 +86,13 @@ Additional save points:
 - Contract changes must update this file in the same change.
 - Decision-level changes must add/update ADR entries.
 - Handoff/parallel context changes must update `docs/current-work.md`.
+
+## C-008 Managed action dark-guard contract
+
+- Managed action rows support an optional `Only when dark` guard.
+- When enabled, created automation config must include:
+  - `condition: state`
+  - `entity_id: sun.sun`
+  - `state: below_horizon`
+- When disabled, no dark guard condition is added.
+- This is the v1 behavior surface; lux/ambient guards are explicitly future enhancement.

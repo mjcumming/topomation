@@ -10,5 +10,13 @@
     "abort": {
       "already_configured": "Topomation is already configured."
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Topomation",
+        "description": "Integration version: {version}\n\nMain panel route: {panel_url}\nDocumentation: {docs_url}\nIssue tracker: {issues_url}\n\nTopomation currently exposes occupancy binary sensors only. Ambient light entities are not created."
+      }
+    }
   }
 }

@@ -12,9 +12,11 @@ from __future__ import annotations
 from unittest.mock import Mock, patch
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.storage import Store
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from custom_components.topomation import _prune_hidden_entities
 from custom_components.topomation.const import (
     DOMAIN,
     STORAGE_KEY_CONFIG,
@@ -434,3 +436,44 @@ async def test_unload_last_entry_unregisters_services(
             await hass.async_block_till_done()
 
     mock_unregister.assert_called_once_with(hass)
+
+
+async def test_prune_hidden_entities_removes_ambient_entities(
+    hass: HomeAssistant,
+) -> None:
+    """Ambient entities should always be removed."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Topomation",
+        data={},
+        entry_id="ambient_prune_test",
+    )
+    entry.add_to_hass(hass)
+    registry = er.async_get(hass)
+    ambient_sensor = registry.async_get_or_create(
+        domain="sensor",
+        platform=DOMAIN,
+        unique_id="ambient_light_kitchen",
+        suggested_object_id="kitchen_ambient_light",
+        config_entry=entry,
+    )
+    ambient_binary = registry.async_get_or_create(
+        domain="binary_sensor",
+        platform=DOMAIN,
+        unique_id="ambient_is_dark_kitchen",
+        suggested_object_id="kitchen_is_dark",
+        config_entry=entry,
+    )
+    occupancy_sensor = registry.async_get_or_create(
+        domain="binary_sensor",
+        platform=DOMAIN,
+        unique_id="occupancy_kitchen",
+        suggested_object_id="kitchen_occupancy",
+        config_entry=entry,
+    )
+
+    _prune_hidden_entities(hass, entry)
+
+    assert registry.async_get(ambient_sensor.entity_id) is None
+    assert registry.async_get(ambient_binary.entity_id) is None
+    assert registry.async_get(occupancy_sensor.entity_id) is not None

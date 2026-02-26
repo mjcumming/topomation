@@ -261,6 +261,50 @@ test("inline action service selector controls created automation action", async 
     .toBe("light.turn_off");
 });
 
+test("inline dark toggle writes sun-based condition for managed automation rule", async ({ page }) => {
+  await page.goto("/mock-harness.html");
+
+  await page.locator("ht-location-tree [data-id='kitchen']").first().click();
+  await page.getByRole("button", { name: "On Occupied" }).click();
+
+  const row = page
+    .locator("ht-location-inspector .action-device-row", { hasText: "Kitchen Main Light" })
+    .first();
+  const includeToggle = row.locator("input.action-include-input");
+  const darkToggle = row.locator("input.action-dark-input");
+
+  await expect(row).toBeVisible();
+  await darkToggle.check();
+  await includeToggle.check();
+
+  await expect
+    .poll(async () =>
+      page.evaluate(async () => {
+        const mock = (window as any).mockHass;
+        const entries = await mock.hass.callWS({ type: "config/entity_registry/list" });
+        const rule = entries.find(
+          (entry: any) =>
+            entry?.domain === "automation" &&
+            typeof entry?.unique_id === "string" &&
+            entry.unique_id.startsWith("topomation_kitchen_occupied")
+        );
+        if (!rule?.entity_id) return null;
+        const configResp = await mock.hass.callWS({
+          type: "automation/config",
+          entity_id: rule.entity_id,
+        });
+        const conditions = configResp?.config?.conditions || [];
+        return conditions.some(
+          (condition: any) =>
+            condition?.condition === "state" &&
+            condition?.entity_id === "sun.sun" &&
+            condition?.state === "below_horizon"
+        );
+      })
+    )
+    .toBe(true);
+});
+
 test("inline actions support all common device types", async ({ page }) => {
   await page.goto("/mock-harness.html");
 

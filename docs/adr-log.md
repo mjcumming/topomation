@@ -1216,6 +1216,41 @@ Extend lock service contract and core semantics:
 
 ---
 
+### ADR-HA-030: Managed Action "Only When Dark" Uses Sun-Based Guard First (2026-02-26)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+Users need a simple way to prevent occupied/vacant action automations from running
+in daylight without introducing more Topomation entities. Ambient/lux-based logic
+is useful but requires additional UX and calibration rules that are not finalized.
+
+**Decision**:
+Add an inline `Only when dark` checkbox for managed action rows (On Occupied and
+On Vacant). When enabled, Topomation writes a Home Assistant automation condition:
+
+1. `condition: state`
+2. `entity_id: sun.sun`
+3. `state: below_horizon`
+
+The guard is stored in managed automation metadata (`require_dark`) and reflected
+from automation config on load. Lux/entity-based dark guards are deferred.
+
+**Rationale**:
+1. Provides immediate user value with minimal complexity.
+2. Avoids creating additional entity surface while dark-mode semantics are still evolving.
+3. Uses a stable built-in HA signal (`sun.sun`) available on all installs.
+4. Keeps managed rule behavior transparent in native HA automation editor/config.
+
+**Consequences**:
+- ✅ Users can gate managed actions to nighttime with one checkbox per device action.
+- ✅ No new Topomation entities are required for this feature.
+- ✅ Existing managed actions remain backward compatible (no condition by default).
+- ⚠️ Sun position is a coarse proxy and does not represent room-specific darkness.
+- ℹ️ Future enhancement path: optional lux-based dark guards with explicit sensor/threshold config.
+
+---
+
 ## How to Use This Log
 
 ### When to Create an ADR

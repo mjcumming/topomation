@@ -91,6 +91,7 @@ export interface TopomationActionRule {
   trigger_type: "occupied" | "vacant";
   action_entity_id?: string;
   action_service?: string;
+  require_dark: boolean;
   enabled: boolean;
 }
 
