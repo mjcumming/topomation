@@ -153,6 +153,7 @@ jobs:
       - name: Create ZIP file
         if: steps.release-check.outputs.exists == 'false'
         run: |
+          WORKSPACE_DIR="${GITHUB_WORKSPACE:-$(pwd)}"
           rm -f topomation.zip
           rm -rf /tmp/topomation-package
           mkdir -p /tmp/topomation-package
@@ -169,9 +170,9 @@ jobs:
           cd /tmp/topomation-package/topomation
           zip -r /tmp/topomation.zip .
           cd /tmp
-          mv topomation.zip /github/workspace/topomation.zip
-          cd /github/workspace
-          zip topomation.zip LICENSE README.md
+          mv topomation.zip "$WORKSPACE_DIR/topomation.zip"
+          cd "$WORKSPACE_DIR"
+          zip -g topomation.zip LICENSE README.md
 
       - name: Extract changelog for this version
         if: steps.release-check.outputs.exists == 'false'
