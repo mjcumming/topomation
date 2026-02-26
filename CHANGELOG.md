@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-02-26
+
 ### Added
 
 - Integration options dialog with about/info metadata (version, panel route, docs,
@@ -28,6 +30,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Topomation now only exposes occupancy binary sensors as entities.
 - Mock harness persistence now keeps managed automation configs/registry entries
   across reloads in production profile.
+- Local comprehensive gate (`scripts/test-comprehensive.sh`) now includes
+  frontend production build + committed runtime bundle parity verification.
 
 ### Fixed
 
@@ -35,6 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   frequently revert after showing `Saving...` when backend entity registry or
   automation config updates are delayed.
 - Existing ambient entities are pruned from the entity registry on startup.
+- Frontend runtime bundle (`topomation-panel.js`) is now regenerated for this
+  release so CI/frontend checks match shipped UI behavior.
 
 ## [0.1.2] - 2026-02-26
 

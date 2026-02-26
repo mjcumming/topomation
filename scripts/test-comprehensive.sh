@@ -12,6 +12,10 @@ echo "==> Frontend unit suite (Vitest)"
 cd "${FRONTEND_DIR}"
 npm run test:unit
 
+echo "==> Frontend production build + runtime bundle parity check"
+npm run build
+diff -u dist/topomation-panel.js topomation-panel.js
+
 echo "==> Ensuring Playwright Chromium is installed"
 npx playwright install chromium >/dev/null
 
