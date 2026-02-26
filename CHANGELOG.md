@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-02-26
+
+### Fixed
+
+- Release version metadata is now synchronized across
+  `manifest.json`, `const.py`, and `pyproject.toml` so CI version-sync
+  validation passes reliably during auto-release.
+
 ## [0.1.6] - 2026-02-26
 
 ### Changed
