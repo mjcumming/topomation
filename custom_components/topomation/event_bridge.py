@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
+from home_topology import Event, EventBus, LocationManager
 from homeassistant.const import (
     EVENT_STATE_CHANGED,
     STATE_OFF,
@@ -14,8 +15,6 @@ from homeassistant.const import (
     STATE_PLAYING,
 )
 from homeassistant.core import HomeAssistant, callback
-
-from home_topology import Event, EventBus, LocationManager
 
 if TYPE_CHECKING:
     from homeassistant.core import Event as HAEvent
@@ -289,7 +288,7 @@ class EventBridge:
         configured_sources: list[Any],
         entity_id: str,
         signal_type: str,
-        signal_key: Optional[str],
+        signal_key: str | None,
     ) -> list[dict[str, Any]]:
         """Resolve configured source records for an incoming entity signal."""
         resolved: list[dict[str, Any]] = []
@@ -318,8 +317,19 @@ class EventBridge:
             elif signal_type == "clear":
                 if source.get("off_event", "none") != "clear":
                     continue
-                timeout_set = True
-                timeout = source.get("off_trailing", 0)
+                off_trailing = source.get("off_trailing", 0)
+                try:
+                    off_trailing = int(off_trailing)
+                except (TypeError, ValueError):
+                    off_trailing = 0
+                if off_trailing <= 0:
+                    timeout_set = False
+                    timeout = None
+                    signal_event_type = "vacate"
+                else:
+                    timeout_set = True
+                    timeout = off_trailing
+                    signal_event_type = "clear"
             else:
                 continue
 
@@ -329,7 +339,7 @@ class EventBridge:
 
             resolved.append(
                 {
-                    "event_type": signal_type,
+                    "event_type": signal_event_type if signal_type == "clear" else signal_type,
                     "source_id": source_id,
                     "timeout_set": timeout_set,
                     "timeout": timeout,

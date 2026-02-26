@@ -111,22 +111,22 @@ describe("HtLocationInspector occupancy source composer", () => {
         request.domain === "topomation" &&
         request.service === "trigger"
     );
-    const clearCall = callWsRequests.find(
+    const vacateCall = callWsRequests.find(
       (request) =>
         request.type === "call_service" &&
         request.domain === "topomation" &&
-        request.service === "clear"
+        request.service === "vacate"
     );
 
     expect(triggerCall).to.exist;
     expect(triggerCall?.service_data?.location_id).to.equal("area_kitchen");
     expect(triggerCall?.service_data?.source_id).to.equal("light.kitchen_ceiling");
 
-    expect(clearCall).to.exist;
-    expect(clearCall?.service_data?.location_id).to.equal("area_kitchen");
-    expect(clearCall?.service_data?.source_id).to.equal("light.kitchen_ceiling");
+    expect(vacateCall).to.exist;
+    expect(vacateCall?.service_data?.location_id).to.equal("area_kitchen");
+    expect(vacateCall?.service_data?.source_id).to.equal(undefined);
 
-    expect(emitted.map((detail) => detail.action)).to.deep.equal(["trigger", "clear"]);
+    expect(emitted.map((detail) => detail.action)).to.deep.equal(["trigger", "vacate"]);
   });
 
   it("disables source test buttons when behaviors are set to no change", async () => {
@@ -404,7 +404,7 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(tabLabels).to.include("On Vacant");
   });
 
-  it("renders lock diagnostics and indefinite vacant timing when block-vacant lock is active", async () => {
+  it("renders header occupancy/lock status and lock diagnostics", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>) => {
         if (request.type === "config/entity_registry/list") return [] as T;
@@ -451,17 +451,19 @@ describe("HtLocationInspector occupancy source composer", () => {
     `);
     await element.updateComplete;
 
-    const untilVacantText = (
-      element.shadowRoot!.querySelector('[data-testid="runtime-time-until-vacant"]')?.textContent || ""
+    const vacantAtText = (
+      element.shadowRoot!.querySelector('[data-testid="header-vacant-at"]')?.textContent || ""
     ).trim();
-    const lockModesText = Array.from(element.shadowRoot!.querySelectorAll(".runtime-row"))
-      .find((row) => (row.textContent || "").includes("Lock Modes"))
-      ?.textContent || "";
+    const lockStatusText = (
+      element.shadowRoot!.querySelector('[data-testid="header-lock-status"]')?.textContent || ""
+    ).trim();
+    const lockModesText = element.shadowRoot!.textContent || "";
     const lockDirectiveText = (
       element.shadowRoot!.querySelector(".lock-directive")?.textContent || ""
     ).trim();
 
-    expect(untilVacantText).to.include("Indefinite");
+    expect(vacantAtText).to.equal("Vacant at No timeout scheduled");
+    expect(lockStatusText).to.equal("Locked");
     expect(lockModesText).to.include("Block vacant");
     expect(lockDirectiveText).to.include("Subtree");
   });
@@ -515,33 +517,42 @@ describe("HtLocationInspector occupancy source composer", () => {
     `);
     await element.updateComplete;
 
-    const untilVacantText = (
-      element.shadowRoot!.querySelector('[data-testid="runtime-time-until-vacant"]')?.textContent || ""
-    ).trim();
     const vacantAtText = (
-      element.shadowRoot!.querySelector('[data-testid="runtime-vacant-at"]')?.textContent || ""
+      element.shadowRoot!.querySelector('[data-testid="header-vacant-at"]')?.textContent || ""
     ).trim();
 
-    expect(untilVacantText).to.not.equal("Unknown");
-    expect(untilVacantText).to.not.equal("Already vacant");
-    expect(vacantAtText).to.equal(expectedVacantAtLabel);
+    expect(vacantAtText).to.equal(`Vacant at ${expectedVacantAtLabel}`);
   });
 
-  it("emits add-rule with vacant trigger from On Vacant tab", async () => {
+  it("shows inline device action include toggles and no Add Rule button", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>) => {
         if (request.type === "config/entity_registry/list") return [] as T;
         if (request.type === "config/device_registry/list") return [] as T;
         return [] as T;
       },
+      callApi: async <T>(): Promise<T> => ({ result: "ok" } as T),
       connection: {},
-      states: {},
+      states: {
+        "light.kitchen_ceiling": {
+          entity_id: "light.kitchen_ceiling",
+          state: "off",
+          attributes: {
+            friendly_name: "Kitchen Ceiling",
+            area_id: "kitchen",
+          },
+        },
+      },
       areas: {},
       floors: {},
       localize: (key: string) => key,
     };
 
     const location = structuredClone(baseLocation);
+    location.id = "area_kitchen";
+    location.ha_area_id = "kitchen";
+    location.modules._meta = { type: "area" };
+    location.entity_ids = ["light.kitchen_ceiling"];
 
     const element = await fixture<HtLocationInspector>(html`
       <ht-location-inspector
@@ -557,20 +568,25 @@ describe("HtLocationInspector occupancy source composer", () => {
     vacantTab!.click();
     await element.updateComplete;
 
-    const addRuleEvent = new Promise<CustomEvent>((resolve) => {
-      element.addEventListener("add-rule", (event) => resolve(event as CustomEvent), {
-        once: true,
-      });
-    });
+    await waitUntil(
+      () =>
+        !!Array.from(element.shadowRoot!.querySelectorAll(".action-device-row")).find((el) =>
+          (el.textContent || "").includes("Kitchen Ceiling")
+        ),
+      "inline action device row did not render"
+    );
 
-    const addRuleButton = Array.from(element.shadowRoot!.querySelectorAll(".button.button-primary")).find(
-      (el) => (el.textContent || "").includes("Add Rule")
-    ) as HTMLButtonElement | undefined;
-    expect(addRuleButton).to.exist;
-    addRuleButton!.click();
+    const addRuleButton = Array.from(element.shadowRoot!.querySelectorAll("button")).find((el) =>
+      (el.textContent || "").includes("Add Rule")
+    );
+    expect(addRuleButton).to.not.exist;
 
-    const event = await addRuleEvent;
-    expect(event.detail?.trigger_type).to.equal("vacant");
+    const row = Array.from(element.shadowRoot!.querySelectorAll(".action-device-row")).find((el) =>
+      (el.textContent || "").includes("Kitchen Ceiling")
+    ) as HTMLElement | undefined;
+    expect(row).to.exist;
+    expect(row!.querySelector("select.action-service-select")).to.exist;
+    expect(row!.querySelector('input[type="checkbox"]')).to.exist;
   });
 
   it("maps forced actions alias to occupied-actions default tab", async () => {
@@ -596,5 +612,419 @@ describe("HtLocationInspector occupancy source composer", () => {
 
     const activeTab = element.shadowRoot!.querySelector(".tab.active");
     expect((activeTab?.textContent || "").trim()).to.equal("On Occupied");
+  });
+
+  it("creates managed automation rule when inline action include toggle is enabled", async () => {
+    const callApiCalls: Array<{
+      method: string;
+      endpoint: string;
+      parameters?: Record<string, any>;
+    }> = [];
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>) => {
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        if (request.type === "automation/config") return { config: undefined } as T;
+        return [] as T;
+      },
+      callApi: async <T>(
+        method: string,
+        endpoint: string,
+        parameters?: Record<string, any>
+      ): Promise<T> => {
+        callApiCalls.push({ method, endpoint, parameters });
+        return { result: "ok" } as T;
+      },
+      connection: {},
+      states: {
+        "binary_sensor.kitchen_occupancy": {
+          entity_id: "binary_sensor.kitchen_occupancy",
+          state: "off",
+          attributes: {
+            friendly_name: "Kitchen Occupancy",
+            device_class: "occupancy",
+            location_id: "area_kitchen",
+          },
+        },
+        "light.kitchen_ceiling": {
+          entity_id: "light.kitchen_ceiling",
+          state: "off",
+          attributes: {
+            friendly_name: "Kitchen Ceiling",
+            area_id: "kitchen",
+          },
+        },
+      },
+      areas: {},
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_kitchen";
+    location.ha_area_id = "kitchen";
+    location.modules._meta = { type: "area" };
+    location.entity_ids = ["light.kitchen_ceiling"];
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${location}
+        .forcedTab=${"actions"}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    await waitUntil(
+      () =>
+        !!Array.from(element.shadowRoot!.querySelectorAll(".action-device-row")).find((el) =>
+          (el.textContent || "").includes("Kitchen Ceiling")
+        ),
+      "inline action device row did not render"
+    );
+
+    const row = Array.from(element.shadowRoot!.querySelectorAll(".action-device-row")).find((el) =>
+      (el.textContent || "").includes("Kitchen Ceiling")
+    ) as HTMLElement | undefined;
+    expect(row).to.exist;
+
+    const toggle = row!.querySelector('input[type="checkbox"]') as HTMLInputElement | null;
+    expect(toggle).to.exist;
+    toggle!.click();
+    await element.updateComplete;
+
+    await waitUntil(() => callApiCalls.length > 0, "managed rule creation call did not occur");
+
+    expect(callApiCalls[0].method).to.equal("post");
+    expect(callApiCalls[0].endpoint).to.contain("config/automation/config/");
+    expect(callApiCalls[0].parameters?.actions?.[0]?.target?.entity_id).to.equal(
+      "light.kitchen_ceiling"
+    );
+  });
+
+  it("uses selected per-device action service when creating managed automation rule", async () => {
+    const callApiCalls: Array<{
+      method: string;
+      endpoint: string;
+      parameters?: Record<string, any>;
+    }> = [];
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>) => {
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        if (request.type === "automation/config") return { config: undefined } as T;
+        return [] as T;
+      },
+      callApi: async <T>(
+        method: string,
+        endpoint: string,
+        parameters?: Record<string, any>
+      ): Promise<T> => {
+        callApiCalls.push({ method, endpoint, parameters });
+        return { result: "ok" } as T;
+      },
+      connection: {},
+      states: {
+        "binary_sensor.kitchen_occupancy": {
+          entity_id: "binary_sensor.kitchen_occupancy",
+          state: "off",
+          attributes: {
+            friendly_name: "Kitchen Occupancy",
+            device_class: "occupancy",
+            location_id: "area_kitchen",
+          },
+        },
+        "light.kitchen_ceiling": {
+          entity_id: "light.kitchen_ceiling",
+          state: "off",
+          attributes: {
+            friendly_name: "Kitchen Ceiling",
+            area_id: "kitchen",
+          },
+        },
+      },
+      areas: {},
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_kitchen";
+    location.ha_area_id = "kitchen";
+    location.modules._meta = { type: "area" };
+    location.entity_ids = ["light.kitchen_ceiling"];
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${location}
+        .forcedTab=${"actions"}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    await waitUntil(
+      () =>
+        !!Array.from(element.shadowRoot!.querySelectorAll(".action-device-row")).find((el) =>
+          (el.textContent || "").includes("Kitchen Ceiling")
+        ),
+      "inline action device row did not render"
+    );
+
+    const row = Array.from(element.shadowRoot!.querySelectorAll(".action-device-row")).find((el) =>
+      (el.textContent || "").includes("Kitchen Ceiling")
+    ) as HTMLElement | undefined;
+    expect(row).to.exist;
+
+    const serviceSelect = row!.querySelector("select.action-service-select") as
+      | HTMLSelectElement
+      | null;
+    expect(serviceSelect).to.exist;
+    serviceSelect!.value = "turn_off";
+    serviceSelect!.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+    await element.updateComplete;
+
+    const toggle = row!.querySelector('input[type="checkbox"]') as HTMLInputElement | null;
+    expect(toggle).to.exist;
+    toggle!.click();
+    await element.updateComplete;
+
+    await waitUntil(
+      () =>
+        callApiCalls.some(
+          (call) =>
+            call.method === "post" &&
+            call.parameters?.actions?.[0]?.action === "light.turn_off"
+        ),
+      "managed rule update call with selected action did not occur"
+    );
+  });
+
+  it("enumerates only supported occupancy action device categories", async () => {
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>) => {
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        if (request.type === "automation/config") return { config: undefined } as T;
+        return [] as T;
+      },
+      callApi: async <T>(): Promise<T> => ({ result: "ok" } as T),
+      connection: {},
+      states: {
+        "light.basic_light": {
+          entity_id: "light.basic_light",
+          state: "off",
+          attributes: {
+            friendly_name: "Basic Light",
+            area_id: "kitchen",
+            supported_color_modes: ["onoff"],
+          },
+        },
+        "light.kitchen_dimmer": {
+          entity_id: "light.kitchen_dimmer",
+          state: "off",
+          attributes: {
+            friendly_name: "Kitchen Dimmer",
+            area_id: "kitchen",
+            supported_color_modes: ["brightness"],
+          },
+        },
+        "light.kitchen_color": {
+          entity_id: "light.kitchen_color",
+          state: "off",
+          attributes: {
+            friendly_name: "Kitchen Color Light",
+            area_id: "kitchen",
+            supported_color_modes: ["xy", "color_temp"],
+          },
+        },
+        "fan.kitchen_fan": {
+          entity_id: "fan.kitchen_fan",
+          state: "off",
+          attributes: {
+            friendly_name: "Kitchen Fan",
+            area_id: "kitchen",
+          },
+        },
+        "media_player.family_tv": {
+          entity_id: "media_player.family_tv",
+          state: "off",
+          attributes: {
+            friendly_name: "Family TV",
+            area_id: "kitchen",
+            device_class: "tv",
+          },
+        },
+        "media_player.hifi_receiver": {
+          entity_id: "media_player.hifi_receiver",
+          state: "off",
+          attributes: {
+            friendly_name: "HiFi Receiver",
+            area_id: "kitchen",
+          },
+        },
+        "switch.exhaust": {
+          entity_id: "switch.exhaust",
+          state: "off",
+          attributes: {
+            friendly_name: "Exhaust Switch",
+            area_id: "kitchen",
+          },
+        },
+      },
+      areas: {},
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_kitchen";
+    location.ha_area_id = "kitchen";
+    location.modules._meta = { type: "area" };
+    location.entity_ids = [
+      "light.basic_light",
+      "light.kitchen_dimmer",
+      "light.kitchen_color",
+      "fan.kitchen_fan",
+      "media_player.family_tv",
+      "media_player.hifi_receiver",
+      "switch.exhaust",
+    ];
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${location}
+        .forcedTab=${"actions"}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    await waitUntil(
+      () => element.shadowRoot!.querySelectorAll(".action-device-row").length === 6,
+      "expected exactly 6 supported action device rows"
+    );
+
+    const text = element.shadowRoot!.textContent || "";
+    expect(text).to.include("Current state:");
+    expect(text).to.not.include("Type:");
+    expect(text).to.not.include("Configured action:");
+    expect(text).to.not.include("Exhaust Switch");
+
+    const stereoRow = Array.from(element.shadowRoot!.querySelectorAll(".action-device-row")).find((el) =>
+      (el.textContent || "").includes("HiFi Receiver")
+    ) as HTMLElement | undefined;
+    expect(stereoRow).to.exist;
+    const serviceSelect = stereoRow!.querySelector("select.action-service-select") as
+      | HTMLSelectElement
+      | null;
+    expect(serviceSelect).to.exist;
+    const optionValues = Array.from(serviceSelect!.options).map((option) => option.value);
+    expect(optionValues).to.deep.equal(["media_stop", "turn_off"]);
+  });
+
+  it("updates action label text when service selection changes on occupied and vacant tabs", async () => {
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>) => {
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        if (request.type === "automation/config") return { config: undefined } as T;
+        return [] as T;
+      },
+      callApi: async <T>(): Promise<T> => ({ result: "ok" } as T),
+      connection: {},
+      states: {
+        "binary_sensor.kitchen_occupancy": {
+          entity_id: "binary_sensor.kitchen_occupancy",
+          state: "off",
+          attributes: {
+            friendly_name: "Kitchen Occupancy",
+            device_class: "occupancy",
+            location_id: "area_kitchen",
+          },
+        },
+        "light.kitchen_ceiling": {
+          entity_id: "light.kitchen_ceiling",
+          state: "off",
+          attributes: {
+            friendly_name: "Kitchen Ceiling",
+            area_id: "kitchen",
+            supported_color_modes: ["onoff"],
+          },
+        },
+      },
+      areas: {},
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_kitchen";
+    location.ha_area_id = "kitchen";
+    location.modules._meta = { type: "area" };
+    location.entity_ids = ["light.kitchen_ceiling"];
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${location}
+        .forcedTab=${"actions"}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    const getRow = () =>
+      Array.from(element.shadowRoot!.querySelectorAll(".action-device-row")).find((el) =>
+        (el.textContent || "").includes("Kitchen Ceiling")
+      ) as HTMLElement | undefined;
+
+    await waitUntil(() => !!getRow(), "inline action device row did not render");
+
+    const occupiedRow = getRow();
+    expect(occupiedRow).to.exist;
+    const occupiedSelect = occupiedRow!.querySelector("select.action-service-select") as
+      | HTMLSelectElement
+      | null;
+    expect(occupiedSelect).to.exist;
+    expect(occupiedSelect!.value).to.equal("turn_on");
+    occupiedSelect!.value = "turn_off";
+    occupiedSelect!.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+    await element.updateComplete;
+
+    const occupiedRowAfter = getRow();
+    expect(occupiedRowAfter).to.exist;
+    const occupiedSelectAfter = occupiedRowAfter!.querySelector("select.action-service-select") as
+      | HTMLSelectElement
+      | null;
+    expect(occupiedSelectAfter).to.exist;
+    expect(occupiedSelectAfter!.value).to.equal("turn_off");
+
+    const vacantTab = Array.from(element.shadowRoot!.querySelectorAll(".tab")).find((el) =>
+      (el.textContent || "").includes("On Vacant")
+    ) as HTMLButtonElement | undefined;
+    expect(vacantTab).to.exist;
+    vacantTab!.click();
+    await element.updateComplete;
+
+    await waitUntil(() => !!getRow(), "vacant row did not render");
+    const vacantRow = getRow();
+    expect(vacantRow).to.exist;
+
+    const vacantSelect = vacantRow!.querySelector("select.action-service-select") as
+      | HTMLSelectElement
+      | null;
+    expect(vacantSelect).to.exist;
+    expect(vacantSelect!.value).to.equal("turn_off");
+    vacantSelect!.value = "turn_on";
+    vacantSelect!.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+    await element.updateComplete;
+
+    const vacantRowAfter = getRow();
+    expect(vacantRowAfter).to.exist;
+    const vacantSelectAfter = vacantRowAfter!.querySelector("select.action-service-select") as
+      | HTMLSelectElement
+      | null;
+    expect(vacantSelectAfter).to.exist;
+    expect(vacantSelectAfter!.value).to.equal("turn_on");
   });
 });

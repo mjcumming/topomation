@@ -1,6 +1,6 @@
 # Agent quickstart for topomation
 
-**Last reviewed**: 2026-02-25
+**Last reviewed**: 2026-02-26
 **Purpose**: fast, deterministic startup context for AI and human contributors.
 
 ## 1) Working directory and repo boundary
@@ -45,14 +45,32 @@ cd custom_components/topomation/frontend
 npm run test:unit
 ```
 
-## 5) Change-routing rules
+- Dependency release workflow (version pin + smoke validation):
+  - `docs/dependency-release-runbook.md`
+
+## 5) Home Assistant runtime (dev container)
+
+- Canonical runbook: `tests/DEV-CONTAINER-HA.md`
+- Daily backend/frontend/live-validation loop: `tests/DEV-CONTAINER-HA.md` ("Daily Change Workflow")
+- Default working directory: `/workspaces/topomation`
+- Default dev HA config path: `/workspaces/core/config`
+- Optional isolated test HA config path: `/workspaces/topomation/tests/test-ha-config`
+- Start HA:
+
+```bash
+hass -c /workspaces/core/config --debug
+```
+
+- Restart HA: stop the running `hass` process and run the same command again, or use the HA API restart endpoint with `tests/ha-config.env`.
+
+## 6) Change-routing rules
 
 - If behavior or invariants changed: update `docs/contracts.md` in the same change.
 - If architecture flow changed: update `docs/architecture.md` in the same change.
 - If the change is a meaningful long-lived decision: add/update ADR in `docs/adr-log.md`.
 - If work is in progress or handed off: update `docs/current-work.md`.
 
-## 6) Fast done checklist
+## 7) Fast done checklist
 
 1. Code/tests updated
 2. Contracts/docs updated

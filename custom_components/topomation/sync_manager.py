@@ -9,24 +9,23 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
+from home_topology import EventBus, LocationManager
 from homeassistant.core import Event as HAEvent
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import entity_registry as er
 
+fr: Any | None
 try:
     from homeassistant.helpers import floor_registry as fr
 except ImportError:  # pragma: no cover - older HA without floor registry
     fr = None
 
-from home_topology import EventBus, LocationManager
-
 if TYPE_CHECKING:
-    from homeassistant.helpers.area_registry import AreaEntry
-
     from home_topology import Location
+    from homeassistant.helpers.area_registry import AreaEntry
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -213,9 +212,10 @@ class SyncManager:
             self._ha_unsubs.append(area_unsub)
 
         # Listen for floor registry changes.
-        if self.floor_registry is not None:
+        floor_event = getattr(fr, "EVENT_FLOOR_REGISTRY_UPDATED", None)
+        if self.floor_registry is not None and floor_event is not None:
             floor_unsub = self.hass.bus.async_listen(
-                fr.EVENT_FLOOR_REGISTRY_UPDATED,
+                floor_event,
                 self._on_floor_registry_updated,
             )
             if callable(floor_unsub):

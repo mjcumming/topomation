@@ -43,6 +43,25 @@ async def test_clear_service_maps_to_clear(hass: HomeAssistant) -> None:
     async_unregister_services(hass)
 
 
+async def test_vacate_service_maps_to_vacate(hass: HomeAssistant) -> None:
+    """vacate service should call occupancy.vacate for single-location authority."""
+    occupancy = Mock()
+    hass.data[DOMAIN] = {"entry_1": _kernel_with_occupancy(occupancy)}
+    async_register_services(hass)
+
+    await hass.services.async_call(
+        DOMAIN,
+        "vacate",
+        {
+            "location_id": "kitchen",
+        },
+        blocking=True,
+    )
+
+    occupancy.vacate.assert_called_once_with("kitchen")
+    async_unregister_services(hass)
+
+
 async def test_lock_and_unlock_use_source_id(hass: HomeAssistant) -> None:
     """lock/unlock services should pass source_id required by core API."""
     occupancy = Mock()
@@ -191,6 +210,85 @@ async def test_service_entry_id_required_with_multiple_entries(hass: HomeAssista
 
     occupancy_one.trigger.assert_not_called()
     occupancy_two.trigger.assert_called_once_with("kitchen", "manual", 60)
+    async_unregister_services(hass)
+
+
+async def test_service_resolves_entry_by_location_id_when_multiple_entries(
+    hass: HomeAssistant,
+) -> None:
+    """Without entry_id, service should dispatch when location_id matches exactly one entry."""
+    occupancy_one = Mock()
+    occupancy_two = Mock()
+    loc_mgr_one = Mock()
+    loc_mgr_two = Mock()
+    loc_mgr_one.get_location.return_value = None
+    loc_mgr_two.get_location.return_value = object()
+    hass.data[DOMAIN] = {
+        "entry_1": {
+            "modules": {"occupancy": occupancy_one},
+            "location_manager": loc_mgr_one,
+        },
+        "entry_2": {
+            "modules": {"occupancy": occupancy_two},
+            "location_manager": loc_mgr_two,
+        },
+    }
+    async_register_services(hass)
+
+    await hass.services.async_call(
+        DOMAIN,
+        "trigger",
+        {
+            "location_id": "kitchen",
+            "source_id": "manual",
+            "timeout": 60,
+        },
+        blocking=True,
+    )
+
+    occupancy_one.trigger.assert_not_called()
+    occupancy_two.trigger.assert_called_once_with("kitchen", "manual", 60)
+    async_unregister_services(hass)
+
+
+async def test_service_ambiguous_location_requires_entry_id_with_multiple_entries(
+    hass: HomeAssistant,
+    caplog,
+) -> None:
+    """Ambiguous location_id across entries should no-op and log a clear error."""
+    occupancy_one = Mock()
+    occupancy_two = Mock()
+    loc_mgr_one = Mock()
+    loc_mgr_two = Mock()
+    loc_mgr_one.get_location.return_value = object()
+    loc_mgr_two.get_location.return_value = object()
+    hass.data[DOMAIN] = {
+        "entry_1": {
+            "modules": {"occupancy": occupancy_one},
+            "location_manager": loc_mgr_one,
+        },
+        "entry_2": {
+            "modules": {"occupancy": occupancy_two},
+            "location_manager": loc_mgr_two,
+        },
+    }
+    async_register_services(hass)
+    caplog.set_level(logging.ERROR)
+
+    await hass.services.async_call(
+        DOMAIN,
+        "trigger",
+        {
+            "location_id": "kitchen",
+            "source_id": "manual",
+            "timeout": 60,
+        },
+        blocking=True,
+    )
+
+    occupancy_one.trigger.assert_not_called()
+    occupancy_two.trigger.assert_not_called()
+    assert "Multiple Topomation entries contain location 'kitchen'" in caplog.text
     async_unregister_services(hass)
 
 

@@ -582,8 +582,9 @@ Adopt and document authority rules:
 
 **Context**:
 The HA service wrapper drifted from the core occupancy API:
-- `topomation.clear` called `occupancy.clear(...)`, which does not exist in
-  the core module (the correct call is `release(...)`).
+- `topomation.clear` behavior needed to stay strictly source-scoped
+  (source release with optional trailing timeout), while authoritative vacant
+  intent required a distinct command path.
 - Lock/unlock/vacate calls omitted `source_id`, reducing determinism for
   multi-source lock semantics.
 - Service dispatch implicitly selected the first loaded config entry, which is
@@ -592,8 +593,9 @@ The HA service wrapper drifted from the core occupancy API:
 
 **Decision**:
 Standardize the wrapper contract:
-1. Keep external service names stable for users, but map internals to core API:
-   `clear -> release`.
+1. Keep clear semantics source-scoped (`occupancy.clear`) and add explicit
+   authoritative single-location vacate service (`topomation.vacate` ->
+   `occupancy.vacate`).
 2. Require source-aware forwarding for lock/unlock/vacate behavior.
 3. Add optional `entry_id` routing for all services, and reject ambiguous calls
    when multiple entries are loaded and `entry_id` is omitted.
@@ -601,7 +603,7 @@ Standardize the wrapper contract:
    config entry unloads.
 
 **Rationale**:
-1. Preserve backward compatibility for existing automations
+1. Keep event/command terminology explicit and unambiguous
 2. Align integration behavior with core occupancy semantics
 3. Avoid cross-entry ambiguity in multi-instance setups
 4. Reduce lifecycle regressions during reload/restart workflows

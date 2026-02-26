@@ -10,6 +10,7 @@ import voluptuous as vol
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import area_registry as ar
+
 try:  # Floor registry is optional on older HA builds.
     from homeassistant.helpers import floor_registry as fr
 except Exception:  # pragma: no cover - compatibility import
@@ -134,7 +135,7 @@ def _nearest_floor_id(location_manager: object, start_parent_id: str | None) -> 
 
     while current_id and current_id not in visited:
         visited.add(current_id)
-        current = location_manager.get_location(current_id)  # type: ignore[attr-defined]
+        current = location_manager.get_location(current_id)
         if current is None:
             return None
 
@@ -184,7 +185,7 @@ def _next_location_id(location_manager: object, location_type: str, name: str) -
     stem = f"{location_type}_{_slugify_location_id(name)}"
     candidate = stem
     suffix = 2
-    while location_manager.get_location(candidate) is not None:  # type: ignore[attr-defined]
+    while location_manager.get_location(candidate) is not None:
         candidate = f"{stem}_{suffix}"
         suffix += 1
     return candidate
@@ -199,7 +200,7 @@ def _validate_parent_for_type(
     if parent_id is None:
         return True, None
 
-    parent = location_manager.get_location(parent_id)  # type: ignore[attr-defined]
+    parent = location_manager.get_location(parent_id)
     if parent is None:
         return False, f"Parent location '{parent_id}' not found"
     if bool(getattr(parent, "is_explicit_root", False)):
@@ -243,14 +244,14 @@ def _siblings_of(location_manager: object, parent_id: str | None) -> list[object
     """Return direct children under a parent ID."""
     return [
         loc
-        for loc in location_manager.all_locations()  # type: ignore[attr-defined]
+        for loc in location_manager.all_locations()
         if getattr(loc, "parent_id", None) == parent_id
     ]
 
 
 def _subtree_location_ids(location_manager: object, root_id: str) -> list[str]:
     """Return root + descendant IDs for a location subtree."""
-    all_locations = list(location_manager.all_locations())  # type: ignore[attr-defined]
+    all_locations = list(location_manager.all_locations())
     by_parent: dict[str | None, list[object]] = {}
     for loc in all_locations:
         by_parent.setdefault(getattr(loc, "parent_id", None), []).append(loc)
@@ -300,7 +301,7 @@ def _sorted_siblings(siblings: list[object]) -> list[object]:
 
 def _ordered_locations_for_list(location_manager: object) -> list[object]:
     """Return depth-first locations with deterministic sibling ordering."""
-    all_locations = list(location_manager.all_locations())  # type: ignore[attr-defined]
+    all_locations = list(location_manager.all_locations())
     by_parent: dict[str | None, list[object]] = {}
     for loc in all_locations:
         by_parent.setdefault(getattr(loc, "parent_id", None), []).append(loc)
@@ -345,7 +346,7 @@ def _mark_sibling_group_manual_order(location_manager: object, parent_id: str | 
         meta = _location_meta(sibling)
         if meta.get("manual_order") is True:
             continue
-        location_manager.set_module_config(  # type: ignore[attr-defined]
+        location_manager.set_module_config(
             getattr(sibling, "id"),
             "_meta",
             {**meta, "manual_order": True},

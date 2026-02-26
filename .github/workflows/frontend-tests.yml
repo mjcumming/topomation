@@ -1,32 +1,106 @@
-name: Frontend Tests
+name: CI
 
 on:
-    push:
-    pull_request:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  DEFAULT_PYTHON: "3.13"
+  NODE_VERSION: "20"
 
 jobs:
-    frontend-tests:
-        runs-on: ubuntu-latest
-        defaults:
-            run:
-                working-directory: custom_components/topomation/frontend
-        steps:
-            - uses: actions/checkout@v4
+  backend:
+    name: Backend checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v5
 
-            - uses: actions/setup-node@v4
-              with:
-                  node-version: "20"
-                  cache: "npm"
-                  cache-dependency-path: custom_components/topomation/frontend/package-lock.json
+      - name: Validate with hassfest
+        uses: home-assistant/actions/hassfest@master
 
-            - name: Install dependencies
-              run: npm ci
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.DEFAULT_PYTHON }}
 
-            - name: Unit tests (Vitest)
-              run: npm run test:unit
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
 
-            - name: Install Playwright browsers
-              run: npx --yes playwright install chromium --with-deps
+      - name: Verify version sync
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          import re
+          import tomllib
 
-            - name: E2E tests (Playwright)
-              run: npm run test:e2e
+          manifest = json.loads(Path("custom_components/topomation/manifest.json").read_text())
+          manifest_version = manifest["version"]
+
+          const_text = Path("custom_components/topomation/const.py").read_text()
+          const_match = re.search(r'^VERSION\s*=\s*"([^"]+)"', const_text, flags=re.MULTILINE)
+          if not const_match:
+              raise SystemExit("Could not find VERSION in const.py")
+          const_version = const_match.group(1)
+
+          pyproject = tomllib.loads(Path("pyproject.toml").read_text())
+          project_version = pyproject["project"]["version"]
+
+          versions = {
+              "manifest.json": manifest_version,
+              "const.py": const_version,
+              "pyproject.toml": project_version,
+          }
+
+          if len(set(versions.values())) != 1:
+              for name, value in versions.items():
+                  print(f"{name}: {value}")
+              raise SystemExit("Version mismatch detected")
+
+          print(f"Version sync ok: {manifest_version}")
+          PY
+
+      - name: Ruff
+        run: ruff check custom_components/topomation tests
+
+      - name: Mypy
+        run: mypy custom_components/topomation
+
+      - name: Pytest
+        run: pytest tests -v
+
+  frontend:
+    name: Frontend checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: custom_components/topomation/frontend
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v5
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: custom_components/topomation/frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Unit tests (Vitest)
+        run: npm run test:unit
+
+      - name: Build frontend bundle
+        run: npm run build
+
+      - name: Verify committed runtime bundle is up to date
+        run: diff -u dist/topomation-panel.js topomation-panel.js

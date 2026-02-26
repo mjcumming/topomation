@@ -114,7 +114,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _setup_default_configs(loc_mgr, modules)
 
     # 6. Restore module runtime state
-    await _restore_module_state(hass, modules)
+    await _restore_module_state(hass, loc_mgr, modules)
 
     # 7. Create coordinator for timeout scheduling
     coordinator = TopomationCoordinator(hass, modules)
@@ -628,7 +628,91 @@ def _bootstrap_default_structural_roots(
         _LOGGER.info("Bootstrapped default structural roots: %s", ", ".join(created_ids))
 
 
-async def _restore_module_state(hass: HomeAssistant, modules: dict[str, Any]) -> None:
+def _allowed_occupancy_source_ids_for_location(loc_mgr: LocationManager, location_id: str) -> set[str]:
+    """Return configured occupancy source IDs for a location."""
+    config = loc_mgr.get_module_config(location_id, "occupancy")
+    if not isinstance(config, dict):
+        return set()
+
+    sources = config.get("occupancy_sources")
+    if not isinstance(sources, list):
+        return set()
+
+    allowed: set[str] = set()
+    for source in sources:
+        if not isinstance(source, dict):
+            continue
+        source_id = source.get("source_id")
+        if isinstance(source_id, str) and source_id.strip():
+            allowed.add(source_id.strip())
+            continue
+
+        entity_id = source.get("entity_id")
+        if not isinstance(entity_id, str) or not entity_id.strip():
+            continue
+        entity_id = entity_id.strip()
+        signal_key = source.get("signal_key")
+        if isinstance(signal_key, str) and signal_key.strip():
+            allowed.add(f"{entity_id}::{signal_key.strip()}")
+        else:
+            allowed.add(entity_id)
+
+    return allowed
+
+
+def _sanitize_occupancy_state_for_restore(
+    loc_mgr: LocationManager,
+    raw_state: dict[str, Any],
+) -> tuple[dict[str, Any], int]:
+    """Drop stale entity-based occupancy contributions no longer configured."""
+    sanitized: dict[str, Any] = {}
+    dropped = 0
+
+    for location_id, entry in raw_state.items():
+        if not isinstance(entry, dict):
+            sanitized[location_id] = entry
+            continue
+
+        allowed_source_ids = _allowed_occupancy_source_ids_for_location(loc_mgr, location_id)
+        updated_entry = dict(entry)
+
+        for key in ("contributions", "suspended_contributions"):
+            values = entry.get(key)
+            if not isinstance(values, list):
+                continue
+
+            filtered: list[Any] = []
+            for item in values:
+                if not isinstance(item, dict):
+                    filtered.append(item)
+                    continue
+                source_id = str(item.get("source_id", "")).strip()
+                if not source_id:
+                    filtered.append(item)
+                    continue
+                if source_id.startswith("__child__:") or source_id.startswith("__follow__:"):
+                    filtered.append(item)
+                    continue
+
+                looks_like_entity_source = "." in source_id.split("::", 1)[0]
+                if looks_like_entity_source and source_id not in allowed_source_ids:
+                    dropped += 1
+                    continue
+
+                filtered.append(item)
+
+            updated_entry[key] = filtered
+
+        sanitized[location_id] = updated_entry
+
+    return sanitized, dropped
+
+
+async def _restore_module_state(
+    hass: HomeAssistant,
+    loc_mgr: LocationManager,
+    modules: dict[str, Any],
+) -> None:
     """Restore runtime state for all modules."""
     store = Store(hass, STORAGE_VERSION, STORAGE_KEY_STATE)
     data = await store.async_load()
@@ -640,7 +724,18 @@ async def _restore_module_state(hass: HomeAssistant, modules: dict[str, Any]) ->
     for module_id, module in modules.items():
         if module_id in data:
             try:
-                module.restore_state(data[module_id])
+                state_payload = data[module_id]
+                if module_id == "occupancy" and isinstance(state_payload, dict):
+                    state_payload, dropped = _sanitize_occupancy_state_for_restore(
+                        loc_mgr,
+                        state_payload,
+                    )
+                    if dropped > 0:
+                        _LOGGER.info(
+                            "Pruned %d stale occupancy contribution(s) during restore",
+                            dropped,
+                        )
+                module.restore_state(state_payload)
                 _LOGGER.info("Restored state for %s", module_id)
             except Exception as e:
                 _LOGGER.error(

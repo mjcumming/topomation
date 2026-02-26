@@ -18,6 +18,18 @@ export class HtRuleDialog extends LitElement {
   @property({ attribute: false }) public rule?: TopomationActionRule;
   @property({ type: String }) public defaultTriggerType?: "occupied" | "vacant";
 
+  // Ensure reactivity in build paths where decorators are not transformed.
+  static properties = {
+    hass: { attribute: false },
+    open: { type: Boolean },
+    location: { attribute: false },
+    rule: { attribute: false },
+    defaultTriggerType: { type: String },
+    _config: { state: true },
+    _submitting: { state: true },
+    _error: { state: true },
+  };
+
   @state() private _config: Partial<TopomationActionRule> = {};
   @state() private _submitting = false;
   @state() private _error?: string;
@@ -90,8 +102,6 @@ export class HtRuleDialog extends LitElement {
   }
 
   render() {
-    if (!this.open) return html``;
-
     const schema = this._getSchema();
 
     return html`
@@ -116,20 +126,22 @@ export class HtRuleDialog extends LitElement {
           ${this._renderPreview()}
         </div>
 
-        <mwc-button
+        <ha-button
           slot="secondaryAction"
+          .dialogAction=${"cancel"}
           @click=${this._handleCancel}
-          .disabled=${this._submitting}
+          ?disabled=${this._submitting}
         >
           Cancel
-        </mwc-button>
-        <mwc-button
+        </ha-button>
+        <ha-button
           slot="primaryAction"
+          .dialogAction=${"confirm"}
           @click=${this._handleSubmit}
-          .disabled=${!this._isValid() || this._submitting}
+          ?disabled=${!this._isValid() || this._submitting}
         >
           ${this._submitting ? "Saving..." : this.rule ? "Save" : "Create"}
-        </mwc-button>
+        </ha-button>
       </ha-dialog>
     `;
   }

@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     pass
 
 _LOGGER = logging.getLogger(__name__)
-SERVICE_NAMES = ("trigger", "clear", "lock", "unlock", "unlock_all", "vacate_area")
+SERVICE_NAMES = ("trigger", "clear", "vacate", "lock", "unlock", "unlock_all", "vacate_area")
 LOCK_MODES = ("freeze", "block_occupied", "block_vacant")
 LOCK_SCOPES = ("self", "subtree")
 
@@ -33,6 +33,13 @@ SERVICE_CLEAR_SCHEMA = vol.Schema(
         vol.Required("location_id"): str,
         vol.Optional("source_id", default="manual"): str,
         vol.Optional("trailing_timeout", default=0): vol.All(vol.Coerce(int), vol.Range(min=0)),
+        vol.Optional("entry_id"): str,
+    }
+)
+
+SERVICE_VACATE_SCHEMA = vol.Schema(
+    {
+        vol.Required("location_id"): str,
         vol.Optional("entry_id"): str,
     }
 )
@@ -89,6 +96,35 @@ def _resolve_kernel(hass: HomeAssistant, call: ServiceCall) -> dict[str, object]
 
     if len(domain_data) == 1:
         return next(iter(domain_data.values()))
+
+    location_id = call.data.get("location_id")
+    if isinstance(location_id, str) and location_id:
+        matching_kernels: list[dict[str, object]] = []
+        for kernel in domain_data.values():
+            loc_mgr = kernel.get("location_manager")
+            get_location = getattr(loc_mgr, "get_location", None)
+            if not callable(get_location):
+                continue
+            try:
+                if get_location(location_id) is not None:
+                    matching_kernels.append(kernel)
+            except Exception:  # pragma: no cover - defensive logging
+                _LOGGER.debug(
+                    "Failed location lookup for service kernel resolution: %s",
+                    location_id,
+                    exc_info=True,
+                )
+
+        if len(matching_kernels) == 1:
+            return matching_kernels[0]
+
+        if len(matching_kernels) > 1:
+            _LOGGER.error(
+                "Multiple Topomation entries contain location '%s'; include service "
+                "field 'entry_id'",
+                location_id,
+            )
+            return None
 
     _LOGGER.error(
         "Multiple Topomation entries loaded (%s); include service field 'entry_id'",
@@ -172,6 +208,26 @@ def async_register_services(hass: HomeAssistant) -> None:
             occupancy.clear(location_id, source_id, trailing_timeout)
         except Exception as err:
             _LOGGER.error("Failed to clear occupancy: %s", err, exc_info=True)
+
+    @callback
+    def handle_vacate(call: ServiceCall) -> None:
+        """Handle vacate service call."""
+        location_id = call.data["location_id"]
+
+        _LOGGER.info("Manual vacate: location=%s", location_id)
+
+        kernel = _resolve_kernel(hass, call)
+        if kernel is None:
+            return
+
+        occupancy = _get_occupancy_module(kernel)
+        if occupancy is None:
+            return
+
+        try:
+            occupancy.vacate(location_id)
+        except Exception as err:
+            _LOGGER.error("Failed to vacate occupancy: %s", err, exc_info=True)
 
     @callback
     def handle_lock(call: ServiceCall) -> None:
@@ -287,6 +343,13 @@ def async_register_services(hass: HomeAssistant) -> None:
 
     hass.services.async_register(
         DOMAIN,
+        "vacate",
+        handle_vacate,
+        schema=SERVICE_VACATE_SCHEMA,
+    )
+
+    hass.services.async_register(
+        DOMAIN,
         "lock",
         handle_lock,
         schema=SERVICE_LOCK_SCHEMA,
@@ -313,7 +376,9 @@ def async_register_services(hass: HomeAssistant) -> None:
         schema=SERVICE_VACATE_AREA_SCHEMA,
     )
 
-    _LOGGER.info("Services registered: trigger, clear, lock, unlock, unlock_all, vacate_area")
+    _LOGGER.info(
+        "Services registered: trigger, clear, vacate, lock, unlock, unlock_all, vacate_area"
+    )
 
 
 def async_unregister_services(hass: HomeAssistant) -> None:

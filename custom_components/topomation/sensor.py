@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from home_topology.core.bus import Event, EventBus
 from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
@@ -13,8 +14,6 @@ from homeassistant.components.sensor import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-
-from home_topology.core.bus import Event, EventBus, EventFilter
 
 from .const import DOMAIN
 

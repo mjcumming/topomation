@@ -114,7 +114,7 @@ def state_changed_listener(event):
         entity_id=entity_id,
         location_id=location_id,
         payload={
-            "event_type": "trigger",  # or "clear"
+            "event_type": "trigger",  # or "clear"/"vacate"
             "source_id": entity_id,
             "signal_key": None,  # e.g. playback/volume/mute or power/level/color
             "old_state": old_state.state,
@@ -241,6 +241,7 @@ def handle_locations_list(hass, connection, msg):
 
 - `topomation.trigger` - Manual occupancy trigger (`occupancy.trigger`)
 - `topomation.clear` - Manual occupancy clear (`occupancy.clear`)
+- `topomation.vacate` - Force single location vacant (`occupancy.vacate`)
 - `topomation.lock` - Apply lock policy (`freeze`, `block_occupied`, `block_vacant`) with `scope` (`self`, `subtree`)
 - `topomation.unlock` - Unlock location (source-aware)
 - `topomation.unlock_all` - Force-clear all lock sources at a location
@@ -258,6 +259,9 @@ def handle_locations_list(hass, connection, msg):
 - Manual occupancy controls in the panel map to services using a stable source:
   - `set occupied` -> `topomation.trigger(location_id, source_id="manual_ui", timeout=default_timeout)`
   - `set unoccupied` -> `topomation.vacate_area(location_id, source_id="manual_ui", include_locked=false)`
+- Source-off test control with authoritative semantics maps to:
+  - `test off` with `off_event=clear` and `off_trailing=0` -> `topomation.vacate(location_id)`
+  - `test off` with `off_event=clear` and `off_trailing>0` -> `topomation.clear(location_id, source_id, trailing_timeout)`
 - Locked locations are immutable for manual occupancy actions. The UI must reject the request and show a warning toast.
 
 ### 3.7 Frontend Panel (`frontend/`)
@@ -286,6 +290,8 @@ shared location tree selection context.
 - Inspector tabs are split into `Detection`, `On Occupied`, and `On Vacant`.
 - `On Occupied` / `On Vacant` rules are created as native Home Assistant automation entities (managed in HA's automation system).
 - Topomation tags those automations with panel metadata + labels/category so each location tab can filter only its own rules.
+- The built-in action list is intentionally common-case: media players support `Stop` and `Turn off` only.
+  Advanced occupancy-driven play/turn-on behavior is expected to be authored as custom HA automations using Topomation occupancy entities.
 - Integration-owned nodes (`building`, `grounds`, `subarea`) are configured through explicit source assignment in inspector.
 - HA-backed wrappers (`floor_*`, `area_*`) keep HA-linked entity discovery defaults.
 

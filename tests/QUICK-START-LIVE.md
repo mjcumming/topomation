@@ -2,6 +2,8 @@
 
 **Get running in 5 minutes!**
 
+For this repo's dev container workflow, use **`DEV-CONTAINER-HA.md`** as the canonical reference for where HA runs and how to restart it.
+
 ## Option 1: Use Your Existing HA (Fastest)
 
 ### Step 1: Get Your Token

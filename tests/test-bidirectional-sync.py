@@ -14,3 +14,4 @@ Test Strategy:
 - Monitor topology for changes
 - Verify bidirectional propagation
 - Test edge cases (orphaned areas, deleted floors, etc.)
+"""

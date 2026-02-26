@@ -12,7 +12,7 @@ AUTOSAVE_DEBOUNCE_SECONDS = 5.0
 
 # Panel
 PANEL_URL = "/topomation"
-PANEL_TITLE = "Location Manager"
+PANEL_TITLE = "TopoMation"
 PANEL_ICON = "mdi:floor-plan"
 PANEL_OCCUPANCY_URL = "/topomation-occupancy"
 PANEL_OCCUPANCY_TITLE = "Occupancy Manager"

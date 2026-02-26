@@ -37,7 +37,7 @@ The Topomation integration is a Home Assistant custom component that bridges HA 
 
 1. **Import style** — Some files use `from home_topology import EventBus, EventFilter, LocationManager` (or `Event`), others `from home_topology.core.bus import Event, EventBus, EventFilter`. Both work (package re-exports from `core.bus`); standardizing on the public `home_topology` API would be slightly cleaner.
 2. **Logger** — For live testing, add `custom_components.topomation: debug` (and optionally `home_topology: debug`) in `configuration.yaml` under `logger.logs` to trace bridge and kernel behavior.
-3. **Manifest** — `requirements`: `["home-topology==0.2.0a0"]`. Ensure the installed `home-topology` version satisfies this (e.g. 0.2.0a0 or 0.2.0-alpha depending on package metadata).
+3. **Manifest** — `requirements`: `["home-topology==1.0.0"]`. Ensure the installed `home-topology` version satisfies this.
 
 ---
 

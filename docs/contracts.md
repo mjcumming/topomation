@@ -32,16 +32,27 @@ Use this file as the quick contract surface. Keep it synchronized with:
   - `include_locked: false`
 - This is intentional subtree vacate semantics, not source-level clear semantics.
 
+## C-003A Authoritative source-off contract
+
+- For detection sources configured with `off_event=clear`:
+  - `off_trailing = 0` maps to authoritative vacant intent (`event_type=vacate`)
+  - `off_trailing > 0` maps to source-level release (`event_type=clear` with timeout)
+- Inspector "Test Off" mirrors this:
+  - `off_trailing = 0` -> `service: topomation.vacate`
+  - `off_trailing > 0` -> `service: topomation.clear`
+- Lock directives remain authoritative (`block_vacant` may prevent transition to vacant).
+
 ## C-004 Service surface contract
 
 Supported services in domain `topomation`:
 
 1. `trigger(location_id, source_id?, timeout?, entry_id?)`
 2. `clear(location_id, source_id?, trailing_timeout?, entry_id?)`
-3. `lock(location_id, source_id?, mode?, scope?, entry_id?)`
-4. `unlock(location_id, source_id?, entry_id?)`
-5. `unlock_all(location_id, entry_id?)`
-6. `vacate_area(location_id, source_id?, include_locked?, entry_id?)`
+3. `vacate(location_id, entry_id?)`
+4. `lock(location_id, source_id?, mode?, scope?, entry_id?)`
+5. `unlock(location_id, source_id?, entry_id?)`
+6. `unlock_all(location_id, entry_id?)`
+7. `vacate_area(location_id, source_id?, include_locked?, entry_id?)`
 
 Lock policy contract:
 - `mode`: `freeze | block_occupied | block_vacant`

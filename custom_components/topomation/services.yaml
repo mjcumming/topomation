@@ -74,6 +74,24 @@ clear:
           max: 86400
           unit_of_measurement: "seconds"
 
+vacate:
+  name: Vacate Location
+  description: Force a single location vacant immediately (authoritative)
+  fields:
+    entry_id:
+      name: Config Entry ID
+      description: Optional config entry ID when multiple Topomation entries are loaded
+      required: false
+      selector:
+        text:
+    location_id:
+      name: Location ID
+      description: The location to vacate
+      required: true
+      example: "kitchen"
+      selector:
+        text:
+
 lock:
   name: Lock Location
   description: Apply an occupancy lock policy to a location

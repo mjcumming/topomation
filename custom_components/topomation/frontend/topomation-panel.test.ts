@@ -219,7 +219,7 @@ describe('TopomationPanel integration (fake hass)', () => {
     expect((element as any)._selectedId).to.not.equal("home");
   });
 
-  it("renders property context from HA installation config", async () => {
+  it("uses topology header and omits property context banner", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(req: Record<string, any>): Promise<T> => {
         if (req.type === "topomation/locations/list") {
@@ -254,11 +254,13 @@ describe('TopomationPanel integration (fake hass)', () => {
     await waitUntil(() => (element as any)._loading === false, "panel did not finish loading");
 
     const contextCard = element.shadowRoot!.querySelector(".property-context");
-    expect(contextCard).to.exist;
-    expect(contextCard?.textContent || "").to.contain("Property");
-    expect(contextCard?.textContent || "").to.contain("Lake House");
-    expect(contextCard?.textContent || "").to.contain("44.9778, -93.2650");
-    expect(contextCard?.textContent || "").to.contain("America/Chicago");
+    expect(contextCard).to.equal(null);
+
+    const leftHeaderTitle = element.shadowRoot!.querySelector(".panel-left .header-title");
+    expect((leftHeaderTitle?.textContent || "").trim()).to.equal("Topology");
+
+    const leftHeaderSubtitle = element.shadowRoot!.querySelector(".panel-left .header-subtitle");
+    expect((leftHeaderSubtitle?.textContent || "").trim()).to.contain("Organize buildings");
   });
 
   it("opens location dialog with building defaults from add-structure handler", async () => {
@@ -443,6 +445,75 @@ describe('TopomationPanel integration (fake hass)', () => {
     expect((element as any)._locationDialogOpen).to.equal(true);
   });
 
+  it("renders inline action list in actions view without Add Rule dialog", async () => {
+    const hass: HomeAssistant = {
+      callWS: async <T>(req: Record<string, any>): Promise<T> => {
+        if (req.type === "topomation/locations/list") {
+          return { locations } as T;
+        }
+        if (req.type === "config/entity_registry/list") {
+          return [] as T;
+        }
+        if (req.type === "config/device_registry/list") {
+          return [] as T;
+        }
+        if (req.type === "config/automation/list") {
+          return [] as T;
+        }
+        if (req.type === "automation/config") {
+          return { config: undefined } as T;
+        }
+        return [] as T;
+      },
+      callApi: async <T>(): Promise<T> => ({ result: "ok" } as T),
+      connection: {},
+      states: {
+        "light.kitchen_main": {
+          entity_id: "light.kitchen_main",
+          state: "off",
+          attributes: {
+            friendly_name: "Kitchen Main Light",
+            area_id: "kitchen",
+          },
+        },
+      },
+      areas: {},
+      floors: {},
+      config: {
+        location_name: "Test Property",
+      },
+      localize: (key: string) => key,
+    };
+
+    const element = await fixture<HTMLDivElement>(html`
+      <topomation-panel
+        .hass=${hass}
+        .panel=${{ config: { topomation_view: "actions" } }}
+      ></topomation-panel>
+    `);
+
+    await waitUntil(() => (element as any)._loading === false, "panel did not finish loading");
+    (element as any)._selectedId = "kitchen";
+    await (element as any).updateComplete;
+
+    const inspector = element.shadowRoot!.querySelector("ht-location-inspector") as any;
+    expect(inspector).to.exist;
+
+    await waitUntil(
+      () =>
+        !!Array.from(inspector.shadowRoot?.querySelectorAll(".action-device-row") || []).length,
+      "inline action rows not rendered"
+    );
+
+    const addRuleButton = Array.from(inspector.shadowRoot.querySelectorAll("button")).find((el) =>
+      (el.textContent || "").includes("Add Rule")
+    );
+    expect(addRuleButton).to.not.exist;
+
+    const rowText = inspector.shadowRoot?.textContent || "";
+    expect(rowText).to.contain("Kitchen Main Light");
+  });
+
   it("shows warning notification when a move is blocked by tree rules", async () => {
     const notifications: any[] = [];
     const hass: HomeAssistant = {
@@ -497,7 +568,7 @@ describe('TopomationPanel integration (fake hass)', () => {
     expect(notifications[0].message).to.contain("cannot move under a different parent");
   });
 
-  it("uses manager title in right header for occupancy view", async () => {
+  it("uses automation title in right header for occupancy view", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(req: Record<string, any>): Promise<T> => {
         if (req.type === "topomation/locations/list") {
@@ -530,7 +601,7 @@ describe('TopomationPanel integration (fake hass)', () => {
 
     await waitUntil(() => (element as any)._loading === false, "panel did not finish loading");
     const rightHeader = element.shadowRoot!.querySelector(".panel-right .header-title");
-    expect((rightHeader?.textContent || "").trim()).to.equal("Occupancy");
+    expect((rightHeader?.textContent || "").trim()).to.equal("Automation");
   });
 
   it("handles lock toggle from tree via topomation lock service", async () => {
@@ -717,7 +788,7 @@ describe('TopomationPanel integration (fake hass)', () => {
         (call) =>
           call.type === "call_service" &&
           call.domain === "topomation" &&
-          (call.service === "trigger" || call.service === "clear")
+          (call.service === "trigger" || call.service === "clear" || call.service === "vacate_area")
       )
     ).to.equal(false);
   });

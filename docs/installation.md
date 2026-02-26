@@ -64,6 +64,10 @@ The integration exposes one primary sidebar panel:
   tabs in the right panel (`Detection`, `On Occupied`, `On Vacant`).
   Action rules created in `On Occupied` / `On Vacant` are native Home Assistant
   automations (not integration-local rule storage).
+  The built-in action composer is intentionally opinionated for common cases:
+  media players only expose `Stop` and `Turn off` actions.
+  If you want play/turn-on behavior on occupancy, use Topomation occupancy entities
+  as triggers in your own HA automations.
 
 Deep-link aliases are also available (same panel, different default focus):
 
@@ -106,7 +110,7 @@ Import those files into HA blueprint editor, then create automations from the im
 ### Integration fails to load
 
 - Check the [Home Assistant logs](https://www.home-assistant.io/docs/configuration/logging/) for errors.
-- Ensure `home-topology>=0.2.0a0` is installed (it should install automatically; if not, install via pip in your HA environment).
+- Ensure `home-topology==1.0.0` is installed (it should install automatically; if not, install via pip in your HA environment).
 
 ### No locations appear
 

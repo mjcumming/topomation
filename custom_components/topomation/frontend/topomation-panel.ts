@@ -7,7 +7,6 @@ import { sharedStyles } from "./styles";
 import "./ht-location-tree";
 import "./ht-location-inspector";
 import "./ht-location-dialog";
-import "./ht-rule-dialog";
 
 type ManagerView = "location" | "occupancy" | "actions";
 
@@ -48,10 +47,7 @@ export class TopomationPanel extends LitElement {
     _saving: { state: true },
     _discarding: { state: true },
     _locationDialogOpen: { state: true },
-    _ruleDialogOpen: { state: true },
     _editingLocation: { state: true },
-    _editingRule: { state: true },
-    _ruleDialogDefaultTriggerType: { state: true },
     _renameConflict: { state: true },
     _newLocationDefaults: { state: true },
     _eventLogOpen: { state: true },
@@ -72,10 +68,7 @@ export class TopomationPanel extends LitElement {
   @state() private _saving = false;
   @state() private _discarding = false;
   @state() private _locationDialogOpen = false;
-  @state() private _ruleDialogOpen = false;
   @state() private _editingLocation?: Location;
-  @state() private _editingRule?: any;
-  @state() private _ruleDialogDefaultTriggerType?: "occupied" | "vacant";
   @state() private _renameConflict?: {
     locationId: string;
     localName: string;
@@ -307,35 +300,6 @@ export class TopomationPanel extends LitElement {
         display: inline-flex !important;
       }
 
-      .property-context {
-        margin: var(--spacing-md) var(--spacing-md) 0;
-        padding: 10px 12px;
-        border: 1px solid var(--divider-color);
-        border-radius: var(--border-radius);
-        background: rgba(var(--rgb-primary-color, 3, 169, 244), 0.07);
-      }
-
-      .property-context-title {
-        font-size: 11px;
-        font-weight: 700;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-        color: var(--text-secondary-color);
-      }
-
-      .property-context-name {
-        margin-top: 4px;
-        font-size: 15px;
-        font-weight: 600;
-        color: var(--primary-text-color);
-      }
-
-      .property-context-meta {
-        margin-top: 4px;
-        font-size: 12px;
-        color: var(--text-secondary-color);
-      }
-
       /* Loading and error states */
       .loading-container {
         display: flex;
@@ -535,22 +499,13 @@ export class TopomationPanel extends LitElement {
     const managerView = this._managerView();
     const managerHeader = this._managerHeader(managerView);
     const forcedInspectorTab = managerView === "location" ? undefined : managerView;
-    const rightHeaderTitle =
-      managerView === "occupancy"
-        ? "Occupancy"
-        : managerView === "actions"
-          ? "Actions"
-          : "Location";
-    const rightHeaderSubtitle = selectedLocation
-      ? `${selectedLocation.name} · ${selectedLocation.id}`
-      : "Select a location to configure modules";
+    const rightHeaderTitle = "Automation";
     const canCreateStructure = true;
     const deleteDisabledReason = this._deleteDisabledReason(selectedLocation);
 
     return html`
       <div class="panel-container">
         <div class="panel-left">
-          ${this._renderPropertyContext()}
           ${this._renderConflictBanner()}
           ${this._locations.length === 0 ? this._renderEmptyStateBanner() : ""}
           <div class="header">
@@ -602,13 +557,11 @@ export class TopomationPanel extends LitElement {
         <div class="panel-right">
           <div class="header">
             <div class="header-title">${rightHeaderTitle}</div>
-            <div class="header-subtitle">${rightHeaderSubtitle}</div>
           </div>
           <ht-location-inspector
             .hass=${this.hass}
             .location=${selectedLocation}
             .forcedTab=${forcedInspectorTab}
-            @add-rule=${this._handleAddRule}
             @source-test=${this._handleSourceTest}
           ></ht-location-inspector>
           ${this._eventLogOpen ? this._renderEventLog() : ""}
@@ -616,38 +569,6 @@ export class TopomationPanel extends LitElement {
       </div>
 
       ${this._renderDialogs()}
-    `;
-  }
-
-  private _renderPropertyContext() {
-    const config = (this.hass as any)?.config;
-    if (!config) return "";
-
-    const locationName = String(config.location_name || "Home Assistant Property").trim();
-    const latitude = typeof config.latitude === "number" ? config.latitude : undefined;
-    const longitude = typeof config.longitude === "number" ? config.longitude : undefined;
-    const timezone = config.time_zone ? String(config.time_zone) : "";
-    const country = config.country ? String(config.country) : "";
-
-    const metaParts: string[] = [];
-    if (latitude !== undefined && longitude !== undefined) {
-      metaParts.push(`${latitude.toFixed(4)}, ${longitude.toFixed(4)}`);
-    }
-    if (timezone) {
-      metaParts.push(timezone);
-    }
-    if (country) {
-      metaParts.push(country);
-    }
-
-    return html`
-      <div class="property-context">
-        <div class="property-context-title">Property</div>
-        <div class="property-context-name">${locationName}</div>
-        ${metaParts.length
-          ? html`<div class="property-context-meta">${metaParts.join(" · ")}</div>`
-          : ""}
-      </div>
     `;
   }
 
@@ -673,30 +594,14 @@ export class TopomationPanel extends LitElement {
   }
 
   private _managerHeader(view: ManagerView): { title: string; subtitle: string } {
-    if (view === "occupancy") {
-      return {
-        title: "Occupancy Manager",
-        subtitle:
-          "Locations are synced from Home Assistant Areas/Floors. Configure occupancy sources and timeout behavior here.",
-      };
-    }
-    if (view === "actions") {
-      return {
-        title: "Actions Manager",
-        subtitle:
-          "Locations are synced from Home Assistant Areas/Floors. Configure occupancy-driven Home Assistant automations here.",
-      };
-    }
     return {
-      title: "Topomation",
+      title: "Topology",
       subtitle:
-        "Manage locations and hierarchy here. Floors, areas, buildings, grounds, and subareas can all be created here.",
+        "Organize buildings, grounds, floors, areas, and subareas, then select a location to configure automation.",
     };
   }
 
   private _renderDialogs() {
-    const selectedLocation = this._getSelectedLocation();
-
     return html`
       <ht-location-dialog
         .hass=${this.hass}
@@ -713,20 +618,6 @@ export class TopomationPanel extends LitElement {
         }}
         @saved=${this._handleLocationDialogSaved}
       ></ht-location-dialog>
-
-      <ht-rule-dialog
-        .hass=${this.hass}
-        .open=${this._ruleDialogOpen}
-        .location=${selectedLocation}
-        .rule=${this._editingRule}
-        .defaultTriggerType=${this._ruleDialogDefaultTriggerType}
-        @dialog-closed=${() => {
-          this._ruleDialogOpen = false;
-          this._editingRule = undefined;
-          this._ruleDialogDefaultTriggerType = undefined;
-        }}
-        @rule-saved=${this._handleRuleSaved}
-      ></ht-rule-dialog>
     `;
   }
 
@@ -1227,24 +1118,6 @@ export class TopomationPanel extends LitElement {
       console.error("Failed to reload locations:", error);
       this._showToast(`Failed to reload: ${error.message}`, 'error');
     }
-  }
-
-  private _handleAddRule(e?: CustomEvent): void {
-    const requestedTrigger = e?.detail?.trigger_type;
-    this._ruleDialogDefaultTriggerType = requestedTrigger === "vacant" ? "vacant" : "occupied";
-    this._editingRule = undefined;
-    this._ruleDialogOpen = true;
-  }
-
-  private async _handleRuleSaved(e: CustomEvent): Promise<void> {
-    const { rule } = e.detail;
-    console.log("Rule saved", rule);
-
-    this._showToast(`Automation "${rule.name}" saved`, 'success');
-    await this._loadLocations(true);
-    this._ruleDialogOpen = false;
-    this._editingRule = undefined;
-    this._ruleDialogDefaultTriggerType = undefined;
   }
 
   private _handleKeyDown = (e: KeyboardEvent): void => {

@@ -24,6 +24,7 @@ Comprehensive test suite for the Topomation Home Assistant integration.
 
 ### Testing Guides
 
+- **`DEV-CONTAINER-HA.md`** - Canonical run/restart workflow for HA in this repo's dev container
 - **`QUICK-START-LIVE.md`** - 🚀 5-minute guide to test against live HA
 - **`RUN-AGAINST-HA.md`** - Complete guide for live HA testing
 - **`REALWORLD-TESTS.md`** - Comprehensive guide to real-world testing
@@ -72,6 +73,16 @@ pytest tests/test-ambient.py -v
 pytest tests/ --cov=custom_components.topomation --cov-report=html
 ```
 
+#### Dependency Update Smoke Test (Recommended)
+
+Use this right after bumping a dependency pin (for example `home-topology`):
+
+```bash
+pytest -q --no-cov tests/test_init.py tests/test_event_bridge.py tests/test_services.py
+```
+
+Why `--no-cov`: the repo enforces a global coverage threshold, so focused test subsets can fail coverage even when behavior is correct.
+
 #### Live HA Tests (Real Integration)
 
 ```bash
@@ -91,6 +102,7 @@ pytest tests/test-realworld.py -v --live-ha
 ```
 
 **See**: `QUICK-START-LIVE.md` for 5-minute setup guide!
+**Dev container**: `DEV-CONTAINER-HA.md` is the canonical HA run/restart reference.
 
 ## Test Categories
 
@@ -119,6 +131,11 @@ pytest tests/test-realworld.py -v --live-ha
 - Short timeouts for fast testing
 
 **Files**: `test-realworld.py`
+
+Current status:
+
+- The `test-realworld.py` suite is currently marked `skip` in default CI while it is being refreshed for `home-topology` v1 event/registry contracts.
+- Keep the file for scenario reference; remove the module-level skip once the v1 refresh is complete.
 
 **Test Categories**:
 

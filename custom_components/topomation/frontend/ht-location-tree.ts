@@ -489,6 +489,16 @@ export class HtLocationTree extends LitElement {
         color: var(--warning-color);
       }
 
+      .type-badge.building {
+        background: rgba(var(--rgb-success-color), 0.15);
+        color: var(--success-color);
+      }
+
+      .type-badge.grounds {
+        background: rgba(var(--rgb-info-color), 0.15);
+        color: var(--info-color);
+      }
+
       .tree-item.selected .type-badge.floor {
         background: var(--primary-color);
         color: white;
@@ -496,6 +506,16 @@ export class HtLocationTree extends LitElement {
 
       .tree-item.selected .type-badge.area {
         background: var(--warning-color);
+        color: white;
+      }
+
+      .tree-item.selected .type-badge.building {
+        background: var(--success-color);
+        color: white;
+      }
+
+      .tree-item.selected .type-badge.grounds {
+        background: var(--info-color);
         color: white;
       }
 
@@ -577,10 +597,6 @@ export class HtLocationTree extends LitElement {
       .tree-item:hover .occupancy-btn,
       .tree-item.selected .occupancy-btn {
         opacity: 1;
-      }
-
-      .occupancy-btn.occupied {
-        color: var(--success-color);
       }
 
       .occupancy-btn:hover {
@@ -848,8 +864,8 @@ export class HtLocationTree extends LitElement {
         : "Locked"
       : "Unlocked";
     const isDirectlyOccupied = this.occupancyStates?.[location.id] === true;
-    const occupancyIcon = isDirectlyOccupied ? "mdi:home-account" : "mdi:home";
-    const occupancyTitle = isDirectlyOccupied ? "Mark unoccupied" : "Mark occupied";
+    const occupancyIcon = "mdi:home-switch-outline";
+    const occupancyTitle = isDirectlyOccupied ? "Set vacant" : "Set occupied";
 
     return html`
       <div
@@ -897,7 +913,7 @@ export class HtLocationTree extends LitElement {
           ? ""
           : html`
               <button
-                class="occupancy-btn ${isDirectlyOccupied ? "occupied" : ""}"
+                class="occupancy-btn"
                 title=${occupancyTitle}
                 @click=${(e: Event) =>
                   this._handleOccupancyToggle(e, location, isDirectlyOccupied)}

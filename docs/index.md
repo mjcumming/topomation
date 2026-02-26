@@ -1,6 +1,6 @@
 # Documentation Index
 
-**Last Reviewed**: 2026-02-25
+**Last Reviewed**: 2026-02-26
 
 This file is the source of truth for active documentation and lifecycle rules.
 If a file is not listed as active below, treat it as reference-only.
@@ -16,6 +16,7 @@ If a file is not listed as active below, treat it as reference-only.
 | `docs/agent-quickstart.md` | Fast startup guide for contributors and AI agents | Active (Operational) |
 | `docs/coding-standards.md` | Coding conventions for backend/frontend | Active |
 | `docs/frontend-dev-workflow.md` | Current frontend/mock workflow | Active |
+| `docs/dependency-release-runbook.md` | Dependency pin + release validation workflow | Active (Operational) |
 | `docs/setup-test-topology.md` | Test topology setup in HA + overlay testing | Active |
 | `docs/live-ha-validation-checklist.md` | Manual validation procedure for v0.1.0 release | Active |
 | `docs/installation.md` | Installation guide for v0.1.0 (HACS and manual) | Active |

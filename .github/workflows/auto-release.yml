@@ -1,0 +1,208 @@
+name: Auto Release
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "custom_components/topomation/manifest.json"
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "Manual trigger reason"
+        required: false
+        type: string
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      version-changed: ${{ steps.check.outputs.changed }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 2
+
+      - name: Get current version
+        id: version
+        run: |
+          VERSION=$(grep '"version"' custom_components/topomation/manifest.json | sed 's/.*"version": "\(.*\)".*/\1/')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Current version: $VERSION"
+
+      - name: Get previous version
+        id: prev-version
+        run: |
+          git checkout HEAD~1
+          PREV_VERSION=$(grep '"version"' custom_components/topomation/manifest.json | sed 's/.*"version": "\(.*\)".*/\1/' || echo "none")
+          echo "prev-version=$PREV_VERSION" >> $GITHUB_OUTPUT
+          echo "Previous version: $PREV_VERSION"
+          git checkout -
+
+      - name: Check if version changed
+        id: check
+        run: |
+          if [ "${{ steps.version.outputs.version }}" != "${{ steps.prev-version.outputs.prev-version }}" ]; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "Version changed from ${{ steps.prev-version.outputs.prev-version }} to ${{ steps.version.outputs.version }}"
+          else
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "Version unchanged"
+          fi
+
+  hacs-validation:
+    needs: check-version
+    if: needs.check-version.outputs.version-changed == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Validate repository with HACS Action
+        uses: hacs/action@22.5.0
+        with:
+          category: "integration"
+          ignore: "topics brands"
+
+  release:
+    needs: [check-version, hacs-validation]
+    if: needs.check-version.outputs.version-changed == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Wait for CI tests to complete
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Waiting for CI checks before creating release..."
+          COMMIT_SHA="${{ github.sha }}"
+          WORKFLOW_NAME="CI"
+          REPO="${{ github.repository }}"
+          MAX_WAIT=900
+          ELAPSED=0
+          INTERVAL=10
+
+          while [ $ELAPSED -lt $MAX_WAIT ]; do
+            RUN_ID=$(gh run list \
+              --workflow="$WORKFLOW_NAME" \
+              --commit="$COMMIT_SHA" \
+              --repo="$REPO" \
+              --json databaseId \
+              --jq '.[0].databaseId' 2>/dev/null || echo "")
+
+            if [ -z "$RUN_ID" ] || [ "$RUN_ID" = "null" ]; then
+              sleep $INTERVAL
+              ELAPSED=$((ELAPSED + INTERVAL))
+              continue
+            fi
+
+            STATUS=$(gh run view "$RUN_ID" --repo="$REPO" --json status --jq '.status' 2>/dev/null || echo "unknown")
+            CONCLUSION=$(gh run view "$RUN_ID" --repo="$REPO" --json conclusion --jq '.conclusion' 2>/dev/null || echo "unknown")
+
+            if [ "$STATUS" = "completed" ]; then
+              if [ "$CONCLUSION" = "success" ]; then
+                echo "CI passed."
+                break
+              fi
+              echo "CI failed or cancelled ($CONCLUSION); aborting release."
+              exit 1
+            fi
+
+            sleep $INTERVAL
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+
+          if [ $ELAPSED -ge $MAX_WAIT ]; then
+            echo "Timeout waiting for CI; continuing."
+          fi
+
+      - name: Check if release already exists
+        id: release-check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "v${{ needs.check-version.outputs.version }}" >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set up Node
+        if: steps.release-check.outputs.exists == 'false'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: custom_components/topomation/frontend/package-lock.json
+
+      - name: Build frontend runtime bundle
+        if: steps.release-check.outputs.exists == 'false'
+        working-directory: custom_components/topomation/frontend
+        run: |
+          npm ci
+          npm run build
+          cp dist/topomation-panel.js topomation-panel.js
+
+      - name: Create ZIP file
+        if: steps.release-check.outputs.exists == 'false'
+        run: |
+          rm -f topomation.zip
+          rm -rf /tmp/topomation-package
+          mkdir -p /tmp/topomation-package
+          cp -R custom_components/topomation /tmp/topomation-package/
+
+          # Keep only runtime frontend artifact in release payload.
+          find /tmp/topomation-package/topomation/frontend -type f ! -name "topomation-panel.js" -delete
+          rm -rf /tmp/topomation-package/topomation/frontend/dist
+          find /tmp/topomation-package/topomation/frontend -type d -empty -delete
+
+          find /tmp/topomation-package/topomation -type d -name "__pycache__" -prune -exec rm -rf {} +
+          find /tmp/topomation-package/topomation -type f -name "*.pyc" -delete
+
+          cd /tmp/topomation-package/topomation
+          zip -r /tmp/topomation.zip .
+          cd /tmp
+          mv topomation.zip /github/workspace/topomation.zip
+          cd /github/workspace
+          zip topomation.zip LICENSE README.md
+
+      - name: Extract changelog for this version
+        if: steps.release-check.outputs.exists == 'false'
+        id: changelog
+        run: |
+          if [ -f "CHANGELOG.md" ]; then
+            awk '/^## \['"${{ needs.check-version.outputs.version }}"'\]/{flag=1; next} /^## \[/{flag=0} flag' CHANGELOG.md > release_notes.md
+            if [ -s release_notes.md ]; then
+              printf 'changelog<<EOF\n' >> $GITHUB_OUTPUT
+              cat release_notes.md >> $GITHUB_OUTPUT
+              printf 'EOF\n' >> $GITHUB_OUTPUT
+            else
+              echo "changelog=Release v${{ needs.check-version.outputs.version }}" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "changelog=Release v${{ needs.check-version.outputs.version }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Release with GitHub CLI
+        if: steps.release-check.outputs.exists == 'false'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_NOTES: ${{ steps.changelog.outputs.changelog }}
+        run: |
+          if gh release view "v${{ needs.check-version.outputs.version }}" >/dev/null 2>&1; then
+            echo "Release already exists, skipping."
+            exit 0
+          fi
+
+          gh release create "v${{ needs.check-version.outputs.version }}" \
+            --title "Topomation v${{ needs.check-version.outputs.version }}" \
+            --notes "$RELEASE_NOTES" \
+            --latest \
+            topomation.zip

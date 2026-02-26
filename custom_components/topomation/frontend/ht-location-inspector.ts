@@ -1,5 +1,6 @@
 import { LitElement, html, css } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
+import { live } from "lit/directives/live.js";
 import type {
   AutomationConfig,
   HomeAssistant,
@@ -13,13 +14,13 @@ import { getLocationIcon } from "./icon-utils";
 import { getLocationType } from "./hierarchy-rules";
 import { applyModeDefaults, getSourceDefaultsForEntity } from "./source-profile-utils";
 import {
+  createTopomationActionRule,
   deleteTopomationActionRule,
   listTopomationActionRules,
-  ruleEditPath,
-  setTopomationActionRuleEnabled,
 } from "./ha-automation-rules";
 
 type SourceSignalKey = OccupancySource["signal_key"];
+type ActionDeviceType = "light" | "dimmer" | "color_light" | "fan" | "stereo" | "tv";
 type InspectorTab = "detection" | "occupied_actions" | "vacant_actions";
 type InspectorTabRequest = InspectorTab | "occupancy" | "actions";
 type OccupancyLockDirective = {
@@ -71,6 +72,8 @@ export class HtLocationInspector extends LitElement {
   @state() private _loadingActionRules = false;
   @state() private _actionRulesError?: string;
   @state() private _nowEpochMs = Date.now();
+  @state() private _actionToggleBusy: Record<string, boolean> = {};
+  @state() private _actionServiceSelections: Record<string, string> = {};
   private _onTimeoutMemory: Record<string, number> = {};
   private _entityAreaLoadPromise?: Promise<void>;
   private _actionRulesLoadSeq = 0;
@@ -92,11 +95,19 @@ export class HtLocationInspector extends LitElement {
       .header {
         display: flex;
         align-items: center;
-        gap: var(--spacing-lg);
+        justify-content: space-between;
+        gap: var(--spacing-md);
         margin-bottom: var(--spacing-lg);
         padding: var(--spacing-md);
         background: rgba(var(--rgb-primary-color), 0.05);
         border-radius: var(--border-radius);
+      }
+
+      .header-main {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-lg);
+        min-width: 0;
       }
 
       .header-icon {
@@ -113,7 +124,7 @@ export class HtLocationInspector extends LitElement {
       }
 
       .header-content {
-        flex: 1;
+        min-width: 0;
       }
 
       .location-name {
@@ -123,20 +134,110 @@ export class HtLocationInspector extends LitElement {
         line-height: 1.2;
       }
 
-      .location-id {
-        font-size: 13px;
-        font-family: var(--code-font-family, monospace);
-        color: var(--secondary-text-color);
-        margin-top: 4px;
-        opacity: 0.8;
+      .header-status {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        margin-top: 8px;
       }
 
-      .id-label {
-        font-weight: 600;
-        text-transform: uppercase;
+      .header-vacant-at {
+        font-size: 12px;
+        color: var(--text-secondary-color);
+      }
+
+      .header-meta {
+        min-width: 180px;
+        display: flex;
+        justify-content: flex-end;
+      }
+
+      .meta-row {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        align-items: baseline;
+        gap: 8px;
+        margin-top: 4px;
+      }
+
+      .meta-label {
         font-size: 10px;
-        margin-right: 4px;
-        letter-spacing: 0.5px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--secondary-text-color);
+        text-align: right;
+      }
+
+      .meta-value {
+        font-size: 12px;
+        font-family: var(--code-font-family, monospace);
+        color: var(--primary-text-color);
+        text-align: right;
+      }
+
+      .runtime-summary {
+        max-width: 900px;
+        margin-bottom: var(--spacing-md);
+        padding: 10px 12px;
+        border: 1px solid var(--divider-color);
+        border-radius: var(--border-radius);
+        background: var(--card-background-color);
+      }
+
+      .runtime-summary-head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 8px;
+      }
+
+      .status-chip {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        padding: 2px 10px;
+        font-size: 12px;
+        font-weight: 600;
+        border: 1px solid var(--divider-color);
+      }
+
+      .status-chip.occupied {
+        color: var(--success-color);
+        border-color: rgba(var(--rgb-success-color), 0.35);
+        background: rgba(var(--rgb-success-color), 0.08);
+      }
+
+      .status-chip.vacant {
+        color: var(--text-secondary-color);
+      }
+
+      .status-chip.locked {
+        color: var(--warning-color);
+        border-color: rgba(var(--rgb-warning-color), 0.35);
+        background: rgba(var(--rgb-warning-color), 0.08);
+      }
+
+      .runtime-summary-grid {
+        display: grid;
+        grid-template-columns: max-content 1fr;
+        gap: 6px 12px;
+        max-width: 560px;
+      }
+
+      .runtime-summary-key {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--text-secondary-color);
+        font-weight: 700;
+      }
+
+      .runtime-summary-value {
+        font-size: 14px;
+        color: var(--primary-text-color);
       }
 
       .card-section {
@@ -262,6 +363,30 @@ export class HtLocationInspector extends LitElement {
         cursor: pointer;
       }
 
+      .startup-inline {
+        max-width: 900px;
+        margin-bottom: var(--spacing-md);
+        padding: 10px 12px;
+        border: 1px solid var(--divider-color);
+        border-radius: var(--border-radius);
+        background: var(--card-background-color);
+      }
+
+      .startup-inline-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--primary-text-color);
+      }
+
+      .startup-inline-help {
+        margin-top: 6px;
+        font-size: 12px;
+        color: var(--text-secondary-color);
+      }
+
       .input {
         padding: var(--spacing-sm);
         border: 1px solid var(--divider-color);
@@ -323,6 +448,66 @@ export class HtLocationInspector extends LitElement {
         border-radius: var(--border-radius);
         margin-bottom: var(--spacing-sm);
         max-width: 820px;
+      }
+
+      .action-device-list {
+        display: grid;
+        gap: var(--spacing-sm);
+        max-width: 820px;
+      }
+
+      .action-device-row.enabled {
+        border-color: rgba(var(--rgb-primary-color), 0.35);
+        background: rgba(var(--rgb-primary-color), 0.05);
+      }
+
+      .action-device-row {
+        grid-template-columns: 28px 24px minmax(0, 1fr) auto;
+      }
+
+      .action-include-control {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .action-include-input {
+        appearance: auto;
+        width: 18px;
+        height: 18px;
+        cursor: pointer;
+        accent-color: var(--primary-color);
+      }
+
+      .action-include-input:focus-visible {
+        outline: 2px solid rgba(var(--rgb-primary-color), 0.45);
+        outline-offset: 2px;
+      }
+
+      .action-controls {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .action-service-select {
+        min-width: 170px;
+        border: 1px solid var(--divider-color);
+        border-radius: 6px;
+        padding: 6px 8px;
+        font-size: 12px;
+        background: var(--card-background-color);
+        color: var(--primary-text-color);
+      }
+
+      .service-pill {
+        display: inline-flex;
+        align-items: center;
+        padding: 1px 8px;
+        border-radius: 999px;
+        background: rgba(var(--rgb-primary-color), 0.1);
+        color: var(--primary-color);
+        font-weight: 600;
       }
 
       .source-icon {
@@ -751,6 +936,30 @@ export class HtLocationInspector extends LitElement {
       }
 
       @media (max-width: 700px) {
+        .header {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+
+        .header-main {
+          width: 100%;
+        }
+
+        .header-meta {
+          width: 100%;
+          min-width: 0;
+        }
+
+        .meta-label,
+        .meta-value {
+          text-align: left;
+        }
+
+        .runtime-summary-grid {
+          grid-template-columns: 1fr;
+          gap: 4px;
+        }
+
         .config-row {
           grid-template-columns: 1fr;
           row-gap: 8px;
@@ -789,7 +998,8 @@ export class HtLocationInspector extends LitElement {
 
     return html`
       <div class="inspector-container">
-        ${this._renderHeader()} ${this._renderTabs()} ${this._renderContent()}
+        ${this._renderHeader()} ${this._renderActionStartupConfig()} ${this._renderTabs()}
+        ${this._renderContent()}
       </div>
     `;
   }
@@ -823,6 +1033,8 @@ export class HtLocationInspector extends LitElement {
         this._externalAreaId = "";
         this._externalEntityId = "";
         this._onTimeoutMemory = {};
+        this._actionToggleBusy = {};
+        this._actionServiceSelections = {};
         if (this.hass) {
           void this._loadEntityAreaAssignments();
         }
@@ -915,18 +1127,62 @@ export class HtLocationInspector extends LitElement {
   private _renderHeader() {
     if (!this.location) return "";
     const areaId = this.location.ha_area_id;
-    const subtitleLabel = areaId ? "HA Area ID:" : "Location ID:";
-    const subtitleValue = areaId || this.location.id;
+    const metaLabel = areaId ? "HA Area ID" : "Location ID";
+    const metaValue = areaId || this.location.id;
+    const lockState = this._getLockState();
+    const occupancyState = this._getOccupancyState();
+    const occupied = occupancyState?.state === "on";
+    const occupancyLabel = occupancyState
+      ? occupied
+        ? "Occupied"
+        : occupancyState.state === "off"
+          ? "Vacant"
+          : "Unknown"
+      : "Unknown";
+    const vacantAt = occupancyState ? this._resolveVacantAt(occupancyState.attributes || {}, occupied) : undefined;
+    const vacantAtLabel = occupied
+      ? vacantAt instanceof Date
+        ? this._formatDateTime(vacantAt)
+        : vacantAt === null
+          ? "No timeout scheduled"
+          : "Unknown"
+      : undefined;
 
     return html`
       <div class="header">
-        <div class="header-icon">
-          <ha-icon .icon=${this._headerIcon(this.location)}></ha-icon>
+        <div class="header-main">
+          <div class="header-icon">
+            <ha-icon .icon=${this._headerIcon(this.location)}></ha-icon>
+          </div>
+          <div class="header-content">
+            <div class="location-name">${this.location.name}</div>
+            <div class="header-status">
+              <span
+                class="status-chip ${occupied ? "occupied" : "vacant"}"
+                data-testid="header-occupancy-status"
+              >
+                ${occupancyLabel}
+              </span>
+              <span
+                class="status-chip ${lockState.isLocked ? "locked" : ""}"
+                data-testid="header-lock-status"
+              >
+                ${lockState.isLocked ? "Locked" : "Unlocked"}
+              </span>
+              ${occupied
+                ? html`
+                    <span class="header-vacant-at" data-testid="header-vacant-at">
+                      Vacant at ${vacantAtLabel}
+                    </span>
+                  `
+                : ""}
+            </div>
+          </div>
         </div>
-        <div class="header-content">
-          <div class="location-name">${this.location.name}</div>
-          <div class="location-id">
-            <span class="id-label">${subtitleLabel}</span>${subtitleValue}
+        <div class="header-meta">
+          <div class="meta-row">
+            <span class="meta-label">${metaLabel}</span>
+            <span class="meta-value">${metaValue}</span>
           </div>
         </div>
       </div>
@@ -1032,7 +1288,7 @@ export class HtLocationInspector extends LitElement {
           ${floorSourceCount > 0
             ? html`
                 <div class="policy-warning">
-                  This floor still has ${floorSourceCount} legacy source${floorSourceCount === 1 ? "" : "s"} in
+                  This floor still has ${floorSourceCount} unsupported source${floorSourceCount === 1 ? "" : "s"} in
                   config. Floor sources are unsupported and should be moved to areas.
                 </div>
               `
@@ -1044,7 +1300,6 @@ export class HtLocationInspector extends LitElement {
     return html`
       <div>
         <div class="card-section">
-          ${this._renderRuntimeStatus(lockState)}
           ${lockState.isLocked ? html`
             <div class="lock-banner">
               <div class="lock-title">Locked</div>
@@ -1124,10 +1379,10 @@ export class HtLocationInspector extends LitElement {
     const occupancyState = this._getOccupancyState();
     if (!occupancyState) {
       return html`
-        <div class="runtime-grid">
-          <div class="runtime-row">
-            <div class="runtime-key">Occupancy</div>
-            <div class="runtime-value">Sensor unavailable</div>
+        <div class="runtime-summary">
+          <div class="runtime-summary-head">
+            <span class="status-chip">Occupancy sensor unavailable</span>
+            ${lockState.isLocked ? html`<span class="status-chip locked">Locked</span>` : ""}
           </div>
         </div>
       `;
@@ -1136,56 +1391,28 @@ export class HtLocationInspector extends LitElement {
     const attrs = occupancyState.attributes || {};
     const occupied = occupancyState.state === "on";
     const vacantAt = this._resolveVacantAt(attrs, occupied);
-
-    let timeUntilVacant = "Unknown";
-    let vacantAtLabel = "Unknown";
-    if (!occupied) {
-      timeUntilVacant = "Already vacant";
-      vacantAtLabel = "-";
-    } else if (vacantAt === null) {
-      const hasBlockVacant = lockState.lockModes.includes("block_vacant");
-      const hasFreeze = lockState.lockModes.includes("freeze");
-      timeUntilVacant = hasBlockVacant
-        ? "Indefinite (block vacant)"
-        : hasFreeze
-          ? "Paused while freeze lock is active"
-          : "Indefinite";
-      vacantAtLabel = "Not scheduled";
-    } else if (vacantAt instanceof Date) {
-      timeUntilVacant = this._formatRelativeDuration(vacantAt);
-      vacantAtLabel = this._formatDateTime(vacantAt);
-    } else if (lockState.lockModes.includes("freeze")) {
-      timeUntilVacant = "Paused while freeze lock is active";
-      vacantAtLabel = "Not scheduled";
-    }
-
     const occupancyLabel = occupied ? "Occupied" : occupancyState.state === "off" ? "Vacant" : "Unknown";
-    const lockModeLabel = lockState.lockModes.length
-      ? lockState.lockModes.map((mode) => this._lockModeLabel(mode)).join(", ")
-      : "None";
-    const lockSourceLabel = lockState.lockedBy.length ? lockState.lockedBy.join(", ") : "None";
+    const vacantAtLabel = occupied
+      ? vacantAt instanceof Date
+        ? this._formatDateTime(vacantAt)
+        : vacantAt === null
+          ? "No timeout scheduled"
+          : "Unknown"
+      : "-";
 
     return html`
-      <div class="runtime-grid">
-        <div class="runtime-row">
-          <div class="runtime-key">Occupancy</div>
-          <div class="runtime-value">${occupancyLabel}</div>
+      <div class="runtime-summary">
+        <div class="runtime-summary-head">
+          <span class="status-chip ${occupied ? "occupied" : "vacant"}">${occupancyLabel}</span>
+          <span class="status-chip ${lockState.isLocked ? "locked" : ""}">
+            ${lockState.isLocked ? "Locked" : "Unlocked"}
+          </span>
         </div>
-        <div class="runtime-row">
-          <div class="runtime-key">Time Until Vacant</div>
-          <div class="runtime-value" data-testid="runtime-time-until-vacant">${timeUntilVacant}</div>
-        </div>
-        <div class="runtime-row">
-          <div class="runtime-key">Vacant At</div>
-          <div class="runtime-value" data-testid="runtime-vacant-at">${vacantAtLabel}</div>
-        </div>
-        <div class="runtime-row">
-          <div class="runtime-key">Lock Modes</div>
-          <div class="runtime-value">${lockModeLabel}</div>
-        </div>
-        <div class="runtime-row">
-          <div class="runtime-key">Lock Sources</div>
-          <div class="runtime-value">${lockSourceLabel}</div>
+        <div class="runtime-summary-grid">
+          <div class="runtime-summary-key">Vacant at</div>
+          <div class="runtime-summary-value" data-testid="runtime-vacant-at">${vacantAtLabel}</div>
+          <div class="runtime-summary-key">Lock</div>
+          <div class="runtime-summary-value">${lockState.isLocked ? "Locked" : "Unlocked"}</div>
         </div>
       </div>
     `;
@@ -1365,6 +1592,7 @@ export class HtLocationInspector extends LitElement {
 
   private _renderAreaSensorList(config: OccupancyConfig) {
     if (!this.location) return "";
+    const hasHaAreaLink = !!this.location.ha_area_id;
     const sources = this._workingSources(config);
     const sourceIndexByKey = new Map<string, number>();
     sources.forEach((source, index) => sourceIndexByKey.set(this._sourceKeyFromSource(source), index));
@@ -1389,8 +1617,9 @@ export class HtLocationInspector extends LitElement {
       return html`
         <div class="empty-state">
           <div class="text-muted">
-            No occupancy-relevant entities found yet.
-            Add one from another area to get started.
+            ${hasHaAreaLink
+              ? html`No occupancy-relevant entities found yet. Add one from another area to get started.`
+              : html`Add a source from Home Assistant entities below to get started.`}
           </div>
         </div>
       `;
@@ -1721,12 +1950,8 @@ export class HtLocationInspector extends LitElement {
   private _renderActionsTab(triggerType: "occupied" | "vacant") {
     if (!this.location) return "";
 
-    const rules = this._actionRules.filter((rule) => rule.trigger_type === triggerType);
-    const sectionTitle = triggerType === "occupied" ? "Occupied Actions" : "Vacant Actions";
-    const emptyText =
-      triggerType === "occupied"
-        ? "No Topomation occupied automations configured."
-        : "No Topomation vacant automations configured.";
+    const actionEntities = this._actionTargetEntities();
+    const sectionTitle = triggerType === "occupied" ? "When Occupied" : "When Vacant";
     const infoText =
       triggerType === "occupied"
         ? "Rules in this tab run when occupancy changes to occupied."
@@ -1734,18 +1959,23 @@ export class HtLocationInspector extends LitElement {
 
     return html`
       <div>
-        ${triggerType === "occupied" ? this._renderActionStartupConfig() : ""}
         <div class="card-section">
           <div class="section-title">
             <ha-icon .icon=${"mdi:flash"}></ha-icon>
-            ${sectionTitle}
+            ${sectionTitle} device actions
           </div>
 
-          <div class="rules-list">
+          <div class="subsection-help">
+            Select the devices to manage in this tab. Media players intentionally support only
+            Stop and Turn off here for common occupancy behavior.
+            Use custom Home Assistant automations for advanced play/turn-on scenarios.
+          </div>
+
+          <div class="action-device-list">
             ${this._loadingActionRules
               ? html`
                   <div class="empty-state">
-                    <div class="text-muted">Loading Home Assistant automations...</div>
+                    <div class="text-muted">Loading device actions...</div>
                   </div>
                 `
               : this._actionRulesError
@@ -1754,56 +1984,73 @@ export class HtLocationInspector extends LitElement {
                       <div class="text-muted">${this._actionRulesError}</div>
                     </div>
                   `
-                : rules.length === 0
+                : actionEntities.length === 0
               ? html`
                   <div class="empty-state">
-                    <div class="text-muted">${emptyText}</div>
+                    <div class="text-muted">
+                      No common controllable devices found for this location yet.
+                    </div>
                   </div>
                 `
-              : rules.map(
-                  (rule) => html`
-                    <div class="source-item">
+              : actionEntities.map(
+                  (entityId) => {
+                    const enabled = this._isManagedActionEnabled(entityId, triggerType);
+                    const busyKey = this._actionToggleKey(entityId, triggerType);
+                    const busy = Boolean(this._actionToggleBusy[busyKey]);
+                    const service = this._selectedManagedActionService(entityId, triggerType);
+                    const serviceOptions = this._actionServiceOptions(entityId, triggerType);
+                    return html`
+                    <div class="source-item action-device-row ${enabled ? "enabled" : ""}">
+                      <div class="action-include-control">
+                        <input
+                          type="checkbox"
+                          class="action-include-input"
+                          .checked=${enabled}
+                          ?disabled=${busy || this._loadingActionRules}
+                          aria-label=${`Include ${this._entityName(entityId)}`}
+                          @change=${(ev: Event) =>
+                            this._handleManagedActionToggle(
+                              entityId,
+                              triggerType,
+                              (ev.target as HTMLInputElement).checked
+                            )}
+                        />
+                      </div>
                       <div class="source-icon">
-                        <ha-icon .icon=${"mdi:robot"}></ha-icon>
+                        <ha-icon .icon=${this._deviceIcon(entityId)}></ha-icon>
                       </div>
                       <div class="source-info">
-                        <div class="source-name">${rule.name}</div>
+                        <div class="source-name">${this._entityName(entityId)}</div>
                         <div class="source-details">
-                          ${this._describeActionRule(rule)}
+                          Entity: ${entityId}
                         </div>
                         <div class="source-details">
-                          ${rule.enabled ? "Enabled" : "Disabled"} • ${rule.entity_id}
+                          Current state: ${this._entityState(entityId)}
                         </div>
                       </div>
-                      <button
-                        class="icon-button"
-                        title=${rule.enabled ? "Disable automation" : "Enable automation"}
-                        @click=${() => this._handleToggleRule(rule)}
-                      >
-                        <ha-icon .icon=${rule.enabled ? "mdi:toggle-switch" : "mdi:toggle-switch-off-outline"}></ha-icon>
-                      </button>
-                      <button
-                        class="icon-button"
-                        title="Open in Home Assistant"
-                        @click=${() => window.open(ruleEditPath(rule), "_blank", "noopener")}
-                      >
-                        <ha-icon .icon=${"mdi:open-in-new"}></ha-icon>
-                      </button>
-                      <button class="icon-button" @click=${() => this._handleDeleteRule(rule)}>
-                        <ha-icon .icon=${"mdi:delete-outline"}></ha-icon>
-                      </button>
+                      <div class="action-controls">
+                        <select
+                          class="action-service-select"
+                          .value=${live(service)}
+                          ?disabled=${busy || this._loadingActionRules}
+                          @change=${(ev: Event) =>
+                            this._handleManagedActionServiceChange(
+                              entityId,
+                              triggerType,
+                              (ev.target as HTMLSelectElement).value
+                            )}
+                        >
+                          ${serviceOptions.map(
+                            (option) =>
+                              html`<option value=${option.value}>${option.label}</option>`
+                          )}
+                        </select>
+                        ${busy ? html`<span class="text-muted">Saving...</span>` : ""}
+                      </div>
                     </div>
-                  `
+                  `;}
                 )}
           </div>
-
-          <button
-            class="button button-primary"
-            style="margin-top: 16px;"
-            @click=${() => this._handleAddRule(triggerType)}
-          >
-            + Add Rule
-          </button>
         </div>
 
         <div class="card-section">
@@ -1812,7 +2059,7 @@ export class HtLocationInspector extends LitElement {
             How it works
           </div>
           <div class="text-muted" style="font-size: 13px; line-height: 1.4;">
-            ${infoText} Rules are created as native Home Assistant automations and tagged for this location.
+            ${infoText} Topomation creates tagged Home Assistant automations automatically.
           </div>
         </div>
       </div>
@@ -1824,45 +2071,293 @@ export class HtLocationInspector extends LitElement {
     const reapplyOnStartup = Boolean(config.reapply_last_state_on_startup);
 
     return html`
-      <div class="card-section">
-        <div class="section-title">
-          <ha-icon .icon=${"mdi:power-cycle"}></ha-icon>
-          Startup behavior
-        </div>
-
-        <div class="config-row startup-config-row">
-          <div class="startup-config-header">
-            <div class="config-label">Reapply current occupancy actions on startup</div>
-            <div class="config-value">
-              <input
-                type="checkbox"
-                class="switch-input"
-                .checked=${reapplyOnStartup}
-                @change=${(ev: Event) => {
-                  const checked = (ev.target as HTMLInputElement).checked;
-                  this._updateAutomationConfig({
-                    ...config,
-                    reapply_last_state_on_startup: checked,
-                  });
-                }}
-              />
-            </div>
-          </div>
-          <div class="config-help">
-            After Home Assistant is fully started, Topomation waits briefly then reruns
-            this location's occupied or vacant automations based on current
-            occupancy state.
-          </div>
+      <div class="startup-inline">
+        <label class="startup-inline-toggle">
+          <input
+            type="checkbox"
+            class="switch-input"
+            .checked=${reapplyOnStartup}
+            @change=${(ev: Event) => {
+              const checked = (ev.target as HTMLInputElement).checked;
+              this._updateAutomationConfig({
+                ...config,
+                reapply_last_state_on_startup: checked,
+              });
+            }}
+          />
+          Reapply occupancy actions on startup
+        </label>
+        <div class="startup-inline-help">
+          Applies to both On Occupied and On Vacant actions after Home Assistant startup.
         </div>
       </div>
     `;
   }
 
-  private _describeActionRule(rule: TopomationActionRule): string {
-    const triggerLabel = rule.trigger_type === "occupied" ? "occupied" : "vacant";
-    const actionService = rule.action_service || "run";
-    const actionEntity = rule.action_entity_id || "target";
-    return `When ${triggerLabel} -> ${actionService} ${actionEntity}`;
+  private _actionToggleKey(entityId: string, triggerType: "occupied" | "vacant"): string {
+    return `${triggerType}:${entityId}`;
+  }
+
+  private _actionTargetEntities(): string[] {
+    if (!this.location) return [];
+    const ids = new Set<string>();
+
+    for (const entityId of this.location.entity_ids || []) {
+      if (this._isActionDeviceEntity(entityId)) {
+        ids.add(entityId);
+      }
+    }
+
+    if (this.location.ha_area_id) {
+      for (const entityId of this._entitiesForArea(this.location.ha_area_id)) {
+        if (this._isActionDeviceEntity(entityId)) {
+          ids.add(entityId);
+        }
+      }
+    }
+
+    return [...ids].sort((a, b) => {
+      const aType = this._actionDeviceType(a) || "zzzz";
+      const bType = this._actionDeviceType(b) || "zzzz";
+      if (aType !== bType) return aType.localeCompare(bType);
+      return this._entityName(a).localeCompare(this._entityName(b));
+    });
+  }
+
+  private _isActionDeviceEntity(entityId: string): boolean {
+    return Boolean(this._actionDeviceType(entityId));
+  }
+
+  private _actionDeviceType(entityId: string): ActionDeviceType | undefined {
+    const stateObj = this.hass?.states?.[entityId];
+    if (!stateObj) return undefined;
+    const domain = entityId.split(".", 1)[0];
+    const attrs = stateObj.attributes || {};
+
+    if (domain === "fan") return "fan";
+
+    if (domain === "media_player") {
+      const deviceClass = String(attrs.device_class || "").toLowerCase();
+      const nameHaystack = `${attrs.friendly_name || ""} ${entityId}`.toLowerCase();
+      if (deviceClass === "tv" || /\btv\b/.test(nameHaystack) || nameHaystack.includes("television")) {
+        return "tv";
+      }
+      return "stereo";
+    }
+
+    if (domain !== "light") return undefined;
+
+    const colorModes = Array.isArray(attrs.supported_color_modes) ? attrs.supported_color_modes : [];
+    const hasColorMode = colorModes.some((mode) =>
+      ["hs", "xy", "rgb", "rgbw", "rgbww", "color_temp"].includes(String(mode))
+    );
+    const hasColorAttribute =
+      Array.isArray(attrs.hs_color) ||
+      Array.isArray(attrs.xy_color) ||
+      Array.isArray(attrs.rgb_color) ||
+      typeof attrs.color_temp_kelvin === "number" ||
+      typeof attrs.color_temp === "number";
+    if (hasColorMode || hasColorAttribute) return "color_light";
+
+    const hasBrightnessMode = colorModes.some((mode) => String(mode) !== "onoff");
+    const hasBrightnessAttribute =
+      typeof attrs.brightness === "number" ||
+      typeof attrs.brightness_pct === "number" ||
+      typeof attrs.brightness_step === "number" ||
+      typeof attrs.brightness_step_pct === "number";
+    if (hasBrightnessMode || hasBrightnessAttribute) return "dimmer";
+
+    return "light";
+  }
+
+  private _actionDeviceTypeLabel(deviceType: ActionDeviceType): string {
+    if (deviceType === "light") return "Light";
+    if (deviceType === "dimmer") return "Dimmer";
+    if (deviceType === "color_light") return "Color light";
+    if (deviceType === "fan") return "Fan";
+    if (deviceType === "stereo") return "Stereo";
+    if (deviceType === "tv") return "TV";
+    return "Device";
+  }
+
+  private _defaultManagedActionService(entityId: string, triggerType: "occupied" | "vacant"): string {
+    const domain = entityId.split(".", 1)[0];
+    if (domain === "media_player") return triggerType === "occupied" ? "media_stop" : "turn_off";
+    return triggerType === "occupied" ? "turn_on" : "turn_off";
+  }
+
+  private _actionServiceOptions(
+    entityId: string,
+    triggerType: "occupied" | "vacant"
+  ): Array<{ value: string; label: string }> {
+    const domain = entityId.split(".", 1)[0];
+    if (domain === "cover") {
+      return [
+        { value: "open_cover", label: "Open cover" },
+        { value: "close_cover", label: "Close cover" },
+        { value: "stop_cover", label: "Stop cover" },
+      ];
+    }
+    if (domain === "media_player") {
+      const defaultService = this._defaultManagedActionService(entityId, triggerType);
+      return [
+        { value: "media_stop", label: "Stop" },
+        { value: "turn_off", label: "Turn off" },
+      ].sort((a, b) => (a.value === defaultService ? -1 : b.value === defaultService ? 1 : 0));
+    }
+    const defaultService = this._defaultManagedActionService(entityId, triggerType);
+    return [
+      { value: "turn_on", label: "Turn on" },
+      { value: "turn_off", label: "Turn off" },
+      { value: "toggle", label: "Toggle" },
+    ].sort((a, b) => (a.value === defaultService ? -1 : b.value === defaultService ? 1 : 0));
+  }
+
+  private _actionServiceLabel(service: string): string {
+    return service
+      .split("_")
+      .map((chunk) => chunk.charAt(0).toUpperCase() + chunk.slice(1))
+      .join(" ");
+  }
+
+  private _selectedManagedActionService(entityId: string, triggerType: "occupied" | "vacant"): string {
+    const key = this._actionToggleKey(entityId, triggerType);
+    const selected = this._actionServiceSelections[key];
+    if (selected) return selected;
+
+    const matchingRules = this._rulesForManagedActionEntity(entityId, triggerType);
+    const enabledRule = matchingRules.find(
+      (rule) =>
+        rule.enabled &&
+        typeof rule.action_service === "string" &&
+        rule.action_service.length > 0
+    );
+    if (enabledRule?.action_service) return enabledRule.action_service;
+
+    const fallbackRule = matchingRules.find(
+      (rule) => typeof rule.action_service === "string" && rule.action_service.length > 0
+    );
+    if (fallbackRule?.action_service) return fallbackRule.action_service;
+
+    return this._defaultManagedActionService(entityId, triggerType);
+  }
+
+  private _rulesForManagedActionEntity(
+    entityId: string,
+    triggerType: "occupied" | "vacant"
+  ): TopomationActionRule[] {
+    return this._actionRules.filter(
+      (rule) =>
+        rule.trigger_type === triggerType &&
+        rule.action_entity_id === entityId
+    );
+  }
+
+  private _isManagedActionEnabled(entityId: string, triggerType: "occupied" | "vacant"): boolean {
+    return this._rulesForManagedActionEntity(entityId, triggerType).some((rule) => rule.enabled);
+  }
+
+  private _deviceIcon(entityId: string): string {
+    const actionDeviceType = this._actionDeviceType(entityId);
+    if (actionDeviceType === "light") return "mdi:lightbulb-outline";
+    if (actionDeviceType === "dimmer") return "mdi:lightbulb-on";
+    if (actionDeviceType === "color_light") return "mdi:palette";
+    if (actionDeviceType === "fan") return "mdi:fan";
+    if (actionDeviceType === "stereo") return "mdi:speaker";
+    if (actionDeviceType === "tv") return "mdi:television";
+    return "mdi:robot";
+  }
+
+  private _managedRuleName(entityId: string, triggerType: "occupied" | "vacant"): string {
+    const locationName = this.location?.name || "Location";
+    const entityName = this._entityName(entityId);
+    const action = this._selectedManagedActionService(entityId, triggerType).replace(/_/g, " ");
+    const triggerLabel = triggerType === "occupied" ? "Occupied" : "Vacant";
+    return `${locationName} ${triggerLabel}: ${entityName} (${action})`;
+  }
+
+  private async _replaceManagedActionRules(
+    entityId: string,
+    triggerType: "occupied" | "vacant",
+    actionService: string
+  ): Promise<void> {
+    if (!this.location) return;
+
+    const existing = this._rulesForManagedActionEntity(entityId, triggerType);
+    if (existing.length > 0) {
+      await Promise.all(existing.map((rule) => deleteTopomationActionRule(this.hass, rule.id)));
+    }
+
+    await createTopomationActionRule(this.hass, {
+      location: this.location,
+      name: this._managedRuleName(entityId, triggerType),
+      trigger_type: triggerType,
+      action_entity_id: entityId,
+      action_service: actionService,
+    });
+  }
+
+  private async _handleManagedActionServiceChange(
+    entityId: string,
+    triggerType: "occupied" | "vacant",
+    actionService: string
+  ): Promise<void> {
+    const key = this._actionToggleKey(entityId, triggerType);
+    this._actionServiceSelections = {
+      ...this._actionServiceSelections,
+      [key]: actionService,
+    };
+
+    const enabled = this._isManagedActionEnabled(entityId, triggerType);
+    if (!enabled) {
+      this.requestUpdate();
+      return;
+    }
+
+    this._actionToggleBusy = { ...this._actionToggleBusy, [key]: true };
+    this.requestUpdate();
+
+    try {
+      await this._replaceManagedActionRules(entityId, triggerType, actionService);
+      await this._loadActionRules();
+    } catch (err: any) {
+      console.error("Failed to update managed action service:", err);
+      this._showToast(err?.message || "Failed to update automation", "error");
+    } finally {
+      const { [key]: _omit, ...remaining } = this._actionToggleBusy;
+      this._actionToggleBusy = remaining;
+      this.requestUpdate();
+    }
+  }
+
+  private async _handleManagedActionToggle(
+    entityId: string,
+    triggerType: "occupied" | "vacant",
+    nextEnabled: boolean
+  ): Promise<void> {
+    if (!this.location) return;
+    const busyKey = this._actionToggleKey(entityId, triggerType);
+    this._actionToggleBusy = { ...this._actionToggleBusy, [busyKey]: true };
+    this.requestUpdate();
+
+    try {
+      const rules = this._rulesForManagedActionEntity(entityId, triggerType);
+      const actionService = this._selectedManagedActionService(entityId, triggerType);
+      if (nextEnabled) {
+        await this._replaceManagedActionRules(entityId, triggerType, actionService);
+      } else if (rules.length > 0) {
+        await Promise.all(rules.map((rule) => deleteTopomationActionRule(this.hass, rule.id)));
+      }
+
+      await this._loadActionRules();
+    } catch (err: any) {
+      console.error("Failed to update managed action rule:", err);
+      this._showToast(err?.message || "Failed to update automation", "error");
+    } finally {
+      const { [busyKey]: _omit, ...remaining } = this._actionToggleBusy;
+      this._actionToggleBusy = remaining;
+      this.requestUpdate();
+    }
   }
 
   private _workingSources(config: OccupancyConfig): OccupancySource[] {
@@ -2088,6 +2583,22 @@ export class HtLocationInspector extends LitElement {
       return stateObj as Record<string, any>;
     }
     return undefined;
+  }
+
+  private _activeContributorsExcluding(sourceId: string): string[] {
+    const occupancyState = this._getOccupancyState();
+    if ((occupancyState?.state || "").toLowerCase() !== "on") return [];
+
+    const attrs = occupancyState?.attributes || {};
+    const contributions = Array.isArray(attrs.contributions) ? attrs.contributions : [];
+    if (!contributions.length) return [];
+
+    const normalizedSource = String(sourceId || "").trim();
+    const active = contributions
+      .map((item: any) => String(item?.source_id || "").trim())
+      .filter((id: string) => id.length > 0 && id !== normalizedSource);
+
+    return Array.from(new Set(active));
   }
 
   private _getLockState(): InspectorLockState {
@@ -2430,20 +2941,25 @@ export class HtLocationInspector extends LitElement {
 
       const trailing_timeout = source.off_trailing ?? 0;
       const sourceId = source.source_id || source.entity_id;
+      const vacate = trailing_timeout <= 0;
       await this.hass.callWS({
         type: "call_service",
         domain: "topomation",
-        service: "clear",
-        service_data: {
-          location_id: this.location.id,
-          source_id: sourceId,
-          trailing_timeout,
-        },
+        service: vacate ? "vacate" : "clear",
+        service_data: vacate
+          ? {
+              location_id: this.location.id,
+            }
+          : {
+              location_id: this.location.id,
+              source_id: sourceId,
+              trailing_timeout,
+            },
       });
       this.dispatchEvent(
         new CustomEvent("source-test", {
           detail: {
-            action: "clear",
+            action: vacate ? "vacate" : "clear",
             locationId: this.location.id,
             sourceId,
             trailing_timeout,
@@ -2452,7 +2968,18 @@ export class HtLocationInspector extends LitElement {
           composed: true,
         })
       );
-      this._showToast(`Cleared ${sourceId}`, "success");
+      if (vacate) {
+        this._showToast(`Vacated ${sourceId}`, "success");
+      } else {
+        const blockers = this._activeContributorsExcluding(sourceId);
+        if (blockers.length > 0) {
+          const preview = blockers.slice(0, 2).join(", ");
+          const suffix = blockers.length > 2 ? ` +${blockers.length - 2} more` : "";
+          this._showToast(`Cleared ${sourceId}; still occupied by ${preview}${suffix}`, "error");
+        } else {
+          this._showToast(`Cleared ${sourceId}`, "success");
+        }
+      }
     } catch (err: any) {
       console.error("Failed to test source event:", err);
       this._showToast(err?.message || "Failed to run source test", "error");
@@ -2470,43 +2997,6 @@ export class HtLocationInspector extends LitElement {
         composed: true,
       })
     );
-  }
-
-  private _handleAddRule(triggerType: "occupied" | "vacant" = "occupied"): void {
-    this.dispatchEvent(
-      new CustomEvent("add-rule", {
-        detail: { trigger_type: triggerType },
-        bubbles: true,
-        composed: true,
-      })
-    );
-  }
-
-  private async _handleDeleteRule(rule: TopomationActionRule): Promise<void> {
-    if (!confirm(`Delete automation \"${rule.name}\"?`)) return;
-    try {
-      await deleteTopomationActionRule(this.hass, rule.id);
-      this._showToast(`Deleted automation \"${rule.name}\"`, "success");
-      await this._loadActionRules();
-    } catch (err: any) {
-      console.error("Failed to delete automation rule:", err);
-      this._showToast(err?.message || "Failed to delete automation", "error");
-    }
-  }
-
-  private async _handleToggleRule(rule: TopomationActionRule): Promise<void> {
-    const nextEnabled = !rule.enabled;
-    try {
-      await setTopomationActionRuleEnabled(this.hass, rule, nextEnabled);
-      this._showToast(
-        `${nextEnabled ? "Enabled" : "Disabled"} automation \"${rule.name}\"`,
-        "success"
-      );
-      await this._loadActionRules();
-    } catch (err: any) {
-      console.error("Failed to toggle automation rule:", err);
-      this._showToast(err?.message || "Failed to update automation state", "error");
-    }
   }
 
   private async _updateModuleConfig(moduleId: string, config: any): Promise<void> {

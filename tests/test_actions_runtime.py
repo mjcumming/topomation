@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from home_topology import Event, EventBus
 from homeassistant.components.automation import DATA_COMPONENT as AUTOMATION_DATA_COMPONENT
@@ -138,25 +138,25 @@ async def test_startup_reapply_reports_failures(hass: HomeAssistant) -> None:
     )
 
     mock_async_call = AsyncMock(side_effect=[None, RuntimeError("boom")])
-    hass.services.async_call = mock_async_call
 
-    events = async_capture_events(hass, EVENT_TOPOMATION_ACTIONS_SUMMARY)
-    await runtime.async_reapply_startup_actions()
-    await hass.async_block_till_done()
+    with patch("homeassistant.core.ServiceRegistry.async_call", new=mock_async_call):
+        events = async_capture_events(hass, EVENT_TOPOMATION_ACTIONS_SUMMARY)
+        await runtime.async_reapply_startup_actions()
+        await hass.async_block_till_done()
 
-    assert mock_async_call.await_count == 2
-    mock_async_call.assert_any_await(
-        "automation",
-        "trigger",
-        {"entity_id": "automation.kitchen_primary", "skip_condition": False},
-        blocking=True,
-    )
-    mock_async_call.assert_any_await(
-        "automation",
-        "trigger",
-        {"entity_id": "automation.kitchen_secondary", "skip_condition": False},
-        blocking=True,
-    )
+        assert mock_async_call.await_count == 2
+        mock_async_call.assert_any_await(
+            "automation",
+            "trigger",
+            {"entity_id": "automation.kitchen_primary", "skip_condition": False},
+            blocking=True,
+        )
+        mock_async_call.assert_any_await(
+            "automation",
+            "trigger",
+            {"entity_id": "automation.kitchen_secondary", "skip_condition": False},
+            blocking=True,
+        )
 
     assert events
     summary = events[-1].data

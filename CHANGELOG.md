@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-02-26
+
 ### Added
 
 - Automation lock policy blueprints:
@@ -62,7 +64,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `sensor.state_changed` events.
 - Removed legacy core-compat fallback paths in `locations/reorder` and adapter
   setup; integration now assumes core v3 APIs directly.
-- Updated package requirements to align with core v3 (`home-topology>=0.2.0a0`,
+- Updated package requirements to align with core v3 (`home-topology==1.0.0`,
   Python `>=3.12`).
 - Occupancy binary sensor attributes now expose v3 fields
   (`locked_by`, `contributions`, `reason`, etc.) instead of legacy
@@ -139,8 +141,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Local HA test environment compatibility by using `pycares<5` with current
-  `aiodns` and pinning `pytest-asyncio<1` for plugin fixture compatibility.
+- Local HA test environment compatibility by aligning test stack pins for
+  current HA (`pytest-asyncio>=1.0`,
+  `pytest-homeassistant-custom-component>=0.13.316`).
 
 - Unload/teardown safety for event unsubscription.
 - Coordinator timeout scheduling now ignores invalid non-datetime module values.

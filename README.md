@@ -1,8 +1,16 @@
 # Topomation
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
-[![Version](https://img.shields.io/badge/version-0.1.0--alpha-blue)](https://github.com/mjcumming/topomation/releases)
-[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Installations](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fanalytics.home-assistant.io%2Fcustom_integrations.json&query=%24.topomation.total&label=installs&color=41BDF5&logo=home-assistant&cacheSeconds=3600)](https://analytics.home-assistant.io/custom_integrations.json)
+[![GitHub Release](https://img.shields.io/github/release/mjcumming/topomation.svg)](https://github.com/mjcumming/topomation/releases)
+[![License](https://img.shields.io/github/license/mjcumming/topomation.svg)](https://github.com/mjcumming/topomation/blob/main/LICENSE)
+[![Home Assistant](https://img.shields.io/badge/home%20assistant-2024.1.0+-blue.svg)](https://www.home-assistant.io/)
+[![Maintenance](https://img.shields.io/maintenance/yes/2026.svg)](https://github.com/mjcumming/topomation)
+[![Quality Scale](https://img.shields.io/badge/quality%20scale-silver-lightgrey.svg)](https://developers.home-assistant.io/docs/core/integration-quality-scale/)
+[![Project Status](https://img.shields.io/badge/project%20status-alpha-orange.svg)](https://github.com/mjcumming/topomation)
+[![CI](https://img.shields.io/github/actions/workflow/status/mjcumming/topomation/frontend-tests.yml?branch=main&label=CI)](https://github.com/mjcumming/topomation/actions/workflows/frontend-tests.yml)
+[![GitHub Issues](https://img.shields.io/github/issues/mjcumming/topomation.svg)](https://github.com/mjcumming/topomation/issues)
+[![GitHub Pull Requests](https://img.shields.io/github/issues-pr/mjcumming/topomation.svg)](https://github.com/mjcumming/topomation/pulls)
 
 **Topomation: Occupancy-driven automation**
 
@@ -15,7 +23,7 @@ Topomation is the product name.
 Current Home Assistant internals use:
 
 - Integration domain: `topomation`
-- Services: `topomation.trigger`, `topomation.clear`, `topomation.lock`, `topomation.unlock`, `topomation.vacate_area`
+- Services: `topomation.trigger`, `topomation.clear`, `topomation.vacate`, `topomation.lock`, `topomation.unlock`, `topomation.vacate_area`
 - Repository: `topomation`
 
 ## Why Topomation
