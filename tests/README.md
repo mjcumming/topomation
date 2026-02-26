@@ -46,7 +46,7 @@ Comprehensive test suite for the Topomation Home Assistant integration.
 pip install -e /workspaces/topomation
 
 # Install test dependencies
-pip install pytest pytest-asyncio pytest-homeassistant-custom-component
+pip install pytest pytest-asyncio pytest-homeassistant-custom-component home-assistant-frontend
 
 # For live HA testing (optional)
 pip install homeassistant-api

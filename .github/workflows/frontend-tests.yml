@@ -27,6 +27,15 @@ jobs:
         with:
           python-version: ${{ env.DEFAULT_PYTHON }}
 
+      - name: Validate custom_components layout
+        run: |
+          extra_dirs="$(find custom_components -mindepth 1 -maxdepth 1 -type d ! -name topomation ! -name __pycache__ -print)"
+          if [ -n "$extra_dirs" ]; then
+            echo "Unexpected custom_components directories:"
+            echo "$extra_dirs"
+            exit 1
+          fi
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip

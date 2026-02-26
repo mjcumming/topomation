@@ -33,6 +33,7 @@ dev = [
     "pytest-cov>=4.0",
     "pytest-asyncio>=1.0",
     "pytest-homeassistant-custom-component>=0.13.316",
+    "home-assistant-frontend",
     "black>=23.0",
     "ruff>=0.1.0",
     "mypy>=1.0",
