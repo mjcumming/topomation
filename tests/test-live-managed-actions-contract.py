@@ -69,7 +69,10 @@ async def _wait_for(
 
 
 @pytest.mark.asyncio
-async def test_managed_action_rule_registers_and_enumerates_in_live_ha(live_ha_config):
+async def test_managed_action_rule_registers_and_enumerates_in_live_ha(
+    live_ha_config,
+    socket_enabled,
+):
     """Validate managed-rule contract against a real HA instance."""
     if live_ha_config["mode"] != "live":
         pytest.skip("Live HA test requires TEST_MODE=live")
@@ -159,7 +162,30 @@ async def test_managed_action_rule_registers_and_enumerates_in_live_ha(live_ha_c
         )
         assert create_resp.status in (200, 201), await create_resp.text()
 
-        automation_entity_id = f"automation.{automation_id}"
+        ws_url = _ws_url_from_http(ha_url)
+        async def _find_registry_entry():
+            registry_entries = await _ws_command(
+                session,
+                ws_url,
+                token,
+                {"type": "config/entity_registry/list"},
+                msg_id=11,
+            )
+            if not isinstance(registry_entries, list):
+                return None
+
+            return next(
+                (
+                    entry
+                    for entry in registry_entries
+                    if isinstance(entry, dict) and entry.get("unique_id") == automation_id
+                ),
+                None,
+            )
+
+        matching_entry = await _wait_for(_find_registry_entry, timeout_seconds=30)
+        assert matching_entry is not None, "Automation did not register in entity registry"
+        automation_entity_id = matching_entry["entity_id"]
 
         async def _state_exists():
             resp = await session.get(f"{ha_url}/api/states/{automation_entity_id}")
@@ -168,27 +194,7 @@ async def test_managed_action_rule_registers_and_enumerates_in_live_ha(live_ha_c
             return None
 
         state_obj = await _wait_for(_state_exists, timeout_seconds=30)
-        assert state_obj is not None, "Automation entity did not appear after config create"
-
-        ws_url = _ws_url_from_http(ha_url)
-        registry_entries = await _ws_command(
-            session,
-            ws_url,
-            token,
-            {"type": "config/entity_registry/list"},
-            msg_id=11,
-        )
-        assert isinstance(registry_entries, list)
-
-        matching_entry = next(
-            (
-                entry
-                for entry in registry_entries
-                if isinstance(entry, dict) and entry.get("unique_id") == automation_id
-            ),
-            None,
-        )
-        assert matching_entry is not None, "Automation did not register in entity registry"
+        assert state_obj is not None, "Automation state did not appear after config create"
 
         config_response = await _ws_command(
             session,

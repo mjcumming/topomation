@@ -817,6 +817,117 @@ describe("HtLocationInspector occupancy source composer", () => {
     }, "managed action toggle should stay enabled after save");
   });
 
+  it("keeps inline managed action enabled when automation config reads are blocked", async () => {
+    const callApiCalls: Array<{
+      method: string;
+      endpoint: string;
+      parameters?: Record<string, any>;
+    }> = [];
+    const states: Record<string, any> = {
+      "binary_sensor.kitchen_occupancy": {
+        entity_id: "binary_sensor.kitchen_occupancy",
+        state: "off",
+        attributes: {
+          friendly_name: "Kitchen Occupancy",
+          device_class: "occupancy",
+          location_id: "area_kitchen",
+        },
+      },
+      "light.kitchen_ceiling": {
+        entity_id: "light.kitchen_ceiling",
+        state: "off",
+        attributes: {
+          friendly_name: "Kitchen Ceiling",
+          area_id: "kitchen",
+        },
+      },
+    };
+
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>) => {
+        if (request.type === "config/entity_registry/list") {
+          throw new Error("forbidden");
+        }
+        if (request.type === "config/device_registry/list") return [] as T;
+        if (request.type === "automation/config") {
+          throw new Error("forbidden");
+        }
+        return [] as T;
+      },
+      callApi: async <T>(
+        method: string,
+        endpoint: string,
+        parameters?: Record<string, any>
+      ): Promise<T> => {
+        callApiCalls.push({ method, endpoint, parameters });
+
+        if (
+          String(method).toLowerCase() === "post" &&
+          endpoint.startsWith("config/automation/config/")
+        ) {
+          const automationId = decodeURIComponent(endpoint.split("/").pop() || "");
+          const slug = String(parameters?.alias || automationId)
+            .trim()
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "_")
+            .replace(/^_+|_+$/g, "");
+          const automationEntityId = `automation.${slug || automationId}`;
+          states[automationEntityId] = {
+            entity_id: automationEntityId,
+            state: "on",
+            attributes: {
+              id: automationId,
+              friendly_name: parameters?.alias || automationId,
+            },
+          };
+        }
+
+        return { result: "ok" } as T;
+      },
+      connection: {},
+      states,
+      areas: {},
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_kitchen";
+    location.ha_area_id = "kitchen";
+    location.modules._meta = { type: "area" };
+    location.entity_ids = ["light.kitchen_ceiling"];
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${location}
+        .forcedTab=${"actions"}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    const findRow = () =>
+      Array.from(element.shadowRoot!.querySelectorAll(".action-device-row")).find((el) =>
+        (el.textContent || "").includes("Kitchen Ceiling")
+      ) as HTMLElement | undefined;
+
+    await waitUntil(() => !!findRow(), "inline action device row did not render");
+
+    const toggle = findRow()!.querySelector("input.action-include-input") as HTMLInputElement | null;
+    expect(toggle).to.exist;
+    toggle!.click();
+    await element.updateComplete;
+
+    await waitUntil(() => callApiCalls.length > 0, "managed rule creation call did not occur");
+
+    await waitUntil(() => {
+      const updated = findRow()?.querySelector("input.action-include-input") as
+        | HTMLInputElement
+        | null;
+      return !!updated && updated.checked;
+    }, "managed action toggle should stay enabled after save when reads are blocked");
+  });
+
   it("writes sun-based dark condition when dark toggle is enabled", async () => {
     const callApiCalls: Array<{
       method: string;

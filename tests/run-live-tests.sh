@@ -107,8 +107,9 @@ if [ -f "$TEST_PATH" ] || [[ "$TEST_PATH" == tests/* ]]; then
     shift
 fi
 
-# Run pytest with live-ha marker
-pytest "$TEST_PATH" -v -m "not mock_only" "$@" || TEST_RESULT=$?
+# Run pytest with live-ha mode enabled.
+# Live contract checks should not trip coverage thresholds from unit suites.
+pytest "$TEST_PATH" -v -m "not mock_only" --live-ha --no-cov "$@" || TEST_RESULT=$?
 
 echo ""
 if [ ${TEST_RESULT:-0} -eq 0 ]; then

@@ -42,32 +42,53 @@ diff -u dist/topomation-panel.js topomation-panel.js
 
 Then rerun `./scripts/test-comprehensive.sh`.
 
-## 3) Optional but recommended live HA gate
+## 3) Mandatory live HA gate (real software, no mocks)
 
-Use this for release candidates that touch managed automations/persistence:
+Every release must pass this gate against a running Home Assistant instance.
+Do not cut a release from mock-only evidence.
 
 ```bash
 cp tests/ha-config.env.template tests/ha-config.env
 # edit tests/ha-config.env with HA_URL + HA_TOKEN (+ optional AREA/entity IDs)
+chmod 600 tests/ha-config.env
 
 source tests/ha-config.env
-pytest tests/test-live-managed-actions-contract.py -v --live-ha
+pytest tests/test-live-managed-actions-contract.py -v --live-ha --no-cov
 ```
 
 This verifies real HA automation registration, enumeration, config readback, and deletion.
+The live contract now asserts against the entity registry `unique_id` and then uses the
+resolved registry `entity_id` (automation entities are alias-slug based, not guaranteed to
+be `automation.<config_id>`).
+
+Local token policy:
+
+1. Keep the token only in `tests/ha-config.env` (gitignored).
+2. Never commit raw tokens into tracked docs or code.
+3. Rotate token immediately if it leaks.
+
+One-command release gate:
+
+```bash
+make test-release-live
+```
 
 ## 4) Release cut checklist
 
 1. Update `custom_components/topomation/manifest.json` version.
 2. Add release notes entry in `CHANGELOG.md`.
 3. Ensure docs/contracts/ADR updates are in the same change when behavior changed.
-4. Re-run `./scripts/test-comprehensive.sh` after final edits.
+4. Run `make test-release-live` after final edits.
 5. Push to `main` (auto-release workflow will publish when CI passes).
 
 ## 5) Common failure triage
 
 - `Saving...` then unchecked in managed actions:
   - validate fallback path for `config/entity_registry/list` permissions
+  - inspect browser console logs for stage traces:
+    `[ht-location-inspector] managed action ...`
+  - if rule reads are blocked, expect explicit error:
+    `Unable to read Topomation automation configs: ...`
   - run production smoke test:
     `npm run test:e2e -- playwright/production-smoke.spec.ts`
 - Parity diff failure:

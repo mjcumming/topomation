@@ -8,6 +8,7 @@ help:
 	@echo "  make dev-install  Install with development dependencies"
 	@echo "  make test         Run tests"
 	@echo "  make test-comprehensive  Run backend + frontend unit/component/e2e suites"
+	@echo "  make test-release-live   Run release gate (comprehensive + real HA contract)"
 	@echo "  make frontend-test-smoke Run production-like frontend smoke profile"
 	@echo "  make test-cov     Run tests with coverage report"
 	@echo "  make lint         Run ruff linter"
@@ -134,3 +135,6 @@ frontend-test-smoke:
 
 test-comprehensive:
 	./scripts/test-comprehensive.sh
+
+test-release-live:
+	./scripts/test-release-live.sh

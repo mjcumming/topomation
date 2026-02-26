@@ -82,6 +82,8 @@ pytest tests/ --cov=custom_components.topomation --cov-report=html
 ```
 
 CI note: `.github/workflows/frontend-tests.yml` now includes a `Comprehensive gate` job that runs `./scripts/test-comprehensive.sh` and blocks release when this matrix fails.
+Release note: use `make test-release-live` before version/tag cut. This runs the
+comprehensive matrix plus a real HA managed-action contract test (no mocks).
 
 #### Dependency Update Smoke Test (Recommended)
 
@@ -108,7 +110,10 @@ make test-live
 
 # Managed action contract only (real HA automation API path)
 source tests/ha-config.env
-pytest tests/test-live-managed-actions-contract.py -v --live-ha
+pytest tests/test-live-managed-actions-contract.py -v --live-ha --no-cov
+
+# Release gate (local matrix + real HA contract)
+make test-release-live
 
 # Or pytest directly
 source tests/ha-config.env
@@ -117,6 +122,7 @@ pytest tests/test-realworld.py -v --live-ha
 
 **See**: `QUICK-START-LIVE.md` for 5-minute setup guide!
 **Dev container**: `DEV-CONTAINER-HA.md` is the canonical HA run/restart reference.
+`tests/ha-config.env` is gitignored and is the canonical local token file.
 
 ## Test Categories
 

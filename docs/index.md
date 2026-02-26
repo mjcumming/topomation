@@ -17,6 +17,7 @@ If a file is not listed as active below, treat it as reference-only.
 | `docs/coding-standards.md` | Coding conventions for backend/frontend | Active |
 | `docs/frontend-dev-workflow.md` | Current frontend/mock workflow | Active |
 | `docs/release-validation-runbook.md` | Pre-release local/live validation workflow | Active (Operational) |
+| `docs/live-release-testing-paradigm.md` | Mandatory no-mock release gate policy and live HA contract expectations | Active (Operational) |
 | `docs/dependency-release-runbook.md` | Dependency pin + release validation workflow | Active (Operational) |
 | `docs/setup-test-topology.md` | Test topology setup in HA + overlay testing | Active |
 | `docs/live-ha-validation-checklist.md` | Manual validation procedure for live HA release candidates | Active |

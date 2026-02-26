@@ -2505,8 +2505,16 @@ export class HtLocationInspector extends LitElement {
     this._actionToggleBusy = { ...this._actionToggleBusy, [key]: true };
     this.requestUpdate();
 
+    const startedAt = Date.now();
     try {
       const requireDark = this._selectedManagedActionRequireDark(entityId, triggerType);
+      console.debug("[ht-location-inspector] managed action service save start", {
+        locationId: this.location?.id,
+        entityId,
+        triggerType,
+        actionService,
+        requireDark,
+      });
       const created = await this._replaceManagedActionRules(
         entityId,
         triggerType,
@@ -2527,14 +2535,29 @@ export class HtLocationInspector extends LitElement {
           this._isManagedActionServiceSelected(entityId, triggerType, actionService) &&
           this._isManagedActionRequireDarkSelected(entityId, triggerType, requireDark)
       );
+      console.debug("[ht-location-inspector] managed action service save complete", {
+        locationId: this.location?.id,
+        entityId,
+        triggerType,
+        actionService,
+        requireDark,
+        converged,
+        duration_ms: Date.now() - startedAt,
+      });
       if (!converged) {
         this._showToast(
-          "Saved. Waiting for Home Assistant automation registry to finish syncing.",
-          "success"
+          "Saved, but Topomation could not verify the updated automation yet. Check browser console logs for details.",
+          "error"
         );
       }
     } catch (err: any) {
-      console.error("Failed to update managed action service:", err);
+      console.error("Failed to update managed action service", {
+        locationId: this.location?.id,
+        entityId,
+        triggerType,
+        actionService,
+        error: err,
+      });
       this._showToast(err?.message || "Failed to update automation", "error");
     } finally {
       const { [key]: _omit, ...remaining } = this._actionToggleBusy;
@@ -2563,8 +2586,16 @@ export class HtLocationInspector extends LitElement {
     this._actionToggleBusy = { ...this._actionToggleBusy, [key]: true };
     this.requestUpdate();
 
+    const startedAt = Date.now();
     try {
       const actionService = this._selectedManagedActionService(entityId, triggerType);
+      console.debug("[ht-location-inspector] managed action dark save start", {
+        locationId: this.location?.id,
+        entityId,
+        triggerType,
+        actionService,
+        requireDark,
+      });
       const created = await this._replaceManagedActionRules(
         entityId,
         triggerType,
@@ -2585,14 +2616,29 @@ export class HtLocationInspector extends LitElement {
           this._isManagedActionServiceSelected(entityId, triggerType, actionService) &&
           this._isManagedActionRequireDarkSelected(entityId, triggerType, requireDark)
       );
+      console.debug("[ht-location-inspector] managed action dark save complete", {
+        locationId: this.location?.id,
+        entityId,
+        triggerType,
+        actionService,
+        requireDark,
+        converged,
+        duration_ms: Date.now() - startedAt,
+      });
       if (!converged) {
         this._showToast(
-          "Saved. Waiting for Home Assistant automation registry to finish syncing.",
-          "success"
+          "Saved, but Topomation could not verify the updated automation yet. Check browser console logs for details.",
+          "error"
         );
       }
     } catch (err: any) {
-      console.error("Failed to update managed action dark condition:", err);
+      console.error("Failed to update managed action dark condition", {
+        locationId: this.location?.id,
+        entityId,
+        triggerType,
+        requireDark,
+        error: err,
+      });
       this._showToast(err?.message || "Failed to update automation", "error");
     } finally {
       const { [key]: _omit, ...remaining } = this._actionToggleBusy;
@@ -2611,10 +2657,20 @@ export class HtLocationInspector extends LitElement {
     this._actionToggleBusy = { ...this._actionToggleBusy, [busyKey]: true };
     this.requestUpdate();
 
+    const startedAt = Date.now();
     try {
       const rules = this._rulesForManagedActionEntity(entityId, triggerType);
       const actionService = this._selectedManagedActionService(entityId, triggerType);
       const requireDark = this._selectedManagedActionRequireDark(entityId, triggerType);
+      console.debug("[ht-location-inspector] managed action toggle start", {
+        locationId: this.location.id,
+        entityId,
+        triggerType,
+        nextEnabled,
+        actionService,
+        requireDark,
+        existingRuleCount: rules.length,
+      });
       if (nextEnabled) {
         const created = await this._replaceManagedActionRules(
           entityId,
@@ -2643,14 +2699,30 @@ export class HtLocationInspector extends LitElement {
             (this._isManagedActionServiceSelected(entityId, triggerType, actionService) &&
               this._isManagedActionRequireDarkSelected(entityId, triggerType, requireDark)))
       );
+      console.debug("[ht-location-inspector] managed action toggle complete", {
+        locationId: this.location.id,
+        entityId,
+        triggerType,
+        nextEnabled,
+        actionService,
+        requireDark,
+        converged,
+        duration_ms: Date.now() - startedAt,
+      });
       if (!converged) {
         this._showToast(
-          "Saved. Waiting for Home Assistant automation registry to finish syncing.",
-          "success"
+          "Saved, but Topomation could not verify the updated automation yet. Check browser console logs for details.",
+          "error"
         );
       }
     } catch (err: any) {
-      console.error("Failed to update managed action rule:", err);
+      console.error("Failed to update managed action rule", {
+        locationId: this.location?.id,
+        entityId,
+        triggerType,
+        nextEnabled,
+        error: err,
+      });
       this._showToast(err?.message || "Failed to update automation", "error");
     } finally {
       const { [busyKey]: _omit, ...remaining } = this._actionToggleBusy;

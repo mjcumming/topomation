@@ -9,6 +9,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-02-26
+
+### Added
+
+- ADR-HA-033 documenting managed-action verification hardening for automation
+  config read failures and live-contract semantics.
+- `docs/live-release-testing-paradigm.md` documenting mandatory real-HA release
+  validation (no mock-only releases).
+- Managed-action inspector diagnostics now log start/complete/error context for
+  toggle/service/dark updates with timing metadata.
+- Regression test for blocked `automation/config` reads in
+  `ht-location-inspector.test.ts`.
+
+### Changed
+
+- Live managed-action contract test now enables real sockets and validates
+  registry `unique_id` -> `entity_id` correlation instead of assuming
+  `automation.<config_id>`.
+- Live test runner (`tests/run-live-tests.sh`) now executes with `--live-ha`
+  and `--no-cov` so live checks actually run and avoid unit coverage gate noise.
+- New release gate command `make test-release-live` runs comprehensive local
+  checks plus live HA managed-action contract validation.
+
+### Fixed
+
+- Managed-action enumeration no longer silently returns an empty ruleset when
+  all candidate `automation/config` reads fail in environments that still show
+  Topomation automation evidence; the UI now preserves optimistic state and
+  surfaces an explicit verification error path.
+
 ## [0.1.4] - 2026-02-26
 
 ### Added

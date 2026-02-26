@@ -25,6 +25,7 @@ cp ha-config.env.template ha-config.env
 
 # Edit with your details
 nano ha-config.env
+chmod 600 ha-config.env
 ```
 
 Paste your token:
@@ -44,6 +45,9 @@ make test-live
 
 # Or directly
 ./tests/run-live-tests.sh
+
+# Required before cutting a release
+make test-release-live
 ```
 
 That's it! ✅
@@ -91,6 +95,7 @@ make test-ha-logs
 cd /workspaces/topomation/tests
 cp ha-config.env.template ha-config.env
 nano ha-config.env
+chmod 600 ha-config.env
 ```
 
 Set:
@@ -105,6 +110,9 @@ TEST_MODE="live"
 
 ```bash
 make test-live
+
+# Required before cutting a release
+make test-release-live
 ```
 
 ### Step 7: Cleanup
@@ -130,6 +138,8 @@ curl -H "Authorization: Bearer $HA_TOKEN" \
 ```
 
 Should return: `{"message": "API running."}`
+
+Security note: keep tokens only in `tests/ha-config.env` (gitignored).
 
 ### Run Single Test
 

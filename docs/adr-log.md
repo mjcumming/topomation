@@ -1335,6 +1335,73 @@ The integration must remain reliable under these real-world conditions.
 
 ---
 
+### ADR-HA-033: Managed Action Verification Must Not Silently Revert on Automation Config Read Failures (2026-02-26)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+Live installs still reported `Saving...` followed by unchecked managed actions even after ADR-HA-032.
+Investigation showed two practical blind spots:
+
+1. Live contract assumptions treated entity IDs as `automation.<config_id>`, but HA entity IDs are alias-slug based while `config.id` maps to registry `unique_id`.
+2. When `automation/config` reads fail across candidates, the frontend previously returned an empty rule list instead of surfacing a read failure, which could visually revert toggles despite successful writes.
+
+**Decision**:
+
+1. Treat registry `unique_id` as the source of truth for config ID correlation in live tests and verification flow.
+2. In managed rule enumeration, throw an explicit error when all candidate `automation/config` reads fail and Topomation automation evidence exists.
+3. Keep optimistic managed-action state on read failures by reusing existing `_loadActionRules` error-preservation behavior.
+4. Add stage-level diagnostics in inspector save handlers (start/complete/error with context + duration) for toggle/service/dark updates.
+5. Update release runbook live gate command to `--no-cov` for single-test local validation.
+
+**Rationale**:
+
+1. Aligns tests and runtime behavior with HA’s real entity/registry model.
+2. Converts silent false-negative verification into actionable failure signal.
+3. Prevents UX rollback when writes succeeded but reads are temporarily/permission blocked.
+4. Shortens production triage cycles with deterministic console evidence.
+
+**Consequences**:
+
+- ✅ Managed action UI no longer silently “reverts” on total config-read failures.
+- ✅ Browser logs show exact save stage and elapsed time for triage.
+- ✅ Live contract test now mirrors HA entity registration semantics.
+- ⚠️ When verification reads are blocked, users see explicit error messaging instead of implicit success.
+
+---
+
+### ADR-HA-034: No-Mock Release Gate Requires Real HA Contract Pass (2026-02-26)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+Mock and browser-harness tests provide broad coverage but cannot prove Home Assistant
+runtime API/registry behavior on production-like installs. Recent regressions showed
+that shipping from mock-only evidence leads to costly deploy-test-iterate loops.
+
+**Decision**:
+
+1. Define a mandatory live release gate for all version/tag cuts.
+2. Keep HA token material local only in `tests/ha-config.env` (gitignored).
+3. Add `make test-release-live` as the canonical release-prep command.
+4. Require the live managed-action contract test to pass before bump/tag:
+   `tests/test-live-managed-actions-contract.py --live-ha --no-cov`.
+
+**Rationale**:
+
+1. Validates the exact HA endpoints that managed actions depend on.
+2. Prevents mock-only green builds from being treated as release-ready.
+3. Creates a repeatable operator workflow across contributors and environments.
+
+**Consequences**:
+
+- ✅ Releases now require proof against real running HA software.
+- ✅ Token handling is explicit and safer (local gitignored secret file).
+- ✅ Trial-and-error knowledge is captured as a repeatable runbook command.
+- ⚠️ Release prep now requires accessible live HA credentials.
+
+---
+
 ## How to Use This Log
 
 ### When to Create an ADR

@@ -295,6 +295,29 @@ function looksLikeTopomationAutomationEntry(entry: AutomationRegistryEntry): boo
   return false;
 }
 
+function hasTopomationAutomationState(hass: HomeAssistant): boolean {
+  return Object.entries(hass.states || {}).some(([entityId, stateObj]) => {
+    if (!entityId.startsWith("automation.")) return false;
+    const rawId = stateObj?.attributes?.id;
+    return (
+      typeof rawId === "string" &&
+      rawId.trim().toLowerCase().startsWith(TOPOMATION_AUTOMATION_ID_PREFIX)
+    );
+  });
+}
+
+function readErrorMessage(err: unknown): string {
+  if (typeof err === "string" && err.trim()) return err.trim();
+  if (err instanceof Error && err.message.trim()) return err.message.trim();
+  if (err && typeof err === "object" && "message" in err) {
+    const maybeMessage = (err as { message?: unknown }).message;
+    if (typeof maybeMessage === "string" && maybeMessage.trim()) {
+      return maybeMessage.trim();
+    }
+  }
+  return "unknown automation/config error";
+}
+
 async function findAutomationRegistryEntryByConfigId(
   hass: HomeAssistant,
   entries: AutomationRegistryEntry[],
@@ -443,6 +466,8 @@ export async function listTopomationActionRules(
   const likelyTopomationEntries = registryEntries.filter(looksLikeTopomationAutomationEntry);
   const candidates =
     likelyTopomationEntries.length > 0 ? likelyTopomationEntries : registryEntries;
+  const failedAutomationConfigReads: Array<{ entity_id: string; error: unknown }> = [];
+
   const loaded = await Promise.all(
     candidates.map(async (entry) => {
       if (!entry.entity_id) return undefined;
@@ -486,15 +511,32 @@ export async function listTopomationActionRules(
           enabled,
         } satisfies TopomationActionRule;
       } catch (err) {
+        failedAutomationConfigReads.push({
+          entity_id: entry.entity_id,
+          error: err,
+        });
         console.debug("[ha-automation-rules] failed to read automation config", entry.entity_id, err);
         return undefined;
       }
     })
   );
 
-  return loaded
+  const resolvedRules = loaded
     .filter((rule): rule is TopomationActionRule => !!rule)
     .sort((a, b) => a.name.localeCompare(b.name));
+
+  if (
+    resolvedRules.length === 0 &&
+    candidates.length > 0 &&
+    failedAutomationConfigReads.length === candidates.length &&
+    (likelyTopomationEntries.length > 0 || hasTopomationAutomationState(hass))
+  ) {
+    const firstFailure = failedAutomationConfigReads[0];
+    const reason = firstFailure ? readErrorMessage(firstFailure.error) : "unknown reason";
+    throw new Error(`Unable to read Topomation automation configs: ${reason}`);
+  }
+
+  return resolvedRules;
 }
 
 export async function createTopomationActionRule(
