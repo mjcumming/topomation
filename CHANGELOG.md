@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-02-26
+
+### Fixed
+
+- HACS repository detection no longer sees a phantom `tests` integration:
+  removed tracked UI artifact files from `custom_components/tests/**` so
+  `custom_components/` only contains `topomation`.
+- CI backend test environment now installs `home-assistant-frontend` in dev
+  dependencies, preventing `ModuleNotFoundError: hass_frontend` during
+  integration setup.
+
 ## [0.1.0] - 2026-02-26
 
 ### Added
