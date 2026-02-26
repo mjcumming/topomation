@@ -16,9 +16,10 @@ If a file is not listed as active below, treat it as reference-only.
 | `docs/agent-quickstart.md` | Fast startup guide for contributors and AI agents | Active (Operational) |
 | `docs/coding-standards.md` | Coding conventions for backend/frontend | Active |
 | `docs/frontend-dev-workflow.md` | Current frontend/mock workflow | Active |
+| `docs/release-validation-runbook.md` | Pre-release local/live validation workflow | Active (Operational) |
 | `docs/dependency-release-runbook.md` | Dependency pin + release validation workflow | Active (Operational) |
 | `docs/setup-test-topology.md` | Test topology setup in HA + overlay testing | Active |
-| `docs/live-ha-validation-checklist.md` | Manual validation procedure for v0.1.0 release | Active |
+| `docs/live-ha-validation-checklist.md` | Manual validation procedure for live HA release candidates | Active |
 | `docs/installation.md` | Installation guide for v0.1.0 (HACS and manual) | Active |
 | `docs/occupancy-lock-workflows.md` | Automation-first lock policy workflows (`away`, `party`) | Active |
 | `docs/integration-guide.md` | Broad integration reference (not policy source) | Active (Reference) |

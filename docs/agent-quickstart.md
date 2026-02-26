@@ -49,10 +49,16 @@ diff -u dist/topomation-panel.js topomation-panel.js
 # Full local release gate (mirrors CI breadth)
 cd /workspaces/topomation
 ./scripts/test-comprehensive.sh
+
+# Optional live managed-action contract gate (requires tests/ha-config.env)
+source tests/ha-config.env
+pytest tests/test-live-managed-actions-contract.py -v --live-ha
 ```
 
 - Dependency release workflow (version pin + smoke validation):
   - `docs/dependency-release-runbook.md`
+- Release-candidate workflow:
+  - `docs/release-validation-runbook.md`
 
 ## 5) Home Assistant runtime (dev container)
 

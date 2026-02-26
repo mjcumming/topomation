@@ -1,12 +1,12 @@
 # Current work
 
-**Last updated**: 2026-02-25
+**Last updated**: 2026-02-26
 **Purpose**: short live context for parallel work, handoff, and branch safety.
 
 ## Snapshot
 
-- Active focus: post-v0.1 operational hardening and UI workflow refinement.
-- Recently completed: manual tree occupancy controls with lock-safe vacate semantics.
+- Active focus: managed-automation reliability hardening and release validation workflow.
+- Recently completed: registry-permission fallback + external reconciliation for managed action toggles.
 - Contract source set: `docs/contracts.md`, `docs/architecture.md`, `docs/adr-log.md`.
 
 ## In-flight work (update per session)
@@ -14,6 +14,7 @@
 | Item | Owner | Status | Notes |
 | --- | --- | --- | --- |
 | Parallel branch updates | multiple | In progress | Verify `git status` before editing overlapping files. |
+| Managed action rule resilience | active | Completed | Added fallback/reconciliation contracts + production smoke coverage. |
 | Docs/rules hardening for faster agent startup | active | Completed | Added quickstart/contracts/current-work and instruction routing. |
 
 ## Parallel-work guardrails

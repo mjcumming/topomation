@@ -9,6 +9,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-02-26
+
+### Added
+
+- Live HA managed-action contract test:
+  `tests/test-live-managed-actions-contract.py` validates create/list/config/delete
+  behavior against real Home Assistant APIs.
+- Frontend coverage for external automation add/delete reconciliation and
+  fallback behavior when `config/entity_registry/list` is unavailable.
+- Production smoke assertion coverage for managed action behavior when entity
+  registry access is denied.
+
+### Changed
+
+- Managed action rule listing now falls back to `hass.states` when entity
+  registry WebSocket access is blocked, preventing false-empty rule loads on
+  restricted installs.
+- Inspector now subscribes to `state_changed` for all `automation.*` entities
+  and debounces rule reloads so external add/delete/edit operations reconcile in
+  the UI without manual refresh.
+- Inline managed action edits/toggles now keep optimistic local rule state and
+  surface a success message when backend registry convergence is delayed.
+- Release validation workflow now requires full local comprehensive gate plus
+  documented optional live managed-action contract validation before version cut.
+
+### Fixed
+
+- `On Occupied` / `On Vacant` include toggles no longer silently revert on
+  installs where entity registry access is restricted.
+- Production smoke failure in CI caused by invalid managed-action state-id
+  expectations in the registry-denied scenario.
+
 ## [0.1.3] - 2026-02-26
 
 ### Added

@@ -96,3 +96,18 @@ Additional save points:
   - `state: below_horizon`
 - When disabled, no dark guard condition is added.
 - This is the v1 behavior surface; lux/ambient guards are explicitly future enhancement.
+
+## C-009 Managed action registration + reconciliation contract
+
+- Managed occupied/vacant action edits are HA automation-config backed (`/api/config/automation/config/{id}`).
+- Managed automation metadata must remain machine-parseable in description:
+  - `Managed by Topomation.`
+  - `[topomation] {"version":...,"location_id":...,"trigger_type":...}`
+- If `config/entity_registry/list` is unavailable, action rule discovery must fall back
+  to `hass.states` automation entities and continue operating.
+- Inspector must reconcile external automation add/delete changes while open via
+  `state_changed` (`automation.*`) subscription + debounced reload.
+- UI save behavior requirement:
+  - successful create/update/delete should not visually revert checkbox/select state
+    during temporary HA registry/config eventual consistency windows.
+  - if convergence polling times out, user gets explicit "saved, still syncing" feedback.

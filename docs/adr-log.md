@@ -1289,6 +1289,52 @@ Split CI responsibilities and make parity explicit:
 
 ---
 
+### ADR-HA-032: Managed Action Rules Must Survive Registry Permission Gaps and External Drift (2026-02-26)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+Live installs reported a repeatable failure mode for `On Occupied`/`On Vacant`
+managed action toggles:
+
+1. Checkbox showed `Saving...`, then reverted to unchecked.
+2. Behavior reproduced on production installs despite mock/dev success.
+3. Some environments restrict panel access to `config/entity_registry/list`.
+4. External HA edits/deletes of managed automations could leave inspector rows stale.
+
+The integration must remain reliable under these real-world conditions.
+
+**Decision**:
+
+1. Keep managed actions automation-first (HA automation config API is the source of truth).
+2. Add entity-registry fallback:
+   - If `config/entity_registry/list` fails, discover automations from `hass.states`.
+3. Add optimistic UI write-through for managed action toggles/selectors:
+   - Preserve intended state locally while backend registry/config converges.
+4. Subscribe inspector to `state_changed` for `automation.*` and debounce reloads so
+   external add/delete/edit changes reconcile without manual refresh.
+5. Add both local and live test gates for this contract:
+   - frontend unit/component + production smoke failure modes
+   - live HA managed-action API contract test.
+
+**Rationale**:
+
+1. Registry permission variability is common in production HA setups.
+2. Eventual consistency and async registry updates should not break UX intent.
+3. External automation mutations are unavoidable and must be reflected quickly.
+4. Contract-level live testing prevents mock-only blind spots.
+
+**Consequences**:
+
+- ✅ Managed action saves no longer depend on registry list permissions.
+- ✅ UI remains stable through backend consistency windows.
+- ✅ External automation changes are reconciled while inspector is open.
+- ✅ Release gate now includes failure-mode coverage matching production issues.
+- ⚠️ Subscribing to all `automation.*` state changes increases reload frequency while inspector is open (mitigated by debounce).
+- ℹ️ Live contract test remains opt-in locally and requires HA token/config.
+
+---
+
 ## How to Use This Log
 
 ### When to Create an ADR

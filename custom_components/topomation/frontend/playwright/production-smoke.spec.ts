@@ -199,4 +199,41 @@ test.describe("Production profile smoke", () => {
         .first()
     ).toBeChecked();
   });
+
+  test("managed action toggle survives entity registry access failures", async ({ page }) => {
+    await selectKitchen(page);
+    await page.getByRole("button", { name: "On Occupied" }).click();
+
+    await page.evaluate(() => {
+      const mock = (window as any).mockHass;
+      const originalCallWs = mock.hass.callWS.bind(mock.hass);
+      mock.hass.callWS = async (request: any) => {
+        if (request?.type === "config/entity_registry/list") {
+          throw new Error("forbidden");
+        }
+        return originalCallWs(request);
+      };
+    });
+
+    const row = page
+      .locator("ht-location-inspector .action-device-row", { hasText: "Kitchen Main Light" })
+      .first();
+    const toggle = row.locator('input[type="checkbox"]').first();
+    await expect(row).toBeVisible();
+    await toggle.check();
+
+    await expect(toggle).toBeChecked();
+
+    await page.reload();
+    await expect(page.locator("topomation-panel")).toBeVisible();
+    await selectKitchen(page);
+    await page.getByRole("button", { name: "On Occupied" }).click();
+    await expect(
+      page
+        .locator("ht-location-inspector .action-device-row", { hasText: "Kitchen Main Light" })
+        .first()
+        .locator('input[type="checkbox"]')
+        .first()
+    ).toBeChecked();
+  });
 });

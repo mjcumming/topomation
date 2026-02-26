@@ -79,6 +79,8 @@ export class HtLocationInspector extends LitElement {
   private _entityAreaLoadPromise?: Promise<void>;
   private _actionRulesLoadSeq = 0;
   private _clockTimer?: number;
+  private _unsubAutomationStateChanged?: () => void;
+  private _actionRulesReloadTimer?: number;
 
   static styles = [
     sharedStyles,
@@ -1030,6 +1032,7 @@ export class HtLocationInspector extends LitElement {
       if (this.hass) {
         void this._loadEntityAreaAssignments();
         void this._loadActionRules();
+        void this._subscribeAutomationStateChanged();
       }
     }
 
@@ -1083,7 +1086,8 @@ export class HtLocationInspector extends LitElement {
       return true;
     } catch (err: any) {
       if (loadSeq !== this._actionRulesLoadSeq) return false;
-      this._actionRules = [];
+      // Preserve current rows on read failures so successful writes don't visually
+      // "revert" while HA registry/config APIs converge.
       this._actionRulesError = err?.message || "Failed to load automation rules";
       return false;
     } finally {
@@ -1279,11 +1283,56 @@ export class HtLocationInspector extends LitElement {
   connectedCallback(): void {
     super.connectedCallback();
     this._startClockTicker();
+    void this._subscribeAutomationStateChanged();
   }
 
   disconnectedCallback(): void {
     super.disconnectedCallback();
     this._stopClockTicker();
+    if (this._actionRulesReloadTimer) {
+      window.clearTimeout(this._actionRulesReloadTimer);
+      this._actionRulesReloadTimer = undefined;
+    }
+    if (this._unsubAutomationStateChanged) {
+      this._unsubAutomationStateChanged();
+      this._unsubAutomationStateChanged = undefined;
+    }
+  }
+
+  private _scheduleActionRulesReload(delayMs = 250): void {
+    if (this._actionRulesReloadTimer) {
+      window.clearTimeout(this._actionRulesReloadTimer);
+      this._actionRulesReloadTimer = undefined;
+    }
+    this._actionRulesReloadTimer = window.setTimeout(() => {
+      this._actionRulesReloadTimer = undefined;
+      void this._loadActionRules();
+    }, delayMs);
+  }
+
+  private async _subscribeAutomationStateChanged(): Promise<void> {
+    if (this._unsubAutomationStateChanged) {
+      this._unsubAutomationStateChanged();
+      this._unsubAutomationStateChanged = undefined;
+    }
+    if (!this.hass?.connection?.subscribeEvents) return;
+
+    try {
+      this._unsubAutomationStateChanged = await this.hass.connection.subscribeEvents(
+        (event: any) => {
+          const entityId = event?.data?.entity_id;
+          if (typeof entityId !== "string" || !entityId.startsWith("automation.")) {
+            return;
+          }
+          // Listen to all automation state changes while inspector is open so
+          // externally added/renamed managed rules are reconciled immediately.
+          this._scheduleActionRulesReload();
+        },
+        "state_changed"
+      );
+    } catch (err) {
+      console.debug("[ht-location-inspector] failed to subscribe to automation state changes", err);
+    }
   }
 
   private _renderOccupancyTab() {
@@ -2378,7 +2427,7 @@ export class HtLocationInspector extends LitElement {
     triggerType: "occupied" | "vacant",
     actionService: string,
     requireDark: boolean
-  ): Promise<void> {
+  ): Promise<TopomationActionRule | undefined> {
     if (!this.location) return;
 
     const existing = this._rulesForManagedActionEntity(entityId, triggerType);
@@ -2386,7 +2435,7 @@ export class HtLocationInspector extends LitElement {
       await Promise.all(existing.map((rule) => deleteTopomationActionRule(this.hass, rule)));
     }
 
-    await createTopomationActionRule(this.hass, {
+    const createdRule = await createTopomationActionRule(this.hass, {
       location: this.location,
       name: this._managedRuleName(entityId, triggerType),
       trigger_type: triggerType,
@@ -2394,6 +2443,46 @@ export class HtLocationInspector extends LitElement {
       action_service: actionService,
       require_dark: requireDark,
     });
+    return createdRule;
+  }
+
+  private _setManagedActionRuleLocal(
+    rule: TopomationActionRule,
+    entityId: string,
+    triggerType: "occupied" | "vacant",
+    actionService: string,
+    requireDark: boolean
+  ): void {
+    const optimisticRule: TopomationActionRule = {
+      ...rule,
+      trigger_type: triggerType,
+      action_entity_id: entityId,
+      action_service: actionService,
+      require_dark: requireDark,
+      enabled: true,
+    };
+
+    const remainder = this._actionRules.filter(
+      (existing) =>
+        !(
+          existing.trigger_type === triggerType &&
+          existing.action_entity_id === entityId
+        )
+    );
+    this._actionRules = [...remainder, optimisticRule];
+  }
+
+  private _removeManagedActionRulesLocal(
+    entityId: string,
+    triggerType: "occupied" | "vacant"
+  ): void {
+    this._actionRules = this._actionRules.filter(
+      (rule) =>
+        !(
+          rule.trigger_type === triggerType &&
+          rule.action_entity_id === entityId
+        )
+    );
   }
 
   private async _handleManagedActionServiceChange(
@@ -2418,12 +2507,32 @@ export class HtLocationInspector extends LitElement {
 
     try {
       const requireDark = this._selectedManagedActionRequireDark(entityId, triggerType);
-      await this._replaceManagedActionRules(entityId, triggerType, actionService, requireDark);
-      await this._reloadActionRulesUntil(
+      const created = await this._replaceManagedActionRules(
+        entityId,
+        triggerType,
+        actionService,
+        requireDark
+      );
+      if (created) {
+        this._setManagedActionRuleLocal(
+          created,
+          entityId,
+          triggerType,
+          actionService,
+          requireDark
+        );
+      }
+      const converged = await this._reloadActionRulesUntil(
         () =>
           this._isManagedActionServiceSelected(entityId, triggerType, actionService) &&
           this._isManagedActionRequireDarkSelected(entityId, triggerType, requireDark)
       );
+      if (!converged) {
+        this._showToast(
+          "Saved. Waiting for Home Assistant automation registry to finish syncing.",
+          "success"
+        );
+      }
     } catch (err: any) {
       console.error("Failed to update managed action service:", err);
       this._showToast(err?.message || "Failed to update automation", "error");
@@ -2456,12 +2565,32 @@ export class HtLocationInspector extends LitElement {
 
     try {
       const actionService = this._selectedManagedActionService(entityId, triggerType);
-      await this._replaceManagedActionRules(entityId, triggerType, actionService, requireDark);
-      await this._reloadActionRulesUntil(
+      const created = await this._replaceManagedActionRules(
+        entityId,
+        triggerType,
+        actionService,
+        requireDark
+      );
+      if (created) {
+        this._setManagedActionRuleLocal(
+          created,
+          entityId,
+          triggerType,
+          actionService,
+          requireDark
+        );
+      }
+      const converged = await this._reloadActionRulesUntil(
         () =>
           this._isManagedActionServiceSelected(entityId, triggerType, actionService) &&
           this._isManagedActionRequireDarkSelected(entityId, triggerType, requireDark)
       );
+      if (!converged) {
+        this._showToast(
+          "Saved. Waiting for Home Assistant automation registry to finish syncing.",
+          "success"
+        );
+      }
     } catch (err: any) {
       console.error("Failed to update managed action dark condition:", err);
       this._showToast(err?.message || "Failed to update automation", "error");
@@ -2487,18 +2616,39 @@ export class HtLocationInspector extends LitElement {
       const actionService = this._selectedManagedActionService(entityId, triggerType);
       const requireDark = this._selectedManagedActionRequireDark(entityId, triggerType);
       if (nextEnabled) {
-        await this._replaceManagedActionRules(entityId, triggerType, actionService, requireDark);
+        const created = await this._replaceManagedActionRules(
+          entityId,
+          triggerType,
+          actionService,
+          requireDark
+        );
+        if (created) {
+          this._setManagedActionRuleLocal(
+            created,
+            entityId,
+            triggerType,
+            actionService,
+            requireDark
+          );
+        }
       } else if (rules.length > 0) {
         await Promise.all(rules.map((rule) => deleteTopomationActionRule(this.hass, rule)));
+        this._removeManagedActionRulesLocal(entityId, triggerType);
       }
 
-      await this._reloadActionRulesUntil(
+      const converged = await this._reloadActionRulesUntil(
         () =>
           this._isManagedActionEnabled(entityId, triggerType) === nextEnabled &&
           (!nextEnabled ||
             (this._isManagedActionServiceSelected(entityId, triggerType, actionService) &&
               this._isManagedActionRequireDarkSelected(entityId, triggerType, requireDark)))
       );
+      if (!converged) {
+        this._showToast(
+          "Saved. Waiting for Home Assistant automation registry to finish syncing.",
+          "success"
+        );
+      }
     } catch (err: any) {
       console.error("Failed to update managed action rule:", err);
       this._showToast(err?.message || "Failed to update automation", "error");

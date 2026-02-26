@@ -204,17 +204,26 @@ function findOccupancyEntityId(hass: HomeAssistant, locationId: string): string 
 async function listAutomationRegistryEntries(
   hass: HomeAssistant
 ): Promise<AutomationRegistryEntry[]> {
-  const entries = await hass.callWS<any[]>({ type: "config/entity_registry/list" });
-  if (!Array.isArray(entries)) return [];
+  try {
+    const entries = await hass.callWS<any[]>({ type: "config/entity_registry/list" });
+    if (!Array.isArray(entries)) return [];
 
-  return entries.filter((entry) => {
-    if (!entry || typeof entry.entity_id !== "string") return false;
-    const domain =
-      typeof entry.domain === "string"
-        ? entry.domain
-        : String(entry.entity_id).split(".", 1)[0];
-    return domain === "automation";
-  }) as AutomationRegistryEntry[];
+    return entries.filter((entry) => {
+      if (!entry || typeof entry.entity_id !== "string") return false;
+      const domain =
+        typeof entry.domain === "string"
+          ? entry.domain
+          : String(entry.entity_id).split(".", 1)[0];
+      return domain === "automation";
+    }) as AutomationRegistryEntry[];
+  } catch (err) {
+    // Some installs/users cannot access entity registry commands from custom panels.
+    // Fall back to automation entities currently in hass.states so managed actions still work.
+    console.debug("[ha-automation-rules] entity_registry list unavailable; falling back to hass.states", err);
+    return Object.keys(hass.states || {})
+      .filter((entityId) => entityId.startsWith("automation."))
+      .map((entity_id) => ({ entity_id }));
+  }
 }
 
 async function waitForAutomationRegistryEntry(

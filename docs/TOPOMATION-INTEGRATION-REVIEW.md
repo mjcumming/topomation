@@ -41,6 +41,20 @@ The Topomation integration is a Home Assistant custom component that bridges HA 
 
 ---
 
+## 2026-02-26 Reliability Notes
+
+1. **Managed action rules** now tolerate environments where entity registry APIs are restricted:
+   action-rule discovery falls back to `hass.states` automation entities when
+   `config/entity_registry/list` is not available.
+2. **Inspector reconciliation** now listens to `automation.*` `state_changed`
+   events and debounces reloads, so external rule add/delete operations are reflected
+   without manual panel refresh.
+3. **Entity surface policy** remains unchanged: Topomation should expose occupancy
+   binary sensors for location automation/eventing, and avoid ambient helper entity sprawl
+   unless explicitly configured as a future enhancement.
+
+---
+
 ## Testing Checklist (Live HA)
 
 - [ ] Integration installs and loads (Settings → Devices & Services → Add → Topomation).

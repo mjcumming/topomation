@@ -1,6 +1,6 @@
 # Live Home Assistant Validation Checklist
 
-Use this checklist to validate the topomation integration on a real Home Assistant instance. This is required before v0.1.0 release.
+Use this checklist to validate the topomation integration on a real Home Assistant instance. Run it for release candidates that change runtime behavior.
 
 **Prerequisites**: Home Assistant running (dev container, VM, or production). Integration installed via developer tools or HACS.
 
@@ -130,7 +130,21 @@ The primary flow: motion sensor triggers → occupancy entity ON → timeout exp
 
 ---
 
-## 5. Environment
+## 5. Managed Automation Rules (0.1.4+)
+
+- [x] In `On Occupied`, enable a light action row and confirm checkbox remains checked after save.
+- [x] Reload panel/browser and confirm managed action row remains enabled.
+- [x] Restart HA and confirm managed action row still reflects enabled state.
+- [x] Delete the managed automation in HA Automations UI; confirm inspector row updates back to unchecked.
+- [x] Recreate matching automation externally; confirm inspector row reconciles to checked.
+- [x] Run optional live contract test:
+  - `pytest tests/test-live-managed-actions-contract.py -v --live-ha`
+
+**Result**: [ ] PASS / [ ] FAIL — Notes:
+
+---
+
+## 6. Environment
 
 | Field | Value |
 |-------|-------|
@@ -142,7 +156,7 @@ The primary flow: motion sensor triggers → occupancy entity ON → timeout exp
 
 ---
 
-## 6. Sign-off
+## 7. Sign-off
 
 - [x] All critical flows (1.1–1.4, 2, 3.1–3.5, 4.1–4.2) passed
 - [x] No blocking errors in HA logs

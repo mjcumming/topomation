@@ -14,6 +14,7 @@ Comprehensive test suite for the Topomation Home Assistant integration.
 ### Integration Tests
 
 - **`test-realworld.py`** - ✨ Real-world integration tests with realistic scenarios
+- **`test-live-managed-actions-contract.py`** - Live HA contract test for managed automation rule registration/enumeration/deletion
 
 ### Configuration
 
@@ -104,6 +105,10 @@ make test-live
 
 # Or use script
 ./tests/run-live-tests.sh
+
+# Managed action contract only (real HA automation API path)
+source tests/ha-config.env
+pytest tests/test-live-managed-actions-contract.py -v --live-ha
 
 # Or pytest directly
 source tests/ha-config.env
