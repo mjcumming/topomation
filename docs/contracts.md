@@ -111,3 +111,9 @@ Additional save points:
   - successful create/update/delete should not visually revert checkbox/select state
     during temporary HA registry/config eventual consistency windows.
   - if convergence polling times out, user gets explicit "saved, still syncing" feedback.
+
+## C-010 Panel authorization contract
+
+- Topomation panel routes are admin-only (`require_admin=True`).
+- Managed action create/update/delete depends on HA config APIs that require admin;
+  non-admin sessions must not be routed into a write-capable panel state.

@@ -29,6 +29,11 @@ interface AutomationRegistryEntry {
   categories?: Record<string, string>;
 }
 
+interface AutomationRegistryListResult {
+  entries: AutomationRegistryEntry[];
+  usedStateFallback: boolean;
+}
+
 const TOPOMATION_AUTOMATION_ID_PREFIX = "topomation_";
 const TOPOMATION_METADATA_PREFIX = "[topomation]";
 
@@ -203,26 +208,37 @@ function findOccupancyEntityId(hass: HomeAssistant, locationId: string): string 
 
 async function listAutomationRegistryEntries(
   hass: HomeAssistant
-): Promise<AutomationRegistryEntry[]> {
+): Promise<AutomationRegistryListResult> {
   try {
     const entries = await hass.callWS<any[]>({ type: "config/entity_registry/list" });
-    if (!Array.isArray(entries)) return [];
+    if (!Array.isArray(entries)) {
+      return {
+        entries: [],
+        usedStateFallback: false,
+      };
+    }
 
-    return entries.filter((entry) => {
-      if (!entry || typeof entry.entity_id !== "string") return false;
-      const domain =
-        typeof entry.domain === "string"
-          ? entry.domain
-          : String(entry.entity_id).split(".", 1)[0];
-      return domain === "automation";
-    }) as AutomationRegistryEntry[];
+    return {
+      entries: entries.filter((entry) => {
+        if (!entry || typeof entry.entity_id !== "string") return false;
+        const domain =
+          typeof entry.domain === "string"
+            ? entry.domain
+            : String(entry.entity_id).split(".", 1)[0];
+        return domain === "automation";
+      }) as AutomationRegistryEntry[],
+      usedStateFallback: false,
+    };
   } catch (err) {
     // Some installs/users cannot access entity registry commands from custom panels.
     // Fall back to automation entities currently in hass.states so managed actions still work.
     console.debug("[ha-automation-rules] entity_registry list unavailable; falling back to hass.states", err);
-    return Object.keys(hass.states || {})
-      .filter((entityId) => entityId.startsWith("automation."))
-      .map((entity_id) => ({ entity_id }));
+    return {
+      entries: Object.keys(hass.states || {})
+        .filter((entityId) => entityId.startsWith("automation."))
+        .map((entity_id) => ({ entity_id })),
+      usedStateFallback: true,
+    };
   }
 }
 
@@ -233,7 +249,8 @@ async function waitForAutomationRegistryEntry(
   waitMs = 250
 ): Promise<AutomationRegistryEntry | undefined> {
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-    const entries = await listAutomationRegistryEntries(hass);
+    const registryResult = await listAutomationRegistryEntries(hass);
+    const entries = registryResult.entries;
     const entry = entries.find((candidate) => candidate.unique_id === automationId);
     if (entry) {
       return entry;
@@ -462,7 +479,8 @@ export async function listTopomationActionRules(
   hass: HomeAssistant,
   locationId: string
 ): Promise<TopomationActionRule[]> {
-  const registryEntries = await listAutomationRegistryEntries(hass);
+  const registryResult = await listAutomationRegistryEntries(hass);
+  const registryEntries = registryResult.entries;
   const likelyTopomationEntries = registryEntries.filter(looksLikeTopomationAutomationEntry);
   const candidates =
     likelyTopomationEntries.length > 0 ? likelyTopomationEntries : registryEntries;
@@ -525,11 +543,16 @@ export async function listTopomationActionRules(
     .filter((rule): rule is TopomationActionRule => !!rule)
     .sort((a, b) => a.name.localeCompare(b.name));
 
+  const allCandidateReadsFailed =
+    candidates.length > 0 &&
+    failedAutomationConfigReads.length === candidates.length;
+  const hasTopomationHint =
+    likelyTopomationEntries.length > 0 || hasTopomationAutomationState(hass);
+
   if (
     resolvedRules.length === 0 &&
-    candidates.length > 0 &&
-    failedAutomationConfigReads.length === candidates.length &&
-    (likelyTopomationEntries.length > 0 || hasTopomationAutomationState(hass))
+    allCandidateReadsFailed &&
+    hasTopomationHint
   ) {
     const firstFailure = failedAutomationConfigReads[0];
     const reason = firstFailure ? readErrorMessage(firstFailure.error) : "unknown reason";

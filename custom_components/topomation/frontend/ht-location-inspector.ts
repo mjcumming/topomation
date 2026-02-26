@@ -2392,6 +2392,9 @@ export class HtLocationInspector extends LitElement {
     delayMs = 250
   ): Promise<boolean> {
     for (let attempt = 0; attempt < attempts; attempt += 1) {
+      if (predicate()) {
+        return true;
+      }
       const ok = await this._loadActionRules();
       if (ok && predicate()) {
         return true;

@@ -1402,6 +1402,37 @@ that shipping from mock-only evidence leads to costly deploy-test-iterate loops.
 
 ---
 
+### ADR-HA-035: Topomation Panel Routes Must Be Admin-Only (2026-02-26)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+Managed action create/update/delete flows are backed by Home Assistant config APIs
+(`config/automation/config/*`) that are admin-gated in core. Topomation routes were
+registered with `require_admin=False`, allowing non-admin sessions into a panel that
+could attempt writes and fail at runtime with no deterministic up-front guardrail.
+
+**Decision**:
+
+1. Register all Topomation panel routes with `require_admin=True`.
+2. Keep managed-action release validation focused on admin-session execution.
+3. Document admin requirement in installation, contracts, and release triage docs.
+
+**Rationale**:
+
+1. Aligns integration UX with HA core authorization model.
+2. Prevents non-admin users from entering a write-dependent panel and hitting
+   confusing save failures.
+3. Reduces production ambiguity when diagnosing "rules not created" reports.
+
+**Consequences**:
+
+- ✅ Deterministic permission boundary for panel and managed-action writes.
+- ✅ Fewer false debugging paths around payload/consistency when issue is auth.
+- ⚠️ Non-admin users lose panel access unless promoted or proxied through an admin workflow.
+
+---
+
 ## How to Use This Log
 
 ### When to Create an ADR

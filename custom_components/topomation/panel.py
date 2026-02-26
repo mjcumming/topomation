@@ -44,7 +44,7 @@ async def async_register_panel(hass: HomeAssistant) -> None:
             sidebar_title=panel["title"],
             sidebar_icon=panel["icon"],
             frontend_url_path=panel["url"].lstrip("/"),
-            require_admin=False,
+            require_admin=True,
             config={
                 "topomation_view": panel["view"],
                 "_panel_custom": {

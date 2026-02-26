@@ -928,6 +928,106 @@ describe("HtLocationInspector occupancy source composer", () => {
     }, "managed action toggle should stay enabled after save when reads are blocked");
   });
 
+  it("keeps inline managed action enabled when state-fallback cannot enumerate new automation yet", async () => {
+    const callApiCalls: Array<{
+      method: string;
+      endpoint: string;
+      parameters?: Record<string, any>;
+    }> = [];
+    const states: Record<string, any> = {
+      "binary_sensor.kitchen_occupancy": {
+        entity_id: "binary_sensor.kitchen_occupancy",
+        state: "off",
+        attributes: {
+          friendly_name: "Kitchen Occupancy",
+          device_class: "occupancy",
+          location_id: "area_kitchen",
+        },
+      },
+      "light.kitchen_ceiling": {
+        entity_id: "light.kitchen_ceiling",
+        state: "off",
+        attributes: {
+          friendly_name: "Kitchen Ceiling",
+          area_id: "kitchen",
+        },
+      },
+      "automation.unrelated_rule": {
+        entity_id: "automation.unrelated_rule",
+        state: "on",
+        attributes: {
+          friendly_name: "Unrelated Rule",
+          id: "manual_unrelated_rule",
+        },
+      },
+    };
+
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>) => {
+        if (request.type === "config/entity_registry/list") {
+          throw new Error("forbidden");
+        }
+        if (request.type === "config/device_registry/list") return [] as T;
+        if (request.type === "automation/config") {
+          throw new Error("forbidden");
+        }
+        return [] as T;
+      },
+      callApi: async <T>(
+        method: string,
+        endpoint: string,
+        parameters?: Record<string, any>
+      ): Promise<T> => {
+        callApiCalls.push({ method, endpoint, parameters });
+        // Intentionally do not mutate hass.states here.
+        // Real HA can delay/omit immediate state visibility for freshly-created
+        // automations even though config create succeeds.
+        return { result: "ok" } as T;
+      },
+      connection: {},
+      states,
+      areas: {},
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_kitchen";
+    location.ha_area_id = "kitchen";
+    location.modules._meta = { type: "area" };
+    location.entity_ids = ["light.kitchen_ceiling"];
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${location}
+        .forcedTab=${"actions"}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    const findRow = () =>
+      Array.from(element.shadowRoot!.querySelectorAll(".action-device-row")).find((el) =>
+        (el.textContent || "").includes("Kitchen Ceiling")
+      ) as HTMLElement | undefined;
+
+    await waitUntil(() => !!findRow(), "inline action device row did not render");
+
+    const toggle = findRow()!.querySelector("input.action-include-input") as HTMLInputElement | null;
+    expect(toggle).to.exist;
+    toggle!.click();
+    await element.updateComplete;
+
+    await waitUntil(() => callApiCalls.length > 0, "managed rule creation call did not occur");
+
+    await waitUntil(() => {
+      const updated = findRow()?.querySelector("input.action-include-input") as
+        | HTMLInputElement
+        | null;
+      return !!updated && updated.checked;
+    }, "managed action toggle should stay enabled after save when fallback reads fail");
+  });
+
   it("writes sun-based dark condition when dark toggle is enabled", async () => {
     const callApiCalls: Array<{
       method: string;

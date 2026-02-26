@@ -36,7 +36,7 @@ async def test_async_register_panel_registers_all_sidebar_views() -> None:
         assert call.kwargs["sidebar_title"] == expected["title"]
         assert call.kwargs["sidebar_icon"] == expected["icon"]
         assert call.kwargs["frontend_url_path"] == expected["url"].lstrip("/")
-        assert call.kwargs["require_admin"] is False
+        assert call.kwargs["require_admin"] is True
         config = call.kwargs["config"]
         assert config["topomation_view"] == expected["view"]
         assert config["_panel_custom"]["name"] == "topomation-panel"

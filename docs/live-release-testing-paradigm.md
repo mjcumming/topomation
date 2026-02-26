@@ -8,6 +8,7 @@
 1. Do not ship from mock-only evidence.
 2. Every release must pass local comprehensive checks and a live HA contract test.
 3. If live contract fails, stop release work and fix before version bump/tag.
+4. Managed-action validation must run with an admin user/session (HA config APIs are admin-gated).
 
 ## Token Handling (Local Only)
 

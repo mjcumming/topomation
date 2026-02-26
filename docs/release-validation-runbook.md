@@ -83,6 +83,11 @@ make test-release-live
 
 ## 5) Common failure triage
 
+- No rules created from panel actions:
+  - confirm the acting user is an HA admin (panel/routes are admin-only)
+  - inspect network response for `config/automation/config/*`:
+    - `401/403` indicates permission issue
+    - `400` indicates payload validation failure (inspect message body)
 - `Saving...` then unchecked in managed actions:
   - validate fallback path for `config/entity_registry/list` permissions
   - inspect browser console logs for stage traces:

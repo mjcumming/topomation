@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-02-26
+
+### Changed
+
+- Topomation manager routes now register with `require_admin=True` so panel access
+  matches Home Assistant's admin-only automation-config write APIs.
+- Managed-action convergence checks now short-circuit on already-satisfied local
+  state before forcing reload polls, avoiding false visual reverts when backend
+  visibility lags.
+
+### Fixed
+
+- Managed-action fallback handling now supports mixed read-permission installs
+  without regressing create flows that cannot enumerate fresh automations
+  through `hass.states` immediately.
+
 ## [0.1.5] - 2026-02-26
 
 ### Added

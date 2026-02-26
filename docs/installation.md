@@ -62,6 +62,7 @@ The integration exposes one primary sidebar panel:
 
 - **Location Manager**: Topology/hierarchy management with occupancy and actions
   tabs in the right panel (`Detection`, `On Occupied`, `On Vacant`).
+  Access requires an admin user session.
   Action rules created in `On Occupied` / `On Vacant` are native Home Assistant
   automations (not integration-local rule storage).
   The built-in action composer is intentionally opinionated for common cases:
