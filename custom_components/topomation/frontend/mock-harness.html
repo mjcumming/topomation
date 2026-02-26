@@ -347,6 +347,12 @@
           <button class="control-btn" onclick="resetMockData()">
             ♻️ Reset Mock Data
           </button>
+          <button class="control-btn" onclick="runProductionReplay()">
+            🎬 Run State Replay
+          </button>
+          <button class="control-btn" onclick="clearProfilePersistence()">
+            🧹 Clear Profile Cache
+          </button>
         </section>
 
         <!-- Console Log -->
@@ -369,6 +375,7 @@
             <span>Mock Mode Active</span>
           </div>
           <span>HMR Enabled</span>
+          <span id="profile-name">Profile: default</span>
           <span id="update-count">Updates: 0</span>
         </header>
 
@@ -381,14 +388,36 @@
     <script type="module">
       import "./mock-ha-components.ts";
       import "./topomation-panel.ts";
-      import { createMockHass, MOCK_STATES } from "./mock-hass.ts";
+      import { createMockHass } from "./mock-hass.ts";
 
       // ================================================================
       // INITIALIZE MOCK HASS
       // ================================================================
-      const mock = createMockHass();
+      const profileParam = new URLSearchParams(window.location.search).get("profile") || "default";
+      const profiles = {
+        default: {
+          id: "default",
+          label: "default",
+          options: {},
+        },
+        production: {
+          id: "production",
+          label: "production",
+          options: {
+            persistence_key: "topomation:harness:production",
+            eventual_consistency: {
+              list_stale_reads_after_module_config: 1,
+              apply_delay_ms: 500,
+              emit_apply_event: false,
+            },
+          },
+        },
+      };
+      const activeProfile = profiles[profileParam] || profiles.default;
+      let mock = createMockHass(activeProfile.options);
       const panel = document.getElementById("panel");
       let updateCount = 0;
+      document.getElementById("profile-name").textContent = `Profile: ${activeProfile.label}`;
 
       // Initial injection
       panel.hass = mock.hass;
@@ -566,9 +595,52 @@
         }
       };
 
+      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+      window.runProductionReplay = async () => {
+        log(`Starting state replay (${activeProfile.label})`, "event");
+        const replaySteps = [
+          () => simulateMotion("kitchen"),
+          () => simulateOccupancyChange("kitchen", true),
+          () =>
+            mock.connection.fireEvent("topomation_actions_summary", {
+              location_id: "kitchen",
+              trigger_type: "occupied",
+              succeeded: 2,
+              failed: 0,
+            }),
+          () => simulateOccupancyChange("kitchen", false),
+          () =>
+            mock.connection.fireEvent("topomation_actions_summary", {
+              location_id: "kitchen",
+              trigger_type: "vacant",
+              succeeded: 2,
+              failed: 0,
+            }),
+        ];
+
+        for (const step of replaySteps) {
+          step();
+          triggerReactiveUpdate();
+          await sleep(220);
+        }
+        log("State replay complete", "event");
+      };
+
+      window.clearProfilePersistence = () => {
+        if (typeof mock.clearPersistence === "function") {
+          mock.clearPersistence();
+        }
+        log(`Cleared profile cache for ${activeProfile.label}`);
+      };
+
       window.resetMockData = async () => {
         if (!confirm("Reset mock data to defaults?")) return;
-        const fresh = createMockHass();
+        if (typeof mock.clearPersistence === "function") {
+          mock.clearPersistence();
+        }
+        const fresh = createMockHass(activeProfile.options);
+        mock = fresh;
         window.mockHass = fresh;
         panel.hass = fresh.hass;
         updateCount = 0;
@@ -596,7 +668,7 @@
         }
       });
 
-      log("Harness ready. Ctrl+Shift+T to toggle theme.");
+      log(`Harness ready (${activeProfile.label}). Ctrl+Shift+T to toggle theme.`);
     </script>
   </body>
 </html>

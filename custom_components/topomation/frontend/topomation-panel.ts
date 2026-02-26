@@ -93,6 +93,7 @@ export class TopomationPanel extends LitElement {
   @state() private _newLocationDefaults?: { parentId?: string; type?: LocationType };
   private _loadSeq = 0;
   private _reloadTimer?: number;
+  private _consistencyReloadTimer?: number;
   private _opQueueByLocationId = new Map<string, Promise<void>>();
 
   private _enqueueLocationOp(locationId: string, op: () => Promise<void>): Promise<void> {
@@ -111,10 +112,20 @@ export class TopomationPanel extends LitElement {
       window.clearTimeout(this._reloadTimer);
       this._reloadTimer = undefined;
     }
+    if (this._consistencyReloadTimer) {
+      window.clearTimeout(this._consistencyReloadTimer);
+      this._consistencyReloadTimer = undefined;
+    }
     this._reloadTimer = window.setTimeout(() => {
       this._reloadTimer = undefined;
       this._loadLocations(silent);
     }, 150);
+    // Production-like integrations can briefly return stale reads after an update event.
+    // Run one trailing reload to converge without requiring manual refresh.
+    this._consistencyReloadTimer = window.setTimeout(() => {
+      this._consistencyReloadTimer = undefined;
+      this._loadLocations(true);
+    }, 1100);
   }
 
   constructor() {
@@ -156,6 +167,14 @@ export class TopomationPanel extends LitElement {
     if (this._pendingLoadTimer) {
       clearTimeout(this._pendingLoadTimer);
       this._pendingLoadTimer = undefined;
+    }
+    if (this._reloadTimer) {
+      clearTimeout(this._reloadTimer);
+      this._reloadTimer = undefined;
+    }
+    if (this._consistencyReloadTimer) {
+      clearTimeout(this._consistencyReloadTimer);
+      this._consistencyReloadTimer = undefined;
     }
 
     // Clean up subscriptions

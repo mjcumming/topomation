@@ -2285,7 +2285,7 @@ export class HtLocationInspector extends LitElement {
 
     const existing = this._rulesForManagedActionEntity(entityId, triggerType);
     if (existing.length > 0) {
-      await Promise.all(existing.map((rule) => deleteTopomationActionRule(this.hass, rule.id)));
+      await Promise.all(existing.map((rule) => deleteTopomationActionRule(this.hass, rule)));
     }
 
     await createTopomationActionRule(this.hass, {
@@ -2346,7 +2346,7 @@ export class HtLocationInspector extends LitElement {
       if (nextEnabled) {
         await this._replaceManagedActionRules(entityId, triggerType, actionService);
       } else if (rules.length > 0) {
-        await Promise.all(rules.map((rule) => deleteTopomationActionRule(this.hass, rule.id)));
+        await Promise.all(rules.map((rule) => deleteTopomationActionRule(this.hass, rule)));
       }
 
       await this._loadActionRules();

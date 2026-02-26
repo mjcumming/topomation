@@ -7,6 +7,8 @@ help:
 	@echo "  make install      Install integration in development mode"
 	@echo "  make dev-install  Install with development dependencies"
 	@echo "  make test         Run tests"
+	@echo "  make test-comprehensive  Run backend + frontend unit/component/e2e suites"
+	@echo "  make frontend-test-smoke Run production-like frontend smoke profile"
 	@echo "  make test-cov     Run tests with coverage report"
 	@echo "  make lint         Run ruff linter"
 	@echo "  make format       Format code with black"
@@ -118,3 +120,17 @@ frontend-build:
 frontend-watch:
 	cd custom_components/topomation/frontend && npm run dev
 
+frontend-test-unit:
+	cd custom_components/topomation/frontend && npm run test:unit
+
+frontend-test-components:
+	cd custom_components/topomation/frontend && CHROME_PATH="$$(node -e 'const { chromium } = require("@playwright/test"); process.stdout.write(chromium.executablePath());')" npm run test
+
+frontend-test-e2e:
+	cd custom_components/topomation/frontend && npm run test:e2e
+
+frontend-test-smoke:
+	cd custom_components/topomation/frontend && npm run test:e2e -- playwright/production-smoke.spec.ts
+
+test-comprehensive:
+	./scripts/test-comprehensive.sh

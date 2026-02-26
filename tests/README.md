@@ -57,6 +57,13 @@ pip install homeassistant-api
 #### Mock HA Tests (Fast)
 
 ```bash
+# Full backend + frontend matrix (recommended before deploy)
+make test-comprehensive
+
+# Production-like frontend smoke profile (save/reload/event replay)
+cd custom_components/topomation/frontend
+npm run test:e2e -- playwright/production-smoke.spec.ts
+
 # All tests
 pytest tests/ -v
 
@@ -72,6 +79,8 @@ pytest tests/test-ambient.py -v
 # With coverage
 pytest tests/ --cov=custom_components.topomation --cov-report=html
 ```
+
+CI note: `.github/workflows/frontend-tests.yml` now includes a `Comprehensive gate` job that runs `./scripts/test-comprehensive.sh` and blocks release when this matrix fails.
 
 #### Dependency Update Smoke Test (Recommended)
 

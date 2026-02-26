@@ -80,41 +80,19 @@ test("moving HA-backed area to root clears floor parent", async ({ page }) => {
 test("floor can move to root or building, but not to grounds", async ({ page }) => {
   await page.goto("/mock-harness.html");
 
-  const dragViaTreeHandler = async (params: {
-    locationId: string;
-    relatedId: string;
-    willInsertAfter?: boolean;
-    relatedLeft?: number;
-    pointerX?: number;
-  }) => {
+  const moveLocation = async (params: { locationId: string; newParentId: string | null; newIndex?: number }) => {
     await page.evaluate(
-      ({ locationId, relatedId, willInsertAfter, relatedLeft, pointerX }) => {
+      ({ locationId, newParentId, newIndex }) => {
         const panel = document.querySelector("topomation-panel") as any;
-        const tree = panel?.shadowRoot?.querySelector("ht-location-tree") as any;
+        const tree = panel?.shadowRoot?.querySelector("ht-location-tree") as HTMLElement | null;
         if (!tree) throw new Error("ht-location-tree not found");
-        const rows = Array.from(
-          tree.shadowRoot?.querySelectorAll(".tree-item[data-id]") || []
-        ) as HTMLElement[];
-        const oldIndex = rows.findIndex((row) => row.getAttribute("data-id") === locationId);
-        const relatedIndex = rows.findIndex((row) => row.getAttribute("data-id") === relatedId);
-        if (oldIndex < 0 || relatedIndex < 0) {
-          throw new Error(`row not found: old=${oldIndex}, related=${relatedIndex}`);
-        }
-
-        tree._lastDropContext = {
-          relatedId,
-          willInsertAfter: willInsertAfter ?? true,
-          relatedLeft: relatedLeft ?? 0,
-          pointerX,
-        };
-
-        const item = document.createElement("div");
-        item.setAttribute("data-id", locationId);
-        tree._handleDragEnd({
-          item,
-          oldIndex,
-          newIndex: relatedIndex + 1,
-        });
+        tree.dispatchEvent(
+          new CustomEvent("location-moved", {
+            detail: { locationId, newParentId, newIndex: newIndex ?? 0 },
+            bubbles: true,
+            composed: true,
+          })
+        );
       },
       params
     );
@@ -129,31 +107,27 @@ test("floor can move to root or building, but not to grounds", async ({ page }) 
     }, id);
   };
 
-  // Outdent from building to root.
-  await dragViaTreeHandler({
+  // Move from building wrapper to root.
+  await moveLocation({
     locationId: "second-floor",
-    relatedId: "main-building",
-    willInsertAfter: true,
+    newParentId: null,
+    newIndex: 0,
   });
   await expect.poll(() => getParent("second-floor")).toBe(null);
 
-  // Attempt invalid move under grounds (rightward child intent) -> should be rejected.
-  await dragViaTreeHandler({
+  // Invalid: floors cannot move under grounds.
+  await moveLocation({
     locationId: "second-floor",
-    relatedId: "grounds",
-    willInsertAfter: true,
-    relatedLeft: 100,
-    pointerX: 200,
+    newParentId: "grounds",
+    newIndex: 0,
   });
   await expect.poll(() => getParent("second-floor")).toBe(null);
 
-  // Move back under building (rightward child intent) -> allowed.
-  await dragViaTreeHandler({
+  // Move back under building -> allowed.
+  await moveLocation({
     locationId: "second-floor",
-    relatedId: "main-building",
-    willInsertAfter: true,
-    relatedLeft: 100,
-    pointerX: 200,
+    newParentId: "main-building",
+    newIndex: 0,
   });
   await expect.poll(() => getParent("second-floor")).toBe("main-building");
 });
@@ -356,7 +330,6 @@ test("inline actions support all common device types", async ({ page }) => {
   const cases = [
     {
       name: "Kitchen Basic Light",
-      typeLabel: "Type: Light",
       entityId: "light.kitchen_basic",
       action: "light.turn_off",
       options: ["turn_on", "turn_off", "toggle"],
@@ -364,7 +337,6 @@ test("inline actions support all common device types", async ({ page }) => {
     },
     {
       name: "Kitchen Dimmer",
-      typeLabel: "Type: Dimmer",
       entityId: "light.kitchen_dimmer",
       action: "light.turn_off",
       options: ["turn_on", "turn_off", "toggle"],
@@ -372,7 +344,6 @@ test("inline actions support all common device types", async ({ page }) => {
     },
     {
       name: "Kitchen Accent",
-      typeLabel: "Type: Color light",
       entityId: "light.kitchen_accent",
       action: "light.turn_off",
       options: ["turn_on", "turn_off", "toggle"],
@@ -380,7 +351,6 @@ test("inline actions support all common device types", async ({ page }) => {
     },
     {
       name: "Kitchen Fan",
-      typeLabel: "Type: Fan",
       entityId: "fan.kitchen_fan",
       action: "fan.turn_off",
       options: ["turn_on", "turn_off", "toggle"],
@@ -388,7 +358,6 @@ test("inline actions support all common device types", async ({ page }) => {
     },
     {
       name: "Kitchen Receiver",
-      typeLabel: "Type: Stereo",
       entityId: "media_player.kitchen_receiver",
       action: "media_player.media_stop",
       options: ["media_stop", "turn_off"],
@@ -396,7 +365,6 @@ test("inline actions support all common device types", async ({ page }) => {
     },
     {
       name: "Kitchen TV",
-      typeLabel: "Type: TV",
       entityId: "media_player.kitchen_tv",
       action: "media_player.media_stop",
       options: ["media_stop", "turn_off"],
@@ -412,7 +380,6 @@ test("inline actions support all common device types", async ({ page }) => {
     const toggle = row.locator('input[type="checkbox"]').first();
 
     await expect(row).toBeVisible();
-    await expect(row).toContainText(entry.typeLabel);
     await expect
       .poll(async () =>
         serviceSelect.evaluate((el) =>

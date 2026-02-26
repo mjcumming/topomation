@@ -449,14 +449,62 @@ function slugify(value: string): string {
   return slug || "item";
 }
 
+type EventualConsistencyOptions = {
+  list_stale_reads_after_module_config?: number;
+  apply_delay_ms?: number;
+  emit_apply_event?: boolean;
+};
+
+type PersistedMockSnapshot = {
+  locations?: Location[];
+};
+
+function cloneLocations(list: Location[]): Location[] {
+  return list.map((loc) => cloneLocation(loc));
+}
+
 export function createMockHass(options: any = {}): any {
   const connection = new MockConnection();
-  let locations = options.locations
-    ? options.locations.map((l: Location) => cloneLocation(l))
-    : MOCK_LOCATIONS.map((l) => cloneLocation(l));
+  const persistenceKey =
+    typeof options.persistence_key === "string" ? options.persistence_key.trim() : "";
+  const persistenceAvailable =
+    persistenceKey.length > 0 &&
+    typeof window !== "undefined" &&
+    !!window.localStorage;
+
+  let persistedSnapshot: PersistedMockSnapshot | undefined;
+  if (persistenceAvailable) {
+    try {
+      const raw = window.localStorage.getItem(persistenceKey);
+      if (raw) persistedSnapshot = JSON.parse(raw);
+    } catch (err) {
+      console.warn("[MockHass] Failed to load persisted snapshot", err);
+    }
+  }
+
+  const initialLocations =
+    Array.isArray(persistedSnapshot?.locations) && persistedSnapshot!.locations.length > 0
+      ? persistedSnapshot!.locations
+      : options.locations || MOCK_LOCATIONS;
+  let locations = cloneLocations(initialLocations);
   let states = { ...(options.states || MOCK_STATES) };
   let areas: Record<string, MockArea> = { ...(options.areas || MOCK_AREAS) };
   let currentTheme = options.theme || "light";
+  const eventualConsistency: EventualConsistencyOptions = {
+    list_stale_reads_after_module_config: Number(
+      options?.eventual_consistency?.list_stale_reads_after_module_config ?? 0
+    ),
+    apply_delay_ms: Number(options?.eventual_consistency?.apply_delay_ms ?? 0),
+    emit_apply_event: Boolean(options?.eventual_consistency?.emit_apply_event),
+  };
+  let pendingModuleConfigApply:
+    | {
+        nextLocations: Location[];
+        staleReadsRemaining: number;
+        applyAt: number;
+        emitApplyEvent: boolean;
+      }
+    | undefined;
   const config = {
     location_name: "Demo Property",
     latitude: 47.6062,
@@ -492,8 +540,55 @@ export function createMockHass(options: any = {}): any {
     return undefined;
   };
 
+  const persistSnapshot = () => {
+    if (!persistenceAvailable) return;
+    try {
+      const snapshot: PersistedMockSnapshot = {
+        locations: cloneLocations(locations),
+      };
+      window.localStorage.setItem(persistenceKey, JSON.stringify(snapshot));
+    } catch (err) {
+      console.warn("[MockHass] Failed to persist snapshot", err);
+    }
+  };
+
+  const applyPendingModuleConfigIfReady = (consumeRead = false): boolean => {
+    if (!pendingModuleConfigApply) return false;
+
+    const now = Date.now();
+    if (now < pendingModuleConfigApply.applyAt) {
+      return false;
+    }
+
+    if (consumeRead && pendingModuleConfigApply.staleReadsRemaining > 0) {
+      pendingModuleConfigApply.staleReadsRemaining -= 1;
+      return false;
+    }
+
+    locations = cloneLocations(pendingModuleConfigApply.nextLocations);
+    const emitApplyEvent = pendingModuleConfigApply.emitApplyEvent;
+    pendingModuleConfigApply = undefined;
+    persistSnapshot();
+    if (emitApplyEvent) {
+      connection.fireEvent("topomation_updated", { reason: "module_config_consistent" });
+    }
+    return true;
+  };
+
+  const flushPendingModuleConfig = () => {
+    applyPendingModuleConfigIfReady(false);
+  };
+
+  if (persistenceAvailable && !persistedSnapshot?.locations) {
+    persistSnapshot();
+  }
+
   const callWS = async (request: any): Promise<any> => {
-    if (request.type === "topomation/locations/list") return { locations: [...locations] };
+    if (request.type === "topomation/locations/list") {
+      applyPendingModuleConfigIfReady(true);
+      return { locations: cloneLocations(locations) };
+    }
+    flushPendingModuleConfig();
     if (request.type === "config/entity_registry/list") {
       const stateEntries = Object.keys(states).map((entityId) => ({
         entity_id: entityId,
@@ -689,6 +784,7 @@ export function createMockHass(options: any = {}): any {
       };
 
       locations = [...locations, location];
+      persistSnapshot();
       connection.fireEvent("topomation_updated", { reason: "create", location_id: nextId });
       return { success: true, location: cloneLocation(location as Location) };
     }
@@ -725,6 +821,7 @@ export function createMockHass(options: any = {}): any {
           parent_id: newParentId,
         };
       });
+      persistSnapshot();
       connection.fireEvent("topomation_updated", { reason: "update", location_id: request.location_id });
       return { success: true };
     }
@@ -868,6 +965,7 @@ export function createMockHass(options: any = {}): any {
       }
 
       locations = nextLocations;
+      persistSnapshot();
 
       console.log(`[MockHass] Moved subtree ${location.name} to parent ${newParentId}`);
       connection.fireEvent("topomation_updated", { reason: "reorder" });
@@ -913,6 +1011,7 @@ export function createMockHass(options: any = {}): any {
 
       const deletedIds = [locationId];
       locations = locations.filter((loc) => loc.id !== locationId);
+      persistSnapshot();
       connection.fireEvent("topomation_updated", { reason: "delete", location_id: locationId });
       return { success: true, deleted_ids: deletedIds, reparented_ids: directChildren.map((c) => c.id) };
     }
@@ -930,7 +1029,7 @@ export function createMockHass(options: any = {}): any {
         throw new Error("Floor locations cannot have occupancy sources");
       }
 
-      locations = locations.map((loc) => {
+      const updatedLocations = locations.map((loc) => {
         if (loc.id !== request.location_id) return loc;
         return {
           ...loc,
@@ -940,6 +1039,25 @@ export function createMockHass(options: any = {}): any {
           },
         };
       });
+
+      const staleReads = Math.max(
+        0,
+        Number(eventualConsistency.list_stale_reads_after_module_config || 0)
+      );
+      const applyDelayMs = Math.max(0, Number(eventualConsistency.apply_delay_ms || 0));
+      const shouldLag = staleReads > 0 || applyDelayMs > 0;
+
+      if (shouldLag) {
+        pendingModuleConfigApply = {
+          nextLocations: cloneLocations(updatedLocations),
+          staleReadsRemaining: staleReads,
+          applyAt: Date.now() + applyDelayMs,
+          emitApplyEvent: Boolean(eventualConsistency.emit_apply_event),
+        };
+      } else {
+        locations = updatedLocations;
+        persistSnapshot();
+      }
 
       connection.fireEvent("topomation_updated", {
         reason: "set_module_config",
@@ -1041,8 +1159,20 @@ export function createMockHass(options: any = {}): any {
   return {
     hass: buildHass(),
     connection,
-    updateState: (id, s) => { states[id].state = s; connection.fireEvent("state_changed", { entity_id: id, new_state: states[id] }); },
-    setTheme: (t) => { currentTheme = t; document.documentElement.setAttribute("data-theme", t); },
+    updateState: (id, s) => {
+      if (!states[id]) return;
+      states[id].state = s;
+      connection.fireEvent("state_changed", { entity_id: id, new_state: states[id] });
+    },
+    setTheme: (t) => {
+      currentTheme = t;
+      document.documentElement.setAttribute("data-theme", t);
+    },
     getReactiveHass: () => ({ ...buildHass() }),
+    getLocations: () => cloneLocations(locations),
+    clearPersistence: () => {
+      if (!persistenceAvailable) return;
+      window.localStorage.removeItem(persistenceKey);
+    },
   };
 }

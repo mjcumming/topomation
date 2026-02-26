@@ -202,9 +202,65 @@ async function waitForAutomationRegistryEntry(
       return entry;
     }
 
+    if (attempt === maxAttempts - 1) {
+      const resolved = await findAutomationRegistryEntryByConfigId(hass, entries, automationId);
+      if (resolved) {
+        return resolved;
+      }
+    }
+
     await new Promise((resolve) => window.setTimeout(resolve, waitMs));
   }
   return undefined;
+}
+
+function resolveAutomationConfigId(
+  entry: AutomationRegistryEntry,
+  config: Record<string, any>
+): string | undefined {
+  const configId = typeof config?.id === "string" ? config.id.trim() : "";
+  if (configId) return configId;
+
+  const uniqueId = typeof entry.unique_id === "string" ? entry.unique_id.trim() : "";
+  if (uniqueId) return uniqueId;
+
+  return undefined;
+}
+
+async function findAutomationRegistryEntryByConfigId(
+  hass: HomeAssistant,
+  entries: AutomationRegistryEntry[],
+  automationId: string
+): Promise<AutomationRegistryEntry | undefined> {
+  const normalizedId = String(automationId || "").trim();
+  if (!normalizedId) return undefined;
+
+  const loaded = await Promise.all(
+    entries
+      .filter((entry) => typeof entry.entity_id === "string" && entry.entity_id.length > 0)
+      .map(async (entry) => {
+        try {
+          const response = await hass.callWS<{ config?: Record<string, any> }>({
+            type: "automation/config",
+            entity_id: entry.entity_id,
+          });
+          const config = response?.config;
+          if (!config || typeof config !== "object") {
+            return undefined;
+          }
+
+          const configId = resolveAutomationConfigId(entry, config);
+          if (configId !== normalizedId) {
+            return undefined;
+          }
+          return entry;
+        } catch {
+          return undefined;
+        }
+      })
+  );
+
+  return loaded.find((entry): entry is AutomationRegistryEntry => !!entry);
 }
 
 async function ensureLabelId(hass: HomeAssistant, labelName: string): Promise<string | undefined> {
@@ -316,15 +372,9 @@ export async function listTopomationActionRules(
   locationId: string
 ): Promise<TopomationActionRule[]> {
   const registryEntries = await listAutomationRegistryEntries(hass);
-  const candidates = registryEntries.filter((entry) => {
-    const uniqueId = typeof entry.unique_id === "string" ? entry.unique_id : "";
-    return uniqueId.startsWith(TOPOMATION_AUTOMATION_ID_PREFIX);
-  });
-
   const loaded = await Promise.all(
-    candidates.map(async (entry) => {
-      const uniqueId = String(entry.unique_id || "").trim();
-      if (!entry.entity_id || !uniqueId) return undefined;
+    registryEntries.map(async (entry) => {
+      if (!entry.entity_id) return undefined;
 
       try {
         const response = await hass.callWS<{ config?: Record<string, any> }>({
@@ -342,6 +392,7 @@ export async function listTopomationActionRules(
           return undefined;
         }
 
+        const configId = resolveAutomationConfigId(entry, config);
         const summary = extractActionSummary(config);
         const stateObj = hass.states?.[entry.entity_id];
         const enabled = stateObj ? stateObj.state !== "off" : true;
@@ -351,7 +402,7 @@ export async function listTopomationActionRules(
           entry.entity_id;
 
         return {
-          id: uniqueId,
+          id: configId || entry.entity_id,
           entity_id: entry.entity_id,
           name,
           trigger_type: metadata.trigger_type,
@@ -440,9 +491,42 @@ export async function createTopomationActionRule(
 
 export async function deleteTopomationActionRule(
   hass: HomeAssistant,
-  automationId: string
+  ruleOrAutomationId: string | Pick<TopomationActionRule, "id" | "entity_id">
 ): Promise<void> {
-  await callAutomationConfigApi<{ result: string }>(hass, "delete", automationId);
+  const automationId =
+    typeof ruleOrAutomationId === "string" ? ruleOrAutomationId : ruleOrAutomationId.id;
+  try {
+    await callAutomationConfigApi<{ result: string }>(hass, "delete", automationId);
+    return;
+  } catch (err) {
+    if (typeof ruleOrAutomationId === "string") {
+      throw err;
+    }
+
+    try {
+      const response = await hass.callWS<{ config?: Record<string, any> }>({
+        type: "automation/config",
+        entity_id: ruleOrAutomationId.entity_id,
+      });
+      const config = response?.config;
+      if (!config || typeof config !== "object") {
+        throw err;
+      }
+      const fallbackId = resolveAutomationConfigId(
+        {
+          entity_id: ruleOrAutomationId.entity_id,
+        },
+        config
+      );
+      if (!fallbackId || fallbackId === automationId) {
+        throw err;
+      }
+
+      await callAutomationConfigApi<{ result: string }>(hass, "delete", fallbackId);
+    } catch {
+      throw err;
+    }
+  }
 }
 
 export async function setTopomationActionRuleEnabled(

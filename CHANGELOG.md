@@ -9,6 +9,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-02-26
+
+### Added
+
+- End-to-end workflow coverage for location dialogs and automation workflows in
+  `custom_components/topomation/frontend/playwright/workflows.spec.ts`.
+- Production-like frontend smoke profile tests in
+  `custom_components/topomation/frontend/playwright/production-smoke.spec.ts`,
+  including save/reload persistence, stale-read convergence, and runtime event
+  replay checks.
+- One-command full test orchestrator at `scripts/test-comprehensive.sh` plus
+  Make targets for frontend slices and production smoke execution.
+
+### Changed
+
+- CI workflow (`.github/workflows/frontend-tests.yml`) now includes a required
+  `Comprehensive gate` job that runs backend + frontend unit/component/e2e
+  suites before release automation proceeds.
+- Mock harness now supports profile-driven execution (`?profile=production`)
+  with persisted mock state, eventual-consistency lag simulation for module
+  config saves, and replayable runtime event sequences.
+- Panel reload behavior now includes a trailing consistency reload after
+  `topomation_updated` events to converge UI state when backends briefly return
+  stale snapshots.
+
+### Fixed
+
+- Stabilized frontend tests around inspector action toggles and tab state.
+- Updated Playwright panel expectations to align with current action row
+  rendering and move-event wiring.
+
 ## [0.1.1] - 2026-02-26
 
 ### Fixed
