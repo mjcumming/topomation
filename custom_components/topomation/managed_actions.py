@@ -40,7 +40,7 @@ _TOPOMATION_OCCUPIED_LABEL_NAME = "Topomation - On Occupied"
 _TOPOMATION_VACANT_LABEL_NAME = "Topomation - On Vacant"
 _TOPOMATION_CATEGORY_NAME = "Topomation"
 _TOPOMATION_SYSTEM_USER_NAME = "Topomation"
-_AUTOMATION_API_REFRESH_TOKEN_KEY = "_automation_api_refresh_token"
+_AUTOMATION_API_REFRESH_TOKEN_KEY = "_automation_api_refresh_token"  # noqa: S105
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -75,7 +75,7 @@ class TopomationManagedActions:
             try:
                 from homeassistant.auth.const import GROUP_ID_ADMIN
             except ImportError:
-                GROUP_ID_ADMIN = "admin"
+                GROUP_ID_ADMIN = "admin"  # noqa: N806
             users = await self.hass.auth.async_get_users()
             for user in users:
                 if getattr(user, "name", None) == _TOPOMATION_SYSTEM_USER_NAME and getattr(
