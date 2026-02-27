@@ -9,6 +9,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-02-27
+
+### Added
+
+- ADR-HA-037 documenting strict in-instance managed-action verification and
+  no-fallback WS contract enforcement.
+- Backend regression coverage for managed-action create rollback and reload
+  timeout error surfacing in `tests/test_managed_actions.py`.
+- Frontend WS-contract tests for explicit failure when managed-action WS
+  commands are unavailable in
+  `custom_components/topomation/frontend/vitest/ha-automation-rules.test.ts`.
+
+### Changed
+
+- Managed-action create now requires confirmed HA runtime registration after
+  reload; if registration does not converge, Topomation rolls back the write
+  and returns an actionable error.
+- Managed-action create/delete/enable frontend APIs are now strict WS backend
+  contract paths (no browser-side fallback for mutation operations).
+- Dev workflow docs now explicitly require in-container `hass` validation and
+  disallow remote probing during this runbook path.
+
+### Fixed
+
+- Prevents silent `Saving...` -> unchecked regressions caused by reporting
+  success before HA actually registered the automation entity.
+- Converts long/stalled automation reload waits into explicit timeout errors
+  instead of opaque failure behavior.
+
 ## [0.1.8] - 2026-02-27
 
 ### Added

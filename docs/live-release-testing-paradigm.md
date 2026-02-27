@@ -9,6 +9,8 @@
 2. Every release must pass local comprehensive checks and a live HA contract test.
 3. If live contract fails, stop release work and fix before version bump/tag.
 4. Managed-action validation must run with an admin user/session (HA config APIs are admin-gated).
+5. In this dev-container workflow, run the live gate against the local
+   in-container `hass` runtime/API path (no remote probing).
 
 ## Token Handling (Local Only)
 

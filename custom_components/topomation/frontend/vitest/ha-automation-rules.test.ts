@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   createTopomationActionRule,
+  deleteTopomationActionRule,
   listTopomationActionRules,
   setTopomationActionRuleEnabled,
   type TopomationActionRule,
@@ -94,13 +95,10 @@ describe("ha-automation-rules websocket path", () => {
     expect(callApi).not.toHaveBeenCalled();
   });
 
-  it("falls back to legacy call_service toggle when ws command is unavailable", async () => {
+  it("fails fast when set_enabled ws command is unavailable", async () => {
     const callWS = vi.fn(async (request: Record<string, unknown>) => {
       if (request.type === "topomation/actions/rules/set_enabled") {
         throw new Error("unknown_command: unsupported");
-      }
-      if (request.type === "call_service") {
-        return { success: true };
       }
       return {};
     });
@@ -109,31 +107,78 @@ describe("ha-automation-rules websocket path", () => {
       states: {},
     } as any;
 
-    await setTopomationActionRuleEnabled(
-      hass,
-      {
-        id: "rule_1",
-        entity_id: "automation.rule_1",
-        name: "Rule 1",
-        trigger_type: "vacant",
-        require_dark: false,
-        enabled: true,
-      },
-      false
-    );
+    await expect(
+      setTopomationActionRuleEnabled(
+        hass,
+        {
+          id: "rule_1",
+          entity_id: "automation.rule_1",
+          name: "Rule 1",
+          trigger_type: "vacant",
+          require_dark: false,
+          enabled: true,
+        },
+        false
+      )
+    ).rejects.toThrow("managed-action backend is unavailable");
 
     expect(callWS).toHaveBeenCalledWith({
       type: "topomation/actions/rules/set_enabled",
       entity_id: "automation.rule_1",
       enabled: false,
     });
-    expect(callWS).toHaveBeenCalledWith({
-      type: "call_service",
-      domain: "automation",
-      service: "turn_off",
-      service_data: {
-        entity_id: "automation.rule_1",
-      },
+  });
+
+  it("fails fast when create ws command is unavailable", async () => {
+    const callWS = vi.fn(async (request: Record<string, unknown>) => {
+      if (request.type === "topomation/actions/rules/create") {
+        throw new Error("unknown_command: unsupported");
+      }
+      return {};
     });
+    const callApi = vi.fn();
+    const hass = {
+      callWS,
+      callApi,
+      states: {},
+    } as any;
+
+    await expect(
+      createTopomationActionRule(hass, {
+        location: {
+          id: "kitchen",
+          name: "Kitchen",
+        } as any,
+        name: "Kitchen Occupied: Kitchen Light (turn on)",
+        trigger_type: "occupied",
+        action_entity_id: "light.kitchen",
+        action_service: "turn_on",
+        require_dark: true,
+      })
+    ).rejects.toThrow("managed-action backend is unavailable");
+    expect(callApi).not.toHaveBeenCalled();
+  });
+
+  it("fails fast when delete ws command is unavailable", async () => {
+    const callWS = vi.fn(async (request: Record<string, unknown>) => {
+      if (request.type === "topomation/actions/rules/delete") {
+        throw new Error("unknown_command: unsupported");
+      }
+      return {};
+    });
+    const callApi = vi.fn();
+    const hass = {
+      callWS,
+      callApi,
+      states: {},
+    } as any;
+
+    await expect(
+      deleteTopomationActionRule(hass, {
+        id: "rule_1",
+        entity_id: "automation.rule_1",
+      })
+    ).rejects.toThrow("managed-action backend is unavailable");
+    expect(callApi).not.toHaveBeenCalled();
   });
 });

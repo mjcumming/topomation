@@ -615,26 +615,37 @@ describe("HtLocationInspector occupancy source composer", () => {
   });
 
   it("creates managed automation rule when inline action include toggle is enabled", async () => {
-    const callApiCalls: Array<{
-      method: string;
-      endpoint: string;
-      parameters?: Record<string, any>;
-    }> = [];
+    const createCalls: Array<Record<string, any>> = [];
+    const rules: Array<Record<string, any>> = [];
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>) => {
+        if (request.type === "topomation/actions/rules/list") {
+          return { rules } as T;
+        }
+        if (request.type === "topomation/actions/rules/create") {
+          createCalls.push(request);
+          const rule = {
+            id: `rule_${createCalls.length}`,
+            entity_id: `automation.rule_${createCalls.length}`,
+            name: request.name,
+            trigger_type: request.trigger_type,
+            action_entity_id: request.action_entity_id,
+            action_service: request.action_service,
+            require_dark: Boolean(request.require_dark),
+            enabled: true,
+          };
+          rules.push(rule);
+          return { rule } as T;
+        }
+        if (request.type === "topomation/actions/rules/delete") {
+          return { success: true } as T;
+        }
         if (request.type === "config/entity_registry/list") return [] as T;
         if (request.type === "config/device_registry/list") return [] as T;
         if (request.type === "automation/config") return { config: undefined } as T;
         return [] as T;
       },
-      callApi: async <T>(
-        method: string,
-        endpoint: string,
-        parameters?: Record<string, any>
-      ): Promise<T> => {
-        callApiCalls.push({ method, endpoint, parameters });
-        return { result: "ok" } as T;
-      },
+      callApi: async <T>(): Promise<T> => ({ result: "ok" } as T),
       connection: {},
       states: {
         "binary_sensor.kitchen_occupancy": {
@@ -693,22 +704,13 @@ describe("HtLocationInspector occupancy source composer", () => {
     toggle!.click();
     await element.updateComplete;
 
-    await waitUntil(() => callApiCalls.length > 0, "managed rule creation call did not occur");
-
-    expect(callApiCalls[0].method).to.equal("post");
-    expect(callApiCalls[0].endpoint).to.contain("config/automation/config/");
-    expect(callApiCalls[0].parameters?.actions?.[0]?.target?.entity_id).to.equal(
-      "light.kitchen_ceiling"
-    );
+    await waitUntil(() => createCalls.length > 0, "managed rule creation call did not occur");
+    expect(createCalls[0].action_entity_id).to.equal("light.kitchen_ceiling");
   });
 
   it("keeps inline managed action enabled when entity registry API is unavailable", async () => {
-    const callApiCalls: Array<{
-      method: string;
-      endpoint: string;
-      parameters?: Record<string, any>;
-    }> = [];
-    const automationConfigByEntityId: Record<string, Record<string, any>> = {};
+    const createCalls: Array<Record<string, any>> = [];
+    const rules: Array<Record<string, any>> = [];
     const states: Record<string, any> = {
       "binary_sensor.kitchen_occupancy": {
         entity_id: "binary_sensor.kitchen_occupancy",
@@ -731,48 +733,35 @@ describe("HtLocationInspector occupancy source composer", () => {
 
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>) => {
+        if (request.type === "topomation/actions/rules/list") {
+          return { rules } as T;
+        }
+        if (request.type === "topomation/actions/rules/create") {
+          createCalls.push(request);
+          const rule = {
+            id: `rule_${createCalls.length}`,
+            entity_id: `automation.rule_${createCalls.length}`,
+            name: request.name,
+            trigger_type: request.trigger_type,
+            action_entity_id: request.action_entity_id,
+            action_service: request.action_service,
+            require_dark: Boolean(request.require_dark),
+            enabled: true,
+          };
+          rules.push(rule);
+          return { rule } as T;
+        }
+        if (request.type === "topomation/actions/rules/delete") {
+          return { success: true } as T;
+        }
         if (request.type === "config/entity_registry/list") {
           throw new Error("forbidden");
         }
         if (request.type === "config/device_registry/list") return [] as T;
-        if (request.type === "automation/config") {
-          return {
-            config: automationConfigByEntityId[request.entity_id],
-          } as T;
-        }
+        if (request.type === "automation/config") throw new Error("forbidden");
         return [] as T;
       },
-      callApi: async <T>(
-        method: string,
-        endpoint: string,
-        parameters?: Record<string, any>
-      ): Promise<T> => {
-        callApiCalls.push({ method, endpoint, parameters });
-
-        if (
-          String(method).toLowerCase() === "post" &&
-          endpoint.startsWith("config/automation/config/")
-        ) {
-          const automationId = decodeURIComponent(endpoint.split("/").pop() || "");
-          const automationEntityId = `automation.${automationId}`;
-          states[automationEntityId] = {
-            entity_id: automationEntityId,
-            state: "on",
-            attributes: {
-              friendly_name: parameters?.alias || automationId,
-            },
-          };
-          automationConfigByEntityId[automationEntityId] = {
-            id: automationId,
-            alias: parameters?.alias,
-            description: parameters?.description,
-            actions: parameters?.actions || [],
-            conditions: parameters?.conditions || [],
-          };
-        }
-
-        return { result: "ok" } as T;
-      },
+      callApi: async <T>(): Promise<T> => ({ result: "ok" } as T),
       connection: {},
       states,
       areas: {},
@@ -807,7 +796,7 @@ describe("HtLocationInspector occupancy source composer", () => {
     toggle!.click();
     await element.updateComplete;
 
-    await waitUntil(() => callApiCalls.length > 0, "managed rule creation call did not occur");
+    await waitUntil(() => createCalls.length > 0, "managed rule creation call did not occur");
 
     await waitUntil(() => {
       const updated = findRow()?.querySelector("input.action-include-input") as
@@ -818,11 +807,8 @@ describe("HtLocationInspector occupancy source composer", () => {
   });
 
   it("keeps inline managed action enabled when automation config reads are blocked", async () => {
-    const callApiCalls: Array<{
-      method: string;
-      endpoint: string;
-      parameters?: Record<string, any>;
-    }> = [];
+    const createCalls: Array<Record<string, any>> = [];
+    const rules: Array<Record<string, any>> = [];
     const states: Record<string, any> = {
       "binary_sensor.kitchen_occupancy": {
         entity_id: "binary_sensor.kitchen_occupancy",
@@ -845,6 +831,27 @@ describe("HtLocationInspector occupancy source composer", () => {
 
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>) => {
+        if (request.type === "topomation/actions/rules/list") {
+          return { rules } as T;
+        }
+        if (request.type === "topomation/actions/rules/create") {
+          createCalls.push(request);
+          const rule = {
+            id: `rule_${createCalls.length}`,
+            entity_id: `automation.rule_${createCalls.length}`,
+            name: request.name,
+            trigger_type: request.trigger_type,
+            action_entity_id: request.action_entity_id,
+            action_service: request.action_service,
+            require_dark: Boolean(request.require_dark),
+            enabled: true,
+          };
+          rules.push(rule);
+          return { rule } as T;
+        }
+        if (request.type === "topomation/actions/rules/delete") {
+          return { success: true } as T;
+        }
         if (request.type === "config/entity_registry/list") {
           throw new Error("forbidden");
         }
@@ -854,36 +861,7 @@ describe("HtLocationInspector occupancy source composer", () => {
         }
         return [] as T;
       },
-      callApi: async <T>(
-        method: string,
-        endpoint: string,
-        parameters?: Record<string, any>
-      ): Promise<T> => {
-        callApiCalls.push({ method, endpoint, parameters });
-
-        if (
-          String(method).toLowerCase() === "post" &&
-          endpoint.startsWith("config/automation/config/")
-        ) {
-          const automationId = decodeURIComponent(endpoint.split("/").pop() || "");
-          const slug = String(parameters?.alias || automationId)
-            .trim()
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, "_")
-            .replace(/^_+|_+$/g, "");
-          const automationEntityId = `automation.${slug || automationId}`;
-          states[automationEntityId] = {
-            entity_id: automationEntityId,
-            state: "on",
-            attributes: {
-              id: automationId,
-              friendly_name: parameters?.alias || automationId,
-            },
-          };
-        }
-
-        return { result: "ok" } as T;
-      },
+      callApi: async <T>(): Promise<T> => ({ result: "ok" } as T),
       connection: {},
       states,
       areas: {},
@@ -918,7 +896,7 @@ describe("HtLocationInspector occupancy source composer", () => {
     toggle!.click();
     await element.updateComplete;
 
-    await waitUntil(() => callApiCalls.length > 0, "managed rule creation call did not occur");
+    await waitUntil(() => createCalls.length > 0, "managed rule creation call did not occur");
 
     await waitUntil(() => {
       const updated = findRow()?.querySelector("input.action-include-input") as
@@ -929,11 +907,8 @@ describe("HtLocationInspector occupancy source composer", () => {
   });
 
   it("keeps inline managed action enabled when state-fallback cannot enumerate new automation yet", async () => {
-    const callApiCalls: Array<{
-      method: string;
-      endpoint: string;
-      parameters?: Record<string, any>;
-    }> = [];
+    const createCalls: Array<Record<string, any>> = [];
+    const rules: Array<Record<string, any>> = [];
     const states: Record<string, any> = {
       "binary_sensor.kitchen_occupancy": {
         entity_id: "binary_sensor.kitchen_occupancy",
@@ -964,6 +939,27 @@ describe("HtLocationInspector occupancy source composer", () => {
 
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>) => {
+        if (request.type === "topomation/actions/rules/list") {
+          return { rules } as T;
+        }
+        if (request.type === "topomation/actions/rules/create") {
+          createCalls.push(request);
+          const rule = {
+            id: `rule_${createCalls.length}`,
+            entity_id: `automation.rule_${createCalls.length}`,
+            name: request.name,
+            trigger_type: request.trigger_type,
+            action_entity_id: request.action_entity_id,
+            action_service: request.action_service,
+            require_dark: Boolean(request.require_dark),
+            enabled: true,
+          };
+          rules.push(rule);
+          return { rule } as T;
+        }
+        if (request.type === "topomation/actions/rules/delete") {
+          return { success: true } as T;
+        }
         if (request.type === "config/entity_registry/list") {
           throw new Error("forbidden");
         }
@@ -973,17 +969,7 @@ describe("HtLocationInspector occupancy source composer", () => {
         }
         return [] as T;
       },
-      callApi: async <T>(
-        method: string,
-        endpoint: string,
-        parameters?: Record<string, any>
-      ): Promise<T> => {
-        callApiCalls.push({ method, endpoint, parameters });
-        // Intentionally do not mutate hass.states here.
-        // Real HA can delay/omit immediate state visibility for freshly-created
-        // automations even though config create succeeds.
-        return { result: "ok" } as T;
-      },
+      callApi: async <T>(): Promise<T> => ({ result: "ok" } as T),
       connection: {},
       states,
       areas: {},
@@ -1018,7 +1004,7 @@ describe("HtLocationInspector occupancy source composer", () => {
     toggle!.click();
     await element.updateComplete;
 
-    await waitUntil(() => callApiCalls.length > 0, "managed rule creation call did not occur");
+    await waitUntil(() => createCalls.length > 0, "managed rule creation call did not occur");
 
     await waitUntil(() => {
       const updated = findRow()?.querySelector("input.action-include-input") as
@@ -1029,26 +1015,37 @@ describe("HtLocationInspector occupancy source composer", () => {
   });
 
   it("writes sun-based dark condition when dark toggle is enabled", async () => {
-    const callApiCalls: Array<{
-      method: string;
-      endpoint: string;
-      parameters?: Record<string, any>;
-    }> = [];
+    const createCalls: Array<Record<string, any>> = [];
+    const rules: Array<Record<string, any>> = [];
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>) => {
+        if (request.type === "topomation/actions/rules/list") {
+          return { rules } as T;
+        }
+        if (request.type === "topomation/actions/rules/create") {
+          createCalls.push(request);
+          const rule = {
+            id: `rule_${createCalls.length}`,
+            entity_id: `automation.rule_${createCalls.length}`,
+            name: request.name,
+            trigger_type: request.trigger_type,
+            action_entity_id: request.action_entity_id,
+            action_service: request.action_service,
+            require_dark: Boolean(request.require_dark),
+            enabled: true,
+          };
+          rules.push(rule);
+          return { rule } as T;
+        }
+        if (request.type === "topomation/actions/rules/delete") {
+          return { success: true } as T;
+        }
         if (request.type === "config/entity_registry/list") return [] as T;
         if (request.type === "config/device_registry/list") return [] as T;
         if (request.type === "automation/config") return { config: undefined } as T;
         return [] as T;
       },
-      callApi: async <T>(
-        method: string,
-        endpoint: string,
-        parameters?: Record<string, any>
-      ): Promise<T> => {
-        callApiCalls.push({ method, endpoint, parameters });
-        return { result: "ok" } as T;
-      },
+      callApi: async <T>(): Promise<T> => ({ result: "ok" } as T),
       connection: {},
       states: {
         "binary_sensor.kitchen_occupancy": {
@@ -1112,15 +1109,8 @@ describe("HtLocationInspector occupancy source composer", () => {
     includeToggle!.click();
     await element.updateComplete;
 
-    await waitUntil(() => callApiCalls.length > 0, "managed rule creation call did not occur");
-
-    expect(callApiCalls[0].parameters?.conditions).to.deep.equal([
-      {
-        condition: "state",
-        entity_id: "sun.sun",
-        state: "below_horizon",
-      },
-    ]);
+    await waitUntil(() => createCalls.length > 0, "managed rule creation call did not occur");
+    expect(createCalls[0].require_dark).to.equal(true);
   });
 
   it("recognizes managed rules when automation unique_id is opaque", async () => {
@@ -1529,26 +1519,37 @@ describe("HtLocationInspector occupancy source composer", () => {
   });
 
   it("uses selected per-device action service when creating managed automation rule", async () => {
-    const callApiCalls: Array<{
-      method: string;
-      endpoint: string;
-      parameters?: Record<string, any>;
-    }> = [];
+    const createCalls: Array<Record<string, any>> = [];
+    const rules: Array<Record<string, any>> = [];
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>) => {
+        if (request.type === "topomation/actions/rules/list") {
+          return { rules } as T;
+        }
+        if (request.type === "topomation/actions/rules/create") {
+          createCalls.push(request);
+          const rule = {
+            id: `rule_${createCalls.length}`,
+            entity_id: `automation.rule_${createCalls.length}`,
+            name: request.name,
+            trigger_type: request.trigger_type,
+            action_entity_id: request.action_entity_id,
+            action_service: request.action_service,
+            require_dark: Boolean(request.require_dark),
+            enabled: true,
+          };
+          rules.push(rule);
+          return { rule } as T;
+        }
+        if (request.type === "topomation/actions/rules/delete") {
+          return { success: true } as T;
+        }
         if (request.type === "config/entity_registry/list") return [] as T;
         if (request.type === "config/device_registry/list") return [] as T;
         if (request.type === "automation/config") return { config: undefined } as T;
         return [] as T;
       },
-      callApi: async <T>(
-        method: string,
-        endpoint: string,
-        parameters?: Record<string, any>
-      ): Promise<T> => {
-        callApiCalls.push({ method, endpoint, parameters });
-        return { result: "ok" } as T;
-      },
+      callApi: async <T>(): Promise<T> => ({ result: "ok" } as T),
       connection: {},
       states: {
         "binary_sensor.kitchen_occupancy": {
@@ -1617,11 +1618,7 @@ describe("HtLocationInspector occupancy source composer", () => {
 
     await waitUntil(
       () =>
-        callApiCalls.some(
-          (call) =>
-            call.method === "post" &&
-            call.parameters?.actions?.[0]?.action === "light.turn_off"
-        ),
+        createCalls.some((call) => call.action_service === "turn_off"),
       "managed rule update call with selected action did not occur"
     );
   });

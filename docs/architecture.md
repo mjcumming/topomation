@@ -297,6 +297,12 @@ shared location tree selection context.
 - The panel is WS-first for rule writes:
   `topomation/actions/rules/*` commands call integration backend code, and backend
   code performs HA automation config mutations/reload.
+- Managed-action mutation paths are strict backend contracts:
+  create/delete/enable fail explicitly when backend WS commands are unavailable
+  (no browser-side mutation fallback).
+- Backend create treats registration as the success condition:
+  if write+reload does not yield runtime registration, Topomation rolls back the
+  write and returns an actionable error.
 - The built-in action list is intentionally common-case: media players support `Stop` and `Turn off` only.
   Advanced occupancy-driven play/turn-on behavior is expected to be authored as custom HA automations using Topomation occupancy entities.
 - Integration-owned nodes (`building`, `grounds`, `subarea`) are configured through explicit source assignment in inspector.

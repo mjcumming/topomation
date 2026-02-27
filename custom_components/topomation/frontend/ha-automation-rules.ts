@@ -75,6 +75,13 @@ function isWsCommandUnavailable(err: unknown): boolean {
   );
 }
 
+function wsUnavailableError(operation: string): Error {
+  return new Error(
+    `Topomation managed-action backend is unavailable for ${operation}. ` +
+      "Reload Home Assistant to ensure this integration version is fully active."
+  );
+}
+
 function slugify(value: string): string {
   const slug = value
     .trim()
@@ -726,9 +733,10 @@ export async function createTopomationActionRule(
     if (!isWsCommandUnavailable(err)) {
       throw err;
     }
+    throw wsUnavailableError("rule creation");
   }
 
-  return createTopomationActionRuleLegacy(hass, args);
+  throw wsUnavailableError("rule creation");
 }
 
 async function deleteTopomationActionRuleLegacy(
@@ -794,9 +802,10 @@ export async function deleteTopomationActionRule(
     if (!isWsCommandUnavailable(err)) {
       throw err;
     }
+    throw wsUnavailableError("rule deletion");
   }
 
-  await deleteTopomationActionRuleLegacy(hass, ruleOrAutomationId);
+  throw wsUnavailableError("rule deletion");
 }
 
 async function setTopomationActionRuleEnabledLegacy(
@@ -832,9 +841,10 @@ export async function setTopomationActionRuleEnabled(
     if (!isWsCommandUnavailable(err)) {
       throw err;
     }
+    throw wsUnavailableError("rule enable/disable");
   }
 
-  await setTopomationActionRuleEnabledLegacy(hass, rule, enabled);
+  throw wsUnavailableError("rule enable/disable");
 }
 
 export function ruleEditPath(rule: TopomationActionRule): string {

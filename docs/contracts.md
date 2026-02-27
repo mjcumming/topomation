@@ -105,7 +105,14 @@ Additional save points:
   - `topomation/actions/rules/delete`
   - `topomation/actions/rules/set_enabled`
 - The backend integration is the writer of HA automation config/state; browser clients do not
-  directly write `config/automation/config/*` in the primary path.
+  directly write `config/automation/config/*` for managed-action mutations.
+- Mutation path is strict WS contract:
+  - create/delete/enable operations must fail explicitly when backend WS commands
+    are unavailable (no browser-side mutation fallback).
+- Create success criteria:
+  - write + reload is not enough; HA runtime registration must converge.
+  - if registration does not converge, backend must rollback the attempted write
+    and return an actionable error.
 - Managed automation metadata must remain machine-parseable in description:
   - `Managed by Topomation.`
   - `[topomation] {"version":...,"location_id":...,"trigger_type":...}`

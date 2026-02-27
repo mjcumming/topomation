@@ -48,6 +48,8 @@ Every release must pass this gate against a running Home Assistant instance.
 Do not cut a release from mock-only evidence.
 Topomation integration must be loaded in that HA instance; the live contract
 gate now fails fast when it is missing.
+For this dev container workflow, validate against the local in-container `hass`
+runtime/API path (no remote probing).
 
 ```bash
 cp tests/ha-config.env.template tests/ha-config.env

@@ -177,3 +177,95 @@ def test_automation_config_file_roundtrip(tmp_path) -> None:
     assert len(loaded) == 2
     assert loaded[0]["id"] == "rule_1"
     assert loaded[1]["id"]
+
+
+def test_automation_config_file_requires_yaml_list(tmp_path) -> None:
+    """Non-list YAML structures raise an actionable error."""
+    path = tmp_path / "automations.yaml"
+    path.write_text("id: not-a-list\nalias: invalid\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="must contain a YAML list"):
+        _read_automation_config_file(str(path))
+
+
+@pytest.mark.asyncio
+async def test_async_create_rule_rolls_back_when_registration_never_appears(
+    hass: HomeAssistant,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Create fails fast and rolls back if HA never registers the new automation."""
+    manager = TopomationManagedActions(hass)
+    location = SimpleNamespace(id="bathroom", name="Bathroom")
+
+    monkeypatch.setattr(
+        manager,
+        "_find_occupancy_entity_id",
+        lambda _location_id: "binary_sensor.bathroom_occupancy",
+    )
+
+    async def _validate(*_args, **_kwargs):
+        return {}
+
+    monkeypatch.setattr(
+        "custom_components.topomation.managed_actions.async_validate_config_item",
+        _validate,
+    )
+
+    writes: list[list[dict[str, object]]] = []
+
+    async def _read():
+        return []
+
+    async def _write(entries):
+        writes.append(list(entries))
+
+    async def _reload(*_args, **_kwargs):
+        return None
+
+    async def _wait(*_args, **_kwargs):
+        return None
+
+    rolled_back = {"value": False}
+
+    async def _rollback(_automation_id: str):
+        rolled_back["value"] = True
+
+    monkeypatch.setattr(manager, "_async_read_automation_config_file", _read)
+    monkeypatch.setattr(manager, "_async_write_automation_config_file", _write)
+    monkeypatch.setattr(manager, "_async_reload_automation", _reload)
+    monkeypatch.setattr(manager, "_wait_for_entity_id", _wait)
+    monkeypatch.setattr(manager, "_async_rollback_rule", _rollback)
+
+    with pytest.raises(ValueError, match="could not verify automation registration"):
+        await manager.async_create_rule(
+            location=location,
+            name="Bathroom Vacant: Bathroom Light (turn off)",
+            trigger_type="vacant",
+            action_entity_id="light.bathroom",
+            action_service="turn_off",
+            require_dark=False,
+        )
+
+    assert writes, "Expected automation config write before rollback"
+    assert rolled_back["value"] is True
+
+
+@pytest.mark.asyncio
+async def test_async_reload_automation_times_out_with_actionable_error(
+    hass: HomeAssistant,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reload timeout surfaces ValueError so frontend can show explicit failure."""
+    manager = TopomationManagedActions(hass)
+
+    class _TimeoutContext:
+        async def __aenter__(self):
+            raise TimeoutError("timeout")
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr("custom_components.topomation.managed_actions.asyncio.timeout", lambda _seconds: _TimeoutContext())
+
+    with pytest.raises(ValueError, match="Timed out waiting for Home Assistant automation reload"):
+        await manager._async_reload_automation("rule_1")  # noqa: SLF001

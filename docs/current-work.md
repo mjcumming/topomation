@@ -5,8 +5,8 @@
 
 ## Snapshot
 
-- Active focus: managed-action backend registration reliability and live-HA release confidence.
-- Recently completed: WS-first managed action backend path (`topomation/actions/rules/*`) with full local gate pass and strict live-gate precondition checks.
+- Active focus: strict in-instance managed-action verification and deterministic failure surfacing.
+- Recently completed: WS-first managed action backend path (`topomation/actions/rules/*`) with local live-HA contract pass, rollback-on-missing-registration, and no-fallback mutation contract.
 - Contract source set: `docs/contracts.md`, `docs/architecture.md`, `docs/adr-log.md`.
 
 ## In-flight work (update per session)
@@ -17,6 +17,7 @@
 | Managed action rule resilience | active | Completed | Added fallback/reconciliation contracts + production smoke coverage. |
 | Panel auth alignment | active | Completed | Panel routes are admin-only to match HA write APIs. |
 | Managed action backend WS path | active | Completed | Frontend now routes rule save/delete/enable to integration backend commands. |
+| Registration verification hardening | active | Completed | Create now fails+rolls back when HA does not register automation after reload. |
 | Docs/rules hardening for faster agent startup | active | Completed | Added quickstart/contracts/current-work and instruction routing. |
 
 ## Parallel-work guardrails

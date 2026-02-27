@@ -1471,6 +1471,50 @@ integration runtime behavior and permission boundaries.
 
 ---
 
+### ADR-HA-037: Managed Action Registration Must Be Verified In-Instance (2026-02-27)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+Repeated production reports still showed `Saving...` followed by unchecked managed
+actions. Root causes were amplified by two behaviors:
+
+1. Backend create path could report success before Home Assistant had actually
+   registered the automation entity.
+2. Frontend create/delete/enable paths still had compatibility fallbacks that
+   could drift from the intended in-instance integration contract.
+
+This created ambiguous signals and expensive deploy-test-iterate loops.
+
+**Decision**:
+
+1. Enforce registration verification in backend create flow:
+   - after write + reload, require automation registration convergence.
+   - if convergence fails, rollback the write and return explicit failure.
+2. Enforce timeout-bound reload handling with clear error messaging.
+3. Remove managed-action browser fallback behavior for create/delete/enable:
+   - if Topomation WS backend commands are unavailable, fail fast with explicit
+     operator guidance instead of trying alternate browser paths.
+4. Document the workflow rule: managed-action validation is run in the local
+   `hass` runtime in this dev container (no remote probing).
+
+**Rationale**:
+
+1. A write is not successful until HA runtime registration is confirmed.
+2. Failing fast is safer than silent fallback divergence.
+3. In-instance runtime tests match deployment architecture and reduce false confidence.
+4. Explicit errors shorten triage time and reduce repeated blind iterations.
+
+**Consequences**:
+
+- ✅ Managed action saves now surface deterministic failures when HA does not register rules.
+- ✅ Failed create attempts are rolled back to avoid stale unmanaged config entries.
+- ✅ Frontend paths now consistently exercise integration backend commands.
+- ✅ Workflow guidance is aligned with process-managed dev HA constraints.
+- ⚠️ Older installs lacking the new WS commands now fail explicitly instead of using fallback behavior.
+
+---
+
 ## How to Use This Log
 
 ### When to Create an ADR

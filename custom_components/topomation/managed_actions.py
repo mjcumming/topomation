@@ -181,9 +181,20 @@ class TopomationManagedActions:
 
         await self._async_reload_automation(automation_id=automation_id)
 
-        entity_id = await self._wait_for_entity_id(automation_id)
-        if entity_id is not None:
-            self._apply_topomation_grouping(entity_id, trigger_type)
+        entity_id = await self._wait_for_entity_id(
+            automation_id,
+            attempts=80,
+            delay_seconds=0.25,
+        )
+        if entity_id is None:
+            await self._async_rollback_rule(automation_id)
+            raise ValueError(
+                "Topomation could not verify automation registration in Home Assistant "
+                "after reload. The write was reverted. Check that automations.yaml is "
+                "valid and actively included by your Home Assistant configuration."
+            )
+
+        self._apply_topomation_grouping(entity_id, trigger_type)
 
         return {
             "id": automation_id,
@@ -528,21 +539,49 @@ class TopomationManagedActions:
             service_data = {}
 
         try:
-            await self.hass.services.async_call(
-                AUTOMATION_DOMAIN,
-                SERVICE_RELOAD,
-                service_data,
-                blocking=True,
-            )
+            async with asyncio.timeout(45):
+                await self.hass.services.async_call(
+                    AUTOMATION_DOMAIN,
+                    SERVICE_RELOAD,
+                    service_data,
+                    blocking=True,
+                )
+        except TimeoutError as err:
+            raise ValueError("Timed out waiting for Home Assistant automation reload") from err
         except Exception:
             if automation_id is None:
                 raise
-            await self.hass.services.async_call(
-                AUTOMATION_DOMAIN,
-                SERVICE_RELOAD,
-                {},
-                blocking=True,
-            )
+            try:
+                async with asyncio.timeout(45):
+                    await self.hass.services.async_call(
+                        AUTOMATION_DOMAIN,
+                        SERVICE_RELOAD,
+                        {},
+                        blocking=True,
+                    )
+            except TimeoutError as err:
+                raise ValueError("Timed out waiting for Home Assistant automation reload") from err
+
+    async def _async_rollback_rule(self, automation_id: str) -> None:
+        """Best-effort rollback when create write did not register in runtime."""
+        removed = False
+        try:
+            async with self._mutation_lock:
+                config_entries = await self._async_read_automation_config_file()
+                removed = self._delete_automation_config(config_entries, automation_id)
+                if removed:
+                    await self._async_write_automation_config_file(config_entries)
+        except Exception:  # pragma: no cover - defensive rollback path
+            _LOGGER.exception("Failed to rollback unmanaged automation create %s", automation_id)
+            return
+
+        if not removed:
+            return
+
+        try:
+            await self._async_reload_automation()
+        except Exception:  # pragma: no cover - defensive rollback path
+            _LOGGER.exception("Failed to reload automations after rollback for %s", automation_id)
 
     async def _async_read_automation_config_file(self) -> list[dict[str, Any]]:
         """Read automations.yaml-like config list."""
@@ -618,7 +657,9 @@ def _read_automation_config_file(path: str) -> list[dict[str, Any]]:
     if raw is None:
         return []
     if not isinstance(raw, list):
-        raise ValueError("Automation config file must contain a list")
+        raise ValueError(
+            f"Automation config file '{path}' must contain a YAML list, got {type(raw).__name__}"
+        )
 
     normalized: list[dict[str, Any]] = []
     for item in raw:

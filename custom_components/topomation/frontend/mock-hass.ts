@@ -449,6 +449,87 @@ function slugify(value: string): string {
   return slug || "item";
 }
 
+const TOPOMATION_METADATA_PREFIX = "[topomation]";
+const TOPOMATION_AUTOMATION_ID_PREFIX = "topomation_";
+
+function parseTopomationMetadata(
+  description: unknown
+): { location_id: string; trigger_type: "occupied" | "vacant"; require_dark?: boolean } | null {
+  if (typeof description !== "string" || !description.includes(TOPOMATION_METADATA_PREFIX)) {
+    return null;
+  }
+
+  for (const line of description.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith(TOPOMATION_METADATA_PREFIX)) continue;
+    const payload = trimmed.slice(TOPOMATION_METADATA_PREFIX.length).trim();
+    if (!payload) return null;
+
+    try {
+      const parsed = JSON.parse(payload) as {
+        location_id?: unknown;
+        trigger_type?: unknown;
+        require_dark?: unknown;
+      };
+      if (
+        typeof parsed.location_id === "string" &&
+        (parsed.trigger_type === "occupied" || parsed.trigger_type === "vacant")
+      ) {
+        return {
+          location_id: parsed.location_id,
+          trigger_type: parsed.trigger_type,
+          require_dark:
+            typeof parsed.require_dark === "boolean" ? parsed.require_dark : undefined,
+        };
+      }
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
+}
+
+function extractActionSummary(config: Record<string, any>): {
+  action_entity_id?: string;
+  action_service?: string;
+} {
+  const actionBlock = config?.actions ?? config?.action;
+  const firstAction = Array.isArray(actionBlock) ? actionBlock[0] : actionBlock;
+  if (!firstAction || typeof firstAction !== "object") return {};
+
+  const rawService = typeof firstAction.action === "string" ? firstAction.action : "";
+  const actionService = rawService.includes(".") ? rawService.split(".").slice(1).join(".") : rawService;
+  const targetEntityId = firstAction?.target?.entity_id;
+  if (typeof targetEntityId === "string") {
+    return {
+      action_entity_id: targetEntityId,
+      action_service: actionService || undefined,
+    };
+  }
+  return { action_service: actionService || undefined };
+}
+
+function hasDarkCondition(config: Record<string, any>): boolean {
+  const conditions = config?.conditions ?? config?.condition;
+  const stack = Array.isArray(conditions) ? [...conditions] : conditions ? [conditions] : [];
+  while (stack.length > 0) {
+    const condition = stack.pop();
+    if (!condition || typeof condition !== "object") continue;
+    if (
+      condition.condition === "state" &&
+      condition.entity_id === "sun.sun" &&
+      condition.state === "below_horizon"
+    ) {
+      return true;
+    }
+    if (Array.isArray(condition.conditions)) {
+      stack.push(...condition.conditions);
+    }
+  }
+  return false;
+}
+
 type EventualConsistencyOptions = {
   list_stale_reads_after_module_config?: number;
   apply_delay_ms?: number;
@@ -595,6 +676,45 @@ export function createMockHass(options: any = {}): any {
     return undefined;
   };
 
+  const findAutomationConfigIdByEntityId = (entityId: string) => {
+    for (const [configId, entry] of automationEntryByConfigId.entries()) {
+      if (entry.entity_id === entityId) return configId;
+    }
+    return undefined;
+  };
+
+  const listManagedActionRules = (locationId: string) =>
+    Array.from(automationEntryByConfigId.entries())
+      .map(([configId, entry]) => {
+        const config = automationConfigsById[configId];
+        if (!config || typeof config !== "object") return undefined;
+
+        const metadata = parseTopomationMetadata(config.description);
+        if (!metadata || metadata.location_id !== locationId) return undefined;
+
+        const summary = extractActionSummary(config);
+        const stateObj = states[entry.entity_id];
+        const enabled = stateObj ? stateObj.state !== "off" : true;
+
+        return {
+          id: configId,
+          entity_id: entry.entity_id,
+          name: String(config.alias || entry.entity_id),
+          trigger_type: metadata.trigger_type,
+          action_entity_id: summary.action_entity_id,
+          action_service: summary.action_service,
+          require_dark:
+            typeof metadata.require_dark === "boolean"
+              ? metadata.require_dark
+              : hasDarkCondition(config),
+          enabled,
+        };
+      })
+      .filter(Boolean)
+      .sort((left, right) =>
+        String(left?.name || "").localeCompare(String(right?.name || ""))
+      ) as Array<Record<string, any>>;
+
   const persistSnapshot = () => {
     if (!persistenceAvailable) return;
     try {
@@ -653,6 +773,160 @@ export function createMockHass(options: any = {}): any {
       return { locations: cloneLocations(locations) };
     }
     flushPendingModuleConfig();
+    if (request.type === "topomation/actions/rules/list") {
+      const locationId = String(request.location_id || "").trim();
+      if (!locationId) {
+        throw new Error("invalid_payload: location_id is required");
+      }
+      return { rules: listManagedActionRules(locationId) };
+    }
+    if (request.type === "topomation/actions/rules/create") {
+      const locationId = String(request.location_id || "").trim();
+      const triggerType = request.trigger_type === "vacant" ? "vacant" : "occupied";
+      const actionEntityId = String(request.action_entity_id || "").trim();
+      const actionService = String(request.action_service || "").trim() || "turn_off";
+      const alias = String(request.name || "Topomation managed rule").trim() || "Topomation managed rule";
+      if (!locationId || !actionEntityId) {
+        throw new Error("invalid_payload: location_id and action_entity_id are required");
+      }
+
+      const occupancyEntityId = Object.keys(states).find((entityId) => {
+        if (!entityId.startsWith("binary_sensor.")) return false;
+        const attrs = states[entityId]?.attributes || {};
+        return attrs.device_class === "occupancy" && attrs.location_id === locationId;
+      });
+      if (!occupancyEntityId) {
+        throw new Error(`No occupancy binary sensor found for location '${locationId}'`);
+      }
+
+      const random = Math.floor(Math.random() * 1_000_000)
+        .toString(36)
+        .padStart(4, "0");
+      const configId = `${TOPOMATION_AUTOMATION_ID_PREFIX}${slugify(locationId)}_${triggerType}_${Date.now()}_${random}`;
+      const requireDark = Boolean(request.require_dark);
+      const actionDomain = actionEntityId.includes(".") ? actionEntityId.split(".", 1)[0] : "homeassistant";
+      const triggerState = triggerType === "occupied" ? "on" : "off";
+
+      const configPayload = {
+        id: configId,
+        alias,
+        description:
+          "Managed by Topomation.\n" +
+          `${TOPOMATION_METADATA_PREFIX} ${JSON.stringify({
+            version: 2,
+            location_id: locationId,
+            trigger_type: triggerType,
+            require_dark: requireDark,
+          })}`,
+        triggers: [
+          {
+            trigger: "state",
+            entity_id: occupancyEntityId,
+            to: triggerState,
+          },
+        ],
+        conditions: requireDark
+          ? [
+              {
+                condition: "state",
+                entity_id: "sun.sun",
+                state: "below_horizon",
+              },
+            ]
+          : [],
+        actions: [
+          {
+            action: `${actionDomain}.${actionService}`,
+            target: {
+              entity_id: actionEntityId,
+            },
+          },
+        ],
+        mode: "single",
+      };
+      automationConfigsById[configId] = configPayload;
+
+      const entry = {
+        entity_id: `automation.${slugify(alias)}`,
+        unique_id: configId,
+        domain: "automation",
+        platform: "automation",
+        labels: [],
+        categories: {},
+      };
+      automationEntryByConfigId.set(configId, entry);
+      states = {
+        ...states,
+        [entry.entity_id]: {
+          entity_id: entry.entity_id,
+          state: "on",
+          attributes: {
+            friendly_name: alias,
+            id: configId,
+          },
+        },
+      };
+      connection.fireEvent("state_changed", {
+        entity_id: entry.entity_id,
+        new_state: states[entry.entity_id],
+      });
+      persistSnapshot();
+
+      return {
+        rule: {
+          id: configId,
+          entity_id: entry.entity_id,
+          name: alias,
+          trigger_type: triggerType,
+          action_entity_id: actionEntityId,
+          action_service: actionService,
+          require_dark: requireDark,
+          enabled: true,
+        },
+      };
+    }
+    if (request.type === "topomation/actions/rules/delete") {
+      const automationId = String(request.automation_id || "").trim();
+      const entityId = String(request.entity_id || "").trim();
+      const configId = automationId || (entityId ? findAutomationConfigIdByEntityId(entityId) : undefined);
+      if (!configId) {
+        throw new Error("invalid_payload: automation_id or entity_id is required");
+      }
+
+      const entry = automationEntryByConfigId.get(configId);
+      delete automationConfigsById[configId];
+      automationEntryByConfigId.delete(configId);
+      if (entry) {
+        const nextStates = { ...states };
+        delete nextStates[entry.entity_id];
+        states = nextStates;
+        connection.fireEvent("state_changed", {
+          entity_id: entry.entity_id,
+          new_state: null,
+        });
+      }
+      persistSnapshot();
+      return { success: true };
+    }
+    if (request.type === "topomation/actions/rules/set_enabled") {
+      const entityId = String(request.entity_id || "").trim();
+      if (!entityId || !states[entityId]) {
+        throw new Error(`Entity not found: ${entityId}`);
+      }
+      states = {
+        ...states,
+        [entityId]: {
+          ...states[entityId],
+          state: request.enabled ? "on" : "off",
+        },
+      };
+      connection.fireEvent("state_changed", {
+        entity_id: entityId,
+        new_state: states[entityId],
+      });
+      persistSnapshot();
+      return { success: true };
+    }
     if (request.type === "config/entity_registry/list") {
       const stateEntries = Object.keys(states).map((entityId) => ({
         entity_id: entityId,
@@ -1210,18 +1484,42 @@ export function createMockHass(options: any = {}): any {
     throw new Error(`Unsupported mock API request: ${method} ${endpoint}`);
   };
 
-  const buildHass = () => ({
-    callWS,
-    callApi,
-    callService: async () => {},
-    connection,
-    states,
-    areas,
-    floors: MOCK_FLOORS,
-    config,
-    localize: (key: string) => key,
-    themes: { darkMode: currentTheme === "dark", theme: currentTheme },
-  });
+  const buildHass = () => {
+    const hass: any = {
+      callWS,
+      callApi,
+      callService: async () => {},
+      connection,
+      config,
+      localize: (key: string) => key,
+    };
+
+    // Expose live references so tests and harness code always observe
+    // the current in-memory state after internal map replacements.
+    Object.defineProperties(hass, {
+      states: {
+        enumerable: true,
+        get: () => states,
+        set: (next: Record<string, any>) => {
+          states = next;
+        },
+      },
+      areas: {
+        enumerable: true,
+        get: () => areas,
+      },
+      floors: {
+        enumerable: true,
+        get: () => MOCK_FLOORS,
+      },
+      themes: {
+        enumerable: true,
+        get: () => ({ darkMode: currentTheme === "dark", theme: currentTheme }),
+      },
+    });
+
+    return hass;
+  };
 
   return {
     hass: buildHass(),
@@ -1235,7 +1533,7 @@ export function createMockHass(options: any = {}): any {
       currentTheme = t;
       document.documentElement.setAttribute("data-theme", t);
     },
-    getReactiveHass: () => ({ ...buildHass() }),
+    getReactiveHass: () => buildHass(),
     getLocations: () => cloneLocations(locations),
     clearPersistence: () => {
       if (!persistenceAvailable) return;

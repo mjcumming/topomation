@@ -7,6 +7,8 @@ Use this as the canonical workflow for running and restarting Home Assistant whi
 - This workspace is already inside the development container.
 - For Topomation dev/testing here, treat Home Assistant as a process managed by `hass`.
 - Do not run Docker lifecycle commands (`docker`, `docker compose`, container restarts) as part of this workflow.
+- Do not probe remote Home Assistant nodes from this workflow; validate against the
+  local in-container `hass` runtime and its API surface.
 - Restart behavior only through:
   - stopping/starting the `hass` process, or
   - HA API restart endpoint.
