@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import logging
 import re
-from weakref import WeakKeyDictionary
 from typing import Any
+from weakref import WeakKeyDictionary
 
 import voluptuous as vol
 from homeassistant.components import websocket_api
@@ -38,7 +38,7 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
-_CONNECTION_ENTRY_HINTS: "WeakKeyDictionary[object, str]" = WeakKeyDictionary()
+_CONNECTION_ENTRY_HINTS: WeakKeyDictionary[object, str] = WeakKeyDictionary()
 
 _SUPPORTED_LOCATION_TYPES = frozenset(
     {
