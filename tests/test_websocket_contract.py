@@ -212,6 +212,44 @@ async def test_locations_create_allows_floor_and_area(hass: HomeAssistant) -> No
     assert area_payload["success"] is True
     assert area_payload["location"]["modules"]["_meta"]["type"] == "area"
     assert area_payload["location"]["parent_id"] == floor_payload["location"]["id"]
+    assert area_payload["location"]["ha_area_id"] is not None
+
+    area_registry = ar.async_get(hass)
+    created_area = area_registry.async_get_area(area_payload["location"]["ha_area_id"])
+    assert created_area is not None
+    assert created_area.name == "Bonus Room"
+
+
+@pytest.mark.asyncio
+async def test_locations_create_rejects_unknown_explicit_ha_area_id(
+    hass: HomeAssistant,
+) -> None:
+    """locations/create fails when explicit ha_area_id does not exist in HA registry."""
+    entry = MockConfigEntry(domain=DOMAIN, data={}, entry_id="test_entry")
+    entry.add_to_hass(hass)
+
+    with patch("custom_components.topomation.async_register_panel", AsyncMock()):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    connection = _fake_connection()
+    handle_locations_create(
+        hass,
+        connection,
+        {
+            "id": 30,
+            "type": WS_TYPE_LOCATIONS_CREATE,
+            "name": "Invalid Linked Area",
+            "parent_id": None,
+            "meta": {"type": "area"},
+            "ha_area_id": "does_not_exist",
+        },
+    )
+
+    assert connection.send_result.call_count == 0
+    connection.send_error.assert_called_once()
+    err_args = connection.send_error.call_args[0]
+    assert err_args[1] == "ha_area_not_found"
 
 
 @pytest.mark.asyncio

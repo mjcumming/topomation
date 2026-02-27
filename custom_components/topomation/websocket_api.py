@@ -537,19 +537,54 @@ def handle_locations_create(
         connection.send_error(msg["id"], "invalid_parent", parent_error or "Invalid parent for type")
         return
 
+    area_registry: ar.AreaRegistry | None = None
+    created_ha_area_id: str | None = None
+
     try:
-        location_id = _next_location_id(loc_mgr, location_type, name)
         ha_area_id = msg.get("ha_area_id")
         if location_type != "area":
             ha_area_id = None
+            location_id = _next_location_id(loc_mgr, location_type, name)
+        else:
+            area_registry = ar.async_get(hass)
+            if isinstance(ha_area_id, str) and ha_area_id:
+                if area_registry.async_get_area(ha_area_id) is None:
+                    connection.send_error(
+                        msg["id"],
+                        "ha_area_not_found",
+                        f"HA area '{ha_area_id}' not found",
+                    )
+                    return
+            else:
+                nearest_floor_id = _nearest_floor_id(loc_mgr, parent_id)
+                created_area = area_registry.async_create(name=name, floor_id=nearest_floor_id)
+                ha_area_id = str(created_area.id)
+                created_ha_area_id = ha_area_id
+            location_id = f"area_{ha_area_id}"
 
-        location = loc_mgr.create_location(
-            id=location_id,
-            name=name,
-            parent_id=parent_id,
-            is_explicit_root=False,
-            ha_area_id=ha_area_id,
-        )
+        existing = loc_mgr.get_location(location_id)
+        if existing is not None:
+            update_kwargs: dict[str, Any] = {}
+            if getattr(existing, "name", None) != name:
+                update_kwargs["name"] = name
+            if getattr(existing, "parent_id", None) != parent_id:
+                update_kwargs["parent_id"] = parent_id if parent_id is not None else ""
+            if location_type == "area" and getattr(existing, "ha_area_id", None) != ha_area_id:
+                update_kwargs["ha_area_id"] = ha_area_id
+
+            location = (
+                loc_mgr.update_location(location_id, **update_kwargs)
+                if update_kwargs
+                else existing
+            )
+        else:
+            location = loc_mgr.create_location(
+                id=location_id,
+                name=name,
+                parent_id=parent_id,
+                is_explicit_root=False,
+                ha_area_id=ha_area_id,
+            )
 
         merged_meta = {
             **meta,
@@ -581,6 +616,9 @@ def handle_locations_create(
             },
         )
     except ValueError as err:
+        if area_registry is not None and created_ha_area_id:
+            if area_registry.async_get_area(created_ha_area_id) is not None:
+                area_registry.async_delete(created_ha_area_id)
         connection.send_error(msg["id"], "create_failed", str(err))
 
 

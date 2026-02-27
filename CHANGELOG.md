@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.18] - 2026-02-27
+
+### Fixed
+
+- Creating an `area` from Topomation now creates/links a real Home Assistant
+  Area Registry entry and persists the resulting `ha_area_id`.
+- Area creation now uses canonical area wrapper IDs (`area_<ha_area_id>`) and
+  reuses pre-existing wrappers when HA sync races in first, preventing duplicate
+  create failures.
+
+### Added
+
+- WebSocket contract coverage for:
+  - automatic HA area creation/linking on `locations/create` for `type=area`
+  - explicit error when a caller passes a non-existent `ha_area_id`
+
 ## [0.1.17] - 2026-02-27
 
 ### Changed
