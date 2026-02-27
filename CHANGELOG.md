@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.12] - 2026-02-27
+
+### Changed
+
+- Managed-action implementation rewritten to match Home Assistant's own
+  `config/automation.py` pattern: read `automations.yaml`, upsert by id, write
+  atomically, call `automation.reload`. Removed include-directory detection,
+  polling loop, rollback logic, and ~700 lines of redundant code.
+- Managed-action writes now always target `automations.yaml` (same as HA's
+  built-in automation config API).
+
 ## [0.1.11] - 2026-02-27
 
 ### Fixed
