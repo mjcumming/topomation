@@ -30,15 +30,21 @@ if os.path.isfile(_CONFIG_ENV):
     with open(_CONFIG_ENV) as f:
         for line in f:
             line = line.strip()
-            if not line or line.startswith("#"):
+            if not line or line.startswith("#") or line.startswith("if ") or line.startswith("else") or line.startswith("fi") or "export " in line:
                 continue
             if "=" in line:
                 k, v = line.split("=", 1)
                 v = v.strip().strip("'\"")
                 os.environ.setdefault(k, v)
 
-HA_URL = os.environ.get("HA_URL", "http://localhost:8123").rstrip("/")
-HA_TOKEN = os.environ.get("HA_TOKEN", "")
+# Resolve dev vs prod (ha-config.env may have HA_URL_DEV/PROD + HA_TARGET)
+_target = os.environ.get("HA_TARGET", "dev")
+if _target == "prod" and os.environ.get("HA_URL_PROD"):
+    HA_URL = os.environ.get("HA_URL_PROD", "http://localhost:8123").rstrip("/")
+    HA_TOKEN = os.environ.get("HA_TOKEN_PROD", "")
+else:
+    HA_URL = os.environ.get("HA_URL_DEV", os.environ.get("HA_URL", "http://localhost:8123")).rstrip("/")
+    HA_TOKEN = os.environ.get("HA_TOKEN_DEV", os.environ.get("HA_TOKEN", ""))
 
 
 def main() -> int:

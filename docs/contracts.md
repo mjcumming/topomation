@@ -124,6 +124,24 @@ Additional save points:
   - successful create/update/delete should not visually revert checkbox/select state
     during temporary HA registry/config eventual consistency windows.
   - if convergence polling times out, user gets explicit "saved, still syncing" feedback.
+- **Automation config source**: The integration uses the same REST API as the Home Assistant
+  automation UI (`/api/config/automation/config/<id>`). That API always writes to
+  `automations.yaml` (HA core constant). The automation component reload re-reads config
+  from whatever `configuration.yaml` includes; if that does not include `automations.yaml`,
+  neither UI-created nor API-created automations will load. Default HA config includes
+  `automation: !include automations.yaml`; if you use only e.g. `!include_dir_list automations/`,
+  add `!include automations.yaml` so the engine loads the file the UI/API write to.
+- **Rules in automations.yaml but not in the UI**: If rules exist in `automations.yaml` but do
+  not appear in Settings → Automations & scenes, the usual cause is that `configuration.yaml`
+  does not include that file. Check the `automation:` key; it must load `automations.yaml`
+  (e.g. `automation: !include automations.yaml`). Without that, HA never loads the file, so
+  nothing in it appears in the UI or runs.
+- **Created rule metadata (match UI Save dialog)**: When creating a managed-action automation,
+  the integration sets: **name** (alias in config), **description** (metadata + Topomation
+  marker), **area** (entity registry area_id from location’s `ha_area_id` when present),
+  **category** (Topomation), and **labels** (Topomation, Topomation - On Occupied / On Vacant).
+  This matches the Settings → Automations & scenes → Save dialog options so rules appear
+  correctly in the UI and by area/category/labels.
 
 ## C-010 Panel authorization contract
 

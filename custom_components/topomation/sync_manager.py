@@ -15,6 +15,7 @@ from home_topology import EventBus, LocationManager
 from homeassistant.core import Event as HAEvent
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import area_registry as ar
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
 fr: Any | None
@@ -52,6 +53,7 @@ class SyncManager:
 
         # Registries
         self.area_registry = ar.async_get(hass)
+        self.device_registry = dr.async_get(hass)
         self.entity_registry = er.async_get(hass)
         self.floor_registry = fr.async_get(hass) if fr else None
 
@@ -162,13 +164,27 @@ class SyncManager:
         except ValueError as e:
             _LOGGER.warning("Failed to import area %s: %s", area.name, e)
 
+    def _entity_area_id(self, entity: er.RegistryEntry) -> str | None:
+        """Resolve area_id for entity (direct or inherited from device)."""
+        if entity.area_id:
+            return entity.area_id
+        if entity.device_id:
+            device = self.device_registry.async_get(entity.device_id)
+            if device and device.area_id:
+                return device.area_id
+        return None
+
     async def _map_entities(self) -> None:
-        """Reconcile entity mapping from HA area assignments."""
+        """Reconcile entity mapping from HA area assignments.
+
+        Includes entities with direct area_id and those inheriting area from their device.
+        """
         desired_by_location: dict[str, set[str]] = {}
         for entity in self.entity_registry.entities.values():
-            if not entity.area_id:
+            area_id = self._entity_area_id(entity)
+            if not area_id:
                 continue
-            location_id = f"area_{entity.area_id}"
+            location_id = f"area_{area_id}"
             desired_by_location.setdefault(location_id, set()).add(entity.entity_id)
 
         # For HA-backed area wrappers, reconcile to exact HA assignment on startup/import.

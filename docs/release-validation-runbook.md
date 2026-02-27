@@ -48,16 +48,23 @@ Every release must pass this gate against a running Home Assistant instance.
 Do not cut a release from mock-only evidence.
 Topomation integration must be loaded in that HA instance; the live contract
 gate now fails fast when it is missing.
-For this dev container workflow, validate against the local in-container `hass`
-runtime/API path (no remote probing).
+
+**Release gate uses local/test environment by default.** The gate runs against
+`HA_URL_DEV` / `HA_TOKEN_DEV` (localhost). Production testing is optional and
+can be done separately by setting `HA_TARGET=prod` before running.
 
 ```bash
 cp tests/ha-config.env.template tests/ha-config.env
-# edit tests/ha-config.env with HA_URL + HA_TOKEN (+ optional AREA/entity IDs)
+# Edit tests/ha-config.env:
+#   HA_URL_DEV, HA_TOKEN_DEV (local/test - mandatory for release gate)
+#   HA_URL_PROD, HA_TOKEN_PROD (production - optional)
 chmod 600 tests/ha-config.env
 
-source tests/ha-config.env
-pytest tests/test-live-managed-actions-contract.py -v --live-ha --no-cov
+# Release gate always uses dev
+make test-release-live
+
+# Optional: test against production
+HA_TARGET=prod make test-release-live
 ```
 
 This verifies real HA automation registration, enumeration, config readback, and deletion.
@@ -67,7 +74,7 @@ be `automation.<config_id>`).
 
 Local token policy:
 
-1. Keep the token only in `tests/ha-config.env` (gitignored).
+1. Keep tokens only in `tests/ha-config.env` (gitignored).
 2. Never commit raw tokens into tracked docs or code.
 3. Rotate token immediately if it leaks.
 

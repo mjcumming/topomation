@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.14] - 2026-02-27
+
+### Added
+
+- ADR-HA-038 documenting managed-action REST API approach and configuration
+  requirements (`automations.yaml` must be included in `configuration.yaml`).
+- Stable automation IDs (location + trigger + action) so saves update in place
+  instead of creating duplicate rules.
+- Area assignment on created automations (from location `ha_area_id`) to match
+  the HA UI Save dialog.
+- Scripts: `verify-automation-crud.py` (create/read/delete), `query-area-entities.py`
+  (list entities in an area), `cleanup-topomation-automations.py` (dedupe rules).
+
+### Fixed
+
+- Entity enumeration now includes entities whose area is inherited from their
+  device (sync manager previously only considered entities with direct
+  `entity.area_id`), fixing incomplete SOURCES lists for areas with
+  device-assigned entities.
+
 ## [0.1.13] - 2026-02-27
 
 ### Changed

@@ -1515,6 +1515,49 @@ This created ambiguous signals and expensive deploy-test-iterate loops.
 
 ---
 
+### ADR-HA-038: Managed Actions REST API and Configuration Requirements (2026-02-27)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+
+Managed-action rules appeared to fail in production ("Saving..." then unchecked, rules
+not created) despite multiple implementation attempts (direct file I/O, include-path
+detection, rollback logic). Root cause turned out to be a **configuration issue** on
+the production machine: `configuration.yaml` did not include `automations.yaml`, so the
+REST API wrote successfully but the automation component never loaded the file.
+
+**Decision**:
+
+1. Use Home Assistant's config REST API (`POST`/`GET`/`DELETE`
+   `/api/config/automation/config/<id>`) exclusively. No direct file I/O.
+2. Document that `automation: !include automations.yaml` must be present in
+   `configuration.yaml` for managed-action (and HA UI–created) automations to load.
+3. Use stable automation IDs (location + trigger + action) so saves update in place
+   instead of duplicating rules.
+4. Include entities whose area is inherited from their device in location entity sync
+   (not only entities with direct `entity.area_id`).
+5. Set area, category, and labels on created automations to match the HA UI Save dialog.
+
+**Rationale**:
+
+1. The REST API is the canonical path; HA handles validation, write, and reload.
+2. Configuration is outside our control; clear documentation reduces support burden.
+3. Stable IDs prevent duplicate-rule accumulation from repeated saves.
+4. Many entities inherit area from device; omission caused incomplete SOURCES lists.
+5. Matching UI metadata improves discoverability and consistency.
+
+**Consequences**:
+
+- ✅ REST API approach works when configuration is correct; no integration bugs.
+- ✅ Stable IDs eliminate duplicate rules; cleanup script available for migration.
+- ✅ Entity enumeration now includes device-inherited area assignments.
+- ⚠️ Users with non-default automation include must add `automations.yaml`.
+- ℹ️ Verification scripts (`verify-automation-crud.py`, `query-area-entities.py`)
+  aid diagnosis.
+
+---
+
 ## How to Use This Log
 
 ### When to Create an ADR

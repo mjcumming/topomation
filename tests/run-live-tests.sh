@@ -21,30 +21,30 @@ REQUESTED_TEST_PATH="${1:-tests/test-realworld.py}"
 if [ ! -f "tests/ha-config.env" ]; then
     echo -e "${RED}❌ Missing tests/ha-config.env${NC}"
     echo ""
-    echo "Create it with your HA connection details:"
+    echo "Copy tests/ha-config.env.template to ha-config.env and set:"
+    echo "  HA_URL_DEV, HA_TOKEN_DEV (local/test - used by release gate)"
+    echo "  HA_URL_PROD, HA_TOKEN_PROD (production - optional, set HA_TARGET=prod to use)"
     echo ""
-    echo -e "${YELLOW}HA_URL=http://localhost:8123${NC}"
-    echo -e "${YELLOW}HA_TOKEN=your_long_lived_access_token_here${NC}"
-    echo -e "${YELLOW}TEST_MODE=live${NC}"
-    echo -e "${YELLOW}TEST_TIMEOUT=10${NC}"
-    echo ""
-    echo "Get token from HA:"
-    echo "  Profile → Security → Long-Lived Access Tokens"
+    echo "Get token from HA: Profile → Security → Long-Lived Access Tokens"
     echo ""
     exit 1
 fi
 
-# Load config
+# Load config (HA_TARGET may be set by caller, e.g. test-release-live.sh sets HA_TARGET=dev)
 source tests/ha-config.env
 
 # Verify required variables
 if [ -z "$HA_URL" ]; then
-    echo -e "${RED}❌ HA_URL not set in tests/ha-config.env${NC}"
+    echo -e "${RED}❌ HA_URL not set for current target${NC}"
+    echo "  For local/test: set HA_URL_DEV in tests/ha-config.env"
+    echo "  For production: set HA_URL_PROD and HA_TARGET=prod"
     exit 1
 fi
 
 if [ -z "$HA_TOKEN" ]; then
-    echo -e "${RED}❌ HA_TOKEN not set in tests/ha-config.env${NC}"
+    echo -e "${RED}❌ HA_TOKEN not set for current target${NC}"
+    echo "  For local/test (release gate): set HA_TOKEN_DEV in tests/ha-config.env"
+    echo "  For production: set HA_TOKEN_PROD and HA_TARGET=prod"
     exit 1
 fi
 

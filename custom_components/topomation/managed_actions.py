@@ -10,7 +10,6 @@ import asyncio
 import json
 import logging
 import time
-import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -192,7 +191,9 @@ class TopomationManagedActions:
                 f'No occupancy binary sensor found for location "{location_name}" ({location_id})'
             )
 
-        automation_id = self._build_automation_id(location_id, trigger_type)
+        automation_id = self._build_stable_automation_id(
+            location_id, trigger_type, action_entity_id
+        )
         trigger_state = "on" if trigger_type == "occupied" else "off"
         action_domain = (
             action_entity_id.split(".", 1)[0]
@@ -276,10 +277,20 @@ class TopomationManagedActions:
                 automation_id,
                 entity_id,
             )
-            self._apply_topomation_grouping(entity_id, trigger_type)
+            ha_area_id = getattr(location, "ha_area_id", None) or (
+                (getattr(location, "modules", None) or {})
+                .get("_meta", {})
+                .get("ha_area_id")
+            )
+            self._apply_topomation_grouping(
+                entity_id, trigger_type, area_id=ha_area_id
+            )
         else:
             _LOGGER.warning(
-                "[managed_actions] Rule created but entity not found automation_id=%s (may appear after refresh)",
+                "[managed_actions] Rule written via config API but entity did not appear. "
+                "The integration uses the same REST API as the HA automation UI (writes to automations.yaml). "
+                "Ensure configuration.yaml includes that file (e.g. automation: !include automations.yaml). "
+                "automation_id=%s",
                 automation_id,
             )
 
@@ -329,13 +340,18 @@ class TopomationManagedActions:
             return state.entity_id
         return None
 
-    def _build_automation_id(self, location_id: str, trigger_type: ActionTriggerType) -> str:
-        """Build a unique Topomation automation id."""
-        now_ms = time.time_ns() // 1_000_000
-        suffix = uuid.uuid4().hex[:6]
+    def _build_stable_automation_id(
+        self,
+        location_id: str,
+        trigger_type: ActionTriggerType,
+        action_entity_id: str,
+    ) -> str:
+        """Build a stable Topomation automation id so save updates in place instead of duplicating."""
+        loc_slug = self._slugify(location_id)
+        action_slug = self._slugify(action_entity_id)
         return (
             f"{_TOPOMATION_AUTOMATION_ID_PREFIX}"
-            f"{self._slugify(location_id)}_{trigger_type}_{now_ms}_{suffix}"
+            f"{loc_slug}_{trigger_type}_{action_slug}"
         )
 
     @staticmethod
@@ -416,7 +432,7 @@ class TopomationManagedActions:
         if not isinstance(first_action, Mapping):
             return None, None
         action_service_name: str | None = None
-        raw_service = first_action.get("action")
+        raw_service = first_action.get("action") or first_action.get("service")
         if isinstance(raw_service, str) and raw_service:
             action_service_name = raw_service.split(".", 1)[1] if "." in raw_service else raw_service
         target = first_action.get("target")
@@ -461,8 +477,14 @@ class TopomationManagedActions:
             return True
         return state.state != "off"
 
-    def _apply_topomation_grouping(self, entity_id: str, trigger_type: ActionTriggerType) -> None:
-        """Apply label/category grouping metadata to an automation entity."""
+    def _apply_topomation_grouping(
+        self,
+        entity_id: str,
+        trigger_type: ActionTriggerType,
+        *,
+        area_id: str | None = None,
+    ) -> None:
+        """Apply area, label, and category to an automation entity (matches UI Save dialog)."""
         entity_registry = er.async_get(self.hass)
         entry = entity_registry.async_get(entity_id)
         if entry is None:
@@ -482,10 +504,20 @@ class TopomationManagedActions:
         category_id = self._ensure_automation_category(_TOPOMATION_CATEGORY_NAME)
         if category_id is not None:
             categories["automation"] = category_id
+        update_kwargs: dict[str, Any] = {
+            "labels": labels,
+            "categories": categories,
+        }
+        if area_id is not None:
+            update_kwargs["area_id"] = area_id
         try:
-            entity_registry.async_update_entity(entity_id, labels=labels, categories=categories)
+            entity_registry.async_update_entity(entity_id, **update_kwargs)
         except Exception:
-            _LOGGER.debug("Failed to apply Topomation labels/categories for %s", entity_id, exc_info=True)
+            _LOGGER.debug(
+                "Failed to apply Topomation area/labels/categories for %s",
+                entity_id,
+                exc_info=True,
+            )
 
     def _ensure_label(self, name: str) -> str | None:
         """Create label if needed and return label_id."""
