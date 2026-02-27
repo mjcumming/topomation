@@ -91,6 +91,10 @@ async def test_setup_entry_attaches_modules(
         await hass.async_block_till_done()
 
         # THEN
+        mock_automation_module.set_platform.assert_called_once()
+        mock_automation_module.set_occupancy_module.assert_called_once_with(
+            mock_occupancy_module
+        )
         mock_occupancy_module.attach.assert_called_once()
         mock_automation_module.attach.assert_called_once()
 

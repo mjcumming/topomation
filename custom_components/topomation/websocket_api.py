@@ -937,6 +937,11 @@ async def handle_action_rules_list(
     try:
         rules = await managed_action_rules.async_list_rules(msg["location_id"])
     except ValueError as err:
+        _LOGGER.warning(
+            "Managed action rule listing rejected for location '%s': %s",
+            msg.get("location_id"),
+            err,
+        )
         connection.send_error(msg["id"], "list_failed", str(err))
         return
     except Exception as err:  # pragma: no cover - defensive runtime boundary
@@ -991,6 +996,12 @@ async def handle_action_rules_create(
             require_dark=bool(msg.get("require_dark", False)),
         )
     except ValueError as err:
+        _LOGGER.warning(
+            "Managed action rule create rejected for location '%s' target '%s': %s",
+            msg.get("location_id"),
+            msg.get("action_entity_id"),
+            err,
+        )
         connection.send_error(msg["id"], "create_failed", str(err))
         return
     except Exception as err:  # pragma: no cover - defensive runtime boundary
@@ -1045,6 +1056,12 @@ async def handle_action_rules_delete(
             entity_id=entity_id,
         )
     except ValueError as err:
+        _LOGGER.warning(
+            "Managed action rule delete rejected for automation_id='%s' entity_id='%s': %s",
+            automation_id,
+            entity_id,
+            err,
+        )
         connection.send_error(msg["id"], "delete_failed", str(err))
         return
     except Exception as err:  # pragma: no cover - defensive runtime boundary
@@ -1089,6 +1106,12 @@ async def handle_action_rules_set_enabled(
             enabled=msg["enabled"],
         )
     except ValueError as err:
+        _LOGGER.warning(
+            "Managed action rule set_enabled rejected for entity '%s' enabled=%s: %s",
+            msg.get("entity_id"),
+            msg.get("enabled"),
+            err,
+        )
         connection.send_error(msg["id"], "set_enabled_failed", str(err))
         return
     except Exception as err:  # pragma: no cover - defensive runtime boundary

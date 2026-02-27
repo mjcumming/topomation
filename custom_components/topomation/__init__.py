@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
+from datetime import datetime
 from inspect import isawaitable
 from typing import TYPE_CHECKING, Any
 
@@ -16,6 +17,7 @@ from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.storage import Store
+from homeassistant.util import dt as dt_util
 
 from .actions_runtime import (
     TopomationActionsRuntime,
@@ -102,6 +104,41 @@ class HAPlatformAdapter:
             return state.attributes.get("unit_of_measurement")
         return None
 
+    def call_service(
+        self,
+        domain: str,
+        service: str,
+        entity_id: str | None = None,
+        data: dict[str, Any] | None = None,
+    ) -> bool:
+        """Schedule a Home Assistant service call for automation engine actions."""
+        payload = dict(data or {})
+        if entity_id and "entity_id" not in payload:
+            payload["entity_id"] = entity_id
+
+        try:
+            self.hass.async_create_task(
+                self.hass.services.async_call(
+                    domain,
+                    service,
+                    payload,
+                    blocking=False,
+                )
+            )
+            return True
+        except Exception:  # pragma: no cover - defensive around runtime service dispatch
+            _LOGGER.exception(
+                "Failed to schedule automation action service %s.%s for %s",
+                domain,
+                service,
+                entity_id or "<none>",
+            )
+            return False
+
+    def get_current_time(self) -> datetime:
+        """Return timezone-aware current time for automation engine conditions."""
+        return dt_util.utcnow()
+
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Topomation from a config entry."""
@@ -120,9 +157,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # 3. Initialize modules
     platform_adapter = HAPlatformAdapter(hass)
+    occupancy_module = OccupancyModule()
+    automation_module = AutomationModule()
+    automation_module.set_platform(platform_adapter)
+    automation_module.set_occupancy_module(occupancy_module)
     modules = {
-        "occupancy": OccupancyModule(),
-        "automation": AutomationModule(),
+        "occupancy": occupancy_module,
+        "automation": automation_module,
         "ambient": AmbientLightModule(platform_adapter=platform_adapter),
     }
 

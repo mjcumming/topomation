@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.11] - 2026-02-27
+
+### Fixed
+
+- Topomation now wires `AutomationModule` with a concrete Home Assistant
+  platform adapter during setup (`set_platform` + occupancy module linkage),
+  preventing runtime initialization gaps reported in production logs.
+- Managed-action WebSocket handlers now emit explicit warning logs for
+  `list/create/delete/set_enabled` validation failures so `Saving...` reverts
+  are traceable in `ha core logs`.
+- Managed-action registration failure message now points to active automation
+  include-path validity/writability instead of only `automations.yaml`.
+
 ## [0.1.10] - 2026-02-27
 
 ### Fixed

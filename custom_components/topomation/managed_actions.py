@@ -198,8 +198,8 @@ class TopomationManagedActions:
             await self._async_rollback_rule(automation_id)
             raise ValueError(
                 "Topomation could not verify automation registration in Home Assistant "
-                "after reload. The write was reverted. Check that automations.yaml is "
-                "valid and actively included by your Home Assistant configuration."
+                "after reload. The write was reverted. Check that your active automation "
+                "include path is valid and writable."
             )
 
         self._apply_topomation_grouping(entity_id, trigger_type)
@@ -612,6 +612,11 @@ class TopomationManagedActions:
             config_path,
             default_automation_path,
         )
+        _LOGGER.info(
+            "Managed automation storage strategy resolved: mode=%s path=%s",
+            self._storage_strategy.mode,
+            self._storage_strategy.path,
+        )
         return self._storage_strategy
 
     async def _async_write_managed_rule_config(
@@ -629,6 +634,12 @@ class TopomationManagedActions:
             await self._async_write_automation_config_file(config_entries, strategy.path)
             return
 
+        _LOGGER.debug(
+            "Writing managed automation rule %s via include directory %s (mode=%s)",
+            automation_id,
+            strategy.path,
+            strategy.mode,
+        )
         await self.hass.async_add_executor_job(
             _write_automation_include_rule_file,
             strategy.path,
