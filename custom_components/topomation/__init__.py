@@ -309,7 +309,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entry.async_on_unload(entry.add_update_listener(_async_handle_options_update))
 
     # 13. Register panel, WebSocket API, and services
-    await async_register_panel(hass)
+    await async_register_panel(hass, entry.entry_id)
     async_register_websocket_api(hass)
     async_register_services(hass)
 

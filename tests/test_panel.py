@@ -21,7 +21,7 @@ async def test_async_register_panel_registers_all_sidebar_views() -> None:
     )
 
     with patch("custom_components.topomation.panel.frontend.async_register_built_in_panel") as register_mock:
-        await async_register_panel(hass)
+        await async_register_panel(hass, "entry_123")
 
     hass.http.async_register_static_paths.assert_awaited_once()
     static_paths = hass.http.async_register_static_paths.await_args.args[0]
@@ -39,6 +39,7 @@ async def test_async_register_panel_registers_all_sidebar_views() -> None:
         assert call.kwargs["require_admin"] is True
         config = call.kwargs["config"]
         assert config["topomation_view"] == expected["view"]
+        assert config["entry_id"] == "entry_123"
         assert config["_panel_custom"]["name"] == "topomation-panel"
         assert config["_panel_custom"]["module_url"].startswith(
             f"{FRONTEND_URL}/topomation-panel.js?v="

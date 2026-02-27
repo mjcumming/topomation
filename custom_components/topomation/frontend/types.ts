@@ -139,4 +139,5 @@ export interface UpdateLocationData {
 
 export interface TopomationPanelConfig {
   title?: string;
+  entry_id?: string;
 }

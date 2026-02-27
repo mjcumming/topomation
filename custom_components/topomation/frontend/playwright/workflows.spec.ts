@@ -1,5 +1,26 @@
 import { expect, test } from "@playwright/test";
 
+async function expandTreeNodes(page: any, ids: string[]): Promise<void> {
+  await page.evaluate((expandIds) => {
+    const panel = document.querySelector("topomation-panel") as any;
+    const tree = panel?.shadowRoot?.querySelector("ht-location-tree") as any;
+    if (!tree) throw new Error("ht-location-tree not found");
+    const next = new Set<string>(Array.from(tree._expandedIds || []));
+    for (const id of expandIds) {
+      next.add(String(id));
+    }
+    tree._expandedIds = next;
+    tree.requestUpdate?.();
+  }, ids);
+}
+
+async function selectKitchen(page: any): Promise<void> {
+  await expandTreeNodes(page, ["main-building", "main-floor"]);
+  const kitchenRow = page.locator("ht-location-tree [data-id='kitchen']").first();
+  await expect(kitchenRow).toBeVisible();
+  await kitchenRow.click();
+}
+
 async function listLocations(page: any): Promise<any[]> {
   return await page.evaluate(async () => {
     const mock = (window as any).mockHass;
@@ -151,7 +172,7 @@ test("location delete workflow updates topology", async ({ page }) => {
 test("detection workflow saves occupancy source configuration", async ({ page }) => {
   await page.goto("/mock-harness.html");
 
-  await page.locator("ht-location-tree [data-id='kitchen']").first().click();
+  await selectKitchen(page);
 
   const motionSourceRow = page
     .locator("ht-location-inspector .source-card", { hasText: "Kitchen Motion" })
@@ -176,7 +197,7 @@ test("detection workflow saves occupancy source configuration", async ({ page })
 test("startup reapply toggle saves automation module config", async ({ page }) => {
   await page.goto("/mock-harness.html");
 
-  await page.locator("ht-location-tree [data-id='kitchen']").first().click();
+  await selectKitchen(page);
   const startupToggle = page.locator(
     "ht-location-inspector .startup-inline-toggle input[type='checkbox']"
   );
@@ -196,7 +217,7 @@ test("startup reapply toggle saves automation module config", async ({ page }) =
 test("event log respects subtree/all scope and captures integration events", async ({ page }) => {
   await page.goto("/mock-harness.html");
 
-  await page.locator("ht-location-tree [data-id='kitchen']").first().click();
+  await selectKitchen(page);
   await page.getByRole("button", { name: "Event Log" }).click();
   await expect(page.locator(".event-log")).toBeVisible();
 

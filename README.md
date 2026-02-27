@@ -118,6 +118,14 @@ data:
 - Ambient module support is available via integration runtime/WebSocket workflows.
   Ambient helper entities are intentionally not exposed yet.
 
+## Topology Mapping Policy
+
+- HA `floor`/`area` are the only HA structural objects Topomation maps for indoor topology.
+- Integration-owned topology nodes (`building`, `grounds`, `subarea`) remain internal behavioral containers (`sync_source=topology`).
+- Do not map Topomation structural nodes to HA `zone` objects.
+- Do not use HA `label` objects as structural hierarchy for topology.
+- HA labels may still be used for non-structural organization of managed automations (for example category/filtering in HA UI).
+
 ## Known Limits
 
 - `Only when dark` is currently sun-position based (`sun.sun`), not per-room lux.

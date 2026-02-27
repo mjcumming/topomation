@@ -10,6 +10,11 @@ import "./ht-location-dialog";
 
 type ManagerView = "location" | "occupancy" | "actions";
 
+const TREE_PANEL_SPLIT_STORAGE_KEY = "topomation:panel-tree-split";
+const TREE_PANEL_SPLIT_DEFAULT = 0.4;
+const TREE_PANEL_SPLIT_MIN = 0.25;
+const TREE_PANEL_SPLIT_MAX = 0.75;
+
 console.log("[topomation-panel] module loaded");
 
 // Dev UX: custom elements cannot be hot-replaced. On HMR updates, force a quick reload.
@@ -28,7 +33,9 @@ try {
 export class TopomationPanel extends LitElement {
   @property({ attribute: false }) public hass!: HomeAssistant;
   @property({ attribute: false }) public narrow = false;
-  @property({ attribute: false }) public panel?: { config?: { topomation_view?: ManagerView } };
+  @property({ attribute: false }) public panel?: {
+    config?: { topomation_view?: ManagerView; entry_id?: string };
+  };
   @property({ attribute: false }) public route?: { path?: string };
 
   // CRITICAL: Explicit static properties for Vite dev mode compatibility
@@ -53,6 +60,8 @@ export class TopomationPanel extends LitElement {
     _eventLogOpen: { state: true },
     _eventLogEntries: { state: true },
     _occupancyStateByLocation: { state: true },
+    _treePanelSplit: { state: true },
+    _isResizingPanels: { state: true },
   };
 
   @state() private _locations: Location[] = [];
@@ -83,6 +92,8 @@ export class TopomationPanel extends LitElement {
     data?: any;
   }> = [];
   @state() private _occupancyStateByLocation: Record<string, boolean> = {};
+  @state() private _treePanelSplit = TREE_PANEL_SPLIT_DEFAULT;
+  @state() private _isResizingPanels = false;
 
   private _hasLoaded = false;
   private _pendingLoadTimer?: number;
@@ -94,7 +105,9 @@ export class TopomationPanel extends LitElement {
   private _loadSeq = 0;
   private _reloadTimer?: number;
   private _consistencyReloadTimer?: number;
+  private _lastKnownEntryId?: string;
   private _opQueueByLocationId = new Map<string, Promise<void>>();
+  private _panelResizePointerId?: number;
 
   private _enqueueLocationOp(locationId: string, op: () => Promise<void>): Promise<void> {
     const prev = this._opQueueByLocationId.get(locationId) ?? Promise.resolve();
@@ -149,6 +162,7 @@ export class TopomationPanel extends LitElement {
   connectedCallback(): void {
     super.connectedCallback();
     console.log("TopomationPanel connected");
+    this._restorePanelSplitPreference();
     this._scheduleInitialLoad();
 
     // Keyboard shortcuts
@@ -163,6 +177,7 @@ export class TopomationPanel extends LitElement {
   disconnectedCallback(): void {
     super.disconnectedCallback();
     document.removeEventListener('keydown', this._handleKeyDown);
+    this._stopPanelSplitterDrag();
 
     if (this._pendingLoadTimer) {
       clearTimeout(this._pendingLoadTimer);
@@ -236,21 +251,51 @@ export class TopomationPanel extends LitElement {
       }
 
       .panel-container {
+        --tree-panel-basis: 40%;
         display: flex;
         height: 100%;
-        gap: 1px;
-        background: var(--divider-color);
+        min-width: 0;
       }
 
-      /* Tree Panel ~40% (min 300px) - from docs/history/2026.02.24-ui-design.md Section 2.1 */
+      /* Tree Panel defaults to ~40%, now user-resizable via splitter */
       .panel-left {
-        flex: 0 0 40%;
+        flex: 0 0 var(--tree-panel-basis);
         min-width: 300px;
-        max-width: 500px;
+        max-width: calc(100% - 410px);
         background: var(--card-background-color);
         overflow: hidden;
         display: flex;
         flex-direction: column;
+        min-height: 0;
+      }
+
+      .panel-splitter {
+        flex: 0 0 10px;
+        position: relative;
+        cursor: col-resize;
+        touch-action: none;
+        user-select: none;
+      }
+
+      .panel-splitter::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 4px;
+        width: 2px;
+        background: var(--divider-color);
+        transition: background-color 0.15s ease;
+      }
+
+      .panel-splitter:hover::before,
+      .panel-splitter.dragging::before,
+      .panel-splitter:focus-visible::before {
+        background: var(--primary-color);
+      }
+
+      .panel-splitter:focus-visible {
+        outline: none;
       }
 
       /* Details Panel ~60% (min 400px) */
@@ -261,13 +306,14 @@ export class TopomationPanel extends LitElement {
         overflow: hidden;
         display: flex;
         flex-direction: column;
+        min-height: 0;
       }
 
       /* Responsive - from docs/history/2026.02.24-ui-design.md Section 2.2 */
       @media (max-width: 1024px) {
         .panel-left {
-          flex: 0 0 300px;
           min-width: 280px;
+          max-width: calc(100% - 310px);
         }
         .panel-right {
           min-width: 300px;
@@ -281,9 +327,13 @@ export class TopomationPanel extends LitElement {
 
         .panel-left,
         .panel-right {
-          flex: 1;
+          flex: 1 1 auto;
           min-width: unset;
           max-width: unset;
+        }
+
+        .panel-splitter {
+          display: none;
         }
       }
 
@@ -521,9 +571,10 @@ export class TopomationPanel extends LitElement {
     const rightHeaderTitle = "Automation";
     const canCreateStructure = true;
     const deleteDisabledReason = this._deleteDisabledReason(selectedLocation);
+    const treePanelBasis = `${(this._treePanelSplit * 100).toFixed(1)}%`;
 
     return html`
-      <div class="panel-container">
+      <div class="panel-container" style=${`--tree-panel-basis: ${treePanelBasis};`}>
         <div class="panel-left">
           ${this._renderConflictBanner()}
           ${this._locations.length === 0 ? this._renderEmptyStateBanner() : ""}
@@ -573,6 +624,21 @@ export class TopomationPanel extends LitElement {
           ></ht-location-tree>
         </div>
 
+        <div
+          class="panel-splitter ${this._isResizingPanels ? "dragging" : ""}"
+          role="separator"
+          aria-label="Resize tree and configuration panels"
+          aria-orientation="vertical"
+          aria-valuemin=${Math.round(TREE_PANEL_SPLIT_MIN * 100)}
+          aria-valuemax=${Math.round(TREE_PANEL_SPLIT_MAX * 100)}
+          aria-valuenow=${Math.round(this._treePanelSplit * 100)}
+          tabindex="0"
+          title="Drag to resize panes. Double-click to reset."
+          @pointerdown=${this._handlePanelSplitterPointerDown}
+          @keydown=${this._handlePanelSplitterKeyDown}
+          @dblclick=${this._handlePanelSplitterReset}
+        ></div>
+
         <div class="panel-right">
           <div class="header">
             <div class="header-title">${rightHeaderTitle}</div>
@@ -580,6 +646,7 @@ export class TopomationPanel extends LitElement {
           <ht-location-inspector
             .hass=${this.hass}
             .location=${selectedLocation}
+            .entryId=${this._activeEntryId()}
             .forcedTab=${forcedInspectorTab}
             @source-test=${this._handleSourceTest}
           ></ht-location-inspector>
@@ -627,6 +694,7 @@ export class TopomationPanel extends LitElement {
         .open=${this._locationDialogOpen}
         .location=${this._editingLocation}
         .locations=${this._locations}
+        .entryId=${this._activeEntryId()}
         .defaultParentId=${this._newLocationDefaults?.parentId}
         .defaultType=${this._newLocationDefaults?.type}
         @dialog-closed=${() => {
@@ -655,9 +723,11 @@ export class TopomationPanel extends LitElement {
       console.log("hass.callWS available:", typeof this.hass.callWS);
 
       const result = await Promise.race([
-        this.hass.callWS<{ locations: Location[] }>({
-          type: "topomation/locations/list",
-        }),
+        this.hass.callWS<{ locations: Location[] }>(
+          this._withEntryId({
+            type: "topomation/locations/list",
+          })
+        ),
         new Promise((_, reject) =>
           setTimeout(() => reject(new Error("Timeout loading locations")), 8000)
         ),
@@ -911,12 +981,14 @@ export class TopomationPanel extends LitElement {
 
     await this._enqueueLocationOp(locationId, async () => {
       try {
-        await this.hass.callWS({
-          type: "topomation/locations/reorder",
-          location_id: locationId,
-          new_parent_id: newParentId ?? null,
-          new_index: newIndex,
-        });
+        await this.hass.callWS(
+          this._withEntryId({
+            type: "topomation/locations/reorder",
+            location_id: locationId,
+            new_parent_id: newParentId ?? null,
+            new_index: newIndex,
+          })
+        );
         await this._loadLocations(true);
         this._locationsVersion += 1;
       } catch (error: any) {
@@ -953,10 +1025,10 @@ export class TopomationPanel extends LitElement {
           type: "call_service",
           domain: "topomation",
           service,
-          service_data: {
+          service_data: this._serviceDataWithEntryId({
             location_id: locationId,
             source_id: "manual_ui",
-          },
+          }),
         });
         this._logEvent("ui", service, { locationId, source_id: "manual_ui" });
         await this._loadLocations(true);
@@ -1032,7 +1104,7 @@ export class TopomationPanel extends LitElement {
           type: "call_service",
           domain: "topomation",
           service,
-          service_data: serviceData,
+          service_data: this._serviceDataWithEntryId(serviceData),
         });
         this._logEvent("ui", service, { locationId, source_id: "manual_ui" });
         await this._loadLocations(true);
@@ -1060,11 +1132,13 @@ export class TopomationPanel extends LitElement {
 
     await this._enqueueLocationOp(locationId, async () => {
       try {
-        await this.hass.callWS({
-          type: "topomation/locations/update",
-          location_id: locationId,
-          changes: { name: String(newName) },
-        });
+        await this.hass.callWS(
+          this._withEntryId({
+            type: "topomation/locations/update",
+            location_id: locationId,
+            changes: { name: String(newName) },
+          })
+        );
         await this._loadLocations(true);
         this._locationsVersion += 1;
         this._showToast(`Renamed to "${newName}"`, "success");
@@ -1092,10 +1166,12 @@ export class TopomationPanel extends LitElement {
         const selectedWasDeleted = this._selectedId === location.id;
         const deletedParentId = location.parent_id ?? undefined;
 
-        await this.hass.callWS({
-          type: "topomation/locations/delete",
-          location_id: location.id,
-        });
+        await this.hass.callWS(
+          this._withEntryId({
+            type: "topomation/locations/delete",
+            location_id: location.id,
+          })
+        );
 
         await this._loadLocations(true);
         this._locationsVersion += 1;
@@ -1175,6 +1251,120 @@ export class TopomationPanel extends LitElement {
     }
   };
 
+  private _isSplitStackedLayout(): boolean {
+    if (this.narrow) return true;
+    if (typeof window.matchMedia !== "function") return false;
+    return window.matchMedia("(max-width: 768px)").matches;
+  }
+
+  private _clampPanelSplit(split: number): number {
+    if (!Number.isFinite(split)) return TREE_PANEL_SPLIT_DEFAULT;
+    return Math.min(TREE_PANEL_SPLIT_MAX, Math.max(TREE_PANEL_SPLIT_MIN, split));
+  }
+
+  private _setPanelSplit(split: number, persist = false): void {
+    const clamped = this._clampPanelSplit(split);
+    if (Math.abs(clamped - this._treePanelSplit) < 0.001) {
+      return;
+    }
+    this._treePanelSplit = clamped;
+    if (persist) {
+      this._persistPanelSplitPreference();
+    }
+  }
+
+  private _restorePanelSplitPreference(): void {
+    try {
+      const raw = window.localStorage?.getItem(TREE_PANEL_SPLIT_STORAGE_KEY);
+      if (!raw) return;
+      const parsed = Number(raw);
+      this._setPanelSplit(parsed);
+    } catch {
+      // ignore storage failures
+    }
+  }
+
+  private _persistPanelSplitPreference(): void {
+    try {
+      window.localStorage?.setItem(TREE_PANEL_SPLIT_STORAGE_KEY, this._treePanelSplit.toFixed(4));
+    } catch {
+      // ignore storage failures
+    }
+  }
+
+  private _applyPanelSplitFromClientX(clientX: number, persist = false): void {
+    const container = this.shadowRoot?.querySelector(".panel-container") as HTMLElement | null;
+    if (!container) return;
+    const rect = container.getBoundingClientRect();
+    if (rect.width <= 0) return;
+    const split = (clientX - rect.left) / rect.width;
+    this._setPanelSplit(split, persist);
+  }
+
+  private _handlePanelSplitterPointerDown = (e: PointerEvent): void => {
+    if (this._isSplitStackedLayout()) return;
+    e.preventDefault();
+    this._panelResizePointerId = e.pointerId;
+    this._isResizingPanels = true;
+    this._applyPanelSplitFromClientX(e.clientX);
+    window.addEventListener("pointermove", this._handlePanelSplitterPointerMove);
+    window.addEventListener("pointerup", this._handlePanelSplitterPointerUp);
+    window.addEventListener("pointercancel", this._handlePanelSplitterPointerUp);
+  };
+
+  private _handlePanelSplitterPointerMove = (e: PointerEvent): void => {
+    if (!this._isResizingPanels) return;
+    if (this._panelResizePointerId !== undefined && e.pointerId !== this._panelResizePointerId) {
+      return;
+    }
+    this._applyPanelSplitFromClientX(e.clientX);
+  };
+
+  private _handlePanelSplitterPointerUp = (e: PointerEvent): void => {
+    if (!this._isResizingPanels) return;
+    if (this._panelResizePointerId !== undefined && e.pointerId !== this._panelResizePointerId) {
+      return;
+    }
+    this._applyPanelSplitFromClientX(e.clientX, true);
+    this._stopPanelSplitterDrag();
+  };
+
+  private _stopPanelSplitterDrag(): void {
+    this._isResizingPanels = false;
+    this._panelResizePointerId = undefined;
+    window.removeEventListener("pointermove", this._handlePanelSplitterPointerMove);
+    window.removeEventListener("pointerup", this._handlePanelSplitterPointerUp);
+    window.removeEventListener("pointercancel", this._handlePanelSplitterPointerUp);
+  }
+
+  private _handlePanelSplitterKeyDown = (e: KeyboardEvent): void => {
+    if (this._isSplitStackedLayout()) return;
+    const step = e.shiftKey ? 0.08 : 0.03;
+    if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      this._setPanelSplit(this._treePanelSplit - step, true);
+      return;
+    }
+    if (e.key === "ArrowRight") {
+      e.preventDefault();
+      this._setPanelSplit(this._treePanelSplit + step, true);
+      return;
+    }
+    if (e.key === "Home") {
+      e.preventDefault();
+      this._setPanelSplit(TREE_PANEL_SPLIT_MIN, true);
+      return;
+    }
+    if (e.key === "End") {
+      e.preventDefault();
+      this._setPanelSplit(TREE_PANEL_SPLIT_MAX, true);
+    }
+  };
+
+  private _handlePanelSplitterReset = (): void => {
+    this._setPanelSplit(TREE_PANEL_SPLIT_DEFAULT, true);
+  };
+
   private async _subscribeToUpdates(): Promise<void> {
     if (!this.hass || !this.hass.connection) return;
 
@@ -1210,34 +1400,6 @@ export class TopomationPanel extends LitElement {
     }
 
     try {
-      this._unsubStateChanged = await this.hass.connection.subscribeEvents(
-        (event: any) => {
-          const entityId = event?.data?.entity_id;
-          if (!entityId) return;
-
-          const newStateObj = event?.data?.new_state;
-          const attrs = newStateObj?.attributes || {};
-          if (
-            entityId.startsWith("binary_sensor.") &&
-            attrs.device_class === "occupancy" &&
-            attrs.location_id
-          ) {
-            this._setOccupancyState(attrs.location_id, newStateObj?.state === "on");
-          }
-
-          if (!this._shouldTrackEntity(entityId)) return;
-          const newState = event?.data?.new_state?.state;
-          const oldState = event?.data?.old_state?.state;
-          this._logEvent("ha", "state_changed", { entityId, oldState, newState });
-        },
-        "state_changed"
-      );
-    } catch (err) {
-      console.warn("Failed to subscribe to state_changed events", err);
-      this._logEvent("error", "subscribe failed: state_changed", String(err));
-    }
-
-    try {
       this._unsubOccupancyChanged = await this.hass.connection.subscribeEvents(
         (event: any) => {
           const locationId = event?.data?.location_id;
@@ -1264,6 +1426,8 @@ export class TopomationPanel extends LitElement {
       console.warn("Failed to subscribe to topomation_actions_summary events", err);
       this._logEvent("error", "subscribe failed: topomation_actions_summary", String(err));
     }
+
+    await this._syncStateChangedSubscription();
   }
 
   private _setOccupancyState(locationId: string, occupied: boolean): void {
@@ -1288,7 +1452,50 @@ export class TopomationPanel extends LitElement {
 
   private _toggleEventLog = (): void => {
     this._eventLogOpen = !this._eventLogOpen;
+    void this._syncStateChangedSubscription();
   };
+
+  private async _syncStateChangedSubscription(): Promise<void> {
+    if (!this.hass?.connection) return;
+
+    if (!this._eventLogOpen) {
+      if (this._unsubStateChanged) {
+        this._unsubStateChanged();
+        this._unsubStateChanged = undefined;
+      }
+      return;
+    }
+
+    if (this._unsubStateChanged) return;
+
+    try {
+      this._unsubStateChanged = await this.hass.connection.subscribeEvents(
+        (event: any) => {
+          const entityId = event?.data?.entity_id;
+          if (!entityId) return;
+
+          const newStateObj = event?.data?.new_state;
+          const attrs = newStateObj?.attributes || {};
+          if (
+            entityId.startsWith("binary_sensor.") &&
+            attrs.device_class === "occupancy" &&
+            attrs.location_id
+          ) {
+            this._setOccupancyState(attrs.location_id, newStateObj?.state === "on");
+          }
+
+          if (!this._shouldTrackEntity(entityId)) return;
+          const newState = event?.data?.new_state?.state;
+          const oldState = event?.data?.old_state?.state;
+          this._logEvent("ha", "state_changed", { entityId, oldState, newState });
+        },
+        "state_changed"
+      );
+    } catch (err) {
+      console.warn("Failed to subscribe to state_changed events", err);
+      this._logEvent("error", "subscribe failed: state_changed", String(err));
+    }
+  }
 
   private _clearEventLog = (): void => {
     this._eventLogEntries = [];
@@ -1417,6 +1624,7 @@ export class TopomationPanel extends LitElement {
   private _showKeyboardShortcutsHelp(): void {
     const shortcuts = [
       { key: 'Drag', description: 'Move location in hierarchy (tree handle)' },
+      { key: 'Left/Right', description: 'Resize panes when splitter is focused' },
       { key: '?', description: 'Show this help' }
     ];
 
@@ -1485,25 +1693,75 @@ export class TopomationPanel extends LitElement {
   }): Promise<void> {
     switch (change.type) {
       case 'update':
-        await this.hass.callWS({
+        await this.hass.callWS(this._withEntryId({
           type: 'topomation/locations/update',
           location_id: id,
           changes: change.updated
-        });
+        }));
         break;
       case 'delete':
-        await this.hass.callWS({
+        await this.hass.callWS(this._withEntryId({
           type: 'topomation/locations/delete',
           location_id: id
-        });
+        }));
         break;
       case 'create':
-        await this.hass.callWS({
+        await this.hass.callWS(this._withEntryId({
           type: 'topomation/locations/create',
           ...change.updated
-        });
+        }));
         break;
     }
+  }
+
+  private _activeEntryId(): string | undefined {
+    const configured = this.panel?.config?.entry_id;
+    if (typeof configured === "string" && configured.trim()) {
+      const resolved = configured.trim();
+      this._lastKnownEntryId = resolved;
+      return resolved;
+    }
+
+    const routeQuery = this.route?.path?.split("?", 2)[1];
+    if (routeQuery) {
+      const fromRoute = new URLSearchParams(routeQuery).get("entry_id");
+      if (fromRoute && fromRoute.trim()) {
+        const resolved = fromRoute.trim();
+        this._lastKnownEntryId = resolved;
+        return resolved;
+      }
+    }
+
+    const fromWindow = new URLSearchParams(window.location.search).get("entry_id");
+    if (fromWindow && fromWindow.trim()) {
+      const resolved = fromWindow.trim();
+      this._lastKnownEntryId = resolved;
+      return resolved;
+    }
+
+    return this._lastKnownEntryId;
+  }
+
+  private _withEntryId<T extends Record<string, any>>(payload: T): T {
+    const entryId = this._activeEntryId();
+    if (!entryId) {
+      return payload;
+    }
+    return {
+      ...payload,
+      entry_id: entryId,
+    };
+  }
+
+  private _serviceDataWithEntryId<T extends Record<string, any>>(serviceData: T): T {
+    const entryId = this._activeEntryId();
+    if (!entryId) {
+      return serviceData;
+    }
+    return {
+      ...serviceData,
+      entry_id: entryId,
+    };
   }
 
   private _showToast(message: string, type: 'success' | 'error' | 'warning' = 'success'): void {

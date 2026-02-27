@@ -31,6 +31,7 @@ export class HtLocationDialog extends LitElement {
   @property({ type: Boolean }) public open = false;
   @property({ attribute: false }) public location?: Location; // If editing existing
   @property({ attribute: false }) public locations: Location[] = []; // For parent selector
+  @property({ attribute: false }) public entryId?: string;
   @property({ attribute: false }) public defaultParentId?: string;
   @property({ attribute: false }) public defaultType?: LocationType;
 
@@ -40,6 +41,7 @@ export class HtLocationDialog extends LitElement {
     open: { type: Boolean },
     location: { attribute: false },
     locations: { attribute: false },
+    entryId: { attribute: false },
     defaultParentId: { attribute: false },
     defaultType: { attribute: false },
     // Internal state - also needs explicit declaration for Vite
@@ -383,34 +385,40 @@ export class HtLocationDialog extends LitElement {
     try {
       if (this.location) {
         // Update existing location
-        await this.hass.callWS({
-          type: "topomation/locations/update",
-          location_id: this.location.id,
-          changes: {
-            name: this._config.name,
-            parent_id: this._submitParentId()
-          }
-        });
+        await this.hass.callWS(
+          this._withEntryId({
+            type: "topomation/locations/update",
+            location_id: this.location.id,
+            changes: {
+              name: this._config.name,
+              parent_id: this._submitParentId()
+            }
+          })
+        );
 
         // Update _meta module for structural type metadata.
-        await this.hass.callWS({
-          type: "topomation/locations/set_module_config",
-          location_id: this.location.id,
-          module_id: "_meta",
-          config: {
-            type: this._config.type
-          }
-        });
+        await this.hass.callWS(
+          this._withEntryId({
+            type: "topomation/locations/set_module_config",
+            location_id: this.location.id,
+            module_id: "_meta",
+            config: {
+              type: this._config.type
+            }
+          })
+        );
       } else {
         // Create new location
-        await this.hass.callWS({
-          type: "topomation/locations/create",
-          name: this._config.name,
-          parent_id: this._submitParentId(),
-          meta: {
-            type: this._config.type
-          }
-        });
+        await this.hass.callWS(
+          this._withEntryId({
+            type: "topomation/locations/create",
+            name: this._config.name,
+            parent_id: this._submitParentId(),
+            meta: {
+              type: this._config.type
+            }
+          })
+        );
       }
 
       // Success - dispatch event and close
@@ -454,9 +462,20 @@ export class HtLocationDialog extends LitElement {
       type: "area"
     };
     this.dispatchEvent(new CustomEvent("dialog-closed", {
-      bubbles: true,
-      composed: true
+      bubbles: false,
+      composed: false
     }));
+  }
+
+  private _withEntryId<T extends Record<string, any>>(payload: T): T {
+    const entryId = typeof this.entryId === "string" ? this.entryId.trim() : "";
+    if (!entryId) {
+      return payload;
+    }
+    return {
+      ...payload,
+      entry_id: entryId,
+    };
   }
 }
 

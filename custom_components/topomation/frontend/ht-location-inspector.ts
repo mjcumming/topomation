@@ -57,12 +57,14 @@ try {
 export class HtLocationInspector extends LitElement {
   @property({ attribute: false }) public hass!: HomeAssistant;
   @property({ attribute: false }) public location?: Location;
+  @property({ attribute: false }) public entryId?: string;
   @property({ type: String }) public forcedTab?: InspectorTabRequest;
 
   // Ensure reactivity even if decorator transforms are unavailable in a given toolchain.
   static properties = {
     hass: { attribute: false },
     location: { attribute: false },
+    entryId: { attribute: false },
     forcedTab: { type: String },
   };
 
@@ -1069,6 +1071,14 @@ export class HtLocationInspector extends LitElement {
       }
       void this._loadActionRules();
     }
+
+    if (changedProps.has("entryId")) {
+      const prevEntryId = (changedProps.get("entryId") as string | undefined) || "";
+      const nextEntryId = this.entryId || "";
+      if (prevEntryId !== nextEntryId) {
+        void this._loadActionRules();
+      }
+    }
   }
 
   private async _loadActionRules(): Promise<boolean> {
@@ -1086,7 +1096,7 @@ export class HtLocationInspector extends LitElement {
     this.requestUpdate();
 
     try {
-      const rules = await listTopomationActionRules(this.hass, locationId);
+      const rules = await listTopomationActionRules(this.hass, locationId, this.entryId);
       if (loadSeq !== this._actionRulesLoadSeq) return false;
       this._actionRules = rules;
       return true;
@@ -2473,7 +2483,9 @@ export class HtLocationInspector extends LitElement {
 
     const existing = this._rulesForManagedActionEntity(entityId, triggerType);
     if (existing.length > 0) {
-      await Promise.all(existing.map((rule) => deleteTopomationActionRule(this.hass, rule)));
+      await Promise.all(
+        existing.map((rule) => deleteTopomationActionRule(this.hass, rule, this.entryId))
+      );
     }
 
     const createdRule = await createTopomationActionRule(this.hass, {
@@ -2483,7 +2495,7 @@ export class HtLocationInspector extends LitElement {
       action_entity_id: entityId,
       action_service: actionService,
       require_dark: requireDark,
-    });
+    }, this.entryId);
     return createdRule;
   }
 
@@ -2729,7 +2741,9 @@ export class HtLocationInspector extends LitElement {
           );
         }
       } else if (rules.length > 0) {
-        await Promise.all(rules.map((rule) => deleteTopomationActionRule(this.hass, rule)));
+        await Promise.all(
+          rules.map((rule) => deleteTopomationActionRule(this.hass, rule, this.entryId))
+        );
         this._removeManagedActionRulesLocal(entityId, triggerType);
       }
 
@@ -3333,11 +3347,11 @@ export class HtLocationInspector extends LitElement {
           type: "call_service",
           domain: "topomation",
           service: "trigger",
-          service_data: {
+          service_data: this._serviceDataWithEntryId({
             location_id: this.location.id,
             source_id: sourceId,
             timeout,
-          },
+          }),
         });
         this.dispatchEvent(
           new CustomEvent("source-test", {
@@ -3362,7 +3376,7 @@ export class HtLocationInspector extends LitElement {
         type: "call_service",
         domain: "topomation",
         service: vacate ? "vacate" : "clear",
-        service_data: vacate
+        service_data: this._serviceDataWithEntryId(vacate
           ? {
               location_id: this.location.id,
             }
@@ -3370,7 +3384,7 @@ export class HtLocationInspector extends LitElement {
               location_id: this.location.id,
               source_id: sourceId,
               trailing_timeout,
-            },
+            }),
       });
       this.dispatchEvent(
         new CustomEvent("source-test", {
@@ -3419,12 +3433,14 @@ export class HtLocationInspector extends LitElement {
     if (!this.location) return;
 
     try {
-      await this.hass.callWS({
-        type: "topomation/locations/set_module_config",
-        location_id: this.location.id,
-        module_id: moduleId,
-        config,
-      });
+      await this.hass.callWS(
+        this._withEntryId({
+          type: "topomation/locations/set_module_config",
+          location_id: this.location.id,
+          module_id: moduleId,
+          config,
+        })
+      );
 
       // Update local state
       this.location.modules[moduleId] = config;
@@ -3442,6 +3458,28 @@ export class HtLocationInspector extends LitElement {
     const newEnabled = !(config.enabled ?? true);
 
     this._updateConfig({ ...config, enabled: newEnabled });
+  }
+
+  private _withEntryId<T extends Record<string, any>>(payload: T): T {
+    const entryId = typeof this.entryId === "string" ? this.entryId.trim() : "";
+    if (!entryId) {
+      return payload;
+    }
+    return {
+      ...payload,
+      entry_id: entryId,
+    };
+  }
+
+  private _serviceDataWithEntryId<T extends Record<string, any>>(serviceData: T): T {
+    const entryId = typeof this.entryId === "string" ? this.entryId.trim() : "";
+    if (!entryId) {
+      return serviceData;
+    }
+    return {
+      ...serviceData,
+      entry_id: entryId,
+    };
   }
 
   private _handleTimeoutSliderInput(e: Event): void {

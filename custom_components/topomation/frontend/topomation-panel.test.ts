@@ -114,7 +114,17 @@ const locationsWithExplicitRoot: Location[] = [
   ...locations,
 ];
 
+const TREE_PANEL_SPLIT_STORAGE_KEY = "topomation:panel-tree-split";
+
 describe('TopomationPanel integration (fake hass)', () => {
+  beforeEach(() => {
+    window.localStorage?.removeItem(TREE_PANEL_SPLIT_STORAGE_KEY);
+  });
+
+  afterEach(() => {
+    window.localStorage?.removeItem(TREE_PANEL_SPLIT_STORAGE_KEY);
+  });
+
   it('loads locations from callWS and renders building/grounds hierarchy', async () => {
     const callWsCalls: any[] = [];
     const hass: HomeAssistant = {
@@ -148,7 +158,7 @@ describe('TopomationPanel integration (fake hass)', () => {
     const element = await fixture<HTMLDivElement>(html`
       <topomation-panel
         .hass=${hass}
-        .panel=${{ config: { topomation_view: "location" } }}
+        .panel=${{ config: { topomation_view: "location", entry_id: "entry_123" } }}
       ></topomation-panel>
     `);
 
@@ -181,7 +191,57 @@ describe('TopomationPanel integration (fake hass)', () => {
     expect(locationNames).to.include('Kitchen');
     expect(locationNames).to.include('Pantry');
     expect(locationNames).to.include('Patio');
-    expect(callWsCalls.some(c => c.type === 'topomation/locations/list')).to.be.true;
+    expect(
+      callWsCalls.some(
+        (c) => c.type === "topomation/locations/list" && c.entry_id === "entry_123"
+      )
+    ).to.be.true;
+  });
+
+  it("reuses last known entry_id when panel config is temporarily unavailable", async () => {
+    const callWsCalls: Array<Record<string, any>> = [];
+    const hass: HomeAssistant = {
+      callWS: async <T>(req: Record<string, any>): Promise<T> => {
+        callWsCalls.push(req);
+        if (req.type === "topomation/locations/list") {
+          return { locations } as T;
+        }
+        if (req.type === "config/entity_registry/list") {
+          return [] as T;
+        }
+        if (req.type === "config/device_registry/list") {
+          return [] as T;
+        }
+        throw new Error("Unexpected WS call");
+      },
+      connection: {},
+      states: {},
+      areas: {},
+      floors: {},
+      config: {
+        location_name: "Test Property",
+      },
+      localize: (key: string) => key,
+    };
+
+    const element = await fixture<HTMLDivElement>(html`
+      <topomation-panel
+        .hass=${hass}
+        .panel=${{ config: { topomation_view: "location", entry_id: "entry_123" } }}
+      ></topomation-panel>
+    `);
+
+    await waitUntil(() => (element as any)._loading === false, "panel did not finish loading");
+
+    (element as any).panel = undefined;
+    await (element as any).updateComplete;
+    await (element as any)._loadLocations(true);
+
+    const locationListCalls = callWsCalls.filter(
+      (call) => call.type === "topomation/locations/list"
+    );
+    expect(locationListCalls.length).to.be.greaterThan(1);
+    expect(locationListCalls[locationListCalls.length - 1].entry_id).to.equal("entry_123");
   });
 
   it("hides explicit Home root from the manager tree", async () => {
@@ -866,6 +926,18 @@ describe('TopomationPanel integration (fake hass)', () => {
 
     element.route = { path: "/topomation" };
     expect(element._managerView()).to.equal("location");
+  });
+
+  it("clamps and persists panel split preference", () => {
+    const element = document.createElement("topomation-panel") as any;
+
+    element._setPanelSplit(1.2, true);
+    expect(element._treePanelSplit).to.equal(0.75);
+    expect(parseFloat(window.localStorage.getItem(TREE_PANEL_SPLIT_STORAGE_KEY) || "0")).to.equal(0.75);
+
+    element._setPanelSplit(0.1, true);
+    expect(element._treePanelSplit).to.equal(0.25);
+    expect(parseFloat(window.localStorage.getItem(TREE_PANEL_SPLIT_STORAGE_KEY) || "0")).to.equal(0.25);
   });
 
 });

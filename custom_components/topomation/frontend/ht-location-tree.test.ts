@@ -303,6 +303,101 @@ describe('HtLocationTree - shouldUpdate Performance', () => {
     expect(selectedId).to.equal('pantry');
   });
 
+  it('starts with collapsed branches until user expands them', async () => {
+    const element = await fixture<HtLocationTree>(html`
+      <ht-location-tree
+        .hass=${mockHass as HomeAssistant}
+        .locations=${nestedLocations}
+      ></ht-location-tree>
+    `);
+
+    await element.updateComplete;
+
+    const expanded = (element as any)._expandedIds as Set<string>;
+    expect(expanded.size).to.equal(0);
+    expect(element.shadowRoot!.querySelector('[data-id="house"]')).to.exist;
+    expect(element.shadowRoot!.querySelector('[data-id="kitchen"]')).to.equal(null);
+    expect(element.shadowRoot!.querySelector('[data-id="pantry"]')).to.equal(null);
+  });
+
+  it('auto-expands a collapsed valid target after drag hover delay', async () => {
+    const element = await fixture<HtLocationTree>(html`
+      <ht-location-tree
+        .hass=${mockHass as HomeAssistant}
+        .locations=${deepTreeLocations}
+      ></ht-location-tree>
+    `);
+    await element.updateComplete;
+
+    (element as any)._expandedIds = new Set(['house', 'main-floor']);
+    (element as any)._isDragging = true;
+    (element as any)._scheduleDragHoverExpand('top-shelf', {
+      relatedId: 'kitchen',
+      willInsertAfter: false,
+      pointerX: 240,
+      relatedLeft: 200,
+    });
+
+    await new Promise((resolve) => window.setTimeout(resolve, 450));
+    const expanded = (element as any)._expandedIds as Set<string>;
+    expect(expanded.has('kitchen')).to.equal(true);
+  });
+
+  it('does not auto-expand when drag intent is not child nesting', async () => {
+    const element = await fixture<HtLocationTree>(html`
+      <ht-location-tree
+        .hass=${mockHass as HomeAssistant}
+        .locations=${deepTreeLocations}
+      ></ht-location-tree>
+    `);
+    await element.updateComplete;
+
+    (element as any)._expandedIds = new Set(['house', 'main-floor']);
+    (element as any)._isDragging = true;
+    (element as any)._scheduleDragHoverExpand('top-shelf', {
+      relatedId: 'kitchen',
+      willInsertAfter: false,
+      pointerX: 210,
+      relatedLeft: 200,
+    });
+
+    await new Promise((resolve) => window.setTimeout(resolve, 450));
+    const expanded = (element as any)._expandedIds as Set<string>;
+    expect(expanded.has('kitchen')).to.equal(false);
+  });
+
+  it('preserves collapsed state after locations refresh', async () => {
+    const element = await fixture<HtLocationTree>(html`
+      <ht-location-tree
+        .hass=${mockHass as HomeAssistant}
+        .locations=${nestedLocations}
+      ></ht-location-tree>
+    `);
+
+    await element.updateComplete;
+
+    // Simulate user collapsing nested branch and keeping only root expanded.
+    (element as any)._expandedIds = new Set(['house']);
+
+    element.locations = [
+      ...nestedLocations,
+      {
+        id: 'office',
+        name: 'Office',
+        parent_id: 'house',
+        is_explicit_root: false,
+        ha_area_id: null,
+        entity_ids: [],
+        modules: { _meta: { type: 'area' } }
+      }
+    ];
+    await element.updateComplete;
+
+    const expanded = (element as any)._expandedIds as Set<string>;
+    expect(expanded.has('house')).to.equal(true);
+    expect(expanded.has('kitchen')).to.equal(false);
+  });
+
   it('dispatches location-lock-toggle when lock icon is clicked', async () => {
     const element = await fixture<HtLocationTree>(html`
       <ht-location-tree
@@ -534,7 +629,7 @@ describe('HtLocationTree - shouldUpdate Performance', () => {
     expect(moveDetail.newIndex).to.equal(1);
   });
 
-  it('outdents when dropped after current parent row', () => {
+  it('outdents only with explicit leftward intent on current parent row', () => {
     const movedTree: Location[] = [
       ...deepTreeLocations.filter((l) => l.id !== 'top-shelf'),
       {
@@ -561,10 +656,53 @@ describe('HtLocationTree - shouldUpdate Performance', () => {
       oldIndex,
       livingIndex + 1,
       'living-room',
-      { relatedId: 'living-room', willInsertAfter: true }
+      {
+        relatedId: 'living-room',
+        willInsertAfter: true,
+        relatedLeft: 200,
+        pointerX: 180,
+      }
     );
 
     expect(result.parentId).to.equal('main-floor');
+  });
+
+  it('keeps current parent when dropped on parent row without outdent intent', () => {
+    const movedTree: Location[] = [
+      ...deepTreeLocations.filter((l) => l.id !== 'top-shelf'),
+      {
+        id: 'top-shelf',
+        name: 'Top Shelf',
+        parent_id: 'living-room',
+        is_explicit_root: false,
+        ha_area_id: null,
+        entity_ids: [],
+        modules: { _meta: { type: 'area' } },
+      },
+    ];
+
+    const flatNodes = __TEST__.buildFlatTree(
+      movedTree,
+      new Set(['house', 'main-floor', 'kitchen', 'pantry', 'pantry-shelf', 'living-room'])
+    );
+
+    const oldIndex = flatNodes.findIndex((n: any) => n.location.id === 'top-shelf');
+    const livingIndex = flatNodes.findIndex((n: any) => n.location.id === 'living-room');
+    const result = __TEST__.computeDropTarget(
+      flatNodes,
+      'top-shelf',
+      oldIndex,
+      livingIndex + 1,
+      'living-room',
+      {
+        relatedId: 'living-room',
+        willInsertAfter: true,
+        relatedLeft: 200,
+        pointerX: 205,
+      }
+    );
+
+    expect(result.parentId).to.equal('living-room');
   });
 
   it('infers child reparenting from horizontal drop intent', () => {
@@ -591,6 +729,56 @@ describe('HtLocationTree - shouldUpdate Performance', () => {
     );
 
     expect(result.parentId).to.equal('living-room');
+  });
+
+  it('keeps sibling-level placement unless horizontal intent is strong', () => {
+    const flatNodes = __TEST__.buildFlatTree(
+      deepTreeLocations,
+      new Set(['house', 'main-floor', 'kitchen', 'pantry', 'pantry-shelf'])
+    );
+
+    const oldIndex = flatNodes.findIndex((n: any) => n.location.id === 'top-shelf');
+    const livingIndex = flatNodes.findIndex((n: any) => n.location.id === 'living-room');
+
+    const result = __TEST__.computeDropTarget(
+      flatNodes,
+      'top-shelf',
+      oldIndex,
+      livingIndex + 1,
+      'pantry-shelf',
+      {
+        relatedId: 'living-room',
+        willInsertAfter: false,
+        relatedLeft: 200,
+        pointerX: 212,
+      }
+    );
+
+    expect(result.parentId).to.equal('main-floor');
+  });
+
+  it('does not infer child move from expanded-row drop without horizontal intent', () => {
+    const flatNodes = __TEST__.buildFlatTree(
+      deepTreeLocations,
+      new Set(['house', 'main-floor', 'kitchen', 'pantry', 'pantry-shelf'])
+    );
+
+    const oldIndex = flatNodes.findIndex((n: any) => n.location.id === 'top-shelf');
+    const kitchenIndex = flatNodes.findIndex((n: any) => n.location.id === 'kitchen');
+
+    const result = __TEST__.computeDropTarget(
+      flatNodes,
+      'top-shelf',
+      oldIndex,
+      kitchenIndex + 1,
+      'pantry-shelf',
+      {
+        relatedId: 'kitchen',
+        willInsertAfter: true,
+      }
+    );
+
+    expect(result.parentId).to.equal('main-floor');
   });
 
   it('keeps floor moves at building/root level when dropped on another floor row', () => {

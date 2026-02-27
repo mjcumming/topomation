@@ -1,5 +1,26 @@
 import { expect, test } from "@playwright/test";
 
+async function expandTreeNodes(page: any, ids: string[]): Promise<void> {
+  await page.evaluate((expandIds) => {
+    const panel = document.querySelector("topomation-panel") as any;
+    const tree = panel?.shadowRoot?.querySelector("ht-location-tree") as any;
+    if (!tree) throw new Error("ht-location-tree not found");
+    const next = new Set<string>(Array.from(tree._expandedIds || []));
+    for (const id of expandIds) {
+      next.add(String(id));
+    }
+    tree._expandedIds = next;
+    tree.requestUpdate?.();
+  }, ids);
+}
+
+async function selectKitchen(page: any): Promise<void> {
+  await expandTreeNodes(page, ["main-building", "main-floor"]);
+  const kitchenRow = page.locator("ht-location-tree [data-id='kitchen']").first();
+  await expect(kitchenRow).toBeVisible();
+  await kitchenRow.click();
+}
+
 test("mock harness loads and renders tree rows", async ({ page }) => {
   await page.goto("/mock-harness.html");
 
@@ -9,6 +30,7 @@ test("mock harness loads and renders tree rows", async ({ page }) => {
 
 test("inline rename opens editor on double-click", async ({ page }) => {
   await page.goto("/mock-harness.html");
+  await expandTreeNodes(page, ["main-building", "main-floor"]);
 
   const kitchenName = page.locator("ht-location-tree [data-id='kitchen'] .location-name").first();
   await expect(kitchenName).toBeVisible();
@@ -44,6 +66,7 @@ test("dispatching a move updates hierarchy without duplication", async ({ page }
     })
     .toBe("second-floor");
 
+  await expandTreeNodes(page, ["main-building", "second-floor"]);
   await expect(
     page.locator("ht-location-tree .tree-item[data-id='kitchen']")
   ).toHaveCount(1);
@@ -151,8 +174,7 @@ test("event log toggle shows and hides event log panel", async ({ page }) => {
 
 test("selecting location shows occupancy inspector with area sensors", async ({ page }) => {
   await page.goto("/mock-harness.html");
-
-  await page.locator("ht-location-tree [data-id='kitchen']").first().click();
+  await selectKitchen(page);
 
   const inspector = page.locator("ht-location-inspector");
   await expect(inspector).toBeVisible();
@@ -163,8 +185,7 @@ test("selecting location shows occupancy inspector with area sensors", async ({ 
 
 test("actions tab uses inline device list instead of Add Rule dialog", async ({ page }) => {
   await page.goto("/mock-harness.html");
-
-  await page.locator("ht-location-tree [data-id='kitchen']").first().click();
+  await selectKitchen(page);
 
   const inspector = page.locator("ht-location-inspector");
   await expect(inspector).toBeVisible();
@@ -177,8 +198,7 @@ test("actions tab uses inline device list instead of Add Rule dialog", async ({ 
 
 test("inline include toggle creates and removes managed automation rules", async ({ page }) => {
   await page.goto("/mock-harness.html");
-
-  await page.locator("ht-location-tree [data-id='kitchen']").first().click();
+  await selectKitchen(page);
   await page.getByRole("button", { name: "On Occupied" }).click();
 
   const row = page
@@ -225,8 +245,7 @@ test("inline include toggle creates and removes managed automation rules", async
 
 test("inline action service selector controls created automation action", async ({ page }) => {
   await page.goto("/mock-harness.html");
-
-  await page.locator("ht-location-tree [data-id='kitchen']").first().click();
+  await selectKitchen(page);
   await page.getByRole("button", { name: "On Occupied" }).click();
 
   const row = page
@@ -263,8 +282,7 @@ test("inline action service selector controls created automation action", async 
 
 test("inline dark toggle writes sun-based condition for managed automation rule", async ({ page }) => {
   await page.goto("/mock-harness.html");
-
-  await page.locator("ht-location-tree [data-id='kitchen']").first().click();
+  await selectKitchen(page);
   await page.getByRole("button", { name: "On Occupied" }).click();
 
   const row = page
@@ -368,7 +386,7 @@ test("inline actions support all common device types", async ({ page }) => {
     panel.hass = mock.getReactiveHass();
   });
 
-  await page.locator("ht-location-tree [data-id='kitchen']").first().click();
+  await selectKitchen(page);
   await page.getByRole("button", { name: "On Occupied" }).click();
 
   const cases = [
@@ -471,8 +489,7 @@ test("inline actions support all common device types", async ({ page }) => {
 
 test("light occupied/vacant mappings are not inverted", async ({ page }) => {
   await page.goto("/mock-harness.html");
-
-  await page.locator("ht-location-tree [data-id='kitchen']").first().click();
+  await selectKitchen(page);
 
   const getMatchingConfigs = async (prefix: string) =>
     page.evaluate(async (uniquePrefix) => {
@@ -590,7 +607,7 @@ test("action row prefers enabled rule service when duplicate managed rules exist
     };
   });
 
-  await page.locator("ht-location-tree [data-id='kitchen']").first().click();
+  await selectKitchen(page);
   await page.getByRole("button", { name: "On Occupied" }).click();
 
   const duplicateRuleStates = await page.evaluate(async () => {

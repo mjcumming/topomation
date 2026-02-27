@@ -298,7 +298,7 @@ describe('HtLocationTree - Design Spec Compliance', () => {
 
       await element.updateComplete;
 
-      // Initially should auto-expand parents
+      // Tree starts collapsed by default.
       let items = element.shadowRoot!.querySelectorAll('.tree-item');
       const initialCount = items.length;
 
@@ -308,9 +308,16 @@ describe('HtLocationTree - Design Spec Compliance', () => {
       expandBtn.click();
       await element.updateComplete;
 
-      // After collapse, should show fewer items
+      // After expand, should show more items.
       items = element.shadowRoot!.querySelectorAll('.tree-item');
-      expect(items.length).to.be.lessThan(initialCount);
+      const expandedCount = items.length;
+      expect(expandedCount).to.be.greaterThan(initialCount);
+
+      // Collapse again should reduce back.
+      expandBtn.click();
+      await element.updateComplete;
+      items = element.shadowRoot!.querySelectorAll('.tree-item');
+      expect(items.length).to.be.lessThan(expandedCount);
     });
 
     it('shows chevron only for nodes with children', async () => {

@@ -59,6 +59,7 @@ class SyncManager:
 
         # Event unsubscribers
         self._ha_unsubs: list[callable] = []
+        self._entity_map_reconcile_scheduled = False
 
     async def async_setup(self) -> None:
         """Set up the sync manager and start syncing."""
@@ -440,70 +441,47 @@ class SyncManager:
 
     @callback
     def _on_entity_registry_updated(self, event: HAEvent) -> None:
-        """Handle entity registry update events."""
-        action = event.data["action"]
-        entity_id = event.data["entity_id"]
+        """Handle entity registry update events.
 
-        if action != "update":
+        We re-run entity→area mapping reconciliation for changes that can affect
+        location assignment:
+          - area assignment changes (`area_id`)
+          - entity_id renames (`entity_id`)
+          - device re-linking (`device_id`, affects inherited area)
+          - create/remove lifecycle events
+        """
+        action = event.data.get("action")
+        entity_id = event.data.get("entity_id")
+        if action not in {"create", "remove", "update"}:
             return
 
-        changes = event.data.get("changes", {})
-        if "area_id" not in changes:
+        if action in {"create", "remove"}:
+            self._schedule_entity_map_reconcile(f"{action}:{entity_id}")
             return
 
-        # Entity area changed
-        old_area_id = changes.get("area_id")
-        entity_entry = self.entity_registry.async_get(entity_id)
-        new_area_id = entity_entry.area_id if entity_entry else None
+        changes = event.data.get("changes", {}) or {}
+        if not any(key in changes for key in ("area_id", "entity_id", "device_id")):
+            return
 
-        _LOGGER.debug(
-            "Entity area changed: %s (%s → %s)",
-            entity_id,
-            old_area_id,
-            new_area_id,
-        )
+        self._schedule_entity_map_reconcile(f"update:{entity_id}")
 
-        try:
-            # Remove from old location
-            if old_area_id:
-                try:
-                    old_location_id = f"area_{old_area_id}"
-                    old_location = self.loc_mgr.get_location(old_location_id)
-                    if old_location and self._can_sync_from_ha(old_location):
-                        self.loc_mgr.remove_entities_from_location([entity_id])
-                except (ValueError, KeyError):
-                    _LOGGER.debug(
-                        "Entity %s was not mapped to old location %s during area change cleanup",
-                        entity_id,
-                        old_location_id,
-                    )
+    def _schedule_entity_map_reconcile(self, reason: str) -> None:
+        """Coalesce entity-mapping reconciles triggered by registry update bursts."""
+        if self._entity_map_reconcile_scheduled:
+            return
 
-            # Add to new location
-            if new_area_id:
-                new_location_id = f"area_{new_area_id}"
-                try:
-                    new_location = self.loc_mgr.get_location(new_location_id)
-                    if new_location and self._can_sync_from_ha(new_location):
-                        self.loc_mgr.add_entity_to_location(entity_id, new_location_id)
-                        _LOGGER.info(
-                            "Moved entity %s to location %s",
-                            entity_id,
-                            new_location_id,
-                        )
-                except (ValueError, KeyError) as e:
-                    _LOGGER.warning(
-                        "Could not add entity %s to location %s: %s",
-                        entity_id,
-                        new_location_id,
-                        e,
-                    )
+        self._entity_map_reconcile_scheduled = True
 
-        except Exception as e:
-            _LOGGER.error(
-                "Error handling entity area change: %s",
-                e,
-                exc_info=True,
-            )
+        async def _run() -> None:
+            try:
+                _LOGGER.debug("Reconcile entity mapping after registry change (%s)", reason)
+                await self._map_entities()
+            except Exception as err:  # pragma: no cover - defensive logging
+                _LOGGER.error("Failed to reconcile entity mapping: %s", err, exc_info=True)
+            finally:
+                self._entity_map_reconcile_scheduled = False
+
+        self.hass.async_create_task(_run())
 
     def _can_sync_from_ha(self, location: Location) -> bool:
         """Return True if Home Assistant changes may update this topology location."""

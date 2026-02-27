@@ -1395,6 +1395,192 @@ async def test_action_rules_list_uses_managed_runtime(hass: HomeAssistant) -> No
 
 
 @pytest.mark.asyncio
+async def test_action_rules_list_resolves_by_location_with_multiple_entries(
+    hass: HomeAssistant,
+) -> None:
+    """actions/rules/list can resolve runtime by unique location_id when entry_id is omitted."""
+    expected_rules = [
+        {
+            "id": "rule_1",
+            "entity_id": "automation.rule_1",
+            "name": "Interior Vacant: Garage (turn off)",
+            "trigger_type": "vacant",
+            "action_entity_id": "light.garage",
+            "action_service": "turn_off",
+            "require_dark": False,
+            "enabled": True,
+        }
+    ]
+    managed_action_rules_1 = AsyncMock()
+    managed_action_rules_1.async_list_rules = AsyncMock(return_value=expected_rules)
+    managed_action_rules_2 = AsyncMock()
+    managed_action_rules_2.async_list_rules = AsyncMock(return_value=[])
+
+    location_manager_1 = Mock()
+    location_manager_1.get_location.side_effect = (
+        lambda location_id: object() if location_id == "interior" else None
+    )
+    location_manager_2 = Mock()
+    location_manager_2.get_location.return_value = None
+
+    hass.data[DOMAIN] = {
+        "entry_1": {
+            "location_manager": location_manager_1,
+            "managed_action_rules": managed_action_rules_1,
+        },
+        "entry_2": {
+            "location_manager": location_manager_2,
+            "managed_action_rules": managed_action_rules_2,
+        },
+    }
+
+    connection = _fake_connection()
+    handle_action_rules_list(
+        hass,
+        connection,
+        {
+            "id": 190,
+            "type": WS_TYPE_ACTION_RULES_LIST,
+            "location_id": "interior",
+        },
+    )
+    await hass.async_block_till_done()
+
+    managed_action_rules_1.async_list_rules.assert_awaited_once_with("interior")
+    managed_action_rules_2.async_list_rules.assert_not_called()
+    connection.send_error.assert_not_called()
+    connection.send_result.assert_called_once_with(190, {"rules": expected_rules})
+
+
+@pytest.mark.asyncio
+async def test_action_rules_list_requires_entry_id_when_location_ambiguous(
+    hass: HomeAssistant,
+) -> None:
+    """actions/rules/list rejects ambiguous multi-entry location_id routing."""
+    managed_action_rules_1 = AsyncMock()
+    managed_action_rules_1.async_list_rules = AsyncMock(return_value=[])
+    managed_action_rules_2 = AsyncMock()
+    managed_action_rules_2.async_list_rules = AsyncMock(return_value=[])
+
+    location_manager_1 = Mock()
+    location_manager_1.get_location.side_effect = (
+        lambda location_id: object() if location_id == "interior" else None
+    )
+    location_manager_2 = Mock()
+    location_manager_2.get_location.side_effect = (
+        lambda location_id: object() if location_id == "interior" else None
+    )
+
+    hass.data[DOMAIN] = {
+        "entry_1": {
+            "location_manager": location_manager_1,
+            "managed_action_rules": managed_action_rules_1,
+        },
+        "entry_2": {
+            "location_manager": location_manager_2,
+            "managed_action_rules": managed_action_rules_2,
+        },
+    }
+
+    connection = _fake_connection()
+    handle_action_rules_list(
+        hass,
+        connection,
+        {
+            "id": 191,
+            "type": WS_TYPE_ACTION_RULES_LIST,
+            "location_id": "interior",
+        },
+    )
+    await hass.async_block_till_done()
+
+    managed_action_rules_1.async_list_rules.assert_not_called()
+    managed_action_rules_2.async_list_rules.assert_not_called()
+    connection.send_result.assert_not_called()
+    connection.send_error.assert_called_once()
+    err_args = connection.send_error.call_args[0]
+    assert err_args[0] == 191
+    assert err_args[1] == "entry_required"
+    assert "contain location 'interior'" in err_args[2]
+
+
+@pytest.mark.asyncio
+async def test_locations_list_uses_connection_entry_hint_after_location_scoped_call(
+    hass: HomeAssistant,
+) -> None:
+    """No-location websocket commands reuse the last resolved entry for the same connection."""
+    managed_action_rules_1 = AsyncMock()
+    managed_action_rules_1.async_list_rules = AsyncMock(return_value=[])
+    managed_action_rules_2 = AsyncMock()
+    managed_action_rules_2.async_list_rules = AsyncMock(return_value=[])
+
+    location = type(
+        "Location",
+        (),
+        {
+            "id": "interior",
+            "name": "Interior",
+            "parent_id": None,
+            "is_explicit_root": False,
+            "order": 0,
+            "ha_area_id": None,
+            "entity_ids": [],
+            "modules": {},
+        },
+    )()
+
+    location_manager_1 = Mock()
+    location_manager_1.get_location.side_effect = (
+        lambda location_id: location if location_id == "interior" else None
+    )
+    location_manager_1.all_locations.return_value = [location]
+
+    location_manager_2 = Mock()
+    location_manager_2.get_location.return_value = None
+    location_manager_2.all_locations.return_value = []
+
+    hass.data[DOMAIN] = {
+        "entry_1": {
+            "location_manager": location_manager_1,
+            "managed_action_rules": managed_action_rules_1,
+        },
+        "entry_2": {
+            "location_manager": location_manager_2,
+            "managed_action_rules": managed_action_rules_2,
+        },
+    }
+
+    connection = _fake_connection()
+    handle_action_rules_list(
+        hass,
+        connection,
+        {
+            "id": 290,
+            "type": WS_TYPE_ACTION_RULES_LIST,
+            "location_id": "interior",
+        },
+    )
+    await hass.async_block_till_done()
+
+    handle_locations_list(
+        hass,
+        connection,
+        {
+            "id": 291,
+            "type": WS_TYPE_LOCATIONS_LIST,
+        },
+    )
+
+    connection.send_error.assert_not_called()
+    assert connection.send_result.call_count == 2
+    managed_action_rules_1.async_list_rules.assert_awaited_once_with("interior")
+    managed_action_rules_2.async_list_rules.assert_not_called()
+    second_result = connection.send_result.call_args_list[1][0]
+    assert second_result[0] == 291
+    assert second_result[1]["locations"][0]["id"] == "interior"
+
+
+@pytest.mark.asyncio
 async def test_action_rules_create_uses_managed_runtime(hass: HomeAssistant) -> None:
     """actions/rules/create resolves location and schedules persistence."""
     location = type("Location", (), {"id": "bathroom", "name": "Bathroom"})()

@@ -563,7 +563,14 @@ loc_mgr.set_module_config(
 - `all_roots` is resolved at execution time from current topology roots.
 - Unknown/invalid explicit targets degrade to the policy-owner location instead of failing.
 
-### 6.2 Current Limitations
+### 6.2 Topology Mapping Boundary
+
+- Structural mapping is limited to HA `floor`/`area` wrappers plus integration-owned topology nodes (`building`, `grounds`, `subarea`).
+- Integration-owned nodes are behavioral containers only and are not mirrored as HA registry structural objects.
+- HA `zone` is out of scope for indoor topology mapping (geofence semantics).
+- HA `label` is out of scope for topology structure. Labels remain optional metadata for non-structural organization, such as managed automation filtering.
+
+### 6.3 Current Limitations
 
 - Policy-source v1 ships only `vacate_area` actions; additional actions are not yet supported.
 - Only explicitly mapped policy states execute actions; unmapped states are ignored.

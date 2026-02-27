@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.16] - 2026-02-27
+
+### Changed
+
+- Tree drag-and-drop behavior now avoids constant auto-expansion and only
+  expands hierarchy nodes when needed.
+- Multi-entry action-rule calls now carry stronger `entry_id` resolution hints
+  between panel and websocket flows.
+
+### Fixed
+
+- Reduced repeat `"Multiple Topomation entries loaded; include 'entry_id'"`
+  failures when opening occupied/vacant action tabs in installations with more
+  than one Topomation config entry.
+- Added regression coverage for connection entry-hint resolution and updated
+  frontend e2e tests for default-collapsed tree navigation.
+
 ## [0.1.15] - 2026-02-27
 
 ### Changed

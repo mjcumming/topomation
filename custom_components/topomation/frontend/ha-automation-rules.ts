@@ -604,12 +604,14 @@ async function listTopomationActionRulesLegacy(
 
 export async function listTopomationActionRules(
   hass: HomeAssistant,
-  locationId: string
+  locationId: string,
+  entryId?: string
 ): Promise<TopomationActionRule[]> {
   try {
     const response = await hass.callWS<{ rules?: TopomationActionRule[] }>({
       type: WS_TYPE_ACTION_RULES_LIST,
       location_id: locationId,
+      ...(entryId ? { entry_id: entryId } : {}),
     });
     if (Array.isArray(response?.rules)) {
       return [...response.rules].sort((a, b) => a.name.localeCompare(b.name));
@@ -710,7 +712,8 @@ export async function createTopomationActionRule(
     action_entity_id: string;
     action_service: string;
     require_dark?: boolean;
-  }
+  },
+  entryId?: string
 ): Promise<TopomationActionRule> {
   try {
     const response = await hass.callWS<{ rule?: TopomationActionRule }>({
@@ -721,6 +724,7 @@ export async function createTopomationActionRule(
       action_entity_id: args.action_entity_id,
       action_service: args.action_service,
       require_dark: Boolean(args.require_dark),
+      ...(entryId ? { entry_id: entryId } : {}),
     });
 
     if (response?.rule) {
@@ -781,7 +785,8 @@ async function deleteTopomationActionRuleLegacy(
 
 export async function deleteTopomationActionRule(
   hass: HomeAssistant,
-  ruleOrAutomationId: string | Pick<TopomationActionRule, "id" | "entity_id">
+  ruleOrAutomationId: string | Pick<TopomationActionRule, "id" | "entity_id">,
+  entryId?: string
 ): Promise<void> {
   const automationId =
     typeof ruleOrAutomationId === "string" ? ruleOrAutomationId : ruleOrAutomationId.id;
@@ -793,6 +798,7 @@ export async function deleteTopomationActionRule(
       type: WS_TYPE_ACTION_RULES_DELETE,
       automation_id: automationId,
       ...(entityId ? { entity_id: entityId } : {}),
+      ...(entryId ? { entry_id: entryId } : {}),
     });
 
     if (response?.success === true) {
@@ -826,13 +832,15 @@ async function setTopomationActionRuleEnabledLegacy(
 export async function setTopomationActionRuleEnabled(
   hass: HomeAssistant,
   rule: TopomationActionRule,
-  enabled: boolean
+  enabled: boolean,
+  entryId?: string
 ): Promise<void> {
   try {
     const response = await hass.callWS<{ success?: boolean }>({
       type: WS_TYPE_ACTION_RULES_SET_ENABLED,
       entity_id: rule.entity_id,
       enabled,
+      ...(entryId ? { entry_id: entryId } : {}),
     });
     if (response?.success === true) {
       return;

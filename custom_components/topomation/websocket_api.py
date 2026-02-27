@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+from weakref import WeakKeyDictionary
 from typing import Any
 
 import voluptuous as vol
@@ -37,6 +38,7 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+_CONNECTION_ENTRY_HINTS: "WeakKeyDictionary[object, str]" = WeakKeyDictionary()
 
 _SUPPORTED_LOCATION_TYPES = frozenset(
     {
@@ -50,6 +52,33 @@ _SUPPORTED_LOCATION_TYPES = frozenset(
 _LEGACY_LOCATION_TYPE_ALIASES: dict[str, str] = {
     "room": "area",
 }
+
+
+def _remember_connection_entry_hint(
+    connection: websocket_api.ActiveConnection,
+    entry_id: str,
+) -> None:
+    """Cache a best-effort entry hint for this websocket connection."""
+    try:
+        _CONNECTION_ENTRY_HINTS[connection] = entry_id
+    except TypeError:
+        # Some connection objects may not be weakref-able; skip hinting.
+        return
+
+
+def _connection_entry_hint(
+    connection: websocket_api.ActiveConnection,
+) -> str | None:
+    """Return cached entry hint for this websocket connection, if any."""
+    try:
+        hint = _CONNECTION_ENTRY_HINTS.get(connection)
+    except TypeError:
+        return None
+    if isinstance(hint, str) and hint:
+        return hint
+    return None
+
+
 def _normalize_location_type(raw_type: Any) -> str:
     """Normalize stored location type strings to adapter-supported values."""
     if raw_type is None:
@@ -83,10 +112,48 @@ def _get_kernel(
                 f"Config entry '{requested_entry_id}' not found",
             )
             return None
+        _remember_connection_entry_hint(connection, requested_entry_id)
         return kernel
 
     if len(domain_data) == 1:
-        return next(iter(domain_data.values()))
+        entry_id, kernel = next(iter(domain_data.items()))
+        _remember_connection_entry_hint(connection, str(entry_id))
+        return kernel
+
+    location_id = msg.get("location_id")
+    if isinstance(location_id, str) and location_id:
+        matching_kernels: list[tuple[str, dict[str, Any]]] = []
+        for entry_id, kernel in domain_data.items():
+            loc_mgr = kernel.get("location_manager")
+            get_location = getattr(loc_mgr, "get_location", None)
+            if not callable(get_location):
+                continue
+            try:
+                if get_location(location_id) is not None:
+                    matching_kernels.append((str(entry_id), kernel))
+            except Exception:  # pragma: no cover - defensive logging
+                _LOGGER.debug(
+                    "Failed location lookup for websocket kernel resolution: %s",
+                    location_id,
+                    exc_info=True,
+                )
+
+        if len(matching_kernels) == 1:
+            matched_entry_id, matched_kernel = matching_kernels[0]
+            _remember_connection_entry_hint(connection, matched_entry_id)
+            return matched_kernel
+
+        if len(matching_kernels) > 1:
+            connection.send_error(
+                msg["id"],
+                "entry_required",
+                f"Multiple Topomation entries contain location '{location_id}'; include 'entry_id'",
+            )
+            return None
+
+    hinted_entry_id = _connection_entry_hint(connection)
+    if hinted_entry_id and hinted_entry_id in domain_data:
+        return domain_data[hinted_entry_id]
 
     connection.send_error(
         msg["id"],

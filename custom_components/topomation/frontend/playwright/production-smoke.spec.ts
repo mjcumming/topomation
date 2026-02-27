@@ -13,8 +13,25 @@ async function openProductionProfile(page: any): Promise<void> {
   await expect(page.locator("topomation-panel")).toBeVisible();
 }
 
+async function expandTreeNodes(page: any, ids: string[]): Promise<void> {
+  await page.evaluate((expandIds) => {
+    const panel = document.querySelector("topomation-panel") as any;
+    const tree = panel?.shadowRoot?.querySelector("ht-location-tree") as any;
+    if (!tree) throw new Error("ht-location-tree not found");
+    const next = new Set<string>(Array.from(tree._expandedIds || []));
+    for (const id of expandIds) {
+      next.add(String(id));
+    }
+    tree._expandedIds = next;
+    tree.requestUpdate?.();
+  }, ids);
+}
+
 async function selectKitchen(page: any): Promise<void> {
-  await page.locator("ht-location-tree [data-id='kitchen']").first().click();
+  await expandTreeNodes(page, ["main-building", "main-floor"]);
+  const kitchenRow = page.locator("ht-location-tree [data-id='kitchen']").first();
+  await expect(kitchenRow).toBeVisible();
+  await kitchenRow.click();
   await expect(page.locator("ht-location-inspector")).toBeVisible();
 }
 

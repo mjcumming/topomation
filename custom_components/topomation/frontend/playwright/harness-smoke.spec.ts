@@ -1,9 +1,24 @@
 import { expect, test } from "@playwright/test";
 
+async function expandTreeNodes(page: any, ids: string[]): Promise<void> {
+  await page.evaluate((expandIds) => {
+    const panel = document.querySelector("topomation-panel") as any;
+    const tree = panel?.shadowRoot?.querySelector("ht-location-tree") as any;
+    if (!tree) throw new Error("ht-location-tree not found");
+    const next = new Set<string>(Array.from(tree._expandedIds || []));
+    for (const id of expandIds) {
+      next.add(String(id));
+    }
+    tree._expandedIds = next;
+    tree.requestUpdate?.();
+  }, ids);
+}
+
 test.describe("Mock Harness Smoke", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/mock-harness.html");
     await expect(page.locator("topomation-panel")).toBeVisible();
+    await expandTreeNodes(page, ["main-building", "grounds"]);
   });
 
   test("renders rootless hierarchy with building and grounds roots", async ({ page }) => {

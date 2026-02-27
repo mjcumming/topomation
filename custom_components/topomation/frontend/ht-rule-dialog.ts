@@ -16,6 +16,7 @@ export class HtRuleDialog extends LitElement {
   @property({ type: Boolean }) public open = false;
   @property({ attribute: false }) public location?: Location;
   @property({ attribute: false }) public rule?: TopomationActionRule;
+  @property({ attribute: false }) public entryId?: string;
   @property({ type: String }) public defaultTriggerType?: "occupied" | "vacant";
 
   // Ensure reactivity in build paths where decorators are not transformed.
@@ -24,6 +25,7 @@ export class HtRuleDialog extends LitElement {
     open: { type: Boolean },
     location: { attribute: false },
     rule: { attribute: false },
+    entryId: { attribute: false },
     defaultTriggerType: { type: String },
     _config: { state: true },
     _submitting: { state: true },
@@ -270,7 +272,7 @@ export class HtRuleDialog extends LitElement {
         trigger_type: this._config.trigger_type as "occupied" | "vacant",
         action_entity_id: this._config.action_entity_id!,
         action_service: this._config.action_service!,
-      });
+      }, this.entryId);
 
       this.dispatchEvent(
         new CustomEvent("rule-saved", {
@@ -297,8 +299,8 @@ export class HtRuleDialog extends LitElement {
     this.open = false;
     this.dispatchEvent(
       new CustomEvent("dialog-closed", {
-        bubbles: true,
-        composed: true,
+        bubbles: false,
+        composed: false,
       })
     );
   }

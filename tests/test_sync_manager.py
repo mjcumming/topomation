@@ -575,6 +575,39 @@ class TestHAToTopologySync:
         assert light.entity_id not in loc_mgr.get_location(kitchen_loc).entity_ids
         assert light.entity_id in loc_mgr.get_location(living_loc).entity_ids
 
+    async def test_entity_id_rename_updates_mapping(
+        self,
+        hass: HomeAssistant,
+        sync_manager: SyncManager,
+        loc_mgr: LocationManager,
+        clean_registries,
+    ):
+        """Entity ID renames in HA should replace mapped IDs in topology."""
+        area_reg = ar.async_get(hass)
+        entity_reg = er.async_get(hass)
+        kitchen = area_reg.async_create("Kitchen")
+
+        light = entity_reg.async_get_or_create(
+            domain="light",
+            platform="test",
+            unique_id="light_rename_1",
+            suggested_object_id="light_rename_1",
+        )
+        old_entity_id = light.entity_id
+        new_entity_id = "light.kitchen_main_renamed"
+        entity_reg.async_update_entity(old_entity_id, area_id=kitchen.id)
+
+        await sync_manager.import_all_areas_and_floors()
+        await sync_manager.async_setup()
+
+        entity_reg.async_update_entity(old_entity_id, new_entity_id=new_entity_id)
+        await hass.async_block_till_done()
+
+        kitchen_loc = loc_mgr.get_location(f"area_{kitchen.id}")
+        assert kitchen_loc is not None
+        assert old_entity_id not in kitchen_loc.entity_ids
+        assert new_entity_id in kitchen_loc.entity_ids
+
     async def test_area_update_ignored_for_topology_owned_location(
         self,
         hass: HomeAssistant,

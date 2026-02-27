@@ -18,7 +18,7 @@ FRONTEND_PATH = Path(__file__).parent / "frontend"
 FRONTEND_URL = f"/api/{DOMAIN}/static"
 
 
-async def async_register_panel(hass: HomeAssistant) -> None:
+async def async_register_panel(hass: HomeAssistant, entry_id: str | None = None) -> None:
     """Register the Topomation panel."""
     import time
 
@@ -47,6 +47,7 @@ async def async_register_panel(hass: HomeAssistant) -> None:
             require_admin=True,
             config={
                 "topomation_view": panel["view"],
+                "entry_id": entry_id,
                 "_panel_custom": {
                     "name": "topomation-panel",
                     "embed_iframe": False,
