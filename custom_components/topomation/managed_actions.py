@@ -225,20 +225,57 @@ class TopomationManagedActions:
             "mode": "single",
         }
 
-        if await async_validate_config_item(self.hass, automation_id, config_payload) is None:
+        _LOGGER.info(
+            "[managed_actions] Creating rule automation_id=%s location=%s",
+            automation_id,
+            location_id,
+        )
+        validated = await async_validate_config_item(
+            self.hass, automation_id, config_payload
+        )
+        if validated is None:
+            _LOGGER.error(
+                "[managed_actions] Validation returned None for automation_id=%s",
+                automation_id,
+            )
             raise ValueError("Automation config validation returned no result")
+        _LOGGER.debug("[managed_actions] Validation passed for automation_id=%s", automation_id)
 
         path = self.hass.config.path(AUTOMATION_CONFIG_PATH)
+        _LOGGER.debug(
+            "[managed_actions] Reading config from path=%s for automation_id=%s",
+            path,
+            automation_id,
+        )
         async with self._mutation_lock:
             current = await self.hass.async_add_executor_job(_read_config, path)
+            _LOGGER.debug(
+                "[managed_actions] Read %d entries from config, upserting automation_id=%s",
+                len(current),
+                automation_id,
+            )
             _upsert_entry(current, automation_id, config_payload)
             await self.hass.async_add_executor_job(_write_config, path, current)
+        _LOGGER.info(
+            "[managed_actions] Wrote config path=%s with %d entries for automation_id=%s",
+            path,
+            len(current),
+            automation_id,
+        )
 
+        _LOGGER.debug(
+            "[managed_actions] Calling automation.reload for automation_id=%s",
+            automation_id,
+        )
         await self.hass.services.async_call(
             AUTOMATION_DOMAIN,
             SERVICE_RELOAD,
             {CONF_ID: automation_id},
             blocking=True,
+        )
+        _LOGGER.debug(
+            "[managed_actions] Reload completed for automation_id=%s",
+            automation_id,
         )
 
         entity_registry = er.async_get(self.hass)
@@ -246,15 +283,28 @@ class TopomationManagedActions:
             AUTOMATION_DOMAIN, AUTOMATION_DOMAIN, automation_id
         )
         if entity_id is None:
+            _LOGGER.debug(
+                "[managed_actions] Entity not in registry, checking component entities for automation_id=%s",
+                automation_id,
+            )
             component = self.hass.data.get(AUTOMATION_DATA_COMPONENT)
             entities = getattr(component, "entities", []) if component else []
             for ent in entities:
                 if getattr(ent, "unique_id", None) == automation_id:
                     entity_id = getattr(ent, "entity_id", None)
                     break
-
         if entity_id:
+            _LOGGER.info(
+                "[managed_actions] Rule created automation_id=%s entity_id=%s",
+                automation_id,
+                entity_id,
+            )
             self._apply_topomation_grouping(entity_id, trigger_type)
+        else:
+            _LOGGER.warning(
+                "[managed_actions] Rule created but entity not found automation_id=%s (may appear after refresh)",
+                automation_id,
+            )
 
         return {
             "id": automation_id,

@@ -1006,7 +1006,8 @@ async def handle_action_rules_create(
         return
     except Exception as err:  # pragma: no cover - defensive runtime boundary
         _LOGGER.error("Failed to create managed rule: %s", err, exc_info=True)
-        connection.send_error(msg["id"], "create_failed", "Failed to create managed action rule")
+        msg_text = str(err) if str(err) else "Failed to create managed action rule"
+        connection.send_error(msg["id"], "create_failed", msg_text)
         return
 
     schedule_persist = kernel.get("schedule_persist")
