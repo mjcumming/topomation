@@ -1,8 +1,7 @@
 """Backend managed-action automation lifecycle for Topomation.
 
-Replicates HA's own config/automation.py pattern: read automations.yaml,
-upsert by id, write atomically, call automation.reload. No polling, no
-include-directory detection, no rollback.
+Uses Home Assistant's config/automation REST API (POST/GET/DELETE) so HA
+handles validation, file write, and reload. No direct file I/O.
 """
 
 from __future__ import annotations
@@ -10,7 +9,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 import time
 import uuid
 from collections.abc import Mapping
@@ -24,16 +22,15 @@ from homeassistant.components.automation import (
     DOMAIN as AUTOMATION_DOMAIN,
 )
 from homeassistant.components.automation.config import async_validate_config_item
-from homeassistant.config import AUTOMATION_CONFIG_PATH
-from homeassistant.const import CONF_ID, SERVICE_RELOAD
+from homeassistant.const import CONF_ID
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import category_registry as cr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import label_registry as lr
-from homeassistant.util.file import write_utf8_file_atomic
-from homeassistant.util.yaml import dump, load_yaml
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.network import get_url
 
-from .const import TOPOMATION_AUTOMATION_METADATA_PREFIX
+from .const import DOMAIN, TOPOMATION_AUTOMATION_METADATA_PREFIX
 
 ActionTriggerType = Literal["occupied", "vacant"]
 
@@ -42,6 +39,8 @@ _TOPOMATION_LABEL_NAME = "Topomation"
 _TOPOMATION_OCCUPIED_LABEL_NAME = "Topomation - On Occupied"
 _TOPOMATION_VACANT_LABEL_NAME = "Topomation - On Vacant"
 _TOPOMATION_CATEGORY_NAME = "Topomation"
+_TOPOMATION_SYSTEM_USER_NAME = "Topomation"
+_AUTOMATION_API_REFRESH_TOKEN_KEY = "_automation_api_refresh_token"
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -55,60 +54,74 @@ class _TopomationMetadata:
     require_dark: bool
 
 
-def _read_config(path: str) -> list[dict[str, Any]]:
-    """Read automation config YAML list from disk (matches HA config/view.py pattern)."""
-    if not os.path.isfile(path):
-        return []
-    raw = load_yaml(path)
-    if raw is None:
-        return []
-    if not isinstance(raw, list):
-        raise ValueError(
-            f"Automation config file '{path}' must contain a YAML list, got {type(raw).__name__}"
-        )
-    return raw
-
-
-def _write_config(path: str, data: list[dict[str, Any]]) -> None:
-    """Write automation config YAML list atomically (matches HA config/view.py pattern)."""
-    contents = dump(data)
-    write_utf8_file_atomic(path, contents)
-
-
-def _upsert_entry(
-    config_entries: list[dict[str, Any]],
-    automation_id: str,
-    payload: dict[str, Any],
-) -> None:
-    """Upsert one automation config by id (matches HA EditIdBasedConfigView._write_value)."""
-    updated_value = {CONF_ID: automation_id, **payload}
-    for item in config_entries:
-        if isinstance(item, dict) and item.get(CONF_ID) == automation_id:
-            item.clear()
-            item.update(updated_value)
-            return
-    config_entries.append(updated_value)
-
-
-def _delete_entry(
-    config_entries: list[dict[str, Any]],
-    automation_id: str,
-) -> bool:
-    """Remove one automation config by id. Returns True if removed."""
-    for i, item in enumerate(config_entries):
-        if isinstance(item, dict) and item.get(CONF_ID) == automation_id:
-            config_entries.pop(i)
-            return True
-    return False
-
-
 class TopomationManagedActions:
-    """Create/list/update/delete Topomation managed automations in HA's rules engine."""
+    """Create/list/update/delete Topomation managed automations via HA's config REST API."""
 
     def __init__(self, hass: HomeAssistant) -> None:
         """Initialize managed automation helper."""
         self.hass = hass
-        self._mutation_lock = asyncio.Lock()
+        self._token_lock = asyncio.Lock()
+
+    async def _ensure_automation_api_token(self) -> str:
+        """Get or create a system user and return an access token for the config API."""
+        async with self._token_lock:
+            domain_data = self.hass.data.get(DOMAIN)
+            if domain_data is None:
+                self.hass.data[DOMAIN] = {}
+                domain_data = self.hass.data[DOMAIN]
+            refresh_token = domain_data.get(_AUTOMATION_API_REFRESH_TOKEN_KEY)
+            if refresh_token is not None:
+                return self.hass.auth.async_create_access_token(refresh_token)
+            try:
+                from homeassistant.auth.const import GROUP_ID_ADMIN
+            except ImportError:
+                GROUP_ID_ADMIN = "admin"
+            users = await self.hass.auth.async_get_users()
+            for user in users:
+                if getattr(user, "name", None) == _TOPOMATION_SYSTEM_USER_NAME and getattr(
+                    user, "system_generated", False
+                ):
+                    for token in user.refresh_tokens.values():
+                        domain_data[_AUTOMATION_API_REFRESH_TOKEN_KEY] = token
+                        return self.hass.auth.async_create_access_token(token)
+            user = await self.hass.auth.async_create_system_user(
+                _TOPOMATION_SYSTEM_USER_NAME,
+                group_ids=[GROUP_ID_ADMIN],
+            )
+            refresh_token = await self.hass.auth.async_create_refresh_token(user)
+            domain_data[_AUTOMATION_API_REFRESH_TOKEN_KEY] = refresh_token
+            return self.hass.auth.async_create_access_token(refresh_token)
+
+    async def _call_automation_config_api(
+        self,
+        method: str,
+        automation_id: str,
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Call HA config/automation/config REST API. Raises on error."""
+        token = await self._ensure_automation_api_token()
+        base = get_url(self.hass, allow_external=False).rstrip("/")
+        url = f"{base}/api/config/automation/config/{automation_id}"
+        session = async_get_clientsession(self.hass)
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
+        if method == "POST" and payload is not None:
+            body = json.dumps(payload).encode("utf-8")
+        else:
+            body = None
+        async with session.request(method, url, headers=headers, data=body, timeout=30) as resp:
+            if resp.status >= 400:
+                try:
+                    err = await resp.json()
+                    msg = err.get("message", await resp.text())
+                except Exception:
+                    msg = await resp.text()
+                raise ValueError(f"Automation API {method} {resp.status}: {msg}")
+            if resp.status == 204 or (method == "DELETE" and resp.status == 200):
+                return {}
+            return await resp.json()
 
     async def async_list_rules(self, location_id: str) -> list[dict[str, Any]]:
         """List managed action rules for one location."""
@@ -196,6 +209,7 @@ class TopomationManagedActions:
         description = "Managed by Topomation.\n" + self._metadata_line(metadata_payload)
 
         config_payload: dict[str, Any] = {
+            CONF_ID: automation_id,
             "alias": name,
             "description": description,
             "triggers": [
@@ -226,7 +240,7 @@ class TopomationManagedActions:
         }
 
         _LOGGER.info(
-            "[managed_actions] Creating rule automation_id=%s location=%s",
+            "[managed_actions] Creating rule via REST API automation_id=%s location=%s",
             automation_id,
             location_id,
         )
@@ -239,44 +253,7 @@ class TopomationManagedActions:
                 automation_id,
             )
             raise ValueError("Automation config validation returned no result")
-        _LOGGER.debug("[managed_actions] Validation passed for automation_id=%s", automation_id)
-
-        path = self.hass.config.path(AUTOMATION_CONFIG_PATH)
-        _LOGGER.debug(
-            "[managed_actions] Reading config from path=%s for automation_id=%s",
-            path,
-            automation_id,
-        )
-        async with self._mutation_lock:
-            current = await self.hass.async_add_executor_job(_read_config, path)
-            _LOGGER.debug(
-                "[managed_actions] Read %d entries from config, upserting automation_id=%s",
-                len(current),
-                automation_id,
-            )
-            _upsert_entry(current, automation_id, config_payload)
-            await self.hass.async_add_executor_job(_write_config, path, current)
-        _LOGGER.info(
-            "[managed_actions] Wrote config path=%s with %d entries for automation_id=%s",
-            path,
-            len(current),
-            automation_id,
-        )
-
-        _LOGGER.debug(
-            "[managed_actions] Calling automation.reload for automation_id=%s",
-            automation_id,
-        )
-        await self.hass.services.async_call(
-            AUTOMATION_DOMAIN,
-            SERVICE_RELOAD,
-            {CONF_ID: automation_id},
-            blocking=True,
-        )
-        _LOGGER.debug(
-            "[managed_actions] Reload completed for automation_id=%s",
-            automation_id,
-        )
+        await self._call_automation_config_api("POST", automation_id, config_payload)
 
         entity_registry = er.async_get(self.hass)
         entity_id = entity_registry.async_get_entity_id(
@@ -323,7 +300,7 @@ class TopomationManagedActions:
         automation_id: str,
         entity_id: str | None = None,
     ) -> None:
-        """Delete a managed action automation (HA config/automation.py hook pattern)."""
+        """Delete a managed action automation via HA config REST API."""
         config_id = automation_id.strip()
         if not config_id and entity_id:
             config_id = self._config_id_for_entity_id(entity_id)
@@ -331,25 +308,7 @@ class TopomationManagedActions:
         if not config_id:
             raise ValueError("Automation id is required")
 
-        path = self.hass.config.path(AUTOMATION_CONFIG_PATH)
-        async with self._mutation_lock:
-            current = await self.hass.async_add_executor_job(_read_config, path)
-            if not _delete_entry(current, config_id):
-                raise ValueError(f"Automation '{config_id}' not found")
-            await self.hass.async_add_executor_job(_write_config, path, current)
-
-        await self.hass.services.async_call(
-            AUTOMATION_DOMAIN, SERVICE_RELOAD, {}, blocking=True
-        )
-
-        entity_registry = er.async_get(self.hass)
-        resolved = entity_registry.async_get_entity_id(
-            AUTOMATION_DOMAIN, AUTOMATION_DOMAIN, config_id
-        )
-        if resolved is not None:
-            entity_registry.async_remove(resolved)
-        if entity_id and entity_registry.async_get(entity_id) is not None:
-            entity_registry.async_remove(entity_id)
+        await self._call_automation_config_api("DELETE", config_id)
 
     async def async_set_rule_enabled(self, *, entity_id: str, enabled: bool) -> None:
         """Enable or disable one automation entity."""

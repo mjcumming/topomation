@@ -12,13 +12,7 @@ from homeassistant.const import CONF_ID
 from homeassistant.core import HomeAssistant
 
 from custom_components.topomation.const import TOPOMATION_AUTOMATION_METADATA_PREFIX
-from custom_components.topomation.managed_actions import (
-    TopomationManagedActions,
-    _delete_entry,
-    _read_config,
-    _upsert_entry,
-    _write_config,
-)
+from custom_components.topomation.managed_actions import TopomationManagedActions
 
 
 @pytest.mark.asyncio
@@ -152,41 +146,3 @@ def test_private_helpers_parse_and_mutate_config() -> None:
         }
     )
     assert not manager._has_sun_dark_condition({"conditions": []})  # noqa: SLF001
-
-    config_entries = [{"id": "first", "alias": "First"}]
-    _upsert_entry(config_entries, "second", {"alias": "Second"})
-    assert {item["id"] for item in config_entries} == {"first", "second"}
-    _upsert_entry(config_entries, "second", {"alias": "Second Updated"})
-    updated = next(item for item in config_entries if item["id"] == "second")
-    assert updated["alias"] == "Second Updated"
-    assert _delete_entry(config_entries, "second")
-    assert not _delete_entry(config_entries, "missing")
-
-
-def test_automation_config_roundtrip(tmp_path) -> None:
-    """Config file helpers write/read YAML lists (HA EditIdBasedConfigView pattern)."""
-    path = tmp_path / "automations.yaml"
-    data = [
-        {"id": "rule_1", "alias": "Rule 1"},
-        {"alias": "Rule without id"},
-    ]
-    _write_config(str(path), data)
-    loaded = _read_config(str(path))
-    assert len(loaded) == 2
-    assert loaded[0]["id"] == "rule_1"
-    assert loaded[0]["alias"] == "Rule 1"
-    assert loaded[1]["alias"] == "Rule without id"
-
-
-def test_automation_config_requires_yaml_list(tmp_path) -> None:
-    """Non-list YAML structures raise an actionable error."""
-    path = tmp_path / "automations.yaml"
-    path.write_text("id: not-a-list\nalias: invalid\n", encoding="utf-8")
-
-    with pytest.raises(ValueError, match="must contain a YAML list"):
-        _read_config(str(path))
-
-
-def test_read_config_returns_empty_for_missing_file(tmp_path) -> None:
-    """Missing file returns empty list."""
-    assert _read_config(str(tmp_path / "nonexistent.yaml")) == []
