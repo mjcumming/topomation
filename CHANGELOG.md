@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.13] - 2026-02-27
+
+### Changed
+
+- Managed actions now use Home Assistant's config REST API
+  (`POST`/`DELETE` `/api/config/automation/config/<id>`) instead of direct
+  file I/O. HA handles validation, file write, and reload; no more
+  reading/writing `automations.yaml` from the integration.
+- Integration creates a system user and token for API auth; no user
+  long-lived token required.
+
 ## [0.1.12] - 2026-02-27
 
 ### Changed
