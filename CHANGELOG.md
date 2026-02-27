@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.10] - 2026-02-27
+
+### Fixed
+
+- Managed-action writes now honor active Home Assistant automation include
+  strategy from `configuration.yaml` (`!include_dir_list`,
+  `!include_dir_merge_list`, and `!include`) instead of always writing to
+  `/config/automations.yaml`.
+- Include-directory strategies now persist one managed rule file per
+  automation ID, allowing Home Assistant to load and register Topomation rules
+  in installs that do not use `automations.yaml`.
+- Managed-rule delete/rollback now also cleans legacy `automations.yaml`
+  entries for migration compatibility.
+
 ## [0.1.9] - 2026-02-27
 
 ### Added

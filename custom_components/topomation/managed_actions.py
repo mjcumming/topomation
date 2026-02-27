@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import time
 import uuid
 from collections.abc import Mapping
@@ -50,6 +51,14 @@ class _TopomationMetadata:
     require_dark: bool
 
 
+@dataclass(slots=True)
+class _AutomationStorageStrategy:
+    """Resolved automation storage backend for managed rule writes."""
+
+    mode: Literal["single_file", "include_dir_list", "include_dir_merge_list"]
+    path: str
+
+
 class TopomationManagedActions:
     """Create/list/update/delete Topomation managed automations inside HA backend."""
 
@@ -57,6 +66,7 @@ class TopomationManagedActions:
         """Initialize managed automation helper."""
         self.hass = hass
         self._mutation_lock = asyncio.Lock()
+        self._storage_strategy: _AutomationStorageStrategy | None = None
 
     async def async_list_rules(self, location_id: str) -> list[dict[str, Any]]:
         """List managed action rules for one location."""
@@ -175,9 +185,7 @@ class TopomationManagedActions:
             raise ValueError("Automation config validation returned no result")
 
         async with self._mutation_lock:
-            config_entries = await self._async_read_automation_config_file()
-            self._upsert_automation_config(config_entries, automation_id, config_payload)
-            await self._async_write_automation_config_file(config_entries)
+            await self._async_write_managed_rule_config(automation_id, config_payload)
 
         await self._async_reload_automation(automation_id=automation_id)
 
@@ -222,11 +230,9 @@ class TopomationManagedActions:
             raise ValueError("Automation id is required")
 
         async with self._mutation_lock:
-            config_entries = await self._async_read_automation_config_file()
-            deleted = self._delete_automation_config(config_entries, config_id)
+            deleted = await self._async_delete_managed_rule_config(config_id)
             if not deleted:
                 raise ValueError(f"Automation '{config_id}' not found")
-            await self._async_write_automation_config_file(config_entries)
 
         await self._async_reload_automation()
 
@@ -567,10 +573,7 @@ class TopomationManagedActions:
         removed = False
         try:
             async with self._mutation_lock:
-                config_entries = await self._async_read_automation_config_file()
-                removed = self._delete_automation_config(config_entries, automation_id)
-                if removed:
-                    await self._async_write_automation_config_file(config_entries)
+                removed = await self._async_delete_managed_rule_config(automation_id)
         except Exception:  # pragma: no cover - defensive rollback path
             _LOGGER.exception("Failed to rollback unmanaged automation create %s", automation_id)
             return
@@ -583,15 +586,87 @@ class TopomationManagedActions:
         except Exception:  # pragma: no cover - defensive rollback path
             _LOGGER.exception("Failed to reload automations after rollback for %s", automation_id)
 
-    async def _async_read_automation_config_file(self) -> list[dict[str, Any]]:
+    async def _async_read_automation_config_file(self, path: str | None = None) -> list[dict[str, Any]]:
         """Read automations.yaml-like config list."""
-        path = self.hass.config.path(AUTOMATION_CONFIG_PATH)
-        return await self.hass.async_add_executor_job(_read_automation_config_file, path)
+        resolved_path = path or self.hass.config.path(AUTOMATION_CONFIG_PATH)
+        return await self.hass.async_add_executor_job(_read_automation_config_file, resolved_path)
 
-    async def _async_write_automation_config_file(self, config_entries: list[dict[str, Any]]) -> None:
+    async def _async_write_automation_config_file(
+        self,
+        config_entries: list[dict[str, Any]],
+        path: str | None = None,
+    ) -> None:
         """Persist automations config list."""
-        path = self.hass.config.path(AUTOMATION_CONFIG_PATH)
-        await self.hass.async_add_executor_job(_write_automation_config_file, path, config_entries)
+        resolved_path = path or self.hass.config.path(AUTOMATION_CONFIG_PATH)
+        await self.hass.async_add_executor_job(_write_automation_config_file, resolved_path, config_entries)
+
+    async def _async_get_storage_strategy(self) -> _AutomationStorageStrategy:
+        """Resolve where automation configs should be written in this HA instance."""
+        if self._storage_strategy is not None:
+            return self._storage_strategy
+
+        config_path = self.hass.config.path("configuration.yaml")
+        default_automation_path = self.hass.config.path(AUTOMATION_CONFIG_PATH)
+        self._storage_strategy = await self.hass.async_add_executor_job(
+            _detect_automation_storage_strategy,
+            config_path,
+            default_automation_path,
+        )
+        return self._storage_strategy
+
+    async def _async_write_managed_rule_config(
+        self,
+        automation_id: str,
+        payload: dict[str, Any],
+    ) -> None:
+        """Write one managed rule using the active HA automation include strategy."""
+        strategy = await self._async_get_storage_strategy()
+        managed_payload = {CONF_ID: automation_id, **payload}
+
+        if strategy.mode == "single_file":
+            config_entries = await self._async_read_automation_config_file(strategy.path)
+            self._upsert_automation_config(config_entries, automation_id, payload)
+            await self._async_write_automation_config_file(config_entries, strategy.path)
+            return
+
+        await self.hass.async_add_executor_job(
+            _write_automation_include_rule_file,
+            strategy.path,
+            automation_id,
+            managed_payload,
+            strategy.mode == "include_dir_merge_list",
+        )
+
+    async def _async_delete_managed_rule_config(self, automation_id: str) -> bool:
+        """Delete one managed rule from the active HA automation include strategy."""
+        strategy = await self._async_get_storage_strategy()
+
+        if strategy.mode == "single_file":
+            config_entries = await self._async_read_automation_config_file(strategy.path)
+            deleted = self._delete_automation_config(config_entries, automation_id)
+            if deleted:
+                await self._async_write_automation_config_file(config_entries, strategy.path)
+            return deleted
+
+        deleted_from_include = await self.hass.async_add_executor_job(
+            _delete_automation_include_rule_file,
+            strategy.path,
+            automation_id,
+        )
+
+        # Migration compatibility: also clean legacy automations.yaml writes.
+        deleted_from_legacy_file = False
+        legacy_path = self.hass.config.path(AUTOMATION_CONFIG_PATH)
+        try:
+            legacy_entries = await self._async_read_automation_config_file(legacy_path)
+        except ValueError:
+            legacy_entries = []
+        if legacy_entries:
+            deleted_from_legacy_file = self._delete_automation_config(legacy_entries, automation_id)
+            if deleted_from_legacy_file:
+                await self._async_write_automation_config_file(legacy_entries, legacy_path)
+
+        return deleted_from_include or deleted_from_legacy_file
 
     def _upsert_automation_config(
         self,
@@ -678,3 +753,113 @@ def _write_automation_config_file(path: str, data: list[dict[str, Any]]) -> None
     """Write automation config YAML list to disk atomically."""
     contents = dump(data)
     write_utf8_file_atomic(path, contents)
+
+
+def _detect_automation_storage_strategy(
+    configuration_path: str,
+    default_automation_path: str,
+) -> _AutomationStorageStrategy:
+    """Detect active HA automation include strategy from configuration.yaml text."""
+    if not os.path.isfile(configuration_path):
+        return _AutomationStorageStrategy(mode="single_file", path=default_automation_path)
+
+    try:
+        with open(configuration_path, encoding="utf-8") as handle:
+            config_text = handle.read()
+    except OSError:
+        return _AutomationStorageStrategy(mode="single_file", path=default_automation_path)
+
+    base_dir = os.path.dirname(configuration_path)
+
+    include_dir_list = _match_automation_include(
+        config_text,
+        tag="include_dir_list",
+    )
+    if include_dir_list is not None:
+        return _AutomationStorageStrategy(
+            mode="include_dir_list",
+            path=_resolve_config_include_path(base_dir, include_dir_list),
+        )
+
+    include_dir_merge_list = _match_automation_include(
+        config_text,
+        tag="include_dir_merge_list",
+    )
+    if include_dir_merge_list is not None:
+        return _AutomationStorageStrategy(
+            mode="include_dir_merge_list",
+            path=_resolve_config_include_path(base_dir, include_dir_merge_list),
+        )
+
+    include_file = _match_automation_include(
+        config_text,
+        tag="include",
+    )
+    if include_file is not None:
+        return _AutomationStorageStrategy(
+            mode="single_file",
+            path=_resolve_config_include_path(base_dir, include_file),
+        )
+
+    return _AutomationStorageStrategy(mode="single_file", path=default_automation_path)
+
+
+def _match_automation_include(config_text: str, tag: str) -> str | None:
+    """Return include target for one automation include tag."""
+    pattern = re.compile(
+        rf"^\s*automation\s*:\s*!{re.escape(tag)}\s+(.+?)\s*$",
+        flags=re.MULTILINE,
+    )
+    match = pattern.search(config_text)
+    if not match:
+        return None
+    return match.group(1).strip()
+
+
+def _resolve_config_include_path(base_dir: str, raw_value: str) -> str:
+    """Resolve an include scalar from configuration.yaml into absolute filesystem path."""
+    value = raw_value.split("#", 1)[0].strip()
+    if (value.startswith("'") and value.endswith("'")) or (
+        value.startswith('"') and value.endswith('"')
+    ):
+        value = value[1:-1].strip()
+
+    if not value:
+        return os.path.join(base_dir, AUTOMATION_CONFIG_PATH)
+
+    if os.path.isabs(value):
+        return os.path.normpath(value)
+
+    return os.path.normpath(os.path.join(base_dir, value))
+
+
+def _managed_rule_filename(automation_id: str) -> str:
+    """Return a safe filename for one managed automation config id."""
+    safe_stem = "".join(
+        char if char.isalnum() or char in {"_", "-"} else "_"
+        for char in automation_id.strip()
+    )
+    safe_stem = safe_stem or "topomation_rule"
+    return f"{safe_stem}.yaml"
+
+
+def _write_automation_include_rule_file(
+    directory_path: str,
+    automation_id: str,
+    payload: dict[str, Any],
+    wrap_in_list: bool,
+) -> None:
+    """Write one managed automation entry into include_dir_* directory strategy."""
+    os.makedirs(directory_path, exist_ok=True)
+    file_path = os.path.join(directory_path, _managed_rule_filename(automation_id))
+    contents = dump([payload] if wrap_in_list else payload)
+    write_utf8_file_atomic(file_path, contents)
+
+
+def _delete_automation_include_rule_file(directory_path: str, automation_id: str) -> bool:
+    """Delete one managed automation entry from include_dir_* directory strategy."""
+    file_path = os.path.join(directory_path, _managed_rule_filename(automation_id))
+    if not os.path.isfile(file_path):
+        return False
+    os.remove(file_path)
+    return True

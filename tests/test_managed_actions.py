@@ -10,11 +10,15 @@ import pytest
 from homeassistant.components.automation import DATA_COMPONENT as AUTOMATION_DATA_COMPONENT
 from homeassistant.const import CONF_ID
 from homeassistant.core import HomeAssistant
+from homeassistant.util.yaml import load_yaml
 
 from custom_components.topomation.const import TOPOMATION_AUTOMATION_METADATA_PREFIX
 from custom_components.topomation.managed_actions import (
     TopomationManagedActions,
+    _detect_automation_storage_strategy,
+    _delete_automation_include_rule_file,
     _read_automation_config_file,
+    _write_automation_include_rule_file,
     _write_automation_config_file,
 )
 
@@ -188,6 +192,41 @@ def test_automation_config_file_requires_yaml_list(tmp_path) -> None:
         _read_automation_config_file(str(path))
 
 
+def test_detect_automation_storage_strategy_include_dir_list(tmp_path) -> None:
+    """Include-dir automation config is detected from configuration.yaml."""
+    configuration = tmp_path / "configuration.yaml"
+    configuration.write_text("automation: !include_dir_list automations/\n", encoding="utf-8")
+
+    strategy = _detect_automation_storage_strategy(
+        str(configuration),
+        str(tmp_path / "automations.yaml"),
+    )
+
+    assert strategy.mode == "include_dir_list"
+    assert strategy.path == str(tmp_path / "automations")
+
+
+def test_write_and_delete_include_rule_file(tmp_path) -> None:
+    """Managed include-dir rule files are written and deleted by automation id."""
+    include_dir = tmp_path / "automations"
+    payload = {"id": "topomation_test_rule", "alias": "Managed Rule"}
+
+    _write_automation_include_rule_file(
+        str(include_dir),
+        "topomation_test_rule",
+        payload,
+        wrap_in_list=False,
+    )
+    rule_file = include_dir / "topomation_test_rule.yaml"
+    loaded = load_yaml(str(rule_file))
+    assert isinstance(loaded, dict)
+    assert loaded["id"] == "topomation_test_rule"
+    assert loaded["alias"] == "Managed Rule"
+
+    assert _delete_automation_include_rule_file(str(include_dir), "topomation_test_rule")
+    assert not rule_file.exists()
+
+
 @pytest.mark.asyncio
 async def test_async_create_rule_rolls_back_when_registration_never_appears(
     hass: HomeAssistant,
@@ -213,10 +252,10 @@ async def test_async_create_rule_rolls_back_when_registration_never_appears(
 
     writes: list[list[dict[str, object]]] = []
 
-    async def _read():
+    async def _read(*_args, **_kwargs):
         return []
 
-    async def _write(entries):
+    async def _write(entries, *_args, **_kwargs):
         writes.append(list(entries))
 
     async def _reload(*_args, **_kwargs):
