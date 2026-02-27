@@ -1,4 +1,4 @@
-# Topomation
+# TopoMation
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
 [![Installations](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fanalytics.home-assistant.io%2Fcustom_integrations.json&query=%24.topomation.total&label=installs&color=41BDF5&logo=home-assistant&cacheSeconds=3600)](https://analytics.home-assistant.io/custom_integrations.json)
@@ -12,52 +12,57 @@
 [![GitHub Issues](https://img.shields.io/github/issues/mjcumming/topomation.svg)](https://github.com/mjcumming/topomation/issues)
 [![GitHub Pull Requests](https://img.shields.io/github/issues-pr/mjcumming/topomation.svg)](https://github.com/mjcumming/topomation/pulls)
 
-**Topomation: Occupancy-driven automation**
+TopoMation is a Home Assistant custom integration for occupancy-first automations.
+It converts noisy per-entity state changes into stable location occupancy signals,
+then lets you manage occupied/vacant behaviors in one place.
 
-Topomation turns disconnected sensor signals into a reliable occupancy model you can automate against.  
-Instead of wiring every automation directly to individual entities, you define occupancy at the location level and reuse that behavior across your home.
+Instead of rebuilding automation logic room by room, you model occupancy once per
+location and reuse that behavior across your topology.
 
-## Naming and Namespace
+## What Topomation Does
 
-Topomation is the product name.  
-Current Home Assistant internals use:
+- Builds a location workspace that combines HA-backed wrappers (`floor_*`, `area_*`)
+  with integration-owned nodes (`building`, `grounds`, `subarea`).
+- Translates Home Assistant state changes into normalized occupancy signals
+  (`trigger`, `clear`, `vacate`) with source-aware IDs and optional signal keys.
+- Publishes one occupancy binary sensor per location for dashboards, automations,
+  and debugging.
+- Supports lock policies for occupancy control (`freeze`, `block_occupied`,
+  `block_vacant`) with `self` and `subtree` scope.
+- Creates and manages occupied/vacant action rules as native Home Assistant
+  automations from the Topomation panel.
+- Supports optional `Only when dark` guard for managed rules
+  (`sun.sun` must be `below_horizon`).
 
-- Integration domain: `topomation`
-- Services: `topomation.trigger`, `topomation.clear`, `topomation.vacate`, `topomation.lock`, `topomation.unlock`, `topomation.vacate_area`
-- Repository: `topomation`
+## Integration Namespace
 
-## Why Topomation
-
-Home Assistant gives you great raw signals, but occupancy automations often become brittle when every room uses different sensor logic.  
-Topomation introduces one shared pattern:
-
-1. Collect occupancy-relevant events from your sensors.
-2. Resolve those events into a location-level occupied/vacant state.
-3. Drive automations from that state instead of ad hoc per-entity conditions.
-
-Result: simpler automations, better consistency, easier debugging.
-
-## What It Does Well
-
-- **Unifies disparate sensors** into one occupancy decision per location.
-- **Keeps automations location-first** so behavior can be reused across rooms.
-- **Supports hierarchy-aware control** across floors, areas, and subareas.
-- **Provides a visual manager** for structure, detection sources, and actions.
-- **Uses native Home Assistant automations** for occupied/vacant action rules.
+- Domain: `topomation`
+- Services:
+  - `topomation.trigger`
+  - `topomation.clear`
+  - `topomation.vacate`
+  - `topomation.lock`
+  - `topomation.unlock`
+  - `topomation.unlock_all`
+  - `topomation.vacate_area`
+- WebSocket namespace: `topomation/*`
 
 ## How It Works
 
-Topomation is a thin Home Assistant adapter around the Topomation core kernel (`home_topology` Python package).
+Topomation is a thin Home Assistant adapter around the Topomation kernel
+(`home_topology` package).
 
-Flow:
+1. Home Assistant emits `state_changed` events.
+2. `EventBridge` translates mapped entity transitions into occupancy signals.
+3. Kernel modules resolve occupancy/holds/locks and timeout transitions.
+4. Integration exposes location state as HA entities and panel data.
+5. Managed actions write native HA automations for occupied/vacant responses.
 
-1. HA entities change state (motion, BLE, contact, etc.).
-2. `event_bridge.py` translates state changes into kernel events.
-3. Occupancy module resolves occupied/vacant with timeouts and holds.
-4. Integration exposes occupancy state back to HA entities and panel views.
-5. You use occupancy state and generated action automations for behavior.
+Architecture and contracts:
 
-See [Architecture](docs/architecture.md) for full details.
+- [Architecture](docs/architecture.md)
+- [Contracts](docs/contracts.md)
+- [ADR Log](docs/adr-log.md)
 
 ## Installation
 
@@ -67,22 +72,20 @@ Quick path via HACS:
 
 1. Open HACS in Home Assistant.
 2. Add `https://github.com/mjcumming/topomation` as a custom integration repository.
-3. Install the integration.
+3. Install Topomation.
 4. Restart Home Assistant.
-5. Add the integration from **Settings** -> **Devices & Services**.
+5. Add Topomation in **Settings -> Devices & Services**.
 
-## Quick Start
+## Quick Start Workflow
 
-1. Open **Location Manager** from the HA sidebar.
-2. Import/sync your floors and areas.
-3. Build your location hierarchy.
-4. Add occupancy sources under the `Detection` tab.
-5. Configure actions under `On Occupied` and `On Vacant`.
-6. Optional: enable `Only when dark` per action row to gate runs to nighttime
-   (`sun.sun` below horizon).
-7. Validate behavior using occupancy entities and service calls.
+1. Open **Location Manager** from the sidebar.
+2. Confirm imported floors/areas and shape your hierarchy.
+3. Configure occupancy detection in the **Detection** tab.
+4. Configure behavior in **On Occupied** and **On Vacant**.
+5. Optionally enable `Only when dark` per managed action.
+6. Validate using occupancy entities and manual services.
 
-Example automation trigger:
+Example trigger from occupancy sensor:
 
 ```yaml
 automation:
@@ -97,7 +100,7 @@ automation:
           entity_id: light.kitchen
 ```
 
-Manual occupancy service example:
+Manual occupancy control example:
 
 ```yaml
 service: topomation.trigger
@@ -107,29 +110,25 @@ data:
   timeout: 300
 ```
 
-## Design Decisions
+## Current Scope (Alpha)
 
-Topomation is built on documented ADRs in [ADR Log](docs/adr-log.md).  
-Key decisions include:
+- Stable occupancy model and lock workflows are available today.
+- Managed occupied/vacant actions are backend-owned and stored as native HA automations.
+- HA registry changes (areas/floors/entities) are synchronized into topology wrappers.
+- Ambient module support is available via integration runtime/WebSocket workflows.
+  Ambient helper entities are intentionally not exposed yet.
 
-- Lit-based UI aligned with Home Assistant frontend patterns.
-- Host-controlled timeout scheduling for deterministic behavior.
-- Integration-owned topology wrappers plus HA-backed area/floor mapping.
-- Single sidebar entry with deep-link aliases for occupancy/actions workflows.
+## Known Limits
 
-## Troubleshooting and Validation
+- `Only when dark` is currently sun-position based (`sun.sun`), not per-room lux.
+- Admin privileges are required for panel routes and managed-action writes.
+- UX polish and richer presets/templates are still in progress.
 
-- Live validation checklist: [Live HA Validation Checklist](docs/live-ha-validation-checklist.md)
-- Integration and behavior guide: [Integration Guide](docs/integration-guide.md)
-- Work log and release context: [Work Tracking](docs/work-tracking.md)
+## Validation and Release Discipline
 
-## Current Scope and Tradeoffs (v0.1.0-alpha)
-
-- Occupancy and actions workflow is available and usable.
-- `Only when dark` currently uses sun position as a coarse guard. Lux/room-darkness
-  gating is planned as a future enhancement.
-- Integration and service namespaces are now `topomation`.
-- Some advanced UX polish and broader module surface are still in progress.
+- [Release Validation Runbook](docs/release-validation-runbook.md)
+- [Live HA Validation Checklist](docs/live-ha-validation-checklist.md)
+- [Live Release Testing Paradigm](docs/live-release-testing-paradigm.md)
 
 ## Development
 
@@ -140,7 +139,7 @@ make dev-install
 make test
 ```
 
-For deeper development workflows, start with:
+Start here for contributor docs:
 
 - [Docs Index](docs/index.md)
 - [Frontend Workflow](docs/frontend-dev-workflow.md)
@@ -150,7 +149,6 @@ For deeper development workflows, start with:
 
 - Issues: <https://github.com/mjcumming/topomation/issues>
 - Discussions: <https://github.com/mjcumming/topomation/discussions>
-- Core library: <https://github.com/mjcumming/topomation>
 
 ## License
 
@@ -158,6 +156,6 @@ MIT License. See [LICENSE](LICENSE).
 
 ---
 
-**Status**: Alpha (v0.1.0)  
-**Maintainer**: Mike Cumming  
-**Last Updated**: 2026-02-25
+**Status**: Alpha
+**Maintainer**: Mike Cumming
+**Last Updated**: 2026-02-27

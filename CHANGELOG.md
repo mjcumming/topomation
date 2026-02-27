@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.15] - 2026-02-27
+
+### Changed
+
+- Rewrote `README.md` to better reflect the current integration behavior and
+  scope: occupancy-first model, topology workspace, lock/service surface,
+  managed occupied/vacant automations, and current alpha limitations.
+- Updated quick-start and validation sections in `README.md` to point users to
+  the active architecture/contracts/release docs.
+
 ## [0.1.14] - 2026-02-27
 
 ### Added

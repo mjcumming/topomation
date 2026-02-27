@@ -291,6 +291,117 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(optionValues).to.not.include("binary_sensor.driveway_motion");
   });
 
+  it("filters hidden/disabled/config entities from area entity options", async () => {
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>): Promise<T> => {
+        if (request.type === "config/entity_registry/list") {
+          return [
+            {
+              entity_id: "binary_sensor.kitchen_motion",
+              area_id: "kitchen",
+              device_id: null,
+            },
+            {
+              entity_id: "switch.kitchen_hidden",
+              area_id: "kitchen",
+              device_id: null,
+              hidden_by: "user",
+            },
+            {
+              entity_id: "switch.kitchen_disabled",
+              area_id: "kitchen",
+              device_id: null,
+              disabled_by: "integration",
+            },
+            {
+              entity_id: "switch.kitchen_config",
+              area_id: "kitchen",
+              device_id: null,
+              entity_category: "config",
+            },
+          ] as T;
+        }
+        if (request.type === "config/device_registry/list") {
+          return [] as T;
+        }
+        if (request.type === "topomation/locations/set_module_config") {
+          return { success: true } as T;
+        }
+        return {} as T;
+      },
+      connection: {},
+      states: {
+        "binary_sensor.kitchen_motion": {
+          entity_id: "binary_sensor.kitchen_motion",
+          state: "off",
+          attributes: {
+            friendly_name: "Kitchen Motion",
+            device_class: "motion",
+          },
+        },
+        "switch.kitchen_hidden": {
+          entity_id: "switch.kitchen_hidden",
+          state: "off",
+          attributes: {
+            friendly_name: "Kitchen Hidden",
+          },
+        },
+        "switch.kitchen_disabled": {
+          entity_id: "switch.kitchen_disabled",
+          state: "off",
+          attributes: {
+            friendly_name: "Kitchen Disabled",
+          },
+        },
+        "switch.kitchen_config": {
+          entity_id: "switch.kitchen_config",
+          state: "off",
+          attributes: {
+            friendly_name: "Kitchen Config",
+          },
+        },
+      },
+      areas: {
+        kitchen: { area_id: "kitchen", name: "Kitchen" },
+      },
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${structuredClone(baseLocation)}
+      ></ht-location-inspector>
+    `);
+
+    const areaSelect = element.shadowRoot!.querySelector(
+      '[data-testid="external-source-area-select"]'
+    ) as HTMLSelectElement;
+    areaSelect.value = "kitchen";
+    areaSelect.dispatchEvent(new Event("change"));
+    await element.updateComplete;
+
+    await waitUntil(() => {
+      const entitySelect = element.shadowRoot!.querySelector(
+        '[data-testid="external-source-entity-select"]'
+      ) as HTMLSelectElement;
+      return Array.from(entitySelect.options).some(
+        (option) => option.value === "binary_sensor.kitchen_motion"
+      );
+    }, "normal kitchen entity option did not appear");
+
+    const entitySelect = element.shadowRoot!.querySelector(
+      '[data-testid="external-source-entity-select"]'
+    ) as HTMLSelectElement;
+    const optionValues = Array.from(entitySelect.options).map((option) => option.value);
+
+    expect(optionValues).to.include("binary_sensor.kitchen_motion");
+    expect(optionValues).to.not.include("switch.kitchen_hidden");
+    expect(optionValues).to.not.include("switch.kitchen_disabled");
+    expect(optionValues).to.not.include("switch.kitchen_config");
+  });
+
   it("adds selected external entity as staged occupancy source", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>): Promise<T> => {

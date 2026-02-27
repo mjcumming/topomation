@@ -34,6 +34,11 @@ type InspectorLockState = {
   lockModes: string[];
   directLocks: OccupancyLockDirective[];
 };
+type EntityRegistryMeta = {
+  hiddenBy?: string | null;
+  disabledBy?: string | null;
+  entityCategory?: string | null;
+};
 
 console.log("[ht-location-inspector] module loaded");
 
@@ -68,6 +73,7 @@ export class HtLocationInspector extends LitElement {
   @state() private _externalAreaId = "";
   @state() private _externalEntityId = "";
   @state() private _entityAreaById: Record<string, string | null> = {};
+  @state() private _entityRegistryMetaById: Record<string, EntityRegistryMeta> = {};
   @state() private _actionRules: TopomationActionRule[] = [];
   @state() private _loadingActionRules = false;
   @state() private _actionRulesError?: string;
@@ -1120,6 +1126,7 @@ export class HtLocationInspector extends LitElement {
         }
 
         const assignments: Record<string, string | null> = {};
+        const entityRegistryMetaById: Record<string, EntityRegistryMeta> = {};
         if (Array.isArray(entityRegistry)) {
           for (const entity of entityRegistry) {
             const entityId = typeof entity?.entity_id === "string" ? entity.entity_id : undefined;
@@ -1133,13 +1140,21 @@ export class HtLocationInspector extends LitElement {
                 : undefined;
 
             assignments[entityId] = explicitAreaId || deviceAreaId || null;
+            entityRegistryMetaById[entityId] = {
+              hiddenBy: typeof entity?.hidden_by === "string" ? entity.hidden_by : null,
+              disabledBy: typeof entity?.disabled_by === "string" ? entity.disabled_by : null,
+              entityCategory:
+                typeof entity?.entity_category === "string" ? entity.entity_category : null,
+            };
           }
         }
 
         this._entityAreaById = assignments;
+        this._entityRegistryMetaById = entityRegistryMetaById;
       } catch (err) {
         console.debug("[ht-location-inspector] failed to load entity/device registry area mapping", err);
         this._entityAreaById = {};
+        this._entityRegistryMetaById = {};
       } finally {
         this._entityAreaLoadPromise = undefined;
         this.requestUpdate();
@@ -1551,6 +1566,14 @@ export class HtLocationInspector extends LitElement {
     }));
   }
 
+  private _signalSortWeight(signalKey?: SourceSignalKey): number {
+    if (!signalKey) return 0;
+    if (signalKey === "power" || signalKey === "playback") return 0;
+    if (signalKey === "level" || signalKey === "volume") return 1;
+    if (signalKey === "color" || signalKey === "mute") return 2;
+    return 3;
+  }
+
   private _candidateTitle(entityId: string, signalKey?: SourceSignalKey): string {
     const baseName = this._entityName(entityId);
     if (signalKey && (entityId.startsWith("media_player.") || entityId.startsWith("light."))) {
@@ -1673,6 +1696,12 @@ export class HtLocationInspector extends LitElement {
     const areaEntitySet = new Set(areaEntityIds);
     const candidateAreaEntityIds = areaEntityIds.filter((entityId) => this._isCandidateEntity(entityId));
     const candidateItems = candidateAreaEntityIds.flatMap((entityId) => this._candidateItemsForEntity(entityId));
+    const configuredKeys = new Set(sources.map((source) => this._sourceKeyFromSource(source)));
+    const visibleCandidateItems = candidateItems.filter((item) => {
+      if (configuredKeys.has(item.key)) return true;
+      const defaultSignalKey = this._defaultSignalKeyForEntity(item.entityId);
+      return item.signalKey === defaultSignalKey || (!defaultSignalKey && !item.signalKey);
+    });
     const candidateItemKeys = new Set(candidateItems.map((item) => item.key));
     const configuredExtraItems = sources
       .filter((source) => !candidateItemKeys.has(this._sourceKeyFromSource(source)))
@@ -1681,7 +1710,16 @@ export class HtLocationInspector extends LitElement {
         entityId: source.entity_id,
         signalKey: source.signal_key,
       }));
-    const items = [...candidateItems, ...configuredExtraItems];
+    const items = [...visibleCandidateItems, ...configuredExtraItems].sort((a, b) => {
+      const aConfigured = sourceIndexByKey.has(a.key);
+      const bConfigured = sourceIndexByKey.has(b.key);
+      if (aConfigured !== bConfigured) return aConfigured ? -1 : 1;
+
+      const byName = this._entityName(a.entityId).localeCompare(this._entityName(b.entityId));
+      if (byName !== 0) return byName;
+
+      return this._signalSortWeight(a.signalKey) - this._signalSortWeight(b.signalKey);
+    });
 
     if (!items.length) {
       return html`
@@ -2924,6 +2962,10 @@ export class HtLocationInspector extends LitElement {
   private _isCandidateEntity(entityId: string): boolean {
     const stateObj = this.hass?.states?.[entityId];
     if (!stateObj) return false;
+    const registryMeta = this._entityRegistryMetaById[entityId];
+    if (registryMeta?.hiddenBy || registryMeta?.disabledBy || registryMeta?.entityCategory) {
+      return false;
+    }
     const attrs = stateObj.attributes || {};
     if (attrs.device_class === "occupancy" && attrs.location_id) return false;
     const domain = entityId.split(".", 1)[0];
