@@ -320,7 +320,30 @@ describe('HtLocationTree - shouldUpdate Performance', () => {
     expect(element.shadowRoot!.querySelector('[data-id="pantry"]')).to.equal(null);
   });
 
-  it('auto-expands a collapsed valid target after drag hover delay', async () => {
+  it('does not auto-expand a collapsed target during drag hover', async () => {
+    const element = await fixture<HtLocationTree>(html`
+      <ht-location-tree
+        .hass=${mockHass as HomeAssistant}
+        .locations=${deepTreeLocations}
+      ></ht-location-tree>
+    `);
+    await element.updateComplete;
+
+    (element as any)._expandedIds = new Set(['house', 'main-floor']);
+    (element as any)._isDragging = true;
+    (element as any)._scheduleDragHoverExpand('top-shelf', {
+      relatedId: 'kitchen',
+      willInsertAfter: false,
+      pointerX: 270,
+      relatedLeft: 200,
+    });
+
+    await new Promise((resolve) => window.setTimeout(resolve, 450));
+    const expanded = (element as any)._expandedIds as Set<string>;
+    expect(expanded.has('kitchen')).to.equal(false);
+  });
+
+  it('does not auto-expand on weak child-intent hover', async () => {
     const element = await fixture<HtLocationTree>(html`
       <ht-location-tree
         .hass=${mockHass as HomeAssistant}
@@ -340,7 +363,7 @@ describe('HtLocationTree - shouldUpdate Performance', () => {
 
     await new Promise((resolve) => window.setTimeout(resolve, 450));
     const expanded = (element as any)._expandedIds as Set<string>;
-    expect(expanded.has('kitchen')).to.equal(true);
+    expect(expanded.has('kitchen')).to.equal(false);
   });
 
   it('does not auto-expand when drag intent is not child nesting', async () => {

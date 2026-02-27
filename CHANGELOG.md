@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.17] - 2026-02-27
+
+### Changed
+
+- Tree drag-and-drop no longer auto-expands collapsed branches during hover.
+  Expansion is now explicit/manual (chevron), while drag/drop still supports
+  reorder and reparent intents.
+- Frontend runtime bundle (`topomation-panel.js`) is synchronized with the
+  updated tree drag behavior.
+
 ## [0.1.16] - 2026-02-27
 
 ### Changed

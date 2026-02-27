@@ -37,7 +37,9 @@ type OccupancyStatus = "occupied" | "vacant" | "unknown";
 type LockState = { isLocked: boolean; lockedBy: string[] };
 const CHILD_INDENT_THRESHOLD_PX = 28;
 const OUTDENT_THRESHOLD_PX = 14;
+const DRAG_HOVER_EXPAND_CHILD_THRESHOLD_PX = 56;
 const DRAG_HOVER_EXPAND_DELAY_MS = 400;
+const ENABLE_DRAG_HOVER_AUTO_EXPAND = false;
 
 /**
  * Build a flat list of nodes in depth-first order for rendering.
@@ -695,7 +697,11 @@ export class HtLocationTree extends LitElement {
               relatedLeft: rect.left,
             };
             this._updateDropIndicator(draggedId, this._lastDropContext, resolvedTarget);
-            this._scheduleDragHoverExpand(draggedId, this._lastDropContext);
+            if (ENABLE_DRAG_HOVER_AUTO_EXPAND) {
+              this._scheduleDragHoverExpand(draggedId, this._lastDropContext);
+            } else {
+              this._clearDragHoverExpand();
+            }
           } else {
             this._dropIndicator = undefined;
             this._clearDragHoverExpand();
@@ -796,14 +802,20 @@ export class HtLocationTree extends LitElement {
     draggedId: string,
     context: DropContext | undefined
   ): void {
+    if (!ENABLE_DRAG_HOVER_AUTO_EXPAND) {
+      this._clearDragHoverExpand();
+      return;
+    }
+
     const relatedId = context?.relatedId;
     if (!relatedId) {
       this._clearDragHoverExpand();
       return;
     }
 
-    const intent = this._resolveDropIntent(draggedId, context);
-    if (intent !== "child") {
+    // Expansion should be conservative: only expand when the pointer clearly
+    // indicates child nesting intent, not for incidental row hover.
+    if (!this._hasStrongChildHoverIntent(context)) {
       this._clearDragHoverExpand();
       return;
     }
@@ -841,6 +853,13 @@ export class HtLocationTree extends LitElement {
       next.add(targetId);
       this._expandedIds = next;
     }, DRAG_HOVER_EXPAND_DELAY_MS);
+  }
+
+  private _hasStrongChildHoverIntent(context: DropContext): boolean {
+    if (context.pointerX === undefined || context.relatedLeft === undefined) {
+      return false;
+    }
+    return context.pointerX >= context.relatedLeft + DRAG_HOVER_EXPAND_CHILD_THRESHOLD_PX;
   }
 
   private _resolveDropIntent(
