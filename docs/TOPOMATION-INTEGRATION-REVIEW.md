@@ -53,6 +53,15 @@ The Topomation integration is a Home Assistant custom component that bridges HA 
    binary sensors for location automation/eventing, and avoid ambient helper entity sprawl
    unless explicitly configured as a future enhancement.
 
+## 2026-02-27 Reliability Notes
+
+1. **Managed action writes are now backend-first**:
+   panel save/delete/enable flows use Topomation WebSocket commands and backend
+   Python code mutates HA automation config from inside the integration runtime.
+2. **Release confidence now includes real-path contract validation**:
+   local comprehensive gate + live managed-action contract pass both execute
+   against the same backend ownership model.
+
 ---
 
 ## Testing Checklist (Live HA)

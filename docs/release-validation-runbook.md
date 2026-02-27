@@ -1,6 +1,6 @@
 # Release Validation Runbook
 
-**Last reviewed**: 2026-02-26
+**Last reviewed**: 2026-02-27
 **Scope**: release-candidate validation before bumping `manifest.json` version.
 
 ## 1) Local preflight
@@ -46,6 +46,8 @@ Then rerun `./scripts/test-comprehensive.sh`.
 
 Every release must pass this gate against a running Home Assistant instance.
 Do not cut a release from mock-only evidence.
+Topomation integration must be loaded in that HA instance; the live contract
+gate now fails fast when it is missing.
 
 ```bash
 cp tests/ha-config.env.template tests/ha-config.env
@@ -85,9 +87,10 @@ make test-release-live
 
 - No rules created from panel actions:
   - confirm the acting user is an HA admin (panel/routes are admin-only)
-  - inspect network response for `config/automation/config/*`:
-    - `401/403` indicates permission issue
-    - `400` indicates payload validation failure (inspect message body)
+  - inspect WS responses for `topomation/actions/rules/create`:
+    - `not_loaded/module_not_loaded` indicates integration runtime wiring issue
+    - `create_failed` indicates backend payload/validation issue (inspect message text)
+  - confirm backend logs show managed action creation path execution (integration performs HA writes)
 - `Saving...` then unchecked in managed actions:
   - validate fallback path for `config/entity_registry/list` permissions
   - inspect browser console logs for stage traces:

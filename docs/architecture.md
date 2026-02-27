@@ -1,7 +1,7 @@
 # Topomation Integration Architecture
 
 **Version**: 1.0
-**Date**: 2026-02-24
+**Date**: 2026-02-27
 **Purpose**: Define the architecture of the Home Assistant integration for Topomation
 
 > **Note**: This document focuses on **integration-specific** architecture. For core kernel architecture (LocationManager, EventBus, Modules), see the Topomation core library documentation.
@@ -207,6 +207,10 @@ class TopomationCoordinator:
 
 - `topomation/locations/list` - Get all locations
 - `topomation/locations/set_module_config` - Update module config
+- `topomation/actions/rules/list` - Enumerate managed occupied/vacant rules for a location
+- `topomation/actions/rules/create` - Create/replace one managed occupied/vacant rule
+- `topomation/actions/rules/delete` - Delete one managed rule
+- `topomation/actions/rules/set_enabled` - Enable/disable one managed rule
 
 Location lifecycle is supported via the WebSocket API with guardrails:
 
@@ -290,6 +294,9 @@ shared location tree selection context.
 - Inspector tabs are split into `Detection`, `On Occupied`, and `On Vacant`.
 - `On Occupied` / `On Vacant` rules are created as native Home Assistant automation entities (managed in HA's automation system).
 - Topomation tags those automations with panel metadata + labels/category so each location tab can filter only its own rules.
+- The panel is WS-first for rule writes:
+  `topomation/actions/rules/*` commands call integration backend code, and backend
+  code performs HA automation config mutations/reload.
 - The built-in action list is intentionally common-case: media players support `Stop` and `Turn off` only.
   Advanced occupancy-driven play/turn-on behavior is expected to be authored as custom HA automations using Topomation occupancy entities.
 - Integration-owned nodes (`building`, `grounds`, `subarea`) are configured through explicit source assignment in inspector.

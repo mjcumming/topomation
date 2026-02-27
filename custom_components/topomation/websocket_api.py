@@ -18,6 +18,10 @@ except Exception:  # pragma: no cover - compatibility import
 
 from .const import (
     DOMAIN,
+    WS_TYPE_ACTION_RULES_CREATE,
+    WS_TYPE_ACTION_RULES_DELETE,
+    WS_TYPE_ACTION_RULES_LIST,
+    WS_TYPE_ACTION_RULES_SET_ENABLED,
     WS_TYPE_AMBIENT_AUTO_DISCOVER,
     WS_TYPE_AMBIENT_GET_READING,
     WS_TYPE_AMBIENT_SET_SENSOR,
@@ -362,6 +366,12 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, handle_locations_delete)
     websocket_api.async_register_command(hass, handle_locations_reorder)
     websocket_api.async_register_command(hass, handle_locations_set_module_config)
+
+    # Managed actions
+    websocket_api.async_register_command(hass, handle_action_rules_list)
+    websocket_api.async_register_command(hass, handle_action_rules_create)
+    websocket_api.async_register_command(hass, handle_action_rules_delete)
+    websocket_api.async_register_command(hass, handle_action_rules_set_enabled)
 
     # Ambient light module
     websocket_api.async_register_command(hass, handle_ambient_get_reading)
@@ -894,6 +904,199 @@ def handle_locations_set_module_config(
         connection.send_result(msg["id"], {"success": True})
     except (ValueError, KeyError) as e:
         connection.send_error(msg["id"], "config_failed", str(e))
+
+
+# =============================================================================
+# Managed Action Rules Commands
+# =============================================================================
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): WS_TYPE_ACTION_RULES_LIST,
+        vol.Required("location_id"): str,
+        vol.Optional("entry_id"): str,
+    }
+)
+@websocket_api.async_response
+async def handle_action_rules_list(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Handle actions/rules/list command."""
+    kernel = _get_kernel(hass, connection, msg)
+    if kernel is None:
+        return
+
+    managed_action_rules = kernel.get("managed_action_rules")
+    if managed_action_rules is None:
+        connection.send_error(msg["id"], "module_not_loaded", "Managed action rules runtime not loaded")
+        return
+
+    try:
+        rules = await managed_action_rules.async_list_rules(msg["location_id"])
+    except ValueError as err:
+        connection.send_error(msg["id"], "list_failed", str(err))
+        return
+    except Exception as err:  # pragma: no cover - defensive runtime boundary
+        _LOGGER.error("Failed to list managed rules: %s", err, exc_info=True)
+        connection.send_error(msg["id"], "list_failed", "Failed to list managed action rules")
+        return
+
+    connection.send_result(msg["id"], {"rules": rules})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): WS_TYPE_ACTION_RULES_CREATE,
+        vol.Required("location_id"): str,
+        vol.Required("name"): str,
+        vol.Required("trigger_type"): vol.In(("occupied", "vacant")),
+        vol.Required("action_entity_id"): str,
+        vol.Required("action_service"): str,
+        vol.Optional("require_dark", default=False): bool,
+        vol.Optional("entry_id"): str,
+    }
+)
+@websocket_api.async_response
+async def handle_action_rules_create(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Handle actions/rules/create command."""
+    kernel = _get_kernel(hass, connection, msg)
+    if kernel is None:
+        return
+
+    managed_action_rules = kernel.get("managed_action_rules")
+    if managed_action_rules is None:
+        connection.send_error(msg["id"], "module_not_loaded", "Managed action rules runtime not loaded")
+        return
+
+    loc_mgr = kernel["location_manager"]
+    location = loc_mgr.get_location(msg["location_id"])
+    if location is None:
+        connection.send_error(msg["id"], "location_not_found", f"Location {msg['location_id']} not found")
+        return
+
+    try:
+        rule = await managed_action_rules.async_create_rule(
+            location=location,
+            name=msg["name"],
+            trigger_type=msg["trigger_type"],
+            action_entity_id=msg["action_entity_id"],
+            action_service=msg["action_service"],
+            require_dark=bool(msg.get("require_dark", False)),
+        )
+    except ValueError as err:
+        connection.send_error(msg["id"], "create_failed", str(err))
+        return
+    except Exception as err:  # pragma: no cover - defensive runtime boundary
+        _LOGGER.error("Failed to create managed rule: %s", err, exc_info=True)
+        connection.send_error(msg["id"], "create_failed", "Failed to create managed action rule")
+        return
+
+    schedule_persist = kernel.get("schedule_persist")
+    if callable(schedule_persist):
+        schedule_persist("actions/rules/create")
+
+    connection.send_result(msg["id"], {"rule": rule})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): WS_TYPE_ACTION_RULES_DELETE,
+        vol.Optional("automation_id"): str,
+        vol.Optional("entity_id"): str,
+        vol.Optional("entry_id"): str,
+    }
+)
+@websocket_api.async_response
+async def handle_action_rules_delete(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Handle actions/rules/delete command."""
+    kernel = _get_kernel(hass, connection, msg)
+    if kernel is None:
+        return
+
+    managed_action_rules = kernel.get("managed_action_rules")
+    if managed_action_rules is None:
+        connection.send_error(msg["id"], "module_not_loaded", "Managed action rules runtime not loaded")
+        return
+
+    automation_id = str(msg.get("automation_id", "")).strip()
+    entity_id = str(msg.get("entity_id", "")).strip() or None
+    if not automation_id and not entity_id:
+        connection.send_error(
+            msg["id"],
+            "invalid_payload",
+            "automation_id or entity_id is required",
+        )
+        return
+
+    try:
+        await managed_action_rules.async_delete_rule(
+            automation_id=automation_id,
+            entity_id=entity_id,
+        )
+    except ValueError as err:
+        connection.send_error(msg["id"], "delete_failed", str(err))
+        return
+    except Exception as err:  # pragma: no cover - defensive runtime boundary
+        _LOGGER.error("Failed to delete managed rule: %s", err, exc_info=True)
+        connection.send_error(msg["id"], "delete_failed", "Failed to delete managed action rule")
+        return
+
+    schedule_persist = kernel.get("schedule_persist")
+    if callable(schedule_persist):
+        schedule_persist("actions/rules/delete")
+
+    connection.send_result(msg["id"], {"success": True})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): WS_TYPE_ACTION_RULES_SET_ENABLED,
+        vol.Required("entity_id"): str,
+        vol.Required("enabled"): bool,
+        vol.Optional("entry_id"): str,
+    }
+)
+@websocket_api.async_response
+async def handle_action_rules_set_enabled(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Handle actions/rules/set_enabled command."""
+    kernel = _get_kernel(hass, connection, msg)
+    if kernel is None:
+        return
+
+    managed_action_rules = kernel.get("managed_action_rules")
+    if managed_action_rules is None:
+        connection.send_error(msg["id"], "module_not_loaded", "Managed action rules runtime not loaded")
+        return
+
+    try:
+        await managed_action_rules.async_set_rule_enabled(
+            entity_id=msg["entity_id"],
+            enabled=msg["enabled"],
+        )
+    except ValueError as err:
+        connection.send_error(msg["id"], "set_enabled_failed", str(err))
+        return
+    except Exception as err:  # pragma: no cover - defensive runtime boundary
+        _LOGGER.error("Failed to set managed rule state: %s", err, exc_info=True)
+        connection.send_error(msg["id"], "set_enabled_failed", "Failed to update managed action rule")
+        return
+
+    connection.send_result(msg["id"], {"success": True})
 
 
 # =============================================================================

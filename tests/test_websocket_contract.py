@@ -27,6 +27,10 @@ from custom_components.topomation.const import (  # type: ignore[import]
     DOMAIN,
     STORAGE_KEY_CONFIG,
     STORAGE_VERSION,
+    WS_TYPE_ACTION_RULES_CREATE,
+    WS_TYPE_ACTION_RULES_DELETE,
+    WS_TYPE_ACTION_RULES_LIST,
+    WS_TYPE_ACTION_RULES_SET_ENABLED,
     WS_TYPE_LOCATIONS_CREATE,
     WS_TYPE_LOCATIONS_DELETE,
     WS_TYPE_LOCATIONS_LIST,
@@ -37,6 +41,10 @@ from custom_components.topomation.const import (  # type: ignore[import]
     WS_TYPE_SYNC_STATUS,
 )
 from custom_components.topomation.websocket_api import (  # type: ignore[import]
+    handle_action_rules_create,
+    handle_action_rules_delete,
+    handle_action_rules_list,
+    handle_action_rules_set_enabled,
     handle_locations_create,
     handle_locations_delete,
     handle_locations_list,
@@ -1344,6 +1352,171 @@ async def test_sync_status_reports_custom_and_legacy_normalized_types(
     )
     assert legacy_conn.send_error.call_count == 0
     assert legacy_conn.send_result.call_args[0][1]["type"] == "area"
+
+
+@pytest.mark.asyncio
+async def test_action_rules_list_uses_managed_runtime(hass: HomeAssistant) -> None:
+    """actions/rules/list returns manager-provided rules for one location."""
+    expected_rules = [
+        {
+            "id": "rule_1",
+            "entity_id": "automation.rule_1",
+            "name": "Bathroom Vacant: Bathroom Light (turn off)",
+            "trigger_type": "vacant",
+            "action_entity_id": "light.bathroom",
+            "action_service": "turn_off",
+            "require_dark": False,
+            "enabled": True,
+        }
+    ]
+    managed_action_rules = AsyncMock()
+    managed_action_rules.async_list_rules = AsyncMock(return_value=expected_rules)
+    hass.data[DOMAIN] = {
+        "entry_1": {
+            "managed_action_rules": managed_action_rules,
+        }
+    }
+
+    connection = _fake_connection()
+    handle_action_rules_list(
+        hass,
+        connection,
+        {
+            "id": 90,
+            "type": WS_TYPE_ACTION_RULES_LIST,
+            "location_id": "bathroom",
+        },
+    )
+    await hass.async_block_till_done()
+
+    managed_action_rules.async_list_rules.assert_awaited_once_with("bathroom")
+    connection.send_error.assert_not_called()
+    connection.send_result.assert_called_once_with(90, {"rules": expected_rules})
+
+
+@pytest.mark.asyncio
+async def test_action_rules_create_uses_managed_runtime(hass: HomeAssistant) -> None:
+    """actions/rules/create resolves location and schedules persistence."""
+    location = type("Location", (), {"id": "bathroom", "name": "Bathroom"})()
+    loc_mgr = Mock()
+    loc_mgr.get_location.return_value = location
+    schedule_persist = Mock()
+    created_rule = {
+        "id": "topomation_bathroom_vacant_1",
+        "entity_id": "automation.topomation_bathroom_vacant_1",
+        "name": "Bathroom Vacant: Bathroom Light (turn off)",
+        "trigger_type": "vacant",
+        "action_entity_id": "light.bathroom",
+        "action_service": "turn_off",
+        "require_dark": True,
+        "enabled": True,
+    }
+    managed_action_rules = AsyncMock()
+    managed_action_rules.async_create_rule = AsyncMock(return_value=created_rule)
+    hass.data[DOMAIN] = {
+        "entry_1": {
+            "location_manager": loc_mgr,
+            "managed_action_rules": managed_action_rules,
+            "schedule_persist": schedule_persist,
+        }
+    }
+
+    connection = _fake_connection()
+    handle_action_rules_create(
+        hass,
+        connection,
+        {
+            "id": 91,
+            "type": WS_TYPE_ACTION_RULES_CREATE,
+            "location_id": "bathroom",
+            "name": "Bathroom Vacant: Bathroom Light (turn off)",
+            "trigger_type": "vacant",
+            "action_entity_id": "light.bathroom",
+            "action_service": "turn_off",
+            "require_dark": True,
+        },
+    )
+    await hass.async_block_till_done()
+
+    loc_mgr.get_location.assert_called_once_with("bathroom")
+    managed_action_rules.async_create_rule.assert_awaited_once_with(
+        location=location,
+        name="Bathroom Vacant: Bathroom Light (turn off)",
+        trigger_type="vacant",
+        action_entity_id="light.bathroom",
+        action_service="turn_off",
+        require_dark=True,
+    )
+    schedule_persist.assert_called_once_with("actions/rules/create")
+    connection.send_error.assert_not_called()
+    connection.send_result.assert_called_once_with(91, {"rule": created_rule})
+
+
+@pytest.mark.asyncio
+async def test_action_rules_delete_uses_managed_runtime(hass: HomeAssistant) -> None:
+    """actions/rules/delete calls manager and schedules persistence."""
+    managed_action_rules = AsyncMock()
+    managed_action_rules.async_delete_rule = AsyncMock(return_value=None)
+    schedule_persist = Mock()
+    hass.data[DOMAIN] = {
+        "entry_1": {
+            "managed_action_rules": managed_action_rules,
+            "schedule_persist": schedule_persist,
+        }
+    }
+
+    connection = _fake_connection()
+    handle_action_rules_delete(
+        hass,
+        connection,
+        {
+            "id": 92,
+            "type": WS_TYPE_ACTION_RULES_DELETE,
+            "automation_id": "topomation_bathroom_vacant_1",
+            "entity_id": "automation.topomation_bathroom_vacant_1",
+        },
+    )
+    await hass.async_block_till_done()
+
+    managed_action_rules.async_delete_rule.assert_awaited_once_with(
+        automation_id="topomation_bathroom_vacant_1",
+        entity_id="automation.topomation_bathroom_vacant_1",
+    )
+    schedule_persist.assert_called_once_with("actions/rules/delete")
+    connection.send_error.assert_not_called()
+    connection.send_result.assert_called_once_with(92, {"success": True})
+
+
+@pytest.mark.asyncio
+async def test_action_rules_set_enabled_uses_managed_runtime(hass: HomeAssistant) -> None:
+    """actions/rules/set_enabled delegates on/off mutation to manager."""
+    managed_action_rules = AsyncMock()
+    managed_action_rules.async_set_rule_enabled = AsyncMock(return_value=None)
+    hass.data[DOMAIN] = {
+        "entry_1": {
+            "managed_action_rules": managed_action_rules,
+        }
+    }
+
+    connection = _fake_connection()
+    handle_action_rules_set_enabled(
+        hass,
+        connection,
+        {
+            "id": 93,
+            "type": WS_TYPE_ACTION_RULES_SET_ENABLED,
+            "entity_id": "automation.topomation_bathroom_vacant_1",
+            "enabled": False,
+        },
+    )
+    await hass.async_block_till_done()
+
+    managed_action_rules.async_set_rule_enabled.assert_awaited_once_with(
+        entity_id="automation.topomation_bathroom_vacant_1",
+        enabled=False,
+    )
+    connection.send_error.assert_not_called()
+    connection.send_result.assert_called_once_with(93, {"success": True})
 
 
 def _add_floors(hass: HomeAssistant, floors: Iterable[FloorDef]) -> None:

@@ -1433,6 +1433,44 @@ could attempt writes and fail at runtime with no deterministic up-front guardrai
 
 ---
 
+### ADR-HA-036: Managed Action Writes Move to Integration-Backend WebSocket Commands (2026-02-27)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+Managed action edits previously relied on browser-driven automation-config writes.
+This made production debugging difficult because panel sessions could diverge from
+integration runtime behavior and permission boundaries.
+
+**Decision**:
+
+1. Make managed action operations WS-first with explicit Topomation commands:
+   - `topomation/actions/rules/list`
+   - `topomation/actions/rules/create`
+   - `topomation/actions/rules/delete`
+   - `topomation/actions/rules/set_enabled`
+2. Move HA automation mutation logic into integration backend code
+   (`managed_actions.py`) running inside Home Assistant.
+3. Keep frontend legacy fallback only for compatibility with older installs that do
+   not expose the new WS command set.
+4. Add backend contract tests for the new WS handlers plus managed-actions helper tests.
+
+**Rationale**:
+
+1. Ensures the same code path is used in dev and real HA installs.
+2. Keeps automation mutation authority in HA backend runtime where validation/reload/logging are native.
+3. Reduces false confidence from browser-only/mock paths.
+4. Improves observability and deterministic failure modes for `Saving...` regressions.
+
+**Consequences**:
+
+- ✅ Panel save flows now exercise integration backend logic directly.
+- ✅ Live contract testing better reflects production behavior.
+- ✅ Backend can centrally enforce metadata/tag/category conventions on managed rules.
+- ⚠️ Requires WebSocket API parity between frontend bundle and backend integration version.
+
+---
+
 ## How to Use This Log
 
 ### When to Create an ADR

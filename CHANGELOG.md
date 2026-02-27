@@ -9,6 +9,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-02-27
+
+### Added
+
+- Backend managed-action runtime module (`managed_actions.py`) plus new
+  websocket commands:
+  - `topomation/actions/rules/list`
+  - `topomation/actions/rules/create`
+  - `topomation/actions/rules/delete`
+  - `topomation/actions/rules/set_enabled`
+- Backend WebSocket contract tests for managed-action commands in
+  `tests/test_websocket_contract.py`.
+- Managed-actions helper unit coverage in `tests/test_managed_actions.py`.
+- Frontend unit tests for WS-first managed-action path and fallback behavior in
+  `custom_components/topomation/frontend/vitest/ha-automation-rules.test.ts`.
+- ADR-HA-036 documenting WS-first managed-action backend ownership.
+
+### Changed
+
+- Frontend managed-action operations are now WebSocket-first and call backend
+  integration commands instead of browser-primary automation-config writes.
+- Topomation setup now stores managed-action runtime in kernel state for shared
+  WebSocket handler access.
+- Architecture/contracts/runbooks now document backend-owned rule mutation flow
+  and updated release triage expectations.
+- Live managed-action contract runner now fails fast when Topomation integration
+  is not loaded in the target HA instance (prevents false-green skipped gates).
+
+### Fixed
+
+- Live test runner integration-detection now falls back to `/api/config`
+  component checks when `/api/config/integrations` is unavailable (404) on the
+  active HA runtime, preventing false "integration not loaded" failures.
+
 ## [0.1.7] - 2026-02-26
 
 ### Fixed

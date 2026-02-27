@@ -1,6 +1,6 @@
 # Contracts
 
-**Last reviewed**: 2026-02-25
+**Last reviewed**: 2026-02-27
 **Purpose**: canonical behavior contracts for Topomation runtime and panel actions.
 
 Use this file as the quick contract surface. Keep it synchronized with:
@@ -99,7 +99,13 @@ Additional save points:
 
 ## C-009 Managed action registration + reconciliation contract
 
-- Managed occupied/vacant action edits are HA automation-config backed (`/api/config/automation/config/{id}`).
+- Managed occupied/vacant action edits are panel-WebSocket backed:
+  - `topomation/actions/rules/list`
+  - `topomation/actions/rules/create`
+  - `topomation/actions/rules/delete`
+  - `topomation/actions/rules/set_enabled`
+- The backend integration is the writer of HA automation config/state; browser clients do not
+  directly write `config/automation/config/*` in the primary path.
 - Managed automation metadata must remain machine-parseable in description:
   - `Managed by Topomation.`
   - `[topomation] {"version":...,"location_id":...,"trigger_type":...}`

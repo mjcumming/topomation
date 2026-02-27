@@ -3,10 +3,11 @@
 These tests hit a real Home Assistant instance and validate the same API path
 the frontend uses for managed rules:
 
-- POST /api/config/automation/config/{id}
+- WS: topomation/actions/rules/create
+- WS: topomation/actions/rules/list
 - WS: config/entity_registry/list
 - WS: automation/config
-- DELETE /api/config/automation/config/{id}
+- WS: topomation/actions/rules/delete
 """
 
 from __future__ import annotations
@@ -33,6 +34,8 @@ async def _ws_command(
     token: str,
     payload: dict[str, Any],
     msg_id: int = 1,
+    *,
+    expect_success: bool = True,
 ) -> Any:
     async with session.ws_connect(ws_url) as ws:
         auth_required = await ws.receive_json(timeout=10)
@@ -48,8 +51,10 @@ async def _ws_command(
             message = await ws.receive_json(timeout=20)
             if message.get("id") != msg_id:
                 continue
-            assert message.get("success") is True, message
-            return message.get("result")
+            if expect_success:
+                assert message.get("success") is True, message
+                return message.get("result")
+            return message
 
 
 async def _wait_for(
@@ -88,6 +93,7 @@ async def test_managed_action_rule_registers_and_enumerates_in_live_ha(
     }
 
     automation_id = ""
+    automation_entity_id = ""
 
     async with aiohttp.ClientSession(headers=headers) as session:
         states_resp = await session.get(f"{ha_url}/api/states")
@@ -125,44 +131,44 @@ async def test_managed_action_rule_registers_and_enumerates_in_live_ha(
         if action_target is None:
             pytest.skip("No light/switch/fan entity available for action target")
 
-        occupancy_entity_id = occupancy_state["entity_id"]
         location_id = occupancy_state["attributes"]["location_id"]
         action_entity_id = action_target["entity_id"]
-        action_domain = action_entity_id.split(".", 1)[0]
+        ws_url = _ws_url_from_http(ha_url)
 
         nonce = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
-        automation_id = f"topomation_live_contract_{nonce}"
-
-        payload = {
-            "alias": f"Topomation Live Contract ({location_id})",
-            "description": (
-                "Managed by Topomation.\n"
-                f'[topomation] {{"version":2,"location_id":"{location_id}","trigger_type":"occupied"}}'
-            ),
-            "triggers": [
-                {
-                    "trigger": "state",
-                    "entity_id": occupancy_entity_id,
-                    "to": "on",
-                }
-            ],
-            "conditions": [],
-            "actions": [
-                {
-                    "action": f"{action_domain}.turn_on",
-                    "target": {"entity_id": action_entity_id},
-                }
-            ],
-            "mode": "single",
-        }
-
-        create_resp = await session.post(
-            f"{ha_url}/api/config/automation/config/{automation_id}",
-            json=payload,
+        create_message = await _ws_command(
+            session,
+            ws_url,
+            token,
+            {
+                "type": "topomation/actions/rules/create",
+                "location_id": location_id,
+                "name": f"Topomation Live Contract ({location_id}) {nonce}",
+                "trigger_type": "occupied",
+                "action_entity_id": action_entity_id,
+                "action_service": "turn_on",
+                "require_dark": False,
+            },
+            msg_id=10,
+            expect_success=False,
         )
-        assert create_resp.status in (200, 201), await create_resp.text()
 
-        ws_url = _ws_url_from_http(ha_url)
+        if create_message.get("success") is not True:
+            error = create_message.get("error", {})
+            raise AssertionError(
+                "Topomation managed-action WS contract unavailable or failed. "
+                f"Expected topomation/actions/rules/create success, got: {error}"
+            )
+
+        result = create_message.get("result")
+        assert isinstance(result, dict)
+        rule = result.get("rule")
+        assert isinstance(rule, dict)
+        automation_id = str(rule.get("id", ""))
+        assert automation_id
+        automation_entity_id = str(rule.get("entity_id", ""))
+        assert automation_entity_id.startswith("automation.")
+
         async def _find_registry_entry():
             registry_entries = await _ws_command(
                 session,
@@ -187,6 +193,21 @@ async def test_managed_action_rule_registers_and_enumerates_in_live_ha(
         assert matching_entry is not None, "Automation did not register in entity registry"
         automation_entity_id = matching_entry["entity_id"]
 
+        listed_rules = await _ws_command(
+            session,
+            ws_url,
+            token,
+            {
+                "type": "topomation/actions/rules/list",
+                "location_id": location_id,
+            },
+            msg_id=13,
+        )
+        assert isinstance(listed_rules, dict)
+        listed = listed_rules.get("rules")
+        assert isinstance(listed, list)
+        assert any(isinstance(item, dict) and item.get("id") == automation_id for item in listed)
+
         async def _state_exists():
             resp = await session.get(f"{ha_url}/api/states/{automation_entity_id}")
             if resp.status == 200:
@@ -201,7 +222,7 @@ async def test_managed_action_rule_registers_and_enumerates_in_live_ha(
             ws_url,
             token,
             {"type": "automation/config", "entity_id": matching_entry["entity_id"]},
-            msg_id=12,
+            msg_id=14,
         )
         assert isinstance(config_response, dict)
         config = config_response.get("config")
@@ -209,10 +230,67 @@ async def test_managed_action_rule_registers_and_enumerates_in_live_ha(
         assert config.get("id") == automation_id
         assert "[topomation]" in str(config.get("description", ""))
 
-        delete_resp = await session.delete(
-            f"{ha_url}/api/config/automation/config/{automation_id}"
+        set_disabled_message = await _ws_command(
+            session,
+            ws_url,
+            token,
+            {
+                "type": "topomation/actions/rules/set_enabled",
+                "entity_id": automation_entity_id,
+                "enabled": False,
+            },
+            msg_id=15,
+            expect_success=False,
         )
-        assert delete_resp.status in (200, 201), await delete_resp.text()
+        assert set_disabled_message.get("success") is True, set_disabled_message
+
+        async def _state_disabled():
+            resp = await session.get(f"{ha_url}/api/states/{automation_entity_id}")
+            if resp.status != 200:
+                return None
+            payload = await resp.json()
+            return payload if payload.get("state") == "off" else None
+
+        disabled_state = await _wait_for(_state_disabled, timeout_seconds=20)
+        assert disabled_state is not None, "Automation did not transition to disabled state"
+
+        set_enabled_message = await _ws_command(
+            session,
+            ws_url,
+            token,
+            {
+                "type": "topomation/actions/rules/set_enabled",
+                "entity_id": automation_entity_id,
+                "enabled": True,
+            },
+            msg_id=16,
+            expect_success=False,
+        )
+        assert set_enabled_message.get("success") is True, set_enabled_message
+
+        async def _state_enabled():
+            resp = await session.get(f"{ha_url}/api/states/{automation_entity_id}")
+            if resp.status != 200:
+                return None
+            payload = await resp.json()
+            return payload if payload.get("state") == "on" else None
+
+        enabled_state = await _wait_for(_state_enabled, timeout_seconds=20)
+        assert enabled_state is not None, "Automation did not transition to enabled state"
+
+        delete_message = await _ws_command(
+            session,
+            ws_url,
+            token,
+            {
+                "type": "topomation/actions/rules/delete",
+                "automation_id": automation_id,
+                "entity_id": automation_entity_id,
+            },
+            msg_id=17,
+            expect_success=False,
+        )
+        assert delete_message.get("success") is True, delete_message
 
         async def _state_removed():
             resp = await session.get(f"{ha_url}/api/states/{automation_entity_id}")

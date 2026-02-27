@@ -127,9 +127,11 @@ Import those files into HA blueprint editor, then create automations from the im
 
 ### Action rule create/delete fails
 
-- Confirm your user has admin rights (HA automation config APIs require admin).
+- Confirm your user has admin rights (Topomation managed-action writes are admin-gated).
 - Open **Settings** → **Automations & Scenes** and verify automations can be created manually.
-- If occupancy actions still fail, check HA logs for `config/automation/config` errors.
+- If occupancy actions still fail:
+  - inspect WS failures for `topomation/actions/rules/*` in browser dev tools
+  - check HA logs for `custom_components.topomation.managed_actions` errors.
 
 ## Uninstallation
 

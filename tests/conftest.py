@@ -33,6 +33,17 @@ from custom_components.topomation.const import DOMAIN
 pytest_plugins = "pytest_homeassistant_custom_component"
 
 
+class _LiveHAConfig(dict):
+    """Dictionary wrapper that redacts tokens in repr output."""
+
+    def __repr__(self) -> str:
+        redacted = dict(self)
+        token = redacted.get("token")
+        if isinstance(token, str) and token:
+            redacted["token"] = "<redacted>"  # noqa: S105
+        return dict.__repr__(redacted)
+
+
 # =============================================================================
 # Autouse Fixtures (applied to all tests automatically)
 # =============================================================================
@@ -109,7 +120,7 @@ def live_ha_config():
     if not config["token"] and config["mode"] == "live":
         pytest.skip("Live HA tests require HA_TOKEN environment variable")
 
-    return config
+    return _LiveHAConfig(config)
 
 
 @pytest.fixture

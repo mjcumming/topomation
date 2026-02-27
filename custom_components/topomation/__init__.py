@@ -31,6 +31,7 @@ from .const import (
 )
 from .coordinator import TopomationCoordinator
 from .event_bridge import EventBridge
+from .managed_actions import TopomationManagedActions
 from .panel import async_register_panel
 from .services import async_register_services, async_unregister_services
 from .sync_manager import SyncManager
@@ -180,6 +181,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # 10. Runtime observers for occupied/vacant native HA automations.
     actions_runtime = TopomationActionsRuntime(hass, loc_mgr, bus)
     await actions_runtime.async_setup()
+    managed_action_rules = TopomationManagedActions(hass)
 
     # 11. Debounced persistence scheduler for runtime/config edits.
     autosave_unsub = None
@@ -255,6 +257,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "sync_manager": sync_manager,
         "event_bridge": event_bridge,
         "actions_runtime": actions_runtime,
+        "managed_action_rules": managed_action_rules,
         "schedule_persist": _schedule_persist,
         "cancel_pending_persist": _cancel_pending_persist,
     }

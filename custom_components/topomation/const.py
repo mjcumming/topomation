@@ -2,7 +2,7 @@
 
 DOMAIN = "topomation"
 NAME = "Topomation"
-VERSION = "0.1.7"
+VERSION = "0.1.8"
 
 # Storage
 STORAGE_VERSION = 1
@@ -62,6 +62,12 @@ WS_TYPE_AMBIENT_AUTO_DISCOVER = f"{DOMAIN}/ambient/auto_discover"
 WS_TYPE_SYNC_IMPORT = f"{DOMAIN}/sync/import"
 WS_TYPE_SYNC_STATUS = f"{DOMAIN}/sync/status"
 WS_TYPE_SYNC_ENABLE = f"{DOMAIN}/sync/enable"
+
+# Managed actions WebSocket API types
+WS_TYPE_ACTION_RULES_LIST = f"{DOMAIN}/actions/rules/list"
+WS_TYPE_ACTION_RULES_CREATE = f"{DOMAIN}/actions/rules/create"
+WS_TYPE_ACTION_RULES_DELETE = f"{DOMAIN}/actions/rules/delete"
+WS_TYPE_ACTION_RULES_SET_ENABLED = f"{DOMAIN}/actions/rules/set_enabled"
 
 # Actions automation metadata/logging
 TOPOMATION_AUTOMATION_METADATA_PREFIX = "[topomation]"

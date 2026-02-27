@@ -41,6 +41,39 @@ const TOPOMATION_LABEL_NAME = "Topomation";
 const TOPOMATION_OCCUPIED_LABEL_NAME = "Topomation - On Occupied";
 const TOPOMATION_VACANT_LABEL_NAME = "Topomation - On Vacant";
 const TOPOMATION_CATEGORY_NAME = "Topomation";
+const WS_TYPE_ACTION_RULES_LIST = "topomation/actions/rules/list";
+const WS_TYPE_ACTION_RULES_CREATE = "topomation/actions/rules/create";
+const WS_TYPE_ACTION_RULES_DELETE = "topomation/actions/rules/delete";
+const WS_TYPE_ACTION_RULES_SET_ENABLED = "topomation/actions/rules/set_enabled";
+
+function extractWsErrorCode(err: unknown): string | undefined {
+  if (!err || typeof err !== "object") return undefined;
+  const candidate = err as { code?: unknown; error?: unknown };
+  if (typeof candidate.code === "string" && candidate.code.trim()) {
+    return candidate.code.trim().toLowerCase();
+  }
+  if (typeof candidate.error === "string" && candidate.error.trim()) {
+    return candidate.error.trim().toLowerCase();
+  }
+  return undefined;
+}
+
+function isWsCommandUnavailable(err: unknown): boolean {
+  const code = extractWsErrorCode(err);
+  if (code && ["unknown_command", "not_found", "invalid_format", "unknown_error"].includes(code)) {
+    return true;
+  }
+
+  const message = readErrorMessage(err).toLowerCase();
+  return (
+    message.includes("unknown_command") ||
+    message.includes("unknown command") ||
+    message.includes("unsupported") ||
+    message.includes("not loaded") ||
+    message.includes("not_loaded") ||
+    message.includes("invalid handler")
+  );
+}
 
 function slugify(value: string): string {
   const slug = value
@@ -475,7 +508,7 @@ function buildAutomationId(location: Location, triggerType: ActionTriggerType): 
   return `${TOPOMATION_AUTOMATION_ID_PREFIX}${slugify(location.id)}_${triggerType}_${timestamp}_${randomSuffix}`;
 }
 
-export async function listTopomationActionRules(
+async function listTopomationActionRulesLegacy(
   hass: HomeAssistant,
   locationId: string
 ): Promise<TopomationActionRule[]> {
@@ -562,7 +595,28 @@ export async function listTopomationActionRules(
   return resolvedRules;
 }
 
-export async function createTopomationActionRule(
+export async function listTopomationActionRules(
+  hass: HomeAssistant,
+  locationId: string
+): Promise<TopomationActionRule[]> {
+  try {
+    const response = await hass.callWS<{ rules?: TopomationActionRule[] }>({
+      type: WS_TYPE_ACTION_RULES_LIST,
+      location_id: locationId,
+    });
+    if (Array.isArray(response?.rules)) {
+      return [...response.rules].sort((a, b) => a.name.localeCompare(b.name));
+    }
+  } catch (err) {
+    if (!isWsCommandUnavailable(err)) {
+      throw err;
+    }
+  }
+
+  return listTopomationActionRulesLegacy(hass, locationId);
+}
+
+async function createTopomationActionRuleLegacy(
   hass: HomeAssistant,
   args: {
     location: Location;
@@ -640,7 +694,44 @@ export async function createTopomationActionRule(
   };
 }
 
-export async function deleteTopomationActionRule(
+export async function createTopomationActionRule(
+  hass: HomeAssistant,
+  args: {
+    location: Location;
+    name: string;
+    trigger_type: ActionTriggerType;
+    action_entity_id: string;
+    action_service: string;
+    require_dark?: boolean;
+  }
+): Promise<TopomationActionRule> {
+  try {
+    const response = await hass.callWS<{ rule?: TopomationActionRule }>({
+      type: WS_TYPE_ACTION_RULES_CREATE,
+      location_id: args.location.id,
+      name: args.name,
+      trigger_type: args.trigger_type,
+      action_entity_id: args.action_entity_id,
+      action_service: args.action_service,
+      require_dark: Boolean(args.require_dark),
+    });
+
+    if (response?.rule) {
+      return {
+        ...response.rule,
+        require_dark: Boolean(response.rule.require_dark),
+      };
+    }
+  } catch (err) {
+    if (!isWsCommandUnavailable(err)) {
+      throw err;
+    }
+  }
+
+  return createTopomationActionRuleLegacy(hass, args);
+}
+
+async function deleteTopomationActionRuleLegacy(
   hass: HomeAssistant,
   ruleOrAutomationId: string | Pick<TopomationActionRule, "id" | "entity_id">
 ): Promise<void> {
@@ -680,7 +771,35 @@ export async function deleteTopomationActionRule(
   }
 }
 
-export async function setTopomationActionRuleEnabled(
+export async function deleteTopomationActionRule(
+  hass: HomeAssistant,
+  ruleOrAutomationId: string | Pick<TopomationActionRule, "id" | "entity_id">
+): Promise<void> {
+  const automationId =
+    typeof ruleOrAutomationId === "string" ? ruleOrAutomationId : ruleOrAutomationId.id;
+  const entityId =
+    typeof ruleOrAutomationId === "string" ? undefined : ruleOrAutomationId.entity_id;
+
+  try {
+    const response = await hass.callWS<{ success?: boolean }>({
+      type: WS_TYPE_ACTION_RULES_DELETE,
+      automation_id: automationId,
+      ...(entityId ? { entity_id: entityId } : {}),
+    });
+
+    if (response?.success === true) {
+      return;
+    }
+  } catch (err) {
+    if (!isWsCommandUnavailable(err)) {
+      throw err;
+    }
+  }
+
+  await deleteTopomationActionRuleLegacy(hass, ruleOrAutomationId);
+}
+
+async function setTopomationActionRuleEnabledLegacy(
   hass: HomeAssistant,
   rule: TopomationActionRule,
   enabled: boolean
@@ -693,6 +812,29 @@ export async function setTopomationActionRuleEnabled(
       entity_id: rule.entity_id,
     },
   });
+}
+
+export async function setTopomationActionRuleEnabled(
+  hass: HomeAssistant,
+  rule: TopomationActionRule,
+  enabled: boolean
+): Promise<void> {
+  try {
+    const response = await hass.callWS<{ success?: boolean }>({
+      type: WS_TYPE_ACTION_RULES_SET_ENABLED,
+      entity_id: rule.entity_id,
+      enabled,
+    });
+    if (response?.success === true) {
+      return;
+    }
+  } catch (err) {
+    if (!isWsCommandUnavailable(err)) {
+      throw err;
+    }
+  }
+
+  await setTopomationActionRuleEnabledLegacy(hass, rule, enabled);
 }
 
 export function ruleEditPath(rule: TopomationActionRule): string {

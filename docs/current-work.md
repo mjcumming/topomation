@@ -1,12 +1,12 @@
 # Current work
 
-**Last updated**: 2026-02-26
+**Last updated**: 2026-02-27
 **Purpose**: short live context for parallel work, handoff, and branch safety.
 
 ## Snapshot
 
-- Active focus: managed-automation reliability hardening, admin authorization alignment, and release validation workflow.
-- Recently completed: registry-permission fallback + external reconciliation for managed action toggles.
+- Active focus: managed-action backend registration reliability and live-HA release confidence.
+- Recently completed: WS-first managed action backend path (`topomation/actions/rules/*`) with full local gate pass and strict live-gate precondition checks.
 - Contract source set: `docs/contracts.md`, `docs/architecture.md`, `docs/adr-log.md`.
 
 ## In-flight work (update per session)
@@ -15,7 +15,8 @@
 | --- | --- | --- | --- |
 | Parallel branch updates | multiple | In progress | Verify `git status` before editing overlapping files. |
 | Managed action rule resilience | active | Completed | Added fallback/reconciliation contracts + production smoke coverage. |
-| Panel auth alignment | active | In progress | Move panel routes to admin-only to match HA automation config API requirements. |
+| Panel auth alignment | active | Completed | Panel routes are admin-only to match HA write APIs. |
+| Managed action backend WS path | active | Completed | Frontend now routes rule save/delete/enable to integration backend commands. |
 | Docs/rules hardening for faster agent startup | active | Completed | Added quickstart/contracts/current-work and instruction routing. |
 
 ## Parallel-work guardrails

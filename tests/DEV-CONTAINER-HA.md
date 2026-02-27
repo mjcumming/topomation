@@ -2,6 +2,15 @@
 
 Use this as the canonical workflow for running and restarting Home Assistant while developing in this repo's dev container.
 
+## Critical Environment Constraint
+
+- This workspace is already inside the development container.
+- For Topomation dev/testing here, treat Home Assistant as a process managed by `hass`.
+- Do not run Docker lifecycle commands (`docker`, `docker compose`, container restarts) as part of this workflow.
+- Restart behavior only through:
+  - stopping/starting the `hass` process, or
+  - HA API restart endpoint.
+
 ## Where We Work
 
 - Repo root (integration code): `/workspaces/topomation`
@@ -94,9 +103,19 @@ Then run live tests:
 make test-live
 ```
 
+For direct `pytest` runs, export env vars from `tests/ha-config.env` first
+or live tests will skip as `TEST_MODE=mock`:
+
+```bash
+set -a
+source /workspaces/topomation/tests/ha-config.env
+set +a
+pytest /workspaces/topomation/tests/test-live-managed-actions-contract.py -v --live-ha --no-cov
+```
+
 ## Notes
 
-- Some environments include Docker/Compose, but this runbook is the default for this dev container workflow.
+- This runbook assumes a containerized workspace with process-managed HA (`hass`), not Docker lifecycle control.
 - Runtime files under `/workspaces/core/config/` are your normal dev state.
 - Runtime files under `tests/test-ha-config/` are isolated test state.
 

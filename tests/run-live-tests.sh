@@ -15,6 +15,8 @@ NC='\033[0m' # No Color
 
 echo -e "${BLUE}🏠 Topomation - Live HA Testing${NC}\n"
 
+REQUESTED_TEST_PATH="${1:-tests/test-realworld.py}"
+
 # Check if ha-config.env exists
 if [ ! -f "tests/ha-config.env" ]; then
     echo -e "${RED}❌ Missing tests/ha-config.env${NC}"
@@ -63,10 +65,28 @@ if ! curl -s -f -H "Authorization: Bearer $HA_TOKEN" "$HA_URL/api/" > /dev/null 
 fi
 echo -e "${GREEN}✅ Home Assistant is accessible${NC}"
 
-# Check if integration is loaded
+# Check if integration is loaded.
+# Prefer /api/config/integrations when available, but newer/alternate HA builds
+# can return 404 there; in that case fall back to /api/config components.
 echo -e "${BLUE}🔍 Checking if topomation integration is loaded...${NC}"
-INTEGRATIONS=$(curl -s -H "Authorization: Bearer $HA_TOKEN" "$HA_URL/api/config/integrations" | grep -c "topomation" || true)
-if [ "$INTEGRATIONS" -eq "0" ]; then
+INTEGRATION_LOADED=0
+
+INTEGRATIONS_HTTP_CODE=$(curl -s -o /tmp/topomation-integrations.json -w "%{http_code}" \
+    -H "Authorization: Bearer $HA_TOKEN" "$HA_URL/api/config/integrations" || true)
+
+if [ "$INTEGRATIONS_HTTP_CODE" = "200" ]; then
+    if grep -q "topomation" /tmp/topomation-integrations.json; then
+        INTEGRATION_LOADED=1
+    fi
+else
+    CONFIG_HTTP_CODE=$(curl -s -o /tmp/topomation-config.json -w "%{http_code}" \
+        -H "Authorization: Bearer $HA_TOKEN" "$HA_URL/api/config" || true)
+    if [ "$CONFIG_HTTP_CODE" = "200" ] && grep -q "\"topomation\"" /tmp/topomation-config.json; then
+        INTEGRATION_LOADED=1
+    fi
+fi
+
+if [ "$INTEGRATION_LOADED" -eq "0" ]; then
     echo -e "${YELLOW}⚠️  topomation integration not loaded in HA${NC}"
     echo ""
     echo "To load the integration:"
@@ -75,6 +95,11 @@ if [ "$INTEGRATIONS" -eq "0" ]; then
     echo "  3. Search: Topomation"
     echo "  4. Click: Topomation"
     echo ""
+    if [[ "$REQUESTED_TEST_PATH" == *"test-live-managed-actions-contract.py"* ]]; then
+        echo -e "${RED}❌ Managed-action live contract requires Topomation integration to be loaded${NC}"
+        echo "Load the integration first, then re-run the live contract gate."
+        exit 1
+    fi
     echo "Continuing anyway (some tests may fail)..."
 else
     echo -e "${GREEN}✅ topomation integration is loaded${NC}"
@@ -100,7 +125,7 @@ echo -e "${BLUE}🧪 Running real-world tests against live HA...${NC}"
 echo ""
 
 # Default to running all real-world tests
-TEST_PATH="${1:-tests/test-realworld.py}"
+TEST_PATH="$REQUESTED_TEST_PATH"
 
 # Shift first arg if it's a test path
 if [ -f "$TEST_PATH" ] || [[ "$TEST_PATH" == tests/* ]]; then

@@ -51,7 +51,9 @@ cd /workspaces/topomation
 ./scripts/test-comprehensive.sh
 
 # Optional live managed-action contract gate (requires tests/ha-config.env)
+set -a
 source tests/ha-config.env
+set +a
 pytest tests/test-live-managed-actions-contract.py -v --live-ha
 ```
 
@@ -64,6 +66,7 @@ pytest tests/test-live-managed-actions-contract.py -v --live-ha
 
 - Canonical runbook: `tests/DEV-CONTAINER-HA.md`
 - Daily backend/frontend/live-validation loop: `tests/DEV-CONTAINER-HA.md` ("Daily Change Workflow")
+- Hard rule: this workflow is process-managed (`hass`) inside the existing dev container. Do not use Docker lifecycle commands for restart/control.
 - Default working directory: `/workspaces/topomation`
 - Default dev HA config path: `/workspaces/core/config`
 - Optional isolated test HA config path: `/workspaces/topomation/tests/test-ha-config`

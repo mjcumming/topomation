@@ -1,6 +1,6 @@
 # Live Release Testing Paradigm
 
-**Last reviewed**: 2026-02-26  
+**Last reviewed**: 2026-02-27  
 **Scope**: release confidence for managed automations and HA registration behavior.
 
 ## Policy
@@ -35,14 +35,19 @@ This runs:
 1. `scripts/test-comprehensive.sh` (backend, frontend unit, browser suites, build parity)
 2. `tests/run-live-tests.sh tests/test-live-managed-actions-contract.py` (real HA API contract)
 
+The live contract gate is strict: it fails if the Topomation integration is not
+loaded in the target HA instance.
+
 ## What the Live Contract Must Prove
 
 For managed action rules, against a running HA instance:
 
-1. POST `config/automation/config/{id}` succeeds.
-2. Rule appears in entity registry with `unique_id == config.id`.
-3. `automation/config` returns metadata including Topomation marker.
-4. DELETE `config/automation/config/{id}` removes the automation state.
+1. Topomation rule create/list/delete flows work end-to-end against real HA APIs.
+2. Created rule appears in entity registry with `unique_id == config.id`.
+3. `automation/config` returns metadata including the Topomation marker payload.
+4. Delete flow removes the automation state cleanly.
+5. Panel-managed path is WebSocket-first (`topomation/actions/rules/*`); backend
+   code is responsible for HA automation mutations.
 
 ## Why This Exists
 
