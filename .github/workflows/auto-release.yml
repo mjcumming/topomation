@@ -111,7 +111,7 @@ jobs:
           COMMIT_SHA="${{ github.sha }}"
           WORKFLOW_NAME="CI"
           REPO="${{ github.repository }}"
-          MAX_WAIT=900
+          MAX_WAIT=1200
           ELAPSED=0
           INTERVAL=10
 
@@ -133,12 +133,38 @@ jobs:
             CONCLUSION=$(gh run view "$RUN_ID" --repo="$REPO" --json conclusion --jq '.conclusion' 2>/dev/null || echo "unknown")
 
             if [ "$STATUS" = "completed" ]; then
-              if [ "$CONCLUSION" = "success" ]; then
-                echo "CI passed."
-                break
+              if [ "$CONCLUSION" != "success" ]; then
+                echo "CI failed or cancelled ($CONCLUSION); aborting release."
+                exit 1
               fi
-              echo "CI failed or cancelled ($CONCLUSION); aborting release."
-              exit 1
+
+              echo "CI workflow completed successfully; verifying required job conclusions..."
+              JOBS_JSON="$(gh run view "$RUN_ID" --repo="$REPO" --json jobs)"
+              if [ -z "$JOBS_JSON" ] || [ "$JOBS_JSON" = "null" ]; then
+                echo "Unable to read CI job status for run $RUN_ID; aborting release."
+                exit 1
+              fi
+
+              REQUIRED_JOBS=(
+                "Backend checks"
+                "Frontend checks"
+                "Comprehensive gate (browser suites)"
+              )
+
+              for JOB_NAME in "${REQUIRED_JOBS[@]}"; do
+                JOB_CONCLUSION="$(echo "$JOBS_JSON" | jq -r --arg name "$JOB_NAME" '.jobs[] | select(.name == $name) | .conclusion' | head -n1)"
+                if [ -z "$JOB_CONCLUSION" ] || [ "$JOB_CONCLUSION" = "null" ]; then
+                  echo "Required CI job not found: $JOB_NAME"
+                  exit 1
+                fi
+                if [ "$JOB_CONCLUSION" != "success" ]; then
+                  echo "Required CI job did not pass: $JOB_NAME (conclusion=$JOB_CONCLUSION)"
+                  exit 1
+                fi
+              done
+
+              echo "All required CI jobs passed."
+              break
             fi
 
             sleep $INTERVAL
@@ -146,7 +172,8 @@ jobs:
           done
 
           if [ $ELAPSED -ge $MAX_WAIT ]; then
-            echo "Timeout waiting for CI; continuing."
+            echo "Timeout waiting for CI; aborting release."
+            exit 1
           fi
 
       - name: Check if release already exists

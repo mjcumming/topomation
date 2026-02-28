@@ -87,6 +87,9 @@ hass -c /workspaces/core/config --debug
 - If architecture flow changed: update `docs/architecture.md` in the same change.
 - If the change is a meaningful long-lived decision: add/update ADR in `docs/adr-log.md`.
 - If work is in progress or handed off: update `docs/current-work.md`.
+- If you discover a recurring environment/workflow prerequisite while fixing something
+  (example: browser path/tooling prereq), automate it where possible and document it
+  in active workflow docs in the same change.
 
 ## 7) Fast done checklist
 

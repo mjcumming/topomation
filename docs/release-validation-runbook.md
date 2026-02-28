@@ -14,6 +14,7 @@ git status --short
 
 - Confirm you understand any existing local changes before cutting a release.
 - Do not release with an out-of-date frontend runtime bundle.
+- **Hard release rule**: never cut/publish a release when any required build/check is failing (local or CI).
 
 ## 2) Mandatory local gate (mirrors CI)
 
@@ -32,6 +33,7 @@ This validates (in the same order as CI):
 3. **Comprehensive:** Web Test Runner (component tests), Playwright e2e
 
 If any step fails, fix it before pushing. Do not push then fix in a follow-up.
+If any step fails, release work is blocked until the step passes.
 
 If parity fails, regenerate runtime bundle:
 
@@ -97,10 +99,25 @@ make test-release-live
 4. Ensure docs/contracts/ADR updates are in the same change when behavior changed.
 5. Run `make test-release-live` after final edits (if you have `tests/ha-config.env`).
 6. Run **`./scripts/test-comprehensive.sh`** again after any last edits; only then push to `main`.
+7. After pushing, verify CI required jobs are green on the release commit:
+   - `Backend checks`
+   - `Frontend checks`
+   - `Comprehensive gate (browser suites)`
+8. Verify `Auto Release` job result is green before considering the release complete.
+   If any required check/release job fails, treat release as failed and fix before retry.
 
 CI runs the same backend/frontend/comprehensive checks. **Auto Release** runs when any of the three version files change and creates the release once CI passes. It also runs the release job when the release for the current version does not exist yet (e.g. after fixing CI or the changelog step without bumping again). If a release was skipped and you did not push another version-file change, go to **Actions → Auto Release → Run workflow** to create the release for the current version.
 
-## 5) Common failure triage
+## 5) Rule for discovered prerequisites
+
+When you discover/fix a recurring environment or workflow prerequisite (for example `CHROME_PATH` resolution), do both in the same change:
+
+1. Automate the prerequisite where possible (scripts/workflow).
+2. Document it in active operational docs (runbook/quickstart/workflow docs).
+
+Do not rely on tribal memory for repeat setup requirements.
+
+## 6) Common failure triage
 
 - No rules created from panel actions:
   - confirm the acting user is an HA admin (panel/routes are admin-only)

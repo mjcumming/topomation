@@ -20,6 +20,16 @@ The framework provides structured workflows for task management, code generation
 
 ---
 
+## Release Safety Rules (Mandatory)
+
+1. Never cut, tag, or publish a release while any required build/check is failing.
+2. Treat release as incomplete until required CI jobs and release workflow are green for the release commit.
+3. When you discover and fix a recurring prerequisite (for example environment paths or tooling setup), you must:
+   - automate it where feasible, and
+   - document it in active workflow/runbook docs in the same change.
+
+---
+
 ## 1. Project Identity
 
 - **Name**: home-topology-ha

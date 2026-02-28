@@ -66,3 +66,4 @@ When documents disagree, use this order:
 2. Transient plans/checklists move to `docs/history/` or `project/history/` when complete.
 3. Keep one source per concern: architecture in `docs`, strategy in `project/roadmap.md`, execution in `docs/work-tracking.md`, tasks in `project/issues/`.
 4. Run `scripts/check-docs-consistency.sh` before merge for sync/contract changes.
+5. If a recurring environment/workflow prerequisite is discovered during a fix, automate it where possible and document it in active docs in the same change.
