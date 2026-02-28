@@ -11,6 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 (None.)
 
+## [0.2.2] - 2026-02-28
+
+### Fixed
+
+- Tree drag-and-drop now correctly allows reparenting a location that has
+  children (subtree move), including floor-to-building/root and area-to-area
+  valid moves under hierarchy rules.
+- Added backend compatibility handling for legacy manager behavior that rejected
+  parent-node reparent requests with the message "Parent locations cannot move
+  under a different parent", while preserving cycle/type validation.
+
 ## [0.2.1] - 2026-02-28
 
 ### Changed
