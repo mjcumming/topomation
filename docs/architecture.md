@@ -428,7 +428,9 @@ For HA-backed wrappers (`floor_*`, `area_*`), startup reconciliation enforces HA
 as canonical for:
 
 - floor/area names
-- floor parent linkage for areas
+- HA floor linkage metadata (`ha_floor_id`) for areas
+- floor parent linkage for areas that still use canonical floor-parent structure
+  (custom topology overlay parents are preserved)
 - `ha_area_id` / `ha_floor_id` metadata
 - sync ownership flags (`sync_source=homeassistant`, `sync_enabled=true`)
 - area entity membership (entity mapping matches HA area assignments)

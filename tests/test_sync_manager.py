@@ -290,6 +290,86 @@ class TestInitialImport:
         assert meta["sync_source"] == "homeassistant"
         assert meta["sync_enabled"] is True
 
+    async def test_import_preserves_existing_area_overlay_parent(
+        self,
+        hass: HomeAssistant,
+        sync_manager: SyncManager,
+        loc_mgr: LocationManager,
+        clean_registries,
+    ):
+        """Startup import should preserve persisted area-under-area overlay parents."""
+        area_reg = ar.async_get(hass)
+        floor_reg = fr.async_get(hass)
+        floor = floor_reg.async_create("Ground Floor")
+        suite = area_reg.async_create("Master Suite", floor_id=floor.floor_id)
+        sitting = area_reg.async_create("Master Sitting", floor_id=floor.floor_id)
+
+        suite_loc_id = f"area_{suite.id}"
+        sitting_loc_id = f"area_{sitting.id}"
+        floor_loc_id = f"floor_{floor.floor_id}"
+
+        loc_mgr.create_location(
+            id=floor_loc_id,
+            name="Ground Floor",
+            parent_id=None,
+            is_explicit_root=False,
+        )
+        loc_mgr.set_module_config(
+            floor_loc_id,
+            "_meta",
+            {
+                "type": "floor",
+                "ha_floor_id": floor.floor_id,
+                "sync_source": "homeassistant",
+                "sync_enabled": True,
+            },
+        )
+
+        # Simulate persisted topology overlay: sitting nested under suite.
+        loc_mgr.create_location(
+            id=suite_loc_id,
+            name="Master Suite",
+            parent_id=floor_loc_id,
+            is_explicit_root=False,
+            ha_area_id=suite.id,
+        )
+        loc_mgr.set_module_config(
+            suite_loc_id,
+            "_meta",
+            {
+                "type": "area",
+                "ha_area_id": suite.id,
+                "ha_floor_id": floor.floor_id,
+                "sync_source": "homeassistant",
+                "sync_enabled": True,
+            },
+        )
+        loc_mgr.create_location(
+            id=sitting_loc_id,
+            name="Master Sitting",
+            parent_id=suite_loc_id,
+            is_explicit_root=False,
+            ha_area_id=sitting.id,
+        )
+        loc_mgr.set_module_config(
+            sitting_loc_id,
+            "_meta",
+            {
+                "type": "area",
+                "ha_area_id": sitting.id,
+                "ha_floor_id": floor.floor_id,
+                "sync_source": "homeassistant",
+                "sync_enabled": True,
+            },
+        )
+
+        await sync_manager.import_all_areas_and_floors()
+
+        sitting_loc = loc_mgr.get_location(sitting_loc_id)
+        assert sitting_loc is not None
+        assert sitting_loc.parent_id == suite_loc_id
+        assert sitting_loc.modules.get("_meta", {}).get("ha_floor_id") == floor.floor_id
+
     async def test_import_reconciles_existing_floor_wrapper_to_ha_truth(
         self,
         hass: HomeAssistant,
@@ -481,6 +561,37 @@ class TestHAToTopologySync:
         assert location is not None
         assert location.parent_id is None
         assert "ha_floor_id" not in location.modules.get("_meta", {})
+
+    async def test_area_rename_preserves_custom_overlay_parent(
+        self,
+        hass: HomeAssistant,
+        sync_manager: SyncManager,
+        loc_mgr: LocationManager,
+        clean_registries,
+    ):
+        """HA area updates should not flatten custom overlay parents."""
+        area_reg = ar.async_get(hass)
+        floor_reg = fr.async_get(hass)
+        floor = floor_reg.async_create("Ground Floor")
+        suite = area_reg.async_create("Master Suite", floor_id=floor.floor_id)
+        sitting = area_reg.async_create("Master Sitting", floor_id=floor.floor_id)
+
+        await sync_manager.import_all_areas_and_floors()
+        await sync_manager.async_setup()
+
+        suite_loc_id = f"area_{suite.id}"
+        sitting_loc_id = f"area_{sitting.id}"
+
+        # Custom overlay parent in topology (area under area).
+        loc_mgr.update_location(sitting_loc_id, parent_id=suite_loc_id)
+
+        area_reg.async_update(sitting.id, name="Lounge")
+        await hass.async_block_till_done()
+
+        sitting_loc = loc_mgr.get_location(sitting_loc_id)
+        assert sitting_loc is not None
+        assert sitting_loc.name == "Lounge"
+        assert sitting_loc.parent_id == suite_loc_id
 
     async def test_floor_delete_reparents_children_and_clears_floor_meta(
         self,

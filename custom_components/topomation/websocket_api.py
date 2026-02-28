@@ -902,15 +902,6 @@ def handle_locations_reorder(
     old_parent_id = location_before.parent_id if location_before else None
     old_order = location_before.order if location_before else 0
 
-    has_direct_children = len(_siblings_of(loc_mgr, location_before.id)) > 0
-    if has_direct_children and requested_parent_id != old_parent_id:
-        connection.send_error(
-            msg["id"],
-            "invalid_parent",
-            "Locations with children cannot be moved under a different parent. Reorder within the current parent instead.",
-        )
-        return
-
     reordered = False
 
     try:

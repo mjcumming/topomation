@@ -247,6 +247,7 @@ export class TopomationPanel extends LitElement {
       :host {
         display: block;
         height: 100%;
+        min-height: 100%;
         background: var(--primary-background-color);
       }
 
@@ -321,19 +322,34 @@ export class TopomationPanel extends LitElement {
       }
 
       @media (max-width: 768px) {
+        :host {
+          height: auto;
+          padding-left: env(safe-area-inset-left);
+          padding-right: env(safe-area-inset-right);
+          padding-bottom: env(safe-area-inset-bottom);
+        }
+
         .panel-container {
           flex-direction: column;
+          height: auto;
         }
 
         .panel-left,
         .panel-right {
-          flex: 1 1 auto;
+          flex: 0 0 auto;
           min-width: unset;
           max-width: unset;
+          overflow: visible;
         }
 
         .panel-splitter {
           display: none;
+        }
+
+        ht-location-tree {
+          flex: 0 0 auto;
+          min-height: 200px;
+          max-height: 52vh;
         }
       }
 
@@ -367,6 +383,11 @@ export class TopomationPanel extends LitElement {
         visibility: visible !important;
         opacity: 1 !important;
         display: inline-flex !important;
+      }
+
+      ht-location-tree {
+        flex: 1 1 auto;
+        min-height: 0;
       }
 
       /* Loading and error states */
@@ -584,6 +605,17 @@ export class TopomationPanel extends LitElement {
               ${managerHeader.subtitle}
             </div>
             <div class="header-actions">
+              ${this._isSplitStackedLayout()
+                ? html`
+                    <button
+                      class="button button-secondary"
+                      @click=${this._handleOpenSidebar}
+                      aria-label="Open Home Assistant sidebar"
+                    >
+                      Sidebar
+                    </button>
+                  `
+                : ""}
               ${canCreateStructure
                 ? html`
                     <button class="button button-primary" @click=${this._handleNewLocation}>
@@ -1249,6 +1281,16 @@ export class TopomationPanel extends LitElement {
     if (e.key === '?' && !e.ctrlKey && !e.metaKey) {
       this._showKeyboardShortcutsHelp();
     }
+  };
+
+  private _handleOpenSidebar = (): void => {
+    this.dispatchEvent(
+      new CustomEvent("hass-toggle-menu", {
+        bubbles: true,
+        composed: true,
+        detail: { open: true },
+      })
+    );
   };
 
   private _isSplitStackedLayout(): boolean {

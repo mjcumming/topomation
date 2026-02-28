@@ -755,19 +755,6 @@ export class HtLocationTree extends LitElement {
     }
 
     if (!canMoveLocation({ locations: this.locations, locationId, newParentId })) {
-      const hasChildren = this.locations.some((loc) => loc.parent_id === locationId);
-      if (hasChildren && newParentId !== dragged.parent_id) {
-        this.dispatchEvent(
-          new CustomEvent("location-move-blocked", {
-            detail: {
-              reason:
-                "Parent locations cannot move under a different parent. Reorder it within the current level.",
-            },
-            bubbles: true,
-            composed: true,
-          })
-        );
-      }
       this._restoreTreeAfterCancelledDrop();
       return;
     }

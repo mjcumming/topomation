@@ -693,10 +693,10 @@ async def test_locations_reorder_is_allowed(hass: HomeAssistant) -> None:
 
 
 @pytest.mark.asyncio
-async def test_locations_reorder_rejects_reparent_for_node_with_children(
+async def test_locations_reorder_allows_reparent_for_node_with_children(
     hass: HomeAssistant,
 ) -> None:
-    """Locations with children may only be reordered within their current parent."""
+    """Locations with children can move as a subtree under a valid parent."""
     store = Store(hass, STORAGE_VERSION, STORAGE_KEY_CONFIG)
     await store.async_save({"locations": []})
 
@@ -731,14 +731,16 @@ async def test_locations_reorder_rejects_reparent_for_node_with_children(
         },
     )
 
-    assert connection.send_result.call_count == 0
-    connection.send_error.assert_called_once()
-    err_args = connection.send_error.call_args[0]
-    assert err_args[1] == "invalid_parent"
+    assert connection.send_error.call_count == 0
+    connection.send_result.assert_called_once()
 
-    unchanged = loc_mgr.get_location("floor_a")
-    assert unchanged is not None
-    assert unchanged.parent_id == "building_a"
+    moved = loc_mgr.get_location("floor_a")
+    assert moved is not None
+    assert moved.parent_id == "building_b"
+
+    child = loc_mgr.get_location("area_a")
+    assert child is not None
+    assert child.parent_id == "floor_a"
 
 
 @pytest.mark.asyncio

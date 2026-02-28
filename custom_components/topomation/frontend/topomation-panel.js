@@ -2089,16 +2089,16 @@ function yn(n, t) {
   return je(n).includes(t);
 }
 function wn(n) {
-  var c;
+  var l;
   const { locations: t, locationId: e, newParentId: i } = n;
   if (i === e || i && Xe(t, e, i)) return !1;
-  const o = new Map(t.map((u) => [u.id, u])), a = o.get(e);
-  if (!a || i && !o.get(i) || i && ((c = o.get(i)) != null && c.is_explicit_root) || t.some((u) => u.parent_id === a.id) && i !== a.parent_id) return !1;
-  const s = ct(a);
-  if (co.has(s))
+  const o = new Map(t.map((c) => [c.id, c])), a = o.get(e);
+  if (!a || i && !o.get(i) || i && ((l = o.get(i)) != null && l.is_explicit_root)) return !1;
+  const r = ct(a);
+  if (co.has(r))
     return i === null;
-  const l = i === null ? "root" : ct(o.get(i) ?? {});
-  return !!yn(s, l);
+  const s = i === null ? "root" : ct(o.get(i) ?? {});
+  return !!yn(r, s);
 }
 function Xe(n, t, e) {
   if (t === e) return !1;
@@ -2333,15 +2333,7 @@ const _e = class _e extends lt {
       return;
     }
     if (!wn({ locations: this.locations, locationId: a, newParentId: u })) {
-      this.locations.some((f) => f.parent_id === a) && u !== r.parent_id && this.dispatchEvent(
-        new CustomEvent("location-move-blocked", {
-          detail: {
-            reason: "Parent locations cannot move under a different parent. Reorder it within the current level."
-          },
-          bubbles: !0,
-          composed: !0
-        })
-      ), this._restoreTreeAfterCancelledDrop();
+      this._restoreTreeAfterCancelledDrop();
       return;
     }
     this.dispatchEvent(new CustomEvent("location-moved", {
@@ -6304,6 +6296,14 @@ const ye = class ye extends lt {
       );
     }, this._handleKeyDown = (t) => {
       (t.ctrlKey || t.metaKey) && t.key === "s" && (t.preventDefault(), this._pendingChanges.size > 0 && !this._saving && this._handleSaveChanges()), (t.ctrlKey || t.metaKey) && t.key === "z" && !t.shiftKey && (t.preventDefault(), console.log("Undo requested")), (t.ctrlKey || t.metaKey) && (t.key === "y" || t.key === "z" && t.shiftKey) && (t.preventDefault(), console.log("Redo requested")), t.key === "Escape" && this._pendingChanges.size > 0 && !this._saving && confirm("Discard all pending changes?") && this._handleDiscardChanges(), t.key === "?" && !t.ctrlKey && !t.metaKey && this._showKeyboardShortcutsHelp();
+    }, this._handleOpenSidebar = () => {
+      this.dispatchEvent(
+        new CustomEvent("hass-toggle-menu", {
+          bubbles: !0,
+          composed: !0,
+          detail: { open: !0 }
+        })
+      );
     }, this._handlePanelSplitterPointerDown = (t) => {
       this._isSplitStackedLayout() || (t.preventDefault(), this._panelResizePointerId = t.pointerId, this._isResizingPanels = !0, this._applyPanelSplitFromClientX(t.clientX), window.addEventListener("pointermove", this._handlePanelSplitterPointerMove), window.addEventListener("pointerup", this._handlePanelSplitterPointerUp), window.addEventListener("pointercancel", this._handlePanelSplitterPointerUp));
     }, this._handlePanelSplitterPointerMove = (t) => {
@@ -6411,6 +6411,15 @@ const ye = class ye extends lt {
               ${i.subtitle}
             </div>
             <div class="header-actions">
+              ${this._isSplitStackedLayout() ? _`
+                    <button
+                      class="button button-secondary"
+                      @click=${this._handleOpenSidebar}
+                      aria-label="Open Home Assistant sidebar"
+                    >
+                      Sidebar
+                    </button>
+                  ` : ""}
               ${_`
                     <button class="button button-primary" @click=${this._handleNewLocation}>
                       + Add Structure
@@ -7193,6 +7202,7 @@ ye.properties = {
       :host {
         display: block;
         height: 100%;
+        min-height: 100%;
         background: var(--primary-background-color);
       }
 
@@ -7267,19 +7277,34 @@ ye.properties = {
       }
 
       @media (max-width: 768px) {
+        :host {
+          height: auto;
+          padding-left: env(safe-area-inset-left);
+          padding-right: env(safe-area-inset-right);
+          padding-bottom: env(safe-area-inset-bottom);
+        }
+
         .panel-container {
           flex-direction: column;
+          height: auto;
         }
 
         .panel-left,
         .panel-right {
-          flex: 1 1 auto;
+          flex: 0 0 auto;
           min-width: unset;
           max-width: unset;
+          overflow: visible;
         }
 
         .panel-splitter {
           display: none;
+        }
+
+        ht-location-tree {
+          flex: 0 0 auto;
+          min-height: 200px;
+          max-height: 52vh;
         }
       }
 
@@ -7313,6 +7338,11 @@ ye.properties = {
         visibility: visible !important;
         opacity: 1 !important;
         display: inline-flex !important;
+      }
+
+      ht-location-tree {
+        flex: 1 1 auto;
+        min-height: 0;
       }
 
       /* Loading and error states */

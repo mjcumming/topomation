@@ -73,9 +73,6 @@ export function canMoveLocation(params: {
   if (!movedLoc) return false;
   if (newParentId && !byId.get(newParentId)) return false;
   if (newParentId && byId.get(newParentId)?.is_explicit_root) return false;
-  const hasChildren = locations.some((loc) => loc.parent_id === movedLoc.id);
-  if (hasChildren && newParentId !== movedLoc.parent_id) return false;
-
   const childType = getLocationType(movedLoc);
 
   // Root-only wrappers must stay at root (no parent).

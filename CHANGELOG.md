@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.19] - 2026-02-28
+
+### Fixed
+
+- Tree drag-and-drop now allows moving parent nodes with children to a different
+  valid parent (subtree reparent), instead of blocking cross-parent moves for
+  any node that had children.
+- HA-backed area wrappers now preserve persisted custom topology parent overlays
+  across restart/import and routine HA area updates (for example rename),
+  preventing area-under-area hierarchy from being flattened back to floor links
+  on startup.
+
 ## [0.1.18] - 2026-02-27
 
 ### Fixed

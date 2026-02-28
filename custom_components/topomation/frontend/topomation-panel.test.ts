@@ -505,6 +505,50 @@ describe('TopomationPanel integration (fake hass)', () => {
     expect((element as any)._locationDialogOpen).to.equal(true);
   });
 
+  it("dispatches hass-toggle-menu from mobile Sidebar button", async () => {
+    const hass: HomeAssistant = {
+      callWS: async <T>(req: Record<string, any>): Promise<T> => {
+        if (req.type === "topomation/locations/list") {
+          return { locations } as T;
+        }
+        if (req.type === "config/entity_registry/list") {
+          return [] as T;
+        }
+        if (req.type === "config/device_registry/list") {
+          return [] as T;
+        }
+        throw new Error("Unexpected WS call");
+      },
+      connection: {},
+      states: {},
+      areas: {},
+      floors: {},
+      config: { location_name: "Test Property" },
+      localize: (key: string) => key,
+    };
+
+    const element = await fixture<HTMLDivElement>(html`
+      <topomation-panel .hass=${hass} .narrow=${true}></topomation-panel>
+    `);
+
+    await waitUntil(() => (element as any)._loading === false, "panel did not finish loading");
+
+    let receivedDetail: any;
+    element.addEventListener("hass-toggle-menu", (ev: Event) => {
+      receivedDetail = (ev as CustomEvent).detail;
+    });
+
+    const buttons = Array.from(
+      element.shadowRoot!.querySelectorAll(".header-actions .button")
+    ) as HTMLButtonElement[];
+    const sidebarButton = buttons.find((btn) => (btn.textContent || "").includes("Sidebar"));
+    expect(sidebarButton).to.exist;
+
+    sidebarButton!.click();
+
+    expect(receivedDetail).to.deep.equal({ open: true });
+  });
+
   it("renders inline action list in actions view without Add Rule dialog", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(req: Record<string, any>): Promise<T> => {

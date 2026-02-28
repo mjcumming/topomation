@@ -97,7 +97,7 @@ describe("hierarchy-rules", () => {
     ).toBe(false);
   });
 
-  it("blocks reparenting a location that has children", () => {
+  it("allows reparenting a location that has children", () => {
     const locations = [
       loc({ id: "building_a", name: "Building A", parent_id: null, modules: { _meta: { type: "building" } } }),
       loc({ id: "building_b", name: "Building B", parent_id: null, modules: { _meta: { type: "building" } } }),
@@ -107,7 +107,7 @@ describe("hierarchy-rules", () => {
 
     expect(
       canMoveLocation({ locations, locationId: "floor_a", newParentId: "building_b" })
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("blocks moving a building under a floor (root-only type)", () => {

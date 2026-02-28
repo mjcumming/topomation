@@ -306,12 +306,14 @@ class SyncManager:
                 area.name,
             )
 
-        # Update parent if floor changed
+        should_reconcile_parent = self._should_reconcile_area_parent_to_floor(location)
+
+        # Update parent if floor changed and no custom topology overlay is in use.
         if hasattr(area, "floor_id"):
             new_parent = (
                 self._ensure_floor_location(area.floor_id) if area.floor_id else None
             )
-            if location.parent_id != new_parent:
+            if should_reconcile_parent and location.parent_id != new_parent:
                 parent_update = new_parent if new_parent is not None else ""
                 self.loc_mgr.update_location(location_id, parent_id=parent_update)
                 _LOGGER.info(
@@ -608,7 +610,7 @@ class SyncManager:
             update_kwargs["name"] = area.name
         if location.ha_area_id != area.id:
             update_kwargs["ha_area_id"] = area.id
-        if location.parent_id != parent_id:
+        if self._should_reconcile_area_parent_to_floor(location) and location.parent_id != parent_id:
             update_kwargs["parent_id"] = parent_id if parent_id is not None else ""
 
         if update_kwargs:
@@ -629,6 +631,32 @@ class SyncManager:
         else:
             meta.pop("ha_floor_id", None)
         self.loc_mgr.set_module_config(location.id, "_meta", meta)
+
+    def _canonical_parent_for_floor(self, floor_id: str | None) -> str | None:
+        """Return canonical parent location ID implied by an HA floor assignment."""
+        if floor_id:
+            return f"floor_{floor_id}"
+        return None
+
+    def _should_reconcile_area_parent_to_floor(self, location: Location) -> bool:
+        """Return True when an HA area wrapper parent should be floor-reconciled.
+
+        Preserve explicit topology overlays (e.g. area-under-area) across restart/live sync.
+        """
+        current_parent = getattr(location, "parent_id", None)
+        if current_parent and self.loc_mgr.get_location(current_parent) is None:
+            # Broken parent pointers should heal back to canonical floor linkage.
+            return True
+
+        meta = location.modules.get("_meta", {})
+        prior_floor_id = None
+        if isinstance(meta, dict):
+            raw_floor_id = meta.get("ha_floor_id")
+            if raw_floor_id:
+                prior_floor_id = str(raw_floor_id)
+
+        canonical_parent = self._canonical_parent_for_floor(prior_floor_id)
+        return current_parent == canonical_parent
 
     def _get_floor(self, floor_id: str) -> object | None:
         """Get a floor entry by ID from the floor registry."""
