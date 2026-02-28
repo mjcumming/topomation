@@ -35,7 +35,7 @@ jobs:
       - name: Get current version
         id: version
         run: |
-          VERSION=$(grep '"version"' custom_components/topomation/manifest.json | sed 's/.*"version": "\(.*\)".*/\1/')
+          VERSION=$(python -c 'import json, pathlib; manifest=json.loads(pathlib.Path("custom_components/topomation/manifest.json").read_text(encoding="utf-8")); version=str(manifest.get("version","")).strip(); assert version, "manifest version is missing or empty"; print(version)')
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Current version: $VERSION"
 
@@ -43,7 +43,7 @@ jobs:
         id: prev-version
         run: |
           git checkout HEAD~1
-          PREV_VERSION=$(grep '"version"' custom_components/topomation/manifest.json | sed 's/.*"version": "\(.*\)".*/\1/' || echo "none")
+          PREV_VERSION=$(python -c 'import json, pathlib; manifest=json.loads(pathlib.Path("custom_components/topomation/manifest.json").read_text(encoding="utf-8")); version=str(manifest.get("version","")).strip(); print(version if version else "none")' 2>/dev/null || echo "none")
           echo "prev-version=$PREV_VERSION" >> $GITHUB_OUTPUT
           echo "Previous version: $PREV_VERSION"
           git checkout -
