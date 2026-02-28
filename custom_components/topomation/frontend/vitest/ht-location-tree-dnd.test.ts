@@ -82,3 +82,25 @@ describe("zoneFromPointerInRow", () => {
     expect(zoneFromPointerInRow(row, 130, 18, true)).toBe("inside");
   });
 });
+
+describe("buildFlatTree safety", () => {
+  it("shows missing-parent nodes as root-level instead of dropping them", () => {
+    const withOrphan: Location[] = [
+      { id: "floor", name: "Floor", parent_id: null, is_explicit_root: false, ha_area_id: null, entity_ids: [], modules: { _meta: { type: "floor" } } },
+      { id: "orphan", name: "Orphan", parent_id: "missing-parent", is_explicit_root: false, ha_area_id: null, entity_ids: [], modules: { _meta: { type: "area" } } },
+    ];
+    const flat = buildFlatTree(withOrphan, new Set(["floor", "orphan"]));
+    const byId = new Map(flat.map((node) => [node.location.id, node]));
+    expect(byId.get("orphan")?.depth).toBe(0);
+  });
+
+  it("breaks self-parent loops by rendering node at root", () => {
+    const selfParent: Location[] = [
+      { id: "self", name: "Self", parent_id: "self", is_explicit_root: false, ha_area_id: null, entity_ids: [], modules: { _meta: { type: "area" } } },
+    ];
+    const flat = buildFlatTree(selfParent, new Set(["self"]));
+    expect(flat.length).toBe(1);
+    expect(flat[0].location.id).toBe("self");
+    expect(flat[0].depth).toBe(0);
+  });
+});

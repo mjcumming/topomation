@@ -253,6 +253,23 @@ npm run test:watch     # Watch mode
 npm run test:coverage  # With coverage report
 ```
 
+`npm run test*` now resolves `CHROME_PATH` automatically from Playwright's Chromium
+binary (`playwright.chromium.executablePath()`), so manual path lookups are not part
+of the workflow anymore.
+
+In this dev container, the resolved path is typically:
+
+```bash
+/home/vscode/.cache/ms-playwright/<revision>/chrome-linux64/chrome
+```
+
+Path can change when Playwright updates. Verify with:
+
+```bash
+cd custom_components/topomation/frontend
+node -e "const { chromium } = require('playwright'); console.log(chromium.executablePath())"
+```
+
 Tests use `@open-wc/testing` with real Chromium:
 
 ```typescript

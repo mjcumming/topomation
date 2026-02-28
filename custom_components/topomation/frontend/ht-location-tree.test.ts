@@ -364,6 +364,27 @@ describe('HtLocationTree - shouldUpdate Performance', () => {
     expect(expanded.has('kitchen')).to.equal(false);
   });
 
+  it('collapsing a branch also collapses its descendants', async () => {
+    const element = await fixture<HtLocationTree>(html`
+      <ht-location-tree
+        .hass=${mockHass as HomeAssistant}
+        .locations=${deepTreeLocations}
+      ></ht-location-tree>
+    `);
+
+    await element.updateComplete;
+
+    (element as any)._expandedIds = new Set(['house', 'main-floor', 'kitchen', 'pantry', 'pantry-shelf']);
+    (element as any)._handleExpand(new Event('click'), 'kitchen');
+
+    const expanded = (element as any)._expandedIds as Set<string>;
+    expect(expanded.has('house')).to.equal(true);
+    expect(expanded.has('main-floor')).to.equal(true);
+    expect(expanded.has('kitchen')).to.equal(false);
+    expect(expanded.has('pantry')).to.equal(false);
+    expect(expanded.has('pantry-shelf')).to.equal(false);
+  });
+
   it('dispatches location-lock-toggle when lock icon is clicked', async () => {
     const element = await fixture<HtLocationTree>(html`
       <ht-location-tree

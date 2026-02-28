@@ -43,6 +43,7 @@ make typecheck
 # Frontend checks
 cd custom_components/topomation/frontend
 npm run test:unit
+npm run test            # Auto-resolves CHROME_PATH via Playwright Chromium
 npm run build
 diff -u dist/topomation-panel.js topomation-panel.js
 

@@ -35,16 +35,43 @@ export function buildFlatTree(
   locations: Location[],
   expandedIds: Set<string>
 ): FlatTreeNode[] {
+  const byId = new Map(locations.map((loc) => [loc.id, loc]));
   const byParent = new Map<string | null, Location[]>();
+
+  const normalizedParentId = (loc: Location): string | null => {
+    const parentId = loc.parent_id;
+    if (!parentId) return null;
+    if (parentId === loc.id) return null;
+    if (!byId.has(parentId)) return null;
+    return parentId;
+  };
+
   for (const loc of locations) {
-    const key = loc.parent_id;
+    const key = normalizedParentId(loc);
     if (!byParent.has(key)) byParent.set(key, []);
     byParent.get(key)!.push(loc);
   }
+
   const result: FlatTreeNode[] = [];
+  const visited = new Set<string>();
+  const structurallyReachable = new Set<string>();
+
+  const roots = byParent.get(null) || [];
+  const structuralStack = [...roots];
+  while (structuralStack.length) {
+    const current = structuralStack.pop()!;
+    if (structurallyReachable.has(current.id)) continue;
+    structurallyReachable.add(current.id);
+    for (const child of byParent.get(current.id) || []) {
+      structuralStack.push(child);
+    }
+  }
+
   function traverse(parentId: string | null, depth: number): void {
     const children = byParent.get(parentId) || [];
     for (const loc of children) {
+      if (visited.has(loc.id)) continue;
+      visited.add(loc.id);
       const locChildren = byParent.get(loc.id) || [];
       const hasChildren = locChildren.length > 0;
       const isExpanded = expandedIds.has(loc.id);
@@ -52,7 +79,21 @@ export function buildFlatTree(
       if (isExpanded && hasChildren) traverse(loc.id, depth + 1);
     }
   }
+
   traverse(null, 0);
+
+  // Best-effort safety: render structurally unreachable/cyclic nodes as roots
+  // instead of hiding them. Do NOT re-add nodes hidden only by collapsed state.
+  for (const loc of locations) {
+    if (structurallyReachable.has(loc.id) || visited.has(loc.id)) continue;
+    visited.add(loc.id);
+    const locChildren = byParent.get(loc.id) || [];
+    const hasChildren = locChildren.length > 0;
+    const isExpanded = expandedIds.has(loc.id);
+    result.push({ location: loc, depth: 0, hasChildren, isExpanded });
+    if (isExpanded && hasChildren) traverse(loc.id, 1);
+  }
+
   return result;
 }
 

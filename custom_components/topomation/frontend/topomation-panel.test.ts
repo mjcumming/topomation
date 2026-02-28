@@ -1,6 +1,6 @@
 /// <reference types="mocha" />
 import { fixture, html, expect, waitUntil } from '@open-wc/testing';
-import './topomation-panel';
+import './topomation-panel.ts';
 import type { HomeAssistant, Location } from './types';
 
 const locations: Location[] = [
@@ -670,6 +670,67 @@ describe('TopomationPanel integration (fake hass)', () => {
 
     expect(notifications.length).to.equal(1);
     expect(notifications[0].message).to.contain("cannot move under a different parent");
+  });
+
+  it("retries move using update+reorder when legacy parent reparent error is returned", async () => {
+    const callWsCalls: any[] = [];
+    let reorderAttempts = 0;
+
+    const hass: HomeAssistant = {
+      callWS: async <T>(req: Record<string, any>): Promise<T> => {
+        callWsCalls.push(req);
+        if (req.type === "topomation/locations/list") {
+          return { locations } as T;
+        }
+        if (req.type === "config/entity_registry/list") {
+          return [] as T;
+        }
+        if (req.type === "config/device_registry/list") {
+          return [] as T;
+        }
+        if (req.type === "topomation/locations/reorder") {
+          reorderAttempts += 1;
+          if (reorderAttempts === 1) {
+            throw new Error(
+              "Parent locations cannot move under a different parent. Reorder it within the current level."
+            );
+          }
+          return { success: true } as T;
+        }
+        if (req.type === "topomation/locations/update") {
+          return { success: true } as T;
+        }
+        throw new Error("Unexpected WS call");
+      },
+      connection: {},
+      states: {},
+      areas: {},
+      floors: {},
+      config: {
+        location_name: "Test Property",
+      },
+      localize: (key: string) => key,
+    };
+
+    const element = await fixture<HTMLDivElement>(html`
+      <topomation-panel .hass=${hass}></topomation-panel>
+    `);
+    await waitUntil(() => (element as any)._loading === false, "panel did not finish loading");
+
+    await (element as any)._handleLocationMoved(
+      new CustomEvent("location-moved", {
+        detail: { locationId: "kitchen", newParentId: "grounds", newIndex: 0 },
+      })
+    );
+
+    await waitUntil(() => callWsCalls.length > 0, "move call was not attempted");
+
+    const updateCall = callWsCalls.find((req) => req.type === "topomation/locations/update");
+    const reorderCalls = callWsCalls.filter((req) => req.type === "topomation/locations/reorder");
+    expect(reorderCalls.length).to.be.greaterThan(0);
+    expect(updateCall).to.exist;
+    expect(updateCall.location_id).to.equal("kitchen");
+    expect(updateCall.changes?.parent_id).to.equal("grounds");
   });
 
   it("uses automation title in right header for occupancy view", async () => {

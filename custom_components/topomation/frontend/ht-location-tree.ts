@@ -898,7 +898,25 @@ export class HtLocationTree extends LitElement {
   private _handleExpand(e: Event, locationId: string): void {
     e.stopPropagation();
     const next = new Set(this._expandedIds);
-    if (next.has(locationId)) next.delete(locationId); else next.add(locationId);
+    if (next.has(locationId)) {
+      next.delete(locationId);
+      // Collapsing a branch also collapses all descendants so re-expanding
+      // shows only the immediate children (predictable tree behavior).
+      const stack = [locationId];
+      const seen = new Set<string>();
+      while (stack.length) {
+        const current = stack.pop()!;
+        if (seen.has(current)) continue;
+        seen.add(current);
+        for (const loc of this.locations) {
+          if (loc.parent_id !== current) continue;
+          next.delete(loc.id);
+          stack.push(loc.id);
+        }
+      }
+    } else {
+      next.add(locationId);
+    }
     this._expandedIds = next;
   }
 
