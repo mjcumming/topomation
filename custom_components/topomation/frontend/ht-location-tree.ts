@@ -37,6 +37,7 @@ type OccupancyStatus = "occupied" | "vacant" | "unknown";
 type LockState = { isLocked: boolean; lockedBy: string[] };
 const CHILD_INDENT_THRESHOLD_PX = 28;
 const OUTDENT_THRESHOLD_PX = 14;
+const CHILD_DEPTH_DOWNLEVEL_BIAS_PX = 24;
 const DRAG_HOVER_EXPAND_CHILD_THRESHOLD_PX = 56;
 const DRAG_HOVER_EXPAND_DELAY_MS = 400;
 const ENABLE_DRAG_HOVER_AUTO_EXPAND = false;
@@ -113,6 +114,18 @@ function _collectSubtreeIds(flatNodes: FlatTreeNode[], rootId: string): Set<stri
   return ids;
 }
 
+function _childIntentThresholdPx(
+  draggedDepth: number,
+  relatedDepth: number
+): number {
+  // When dragging a deeper node over a shallower row, require extra horizontal
+  // intent so sibling/outdent drops don't get interpreted as accidental nesting.
+  if (draggedDepth > relatedDepth) {
+    return CHILD_INDENT_THRESHOLD_PX + CHILD_DEPTH_DOWNLEVEL_BIAS_PX;
+  }
+  return CHILD_INDENT_THRESHOLD_PX;
+}
+
 function computeDropTarget(
   flatNodes: FlatTreeNode[],
   draggedId: string,
@@ -131,8 +144,11 @@ function computeDropTarget(
     : undefined;
   const hasHorizontalIntent =
     dropContext?.pointerX !== undefined && dropContext?.relatedLeft !== undefined;
+  const draggedDepth = draggedNode?.depth ?? 0;
+  const relatedDepth = relatedNode?.depth ?? draggedDepth;
+  const childIntentThreshold = _childIntentThresholdPx(draggedDepth, relatedDepth);
   const childIntent = hasHorizontalIntent
-    ? (dropContext.pointerX as number) >= (dropContext.relatedLeft as number) + CHILD_INDENT_THRESHOLD_PX
+    ? (dropContext.pointerX as number) >= (dropContext.relatedLeft as number) + childIntentThreshold
     : false;
   const outdentIntent = hasHorizontalIntent
     ? (dropContext.pointerX as number) <= (dropContext.relatedLeft as number) - OUTDENT_THRESHOLD_PX
@@ -856,7 +872,10 @@ export class HtLocationTree extends LitElement {
     if (context.pointerX === undefined || context.relatedLeft === undefined) {
       return "sibling";
     }
-    if (context.pointerX >= context.relatedLeft + CHILD_INDENT_THRESHOLD_PX) {
+    const draggedDepth = this._getDepthForLocation(draggedId);
+    const relatedDepth = context.relatedId ? this._getDepthForLocation(context.relatedId) : draggedDepth;
+    const childIntentThreshold = _childIntentThresholdPx(draggedDepth, relatedDepth);
+    if (context.pointerX >= context.relatedLeft + childIntentThreshold) {
       return "child";
     }
 
@@ -870,6 +889,22 @@ export class HtLocationTree extends LitElement {
       return "outdent";
     }
     return "sibling";
+  }
+
+  private _getDepthForLocation(locationId: string): number {
+    const byId = new Map(this.locations.map((loc) => [loc.id, loc]));
+    let depth = 0;
+    let current = byId.get(locationId);
+    const visited = new Set<string>();
+    while (current?.parent_id) {
+      if (visited.has(current.parent_id)) {
+        break;
+      }
+      visited.add(current.parent_id);
+      depth += 1;
+      current = byId.get(current.parent_id);
+    }
+    return depth;
   }
 
   private _updateDropIndicator(

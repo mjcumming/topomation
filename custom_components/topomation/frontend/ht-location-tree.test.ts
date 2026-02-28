@@ -747,7 +747,7 @@ describe('HtLocationTree - shouldUpdate Performance', () => {
         relatedId: 'living-room',
         willInsertAfter: false,
         relatedLeft: 200,
-        pointerX: 250,
+        pointerX: 260,
       }
     );
 
@@ -774,6 +774,32 @@ describe('HtLocationTree - shouldUpdate Performance', () => {
         willInsertAfter: false,
         relatedLeft: 200,
         pointerX: 212,
+      }
+    );
+
+    expect(result.parentId).to.equal('main-floor');
+  });
+
+  it('does not infer child move when dragging deeper node over shallower row with mild offset', () => {
+    const flatNodes = __TEST__.buildFlatTree(
+      deepTreeLocations,
+      new Set(['house', 'main-floor', 'kitchen', 'pantry', 'pantry-shelf'])
+    );
+
+    const oldIndex = flatNodes.findIndex((n: any) => n.location.id === 'top-shelf');
+    const livingIndex = flatNodes.findIndex((n: any) => n.location.id === 'living-room');
+
+    const result = __TEST__.computeDropTarget(
+      flatNodes,
+      'top-shelf',
+      oldIndex,
+      livingIndex + 1,
+      'pantry-shelf',
+      {
+        relatedId: 'living-room',
+        willInsertAfter: false,
+        relatedLeft: 200,
+        pointerX: 240,
       }
     );
 

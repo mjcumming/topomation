@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Drag-and-drop child intent now applies a depth-aware horizontal threshold so
+  moving a deeper node across a shallower row does not accidentally create an
+  unintended extra nesting level.
+
 ## [0.1.19] - 2026-02-28
 
 ### Fixed
