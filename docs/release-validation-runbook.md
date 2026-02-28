@@ -86,11 +86,14 @@ make test-release-live
 
 ## 4) Release cut checklist
 
-1. Update `custom_components/topomation/manifest.json` version.
+1. Update version in **all three** places (CI will fail otherwise):
+   - `custom_components/topomation/manifest.json` (`"version": "x.y.z"`)
+   - `custom_components/topomation/const.py` (`VERSION = "x.y.z"`)
+   - `pyproject.toml` (`version = "x.y.z"`)
 2. Add release notes entry in `CHANGELOG.md`.
 3. Ensure docs/contracts/ADR updates are in the same change when behavior changed.
 4. Run `make test-release-live` after final edits.
-5. Push to `main` (auto-release workflow will publish when CI passes).
+5. Push to `main`. CI runs backend (version sync, ruff, mypy, pytest), frontend, and comprehensive gate; **Auto Release** waits for CI success then creates the GitHub release.
 
 ## 5) Common failure triage
 
