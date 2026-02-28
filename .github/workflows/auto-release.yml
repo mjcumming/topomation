@@ -6,6 +6,8 @@ on:
       - main
     paths:
       - "custom_components/topomation/manifest.json"
+      - "custom_components/topomation/const.py"
+      - "pyproject.toml"
   workflow_dispatch:
     inputs:
       reason:

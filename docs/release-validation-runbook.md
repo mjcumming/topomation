@@ -93,7 +93,7 @@ make test-release-live
 2. Add release notes entry in `CHANGELOG.md`.
 3. Ensure docs/contracts/ADR updates are in the same change when behavior changed.
 4. Run `make test-release-live` after final edits.
-5. Push to `main`. CI runs backend (version sync, ruff, mypy, pytest), frontend, and comprehensive gate; **Auto Release** waits for CI success then creates the GitHub release.
+5. Push to `main`. CI runs backend (version sync, ruff, mypy, pytest), frontend, and comprehensive gate. **Auto Release** runs when any of `manifest.json`, `const.py`, or `pyproject.toml` change; it waits for CI success then creates the GitHub release. If the first push fails CI (e.g. version sync), a fix push that updates the other version files will re-trigger Auto Release so the release is created once CI passes.
 
 ## 5) Common failure triage
 
