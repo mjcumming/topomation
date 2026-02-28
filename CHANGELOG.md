@@ -11,6 +11,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 (None.)
 
+## [0.2.3] - 2026-02-28
+
+### Fixed
+
+- Re-synced committed frontend runtime bundle (`topomation-panel.js`) with
+  current TypeScript source to restore CI frontend parity checks.
+- Browser component tests now run through a wrapper that auto-resolves
+  `CHROME_PATH` from Playwright Chromium, removing repeated path lookup
+  failures in local/CI workflows.
+
+### Changed
+
+- Auto Release workflow now hard-blocks release creation unless required CI jobs
+  (`Backend checks`, `Frontend checks`, `Comprehensive gate`) are explicitly
+  green for the release commit; CI timeout now fails release instead of
+  continuing.
+- Release/runbook rules now explicitly require verifying CI/release success
+  before considering a release complete and require documenting recurring
+  environment/workflow prerequisites when discovered.
+
 ## [0.2.2] - 2026-02-28
 
 ### Fixed
