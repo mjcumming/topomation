@@ -15,21 +15,23 @@ git status --short
 - Confirm you understand any existing local changes before cutting a release.
 - Do not release with an out-of-date frontend runtime bundle.
 
-## 2) Mandatory local gate
+## 2) Mandatory local gate (mirrors CI)
 
-Run the full gate:
+Run the full gate **before every release push**. It runs the same checks as CI so you don't push and then see failures:
 
 ```bash
 ./scripts/test-comprehensive.sh
 ```
 
-This validates:
+or `make test-comprehensive`.
 
-1. Backend pytest suite
-2. Frontend unit tests
-3. Frontend build + runtime bundle parity (`dist/topomation-panel.js` vs committed `topomation-panel.js`)
-4. Frontend component tests (Web Test Runner)
-5. Frontend Playwright suites (workflow + production smoke)
+This validates (in the same order as CI):
+
+1. **Backend:** custom_components layout, version sync (manifest + const.py + pyproject.toml), Ruff, Mypy, Pytest
+2. **Frontend:** unit tests (Vitest), build, runtime bundle parity (`dist/topomation-panel.js` vs committed `topomation-panel.js`)
+3. **Comprehensive:** Web Test Runner (component tests), Playwright e2e
+
+If any step fails, fix it before pushing. Do not push then fix in a follow-up.
 
 If parity fails, regenerate runtime bundle:
 
@@ -86,14 +88,17 @@ make test-release-live
 
 ## 4) Release cut checklist
 
-1. Update version in **all three** places (CI will fail otherwise):
+1. Run **`./scripts/test-comprehensive.sh`** and ensure it passes (no pushing until it does).
+2. Update version in **all three** places (CI will fail otherwise):
    - `custom_components/topomation/manifest.json` (`"version": "x.y.z"`)
    - `custom_components/topomation/const.py` (`VERSION = "x.y.z"`)
    - `pyproject.toml` (`version = "x.y.z"`)
-2. Add release notes entry in `CHANGELOG.md`.
-3. Ensure docs/contracts/ADR updates are in the same change when behavior changed.
-4. Run `make test-release-live` after final edits.
-5. Push to `main`. CI runs backend (version sync, ruff, mypy, pytest), frontend, and comprehensive gate. **Auto Release** runs when any of `manifest.json`, `const.py`, or `pyproject.toml` change; it waits for CI success then creates the GitHub release. If the first push fails CI (e.g. version sync), a fix push that updates the other version files will re-trigger Auto Release so the release is created once CI passes.
+3. Add release notes entry in `CHANGELOG.md`.
+4. Ensure docs/contracts/ADR updates are in the same change when behavior changed.
+5. Run `make test-release-live` after final edits (if you have `tests/ha-config.env`).
+6. Run **`./scripts/test-comprehensive.sh`** again after any last edits; only then push to `main`.
+
+CI runs the same backend/frontend/comprehensive checks. **Auto Release** runs when any of the three version files change and creates the release once CI passes. It also runs the release job when the release for the current version does not exist yet (e.g. after fixing CI or the changelog step without bumping again). If a release was skipped and you did not push another version-file change, go to **Actions → Auto Release → Run workflow** to create the release for the current version.
 
 ## 5) Common failure triage
 

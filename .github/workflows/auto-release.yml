@@ -25,6 +25,7 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
       version-changed: ${{ steps.check.outputs.changed }}
+      release-missing: ${{ steps.release-missing.outputs.missing }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -58,9 +59,25 @@ jobs:
             echo "Version unchanged"
           fi
 
+      - name: Check if release exists for current version
+        id: release-missing
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "v${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
+            echo "missing=false" >> $GITHUB_OUTPUT
+            echo "Release v${{ steps.version.outputs.version }} already exists"
+          else
+            echo "missing=true" >> $GITHUB_OUTPUT
+            echo "Release v${{ steps.version.outputs.version }} does not exist; will create"
+          fi
+
   hacs-validation:
     needs: check-version
-    if: needs.check-version.outputs.version-changed == 'true' || github.event_name == 'workflow_dispatch'
+    if: |
+      needs.check-version.outputs.version-changed == 'true' ||
+      needs.check-version.outputs.release-missing == 'true' ||
+      github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -74,7 +91,10 @@ jobs:
 
   release:
     needs: [check-version, hacs-validation]
-    if: needs.check-version.outputs.version-changed == 'true' || github.event_name == 'workflow_dispatch'
+    if: |
+      needs.check-version.outputs.version-changed == 'true' ||
+      needs.check-version.outputs.release-missing == 'true' ||
+      github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: write

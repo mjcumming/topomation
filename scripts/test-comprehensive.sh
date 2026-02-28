@@ -4,8 +4,26 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 FRONTEND_DIR="${ROOT_DIR}/custom_components/topomation/frontend"
 
-echo "==> Backend pytest suite"
 cd "${ROOT_DIR}"
+
+echo "==> Validate custom_components layout"
+extra_dirs="$(find custom_components -mindepth 1 -maxdepth 1 -type d ! -name topomation ! -name __pycache__ -print)"
+if [ -n "$extra_dirs" ]; then
+  echo "Unexpected custom_components directories:"
+  echo "$extra_dirs"
+  exit 1
+fi
+
+echo "==> Verify version sync (manifest.json, const.py, pyproject.toml)"
+python scripts/verify-version-sync.py
+
+echo "==> Ruff"
+ruff check custom_components/topomation tests
+
+echo "==> Mypy"
+mypy custom_components/topomation
+
+echo "==> Backend pytest suite"
 pytest tests/ -v
 
 echo "==> Frontend unit suite (Vitest)"

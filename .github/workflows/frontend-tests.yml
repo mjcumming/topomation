@@ -46,38 +46,7 @@ jobs:
           pip install -e ".[dev]"
 
       - name: Verify version sync
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          import json
-          import re
-          import tomllib
-
-          manifest = json.loads(Path("custom_components/topomation/manifest.json").read_text())
-          manifest_version = manifest["version"]
-
-          const_text = Path("custom_components/topomation/const.py").read_text()
-          const_match = re.search(r'^VERSION\s*=\s*"([^"]+)"', const_text, flags=re.MULTILINE)
-          if not const_match:
-              raise SystemExit("Could not find VERSION in const.py")
-          const_version = const_match.group(1)
-
-          pyproject = tomllib.loads(Path("pyproject.toml").read_text())
-          project_version = pyproject["project"]["version"]
-
-          versions = {
-              "manifest.json": manifest_version,
-              "const.py": const_version,
-              "pyproject.toml": project_version,
-          }
-
-          if len(set(versions.values())) != 1:
-              for name, value in versions.items():
-                  print(f"{name}: {value}")
-              raise SystemExit("Version mismatch detected")
-
-          print(f"Version sync ok: {manifest_version}")
-          PY
+        run: python scripts/verify-version-sync.py
 
       - name: Ruff
         run: ruff check custom_components/topomation tests

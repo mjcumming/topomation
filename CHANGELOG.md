@@ -11,6 +11,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 (None.)
 
+## [0.2.1] - 2026-02-28
+
+### Changed
+
+- **Auto Release:** Release job now runs when the release for the current version
+  does not exist (in addition to when the version just changed or on manual run).
+  Unblocks creating a release after fixing CI or changelog without a second
+  version bump. Runbook updated with note to use "Run workflow" if a release was
+  skipped.
+
 ## [0.1.20] - 2026-02-28
 
 ### Changed
