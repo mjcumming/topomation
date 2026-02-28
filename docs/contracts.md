@@ -148,3 +148,15 @@ Additional save points:
 - Topomation panel routes are admin-only (`require_admin=True`).
 - Managed action create/update/delete depends on HA config APIs that require admin;
   non-admin sessions must not be routed into a write-capable panel state.
+
+## C-011 Tree drag-and-drop contract (target state)
+
+- **Intent is explicit, not inferred.** Drop outcome is determined solely by which drop target zone the user releases over: **before**, **inside** (child), or **after** the target row. No pointer X-offset or heuristic inference.
+- **Per-row drop zones.** Each tree row exposes exactly three drop semantics relative to that row:
+  - **Before**: insert as previous sibling of this row (same parent).
+  - **Inside**: make this row the new parent (append as last child).
+  - **After**: insert as next sibling of this row (same parent).
+- **Outdent** (move to grandparent) is either a fourth explicit zone (e.g. “outdent” strip when hovering the current parent row) or a dedicated control; it is not inferred from pointer position.
+- **Ordering mechanics.** SortableJS (or equivalent) is used only for list reorder and pointer capture. The final (parentId, siblingIndex) is computed from the **active drop zone** at drop time, not from flat index + heuristics.
+- **Domain rules.** All moves are validated by `canMoveLocation` (hierarchy-rules): floor/building/area constraints, no cycles, no self-parent. Invalid drops are rejected and the tree is restored to pre-drag order.
+- **Single source of truth.** The drag contract is specified in this contract and in the implementation’s drop-zone logic; no duplicate or divergent heuristic logic (e.g. x-offset thresholds) determines intent.

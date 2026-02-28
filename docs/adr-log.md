@@ -1558,6 +1558,42 @@ REST API wrote successfully but the automation component never loaded the file.
 
 ---
 
+### ADR-HA-039: Tree DnD — Explicit Drop Targets, No Heuristic Intent (2026-02-28)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+
+Tree drag-and-drop used a flat-list engine (SortableJS) and inferred tree intent from pointer position (x-offset, related row, collapsed state). That led to:
+
+- Heuristic drift and edge cases (wrong sibling vs child vs outdent).
+- Domain constraints (floor/building/area + HA sync) making wrong drops very visible and disruptive.
+- Fixes that addressed symptoms rather than a single deterministic contract.
+
+**Decision**:
+
+1. **Strict drag contract** (see C-011): Drop outcome is determined only by which **explicit drop zone** the user releases over (before / inside / after), not by pointer x-offset or related-row heuristics.
+2. **Explicit drop targets per row**: Each tree row exposes three (or four, if outdent is a zone) discrete drop targets; the UI highlights the active zone during drag. Intent = zone hovered at drop.
+3. **SortableJS role**: Use SortableJS only for list reorder mechanics and pointer capture. Map final drop to (parentId, siblingIndex) from the **active drop zone** at drop time, not from flat index + heuristics.
+4. **No new heuristic inference**: Remove or freeze x-offset / relatedLeft / childIntent / outdentIntent logic from intent resolution. Outdent is either an explicit zone (e.g. when hovering current parent) or a separate control.
+5. **Regression coverage**: Add screenshot-based or DOM-state e2e scenarios for before/after/inside/outdent and invalid moves so DnD behavior does not regress.
+
+**Rationale**:
+
+1. Deterministic behavior: one drop zone → one outcome.
+2. Domain rules stay in hierarchy-rules; UI only exposes valid zones (or disables invalid ones).
+3. Stops “fix one edge case, break another” by eliminating inference.
+4. E2E locks the contract so future changes are safe.
+
+**Consequences**:
+
+- ✅ Single source of truth for DnD (contract + drop-zone implementation).
+- ✅ Predictable UX; no surprise “it dropped as child when I wanted sibling.”
+- ⚠️ Requires refactor: replace pointer-based intent with zone-based hit-testing and optional visual zones.
+- ℹ️ Implementation plan: see `docs/tree-dnd-stabilization-plan.md`.
+
+---
+
 ## How to Use This Log
 
 ### When to Create an ADR

@@ -1,7 +1,11 @@
 # Work Tracking - topomation
 
-**Last Updated**: 2026-02-25
+**Last Updated**: 2026-02-28
 **Purpose**: operational execution tracker for the active sprint.
+
+### v0.1.20 (2026-02-28) — Tree DnD stabilization
+
+- Tree drag-and-drop now uses explicit drop zones (C-011, ADR-HA-039): before/inside/after/outdent by zone only; no x-offset heuristics. E2E and unit tests added; contract and plan documented.
 
 Canonical separation:
 - Strategy and release sequencing: `project/roadmap.md`

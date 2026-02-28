@@ -7,23 +7,20 @@ import { sharedStyles } from "./styles";
 import Sortable from "sortablejs";
 import { getLocationType, isDescendant, canMoveLocation } from "./hierarchy-rules";
 import { getTypeFallbackIcon } from "./icon-utils";
+import {
+  buildFlatTree,
+  zoneFromPointerInRow,
+  resolveDropTargetFromZone,
+  type FlatTreeNode,
+  type DropZone,
+} from "./tree-dnd-zones";
 
-/**
- * Flat tree node for rendering - computed from hierarchical Location data
- */
-interface FlatTreeNode {
-  location: Location;
-  depth: number;
-  hasChildren: boolean;
-  isExpanded: boolean;
+/** Active drop target at drop time: related row + zone. No pointer/heuristic. */
+export interface ActiveDropTarget {
+  relatedId: string;
+  zone: DropZone;
 }
-
-interface DropContext {
-  relatedId?: string;
-  willInsertAfter?: boolean;
-  pointerX?: number;
-  relatedLeft?: number;
-}
+export type { DropZone } from "./tree-dnd-zones";
 
 interface DropIndicator {
   top: number;
@@ -35,181 +32,6 @@ interface DropIndicator {
 
 type OccupancyStatus = "occupied" | "vacant" | "unknown";
 type LockState = { isLocked: boolean; lockedBy: string[] };
-const CHILD_INDENT_THRESHOLD_PX = 28;
-const OUTDENT_THRESHOLD_PX = 14;
-const CHILD_DEPTH_DOWNLEVEL_BIAS_PX = 24;
-const DRAG_HOVER_EXPAND_CHILD_THRESHOLD_PX = 56;
-const DRAG_HOVER_EXPAND_DELAY_MS = 400;
-const ENABLE_DRAG_HOVER_AUTO_EXPAND = false;
-
-/**
- * Build a flat list of nodes in depth-first order for rendering.
- */
-function buildFlatTree(
-  locations: Location[],
-  expandedIds: Set<string>
-): FlatTreeNode[] {
-  const byParent = new Map<string | null, Location[]>();
-
-  for (const loc of locations) {
-    const key = loc.parent_id;
-    if (!byParent.has(key)) {
-      byParent.set(key, []);
-    }
-    byParent.get(key)!.push(loc);
-  }
-
-  const result: FlatTreeNode[] = [];
-
-  function traverse(parentId: string | null, depth: number): void {
-    const children = byParent.get(parentId) || [];
-    for (const loc of children) {
-      const locChildren = byParent.get(loc.id) || [];
-      const hasChildren = locChildren.length > 0;
-      const isExpanded = expandedIds.has(loc.id);
-
-      result.push({ location: loc, depth, hasChildren, isExpanded });
-
-      if (isExpanded && hasChildren) {
-        traverse(loc.id, depth + 1);
-      }
-    }
-  }
-
-  traverse(null, 0);
-  return result;
-}
-
-/**
- * Given a drop position in the flat list, determine the new parent_id.
- *
- * Logic:
- * 1. If dropped at index 0 -> becomes root.
- * 2. If dropped after an item:
- *    - If that item is EXPANDED -> becomes its first child.
- *    - Otherwise -> becomes its sibling (same parent).
- */
-function _computeInsertIndex(
-  oldIndex: number,
-  newIndex: number,
-  filteredLength: number
-): number {
-  const adjusted = newIndex > oldIndex ? newIndex - 1 : newIndex;
-  return Math.max(0, Math.min(adjusted, filteredLength));
-}
-
-function _collectSubtreeIds(flatNodes: FlatTreeNode[], rootId: string): Set<string> {
-  const ids = new Set<string>([rootId]);
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const node of flatNodes) {
-      const pid = node.location.parent_id;
-      if (pid && ids.has(pid) && !ids.has(node.location.id)) {
-        ids.add(node.location.id);
-        changed = true;
-      }
-    }
-  }
-  return ids;
-}
-
-function _childIntentThresholdPx(
-  draggedDepth: number,
-  relatedDepth: number
-): number {
-  // When dragging a deeper node over a shallower row, require extra horizontal
-  // intent so sibling/outdent drops don't get interpreted as accidental nesting.
-  if (draggedDepth > relatedDepth) {
-    return CHILD_INDENT_THRESHOLD_PX + CHILD_DEPTH_DOWNLEVEL_BIAS_PX;
-  }
-  return CHILD_INDENT_THRESHOLD_PX;
-}
-
-function computeDropTarget(
-  flatNodes: FlatTreeNode[],
-  draggedId: string,
-  oldIndex: number,
-  newIndex: number,
-  currentParentId: string | null,
-  dropContext?: DropContext
-): { parentId: string | null; siblingIndex: number } {
-  const subtreeIds = _collectSubtreeIds(flatNodes, draggedId);
-  const filtered = flatNodes.filter((n) => !subtreeIds.has(n.location.id));
-  let parentId = currentParentId;
-  const draggedNode = flatNodes.find((node) => node.location.id === draggedId);
-  const draggedType = draggedNode ? getLocationType(draggedNode.location) : "area";
-  const relatedNode = dropContext?.relatedId
-    ? filtered.find((node) => node.location.id === dropContext.relatedId)
-    : undefined;
-  const hasHorizontalIntent =
-    dropContext?.pointerX !== undefined && dropContext?.relatedLeft !== undefined;
-  const draggedDepth = draggedNode?.depth ?? 0;
-  const relatedDepth = relatedNode?.depth ?? draggedDepth;
-  const childIntentThreshold = _childIntentThresholdPx(draggedDepth, relatedDepth);
-  const childIntent = hasHorizontalIntent
-    ? (dropContext.pointerX as number) >= (dropContext.relatedLeft as number) + childIntentThreshold
-    : false;
-  const outdentIntent = hasHorizontalIntent
-    ? (dropContext.pointerX as number) <= (dropContext.relatedLeft as number) - OUTDENT_THRESHOLD_PX
-    : false;
-
-  // Reparenting is explicit:
-  // - Drag sufficiently right to nest as child.
-  // - Drag left over current parent row to outdent to grandparent.
-  // - Otherwise keep sibling-level placement.
-  if (relatedNode) {
-    const relatedType = getLocationType(relatedNode.location);
-    if (childIntent) {
-      parentId =
-        draggedType === "floor" && relatedType !== "building"
-          ? relatedNode.location.parent_id
-          : relatedNode.location.id;
-    } else if (relatedNode.location.id === currentParentId) {
-      // Hovering the current parent row keeps sibling-level by default.
-      // Outdent only when the pointer is explicitly left of the row.
-      parentId = outdentIntent ? relatedNode.location.parent_id : currentParentId;
-    } else {
-      parentId = relatedNode.location.parent_id;
-    }
-  }
-
-  const siblings = filtered.filter((node) => node.location.parent_id === parentId);
-
-  if (relatedNode) {
-    // Child intent: append as last child of related row.
-    if (parentId === relatedNode.location.id) {
-      return { parentId, siblingIndex: siblings.length };
-    }
-
-    // Dropping on the current parent row: choose beginning/end of current sibling list.
-    if (relatedNode.location.id === currentParentId && parentId === currentParentId) {
-      return { parentId, siblingIndex: dropContext?.willInsertAfter ? siblings.length : 0 };
-    }
-
-    const relatedSiblingIndex = siblings.findIndex(
-      (node) => node.location.id === relatedNode.location.id
-    );
-    if (relatedSiblingIndex >= 0) {
-      const idx = dropContext?.willInsertAfter ? relatedSiblingIndex + 1 : relatedSiblingIndex;
-      return { parentId, siblingIndex: Math.max(0, Math.min(idx, siblings.length)) };
-    }
-  }
-
-  // Fallback when we lack a concrete related target: approximate by index,
-  // but account for dragging an entire subtree, not only the root row.
-  const insertIndex = Math.max(
-    0,
-    Math.min(
-      newIndex > oldIndex ? newIndex - subtreeIds.size : newIndex,
-      filtered.length
-    )
-  );
-  const siblingIndex = filtered
-    .slice(0, insertIndex)
-    .filter((node) => node.location.parent_id === parentId).length;
-  return { parentId, siblingIndex };
-}
 
 /**
  * Location tree component using FLAT RENDERING pattern.
@@ -250,9 +72,7 @@ export class HtLocationTree extends LitElement {
 
   private _sortable?: Sortable;
   private _hasInitializedExpansion = false;
-  private _lastDropContext?: DropContext;
-  private _dragHoverExpandTimer?: number;
-  private _dragHoverExpandTargetId?: string;
+  private _activeDropTarget?: ActiveDropTarget;
 
   private _resolveRelatedId(evt: Sortable.MoveEvent): string | undefined {
     const draggedId = (evt.dragged as HTMLElement | undefined)?.getAttribute("data-id") || undefined;
@@ -642,7 +462,6 @@ export class HtLocationTree extends LitElement {
     super.disconnectedCallback();
     this._sortable?.destroy();
     this._sortable = undefined;
-    this._clearDragHoverExpand();
   }
 
   protected updated(changedProps: PropertyValues): void {
@@ -691,45 +510,41 @@ export class HtLocationTree extends LitElement {
         onStart: () => {
           this._isDragging = true;
           this._dropIndicator = undefined;
-          this._clearDragHoverExpand();
         },
         onMove: (evt) => {
           const draggedId =
             (evt.dragged as HTMLElement | undefined)?.getAttribute("data-id") || undefined;
           const relatedTarget = evt.related as HTMLElement | undefined;
           if (draggedId && relatedTarget?.classList.contains("tree-item")) {
-            const resolvedRelatedId = this._resolveRelatedId(evt);
-            const resolvedTarget =
-              (resolvedRelatedId
-                ? (this.shadowRoot?.querySelector(
-                    `.tree-item[data-id="${resolvedRelatedId}"]`
-                  ) as HTMLElement | null)
-                : null) || relatedTarget;
-            const rect = resolvedTarget.getBoundingClientRect();
-            this._lastDropContext = {
-              relatedId: resolvedRelatedId ?? (relatedTarget.getAttribute("data-id") ?? undefined),
-              willInsertAfter: evt.willInsertAfter,
-              pointerX: (evt as any).originalEvent?.clientX,
-              relatedLeft: rect.left,
-            };
-            this._updateDropIndicator(draggedId, this._lastDropContext, resolvedTarget);
-            if (ENABLE_DRAG_HOVER_AUTO_EXPAND) {
-              this._scheduleDragHoverExpand(draggedId, this._lastDropContext);
-            } else {
-              this._clearDragHoverExpand();
+            const relatedId =
+              this._resolveRelatedId(evt) ??
+              (relatedTarget.getAttribute("data-id") ?? undefined);
+            if (!relatedId || relatedId === draggedId) {
+              this._activeDropTarget = undefined;
+              this._dropIndicator = undefined;
+              return true;
             }
+            const rect = relatedTarget.getBoundingClientRect();
+            const orig = (evt as any).originalEvent;
+            const clientX = typeof orig?.clientX === "number" ? orig.clientX : rect.left + rect.width / 2;
+            const clientY = typeof orig?.clientY === "number" ? orig.clientY : rect.top + rect.height / 2;
+            const dragged = this.locations.find((l) => l.id === draggedId);
+            const currentParentId = dragged?.parent_id ?? null;
+            const isCurrentParentRow = relatedId === currentParentId;
+            const zone = zoneFromPointerInRow(rect, clientX, clientY, isCurrentParentRow);
+            this._activeDropTarget = { relatedId, zone };
+            this._updateDropIndicator(draggedId, relatedTarget, zone);
           } else {
+            this._activeDropTarget = undefined;
             this._dropIndicator = undefined;
-            this._clearDragHoverExpand();
           }
           return true;
         },
         onEnd: (evt) => {
           this._isDragging = false;
           this._dropIndicator = undefined;
-          this._clearDragHoverExpand();
           this._handleDragEnd(evt);
-          this._lastDropContext = undefined;
+          this._activeDropTarget = undefined;
           // Re-sync Sortable after drop to match Lit-rendered tree state.
           this.updateComplete.then(() => {
             this._cleanupDuplicateTreeItems();
@@ -741,30 +556,30 @@ export class HtLocationTree extends LitElement {
   }
 
   private _handleDragEnd(evt: Sortable.SortableEvent): void {
-    const { item, newIndex, oldIndex } = evt;
-    if (newIndex === undefined || oldIndex === undefined) return;
-
+    const { item } = evt;
     const locationId = item.getAttribute("data-id");
     if (!locationId) return;
     const dragged = this.locations.find((loc) => loc.id === locationId);
     if (!dragged) return;
 
-    const effectiveDropContext = this._lastDropContext;
+    const target = this._activeDropTarget;
+    if (!target) {
+      this._restoreTreeAfterCancelledDrop();
+      return;
+    }
 
     const flatNodes = buildFlatTree(this.locations, this._expandedIds);
-    const dropTarget = computeDropTarget(
+    const dropTarget = resolveDropTargetFromZone(
       flatNodes,
       locationId,
-      oldIndex,
-      newIndex,
       dragged.parent_id,
-      effectiveDropContext
+      target.relatedId,
+      target.zone
     );
-    const newParentId = dropTarget.parentId;
-    const siblingIndex = dropTarget.siblingIndex;
+    const { parentId: newParentId, siblingIndex } = dropTarget;
     const oldSiblingIndex = flatNodes
-      .slice(0, oldIndex)
-      .filter((node) => node.location.parent_id === dragged.parent_id).length;
+      .filter((node) => node.location.parent_id === dragged.parent_id)
+      .findIndex((node) => node.location.id === locationId);
     if (newParentId === dragged.parent_id && siblingIndex === oldSiblingIndex) {
       this._restoreTreeAfterCancelledDrop();
       return;
@@ -785,7 +600,6 @@ export class HtLocationTree extends LitElement {
   private _restoreTreeAfterCancelledDrop(): void {
     // Sortable mutates DOM directly during drag; force Lit to repaint canonical order.
     this._dropIndicator = undefined;
-    this._clearDragHoverExpand();
     this.requestUpdate();
     this.updateComplete.then(() => {
       this._cleanupDuplicateTreeItems();
@@ -793,151 +607,37 @@ export class HtLocationTree extends LitElement {
     });
   }
 
-  private _clearDragHoverExpand(): void {
-    if (this._dragHoverExpandTimer !== undefined) {
-      window.clearTimeout(this._dragHoverExpandTimer);
-      this._dragHoverExpandTimer = undefined;
-    }
-    this._dragHoverExpandTargetId = undefined;
-  }
-
-  private _scheduleDragHoverExpand(
-    draggedId: string,
-    context: DropContext | undefined
-  ): void {
-    if (!ENABLE_DRAG_HOVER_AUTO_EXPAND) {
-      this._clearDragHoverExpand();
-      return;
-    }
-
-    const relatedId = context?.relatedId;
-    if (!relatedId) {
-      this._clearDragHoverExpand();
-      return;
-    }
-
-    // Expansion should be conservative: only expand when the pointer clearly
-    // indicates child nesting intent, not for incidental row hover.
-    if (!this._hasStrongChildHoverIntent(context)) {
-      this._clearDragHoverExpand();
-      return;
-    }
-
-    const hasChildren = this.locations.some((loc) => loc.parent_id === relatedId);
-    if (!hasChildren || this._expandedIds.has(relatedId)) {
-      this._clearDragHoverExpand();
-      return;
-    }
-
-    if (
-      !canMoveLocation({
-        locations: this.locations,
-        locationId: draggedId,
-        newParentId: relatedId,
-      })
-    ) {
-      this._clearDragHoverExpand();
-      return;
-    }
-
-    if (this._dragHoverExpandTargetId === relatedId && this._dragHoverExpandTimer !== undefined) {
-      return;
-    }
-
-    this._clearDragHoverExpand();
-    this._dragHoverExpandTargetId = relatedId;
-    this._dragHoverExpandTimer = window.setTimeout(() => {
-      this._dragHoverExpandTimer = undefined;
-      const targetId = this._dragHoverExpandTargetId;
-      if (!this._isDragging || !targetId || this._expandedIds.has(targetId)) {
-        return;
-      }
-      const next = new Set(this._expandedIds);
-      next.add(targetId);
-      this._expandedIds = next;
-    }, DRAG_HOVER_EXPAND_DELAY_MS);
-  }
-
-  private _hasStrongChildHoverIntent(context: DropContext): boolean {
-    if (context.pointerX === undefined || context.relatedLeft === undefined) {
-      return false;
-    }
-    return context.pointerX >= context.relatedLeft + DRAG_HOVER_EXPAND_CHILD_THRESHOLD_PX;
-  }
-
-  private _resolveDropIntent(
-    draggedId: string,
-    context: DropContext
-  ): "child" | "sibling" | "outdent" {
-    if (context.pointerX === undefined || context.relatedLeft === undefined) {
-      return "sibling";
-    }
-    const draggedDepth = this._getDepthForLocation(draggedId);
-    const relatedDepth = context.relatedId ? this._getDepthForLocation(context.relatedId) : draggedDepth;
-    const childIntentThreshold = _childIntentThresholdPx(draggedDepth, relatedDepth);
-    if (context.pointerX >= context.relatedLeft + childIntentThreshold) {
-      return "child";
-    }
-
-    const dragged = this.locations.find((loc) => loc.id === draggedId);
-    if (
-      dragged &&
-      dragged.parent_id &&
-      context.relatedId === dragged.parent_id &&
-      context.pointerX <= context.relatedLeft - OUTDENT_THRESHOLD_PX
-    ) {
-      return "outdent";
-    }
-    return "sibling";
-  }
-
-  private _getDepthForLocation(locationId: string): number {
-    const byId = new Map(this.locations.map((loc) => [loc.id, loc]));
-    let depth = 0;
-    let current = byId.get(locationId);
-    const visited = new Set<string>();
-    while (current?.parent_id) {
-      if (visited.has(current.parent_id)) {
-        break;
-      }
-      visited.add(current.parent_id);
-      depth += 1;
-      current = byId.get(current.parent_id);
-    }
-    return depth;
-  }
-
   private _updateDropIndicator(
-    draggedId: string,
-    context: DropContext | undefined,
-    relatedRow: HTMLElement | null
+    _draggedId: string,
+    relatedRow: HTMLElement,
+    zone: DropZone
   ): void {
     const list = this.shadowRoot?.querySelector(".tree-list") as HTMLElement | null;
-    if (!context || !relatedRow || !list) {
+    if (!relatedRow || !list) {
       this._dropIndicator = undefined;
       return;
     }
 
     const listRect = list.getBoundingClientRect();
     const rowRect = relatedRow.getBoundingClientRect();
-    const intent = this._resolveDropIntent(draggedId, context);
+    const intent: "child" | "sibling" | "outdent" =
+      zone === "inside" ? "child" : zone === "outdent" ? "outdent" : "sibling";
+    const label =
+      zone === "inside" ? "Child" : zone === "outdent" ? "Outdent" : zone === "after" ? "After" : "Before";
 
     let left = rowRect.left - listRect.left + 6;
-    if (intent === "child") left += 24;
-    if (intent === "outdent") left -= 24;
+    if (zone === "inside") left += 24;
+    if (zone === "outdent") left -= 24;
     left = Math.max(8, Math.min(left, listRect.width - 44));
-
     const width = Math.max(36, listRect.width - left - 8);
-    const top = (context.willInsertAfter ? rowRect.bottom : rowRect.top) - listRect.top;
-    const label =
-      intent === "child"
-        ? "Child"
-        : intent === "outdent"
-          ? "Outdent"
-          : context.willInsertAfter
-            ? "After"
-            : "Before";
-
+    const top =
+      zone === "after"
+        ? rowRect.bottom - listRect.top
+        : zone === "before"
+          ? rowRect.top - listRect.top
+          : zone === "inside"
+            ? rowRect.bottom - listRect.top
+            : rowRect.top - listRect.top;
     this._dropIndicator = { top, left, width, intent, label };
   }
 
@@ -1045,7 +745,7 @@ export class HtLocationTree extends LitElement {
           class="drag-handle ${!this.allowMove ? "disabled" : ""}"
           title=${!this.allowMove
             ? "Hierarchy move is disabled."
-            : "Drag to reorder. Move right to nest under a row."}
+            : "Drag to reorder. Drop on top/middle/bottom of a row for before/child/after."}
         ><ha-icon icon="mdi:drag-vertical"></ha-icon></div>
 
         <button
@@ -1287,7 +987,8 @@ export class HtLocationTree extends LitElement {
 
 export const __TEST__ = {
   buildFlatTree,
-  computeDropTarget,
+  zoneFromPointerInRow,
+  resolveDropTargetFromZone,
 };
 
 if (!customElements.get("ht-location-tree")) {

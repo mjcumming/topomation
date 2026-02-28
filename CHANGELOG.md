@@ -9,11 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+(None.)
+
+## [0.1.20] - 2026-02-28
+
+### Changed
+
+- **Tree drag-and-drop: explicit drop zones (C-011, ADR-HA-039).** Drop outcome is
+  determined only by which zone is hovered (before / inside / after / outdent),
+  not by pointer x-offset or heuristics. Each row exposes three Y-based zones:
+  top third = insert before, middle = make child, bottom third = insert after;
+  when hovering the current parent row, a left-edge strip = outdent to grandparent.
+  This removes heuristic drift and makes DnD behavior deterministic and
+  testable.
+
+### Added
+
+- E2E regression tests for tree DnD zones (Playwright: before/inside/after drop)
+  and unit tests for zone resolver and hit-test (`tree-dnd-zones`, vitest).
+- Contract C-011 (tree DnD) and ADR-HA-039 (explicit drop targets) in
+  `docs/contracts.md` and `docs/adr-log.md`; implementation plan in
+  `docs/tree-dnd-stabilization-plan.md`.
+
 ### Fixed
 
-- Drag-and-drop child intent now applies a depth-aware horizontal threshold so
-  moving a deeper node across a shallower row does not accidentally create an
-  unintended extra nesting level.
+- Removed drag-hover auto-expand and x-offset intent logic; replaced with
+  zone-only resolution so the same issue does not recur.
 
 ## [0.1.19] - 2026-02-28
 

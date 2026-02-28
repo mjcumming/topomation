@@ -27,6 +27,7 @@ If a file is not listed as active below, treat it as reference-only.
 | `docs/work-tracking.md` | Current sprint execution status | Active (Operational) |
 | `docs/current-work.md` | Live parallel-work and handoff context | Active (Operational) |
 | `docs/cursor-guide.md` | Agent reference and repository operating notes | Active (Reference) |
+| `docs/tree-dnd-stabilization-plan.md` | Tree DnD explicit drop targets — implementation plan (C-011, ADR-HA-039) | Active (Operational) |
 
 ## Project Docs Scope (`/project`)
 
