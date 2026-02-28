@@ -183,18 +183,22 @@ jobs:
       - name: Extract changelog for this version
         if: steps.release-check.outputs.exists == 'false'
         id: changelog
+        env:
+          VERSION: ${{ needs.check-version.outputs.version }}
         run: |
           if [ -f "CHANGELOG.md" ]; then
-            awk '/^## \['"${{ needs.check-version.outputs.version }}"'\]/{flag=1; next} /^## \[/{flag=0} flag' CHANGELOG.md > release_notes.md
+            # Match literal "## [VERSION]" (escape dots for regex)
+            PATTERN="^## \\[${VERSION//./\\.}\\]"
+            awk -v pat="$PATTERN" '$0 ~ pat {flag=1; next} /^## \[/ {if(flag) exit} flag' CHANGELOG.md > release_notes.md
             if [ -s release_notes.md ]; then
               printf 'changelog<<EOF\n' >> $GITHUB_OUTPUT
               cat release_notes.md >> $GITHUB_OUTPUT
               printf 'EOF\n' >> $GITHUB_OUTPUT
             else
-              echo "changelog=Release v${{ needs.check-version.outputs.version }}" >> $GITHUB_OUTPUT
+              echo "changelog=Release v$VERSION" >> $GITHUB_OUTPUT
             fi
           else
-            echo "changelog=Release v${{ needs.check-version.outputs.version }}" >> $GITHUB_OUTPUT
+            echo "changelog=Release v$VERSION" >> $GITHUB_OUTPUT
           fi
 
       - name: Create Release with GitHub CLI
