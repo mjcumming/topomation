@@ -424,6 +424,19 @@ def _mark_sibling_group_manual_order(location_manager: object, parent_id: str | 
         )
 
 
+def _location_has_children(location_manager: object, location_id: str) -> bool:
+    """Return True when a location has direct children."""
+    return any(
+        str(getattr(location, "parent_id", "")) == location_id
+        for location in location_manager.all_locations()
+    )
+
+
+def _is_parent_reparent_block_error(err: Exception) -> bool:
+    """Detect legacy core error that blocks moving a parent under a new parent."""
+    return "parent locations cannot move under a different parent" in str(err).casefold()
+
+
 def async_register_websocket_api(hass: HomeAssistant) -> None:
     """Register WebSocket API commands."""
     # Location management
@@ -903,14 +916,37 @@ def handle_locations_reorder(
     old_order = location_before.order if location_before else 0
 
     reordered = False
+    used_parent_reparent_compat = False
 
     try:
-        location = loc_mgr.reorder_location(
-            msg["location_id"],
-            requested_parent_id,
-            msg["new_index"],
-        )
-        reordered = True
+        try:
+            location = loc_mgr.reorder_location(
+                msg["location_id"],
+                requested_parent_id,
+                msg["new_index"],
+            )
+            reordered = True
+        except (ValueError, KeyError) as reorder_err:
+            # Compatibility path: some home_topology versions reject parent-node
+            # reparent via reorder_location even for valid tree moves.
+            should_use_compat = (
+                old_parent_id != requested_parent_id
+                and _location_has_children(loc_mgr, msg["location_id"])
+                and _is_parent_reparent_block_error(reorder_err)
+            )
+            if not should_use_compat:
+                raise
+
+            parent_for_update = requested_parent_id if requested_parent_id is not None else ""
+            loc_mgr.update_location(msg["location_id"], parent_id=parent_for_update)
+            reordered = True
+            location = loc_mgr.reorder_location(
+                msg["location_id"],
+                requested_parent_id,
+                msg["new_index"],
+            )
+            used_parent_reparent_compat = True
+
         _mark_sibling_group_manual_order(loc_mgr, old_parent_id)
         _mark_sibling_group_manual_order(loc_mgr, location.parent_id)
         synced_floor_id = _sync_ha_area_floor_assignment(hass, loc_mgr, location)
@@ -927,6 +963,11 @@ def handle_locations_reorder(
                 "ha_floor_id": synced_floor_id,
             },
         )
+        if used_parent_reparent_compat:
+            _LOGGER.info(
+                "Applied legacy parent-reparent compatibility path for location '%s'",
+                msg["location_id"],
+            )
     except (ValueError, KeyError) as e:
         if reordered and location_before is not None:
             try:
