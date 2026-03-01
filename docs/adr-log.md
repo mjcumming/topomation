@@ -1693,6 +1693,52 @@ intended vacant semantics.
 
 ---
 
+### ADR-HA-042: Detection Must Exclude Occupancy-Class Inputs and Expose Full Signal Variants (2026-03-01)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+
+After ADR-HA-041 shipped, two UX/contract gaps remained:
+
+1. The detection source list still allowed `binary_sensor` entities with
+   `device_class: occupancy` unless they were explicitly Topomation-owned
+   (`location_id` present), causing confusing rows such as
+   `binary_sensor.*_occupancy • unavailable`.
+2. Multi-signal entities (dimmers/media) were internally modeled with explicit
+   `signal_key` variants but the UI only showed each entity's default signal in
+   the core list, making `light::level` and media `volume`/`mute` effectively
+   undiscoverable from the normal Detection flow.
+
+**Decision**:
+
+1. Exclude all occupancy-class binary sensors from source auto-enumeration
+   (`device_class: occupancy`), not just Topomation-owned outputs.
+2. Keep dimmer/media signal decomposition explicit in UI and always show all
+   supported signal rows in the Detection core list:
+   - light: `power`, `level`, `color` (as supported)
+   - media: `playback`, `volume`, `mute`
+3. Keep **Add Source** as the edge-case path for uncommon domains, but apply the
+   same occupancy-class exclusion there.
+
+**Rationale**:
+
+1. Occupancy sensors are derived state and should not be treated as primary
+   occupancy inputs by default.
+2. Users need first-class access to dimmer-level/media interaction signals
+   without hidden or implicit configuration paths.
+3. This keeps the panel behavior aligned with the explicit signal-key contract
+   from ADR-HA-018.
+
+**Consequences**:
+
+- ✅ `device_class: occupancy` no longer appears in Detection source pickers.
+- ✅ Dimmers and media entities expose all configured event channels directly.
+- ✅ Source discovery behavior now matches expected "on/off + level change" flows.
+- ⚠️ Detection lists can show more rows for rich devices (intentional).
+
+---
+
 ## How to Use This Log
 
 ### When to Create an ADR

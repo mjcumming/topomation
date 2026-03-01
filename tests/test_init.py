@@ -19,6 +19,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.topomation import _prune_hidden_entities
 from custom_components.topomation.const import (
     DOMAIN,
+    EVENT_TOPOMATION_OCCUPANCY_CHANGED,
     STORAGE_KEY_CONFIG,
     STORAGE_VERSION,
 )
@@ -158,6 +159,60 @@ async def test_setup_entry_subscribes_timeout_reschedule_hooks(
 
     assert "occupancy.changed" in event_types
     assert "occupancy.signal" in event_types
+
+
+async def test_setup_entry_forwards_occupancy_changed_to_ha_bus(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    mock_event_bus: Mock,
+) -> None:
+    """Kernel occupancy.changed events should be mirrored to HA bus."""
+    config_entry.add_to_hass(hass)
+
+    with (
+        patch("custom_components.topomation.async_register_panel"),
+        patch("custom_components.topomation.async_register_websocket_api"),
+        patch("custom_components.topomation.async_register_services"),
+        patch.object(hass.config_entries, "async_forward_entry_setups", return_value=True),
+    ):
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    occupancy_callbacks = []
+    for call in mock_event_bus.subscribe.call_args_list:
+        if len(call.args) < 2:
+            continue
+        callback = call.args[0]
+        event_filter = call.args[1]
+        if getattr(event_filter, "event_type", None) == "occupancy.changed":
+            occupancy_callbacks.append(callback)
+
+    forwarded_events: list[dict] = []
+    unsub = hass.bus.async_listen(
+        EVENT_TOPOMATION_OCCUPANCY_CHANGED,
+        lambda evt: forwarded_events.append(dict(evt.data or {})),
+    )
+
+    event = Mock()
+    event.location_id = "area_mud_room"
+    event.payload = {
+        "occupied": True,
+        "previous_occupied": False,
+        "reason": "event:trigger",
+    }
+    for callback in occupancy_callbacks:
+        callback(event)
+
+    await hass.async_block_till_done()
+    unsub()
+
+    assert {
+        "entry_id": config_entry.entry_id,
+        "location_id": "area_mud_room",
+        "occupied": True,
+        "previous_occupied": False,
+        "reason": "event:trigger",
+    } in forwarded_events
 
 
 async def test_setup_entry_bootstraps_building_and_grounds_on_first_install(

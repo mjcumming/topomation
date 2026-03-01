@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.9] - 2026-03-01
+
+### Changed
+
+- Detection source pickers now exclude all `binary_sensor` entities with
+  `device_class: occupancy` (including non-Topomation occupancy sensors).
+- Detection core list now always exposes all supported signal rows for rich
+  entities (for example light `power` + `level`, media `playback` + `volume` +
+  `mute`) instead of showing only a default signal.
+
+### Fixed
+
+- Integration runtime now mirrors kernel `occupancy.changed` transitions to the
+  HA bus event `topomation_occupancy_changed`, restoring live occupancy state
+  refreshes in the main panel.
+
 ## [0.2.8] - 2026-03-01
 
 ### Changed

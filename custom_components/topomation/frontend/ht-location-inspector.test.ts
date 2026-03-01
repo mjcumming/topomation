@@ -570,7 +570,7 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(staged[0].entity_id).to.equal("binary_sensor.kitchen_motion");
   });
 
-  it("does not show Topomation occupancy entities in source candidates", async () => {
+  it("does not show occupancy-class entities in source candidates", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>): Promise<T> => {
         if (request.type === "config/entity_registry/list") return [] as T;
@@ -591,6 +591,14 @@ describe("HtLocationInspector occupancy source composer", () => {
             location_id: "area_kitchen",
           },
         },
+        "binary_sensor.camera_estimated_occupancy": {
+          entity_id: "binary_sensor.camera_estimated_occupancy",
+          state: "on",
+          attributes: {
+            friendly_name: "Camera Estimated Occupancy",
+            device_class: "occupancy",
+          },
+        },
       },
       areas: {
         kitchen: { area_id: "kitchen", name: "Kitchen" },
@@ -604,7 +612,10 @@ describe("HtLocationInspector occupancy source composer", () => {
     location.name = "Kitchen";
     location.ha_area_id = "kitchen";
     location.modules._meta = { type: "area" };
-    location.entity_ids = ["binary_sensor.kitchen_occupancy"];
+    location.entity_ids = [
+      "binary_sensor.kitchen_occupancy",
+      "binary_sensor.camera_estimated_occupancy",
+    ];
 
     const element = await fixture<HtLocationInspector>(html`
       <ht-location-inspector
@@ -622,6 +633,10 @@ describe("HtLocationInspector occupancy source composer", () => {
       (row.textContent || "").includes("Kitchen Occupancy")
     );
     expect(matchingCard).to.equal(undefined);
+    const estimatedCard = Array.from(element.shadowRoot!.querySelectorAll(".source-card")).find((row) =>
+      (row.textContent || "").includes("Camera Estimated Occupancy")
+    );
+    expect(estimatedCard).to.equal(undefined);
   });
 
   it("shows only core detection entities in area source candidates while keeping generic switches in Add Source", async () => {
@@ -795,10 +810,13 @@ describe("HtLocationInspector occupancy source composer", () => {
       .map((card) => (card.textContent || "").trim())
       .join("\n");
 
-    expect(cardsText).to.include("Mudroom Lights");
+    expect(cardsText).to.include("Mudroom Lights — Power");
+    expect(cardsText).to.include("Mudroom Lights — Level change");
     expect(cardsText).to.include("Mudroom Relay Light");
     expect(cardsText).to.include("Mudroom Exhaust");
-    expect(cardsText).to.include("Mudroom Speaker");
+    expect(cardsText).to.include("Mudroom Speaker — Playback");
+    expect(cardsText).to.include("Mudroom Speaker — Volume");
+    expect(cardsText).to.include("Mudroom Speaker — Mute");
     expect(cardsText).to.include("Mudroom Motion");
     expect(cardsText).to.include("Mudroom Glass Vibration");
     expect(cardsText).to.include("Mudroom Alarm Sound");
@@ -829,6 +847,7 @@ describe("HtLocationInspector occupancy source composer", () => {
     ) as HTMLSelectElement;
     const optionValues = Array.from(entitySelect.options).map((option) => option.value);
     expect(optionValues).to.include("switch.mudroom_indicator");
+    expect(optionValues).to.not.include("binary_sensor.mudroom_occupancy");
   });
 
   it("renders Detection/On Occupied/On Vacant tabs", async () => {

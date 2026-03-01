@@ -2,7 +2,7 @@
 
 DOMAIN = "topomation"
 NAME = "Topomation"
-VERSION = "0.2.8"
+VERSION = "0.2.9"
 
 # Storage
 STORAGE_VERSION = 1
@@ -75,3 +75,4 @@ TOPOMATION_AUTOMATION_METADATA_PREFIX = "[topomation]"
 AUTOMATION_REAPPLY_CONFIG_KEY = "reapply_last_state_on_startup"
 AUTOMATION_STARTUP_BUFFER_SECONDS = 20
 EVENT_TOPOMATION_ACTIONS_SUMMARY = f"{DOMAIN}_actions_summary"
+EVENT_TOPOMATION_OCCUPANCY_CHANGED = f"{DOMAIN}_occupancy_changed"

@@ -27,6 +27,7 @@ from .const import (
     AUTOMATION_REAPPLY_CONFIG_KEY,
     AUTOSAVE_DEBOUNCE_SECONDS,
     DOMAIN,
+    EVENT_TOPOMATION_OCCUPANCY_CHANGED,
     STORAGE_KEY_CONFIG,
     STORAGE_KEY_STATE,
     STORAGE_VERSION,
@@ -189,6 +190,31 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     bus.subscribe(_reschedule_timeouts, EventFilter(event_type="occupancy.changed"))
     bus.subscribe(_reschedule_timeouts, EventFilter(event_type="occupancy.signal"))
+
+    @callback
+    def _forward_occupancy_changed(event: Event) -> None:
+        """Mirror kernel occupancy changes onto HA event bus for panel live updates."""
+        payload = event.payload if isinstance(event.payload, Mapping) else {}
+        occupied = payload.get("occupied")
+        location_id = event.location_id
+        if not isinstance(location_id, str) or not isinstance(occupied, bool):
+            return
+
+        ha_payload: dict[str, Any] = {
+            "entry_id": entry.entry_id,
+            "location_id": location_id,
+            "occupied": occupied,
+        }
+        previous_occupied = payload.get("previous_occupied")
+        if isinstance(previous_occupied, bool):
+            ha_payload["previous_occupied"] = previous_occupied
+        reason = payload.get("reason")
+        if isinstance(reason, str) and reason:
+            ha_payload["reason"] = reason
+
+        hass.bus.async_fire(EVENT_TOPOMATION_OCCUPANCY_CHANGED, ha_payload)
+
+    bus.subscribe(_forward_occupancy_changed, EventFilter(event_type="occupancy.changed"))
 
     # 8. Set up sync manager for bidirectional HA ↔ Topology sync
     sync_manager = SyncManager(hass, loc_mgr, bus)

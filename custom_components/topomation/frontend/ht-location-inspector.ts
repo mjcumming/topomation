@@ -1700,15 +1700,9 @@ export class HtLocationInspector extends LitElement {
     const areaEntityIds = [...(this.location.entity_ids || [])].sort((a, b) =>
       this._entityName(a).localeCompare(this._entityName(b))
     );
-    const areaEntitySet = new Set(areaEntityIds);
     const candidateAreaEntityIds = areaEntityIds.filter((entityId) => this._isCoreAreaSourceEntity(entityId));
     const candidateItems = candidateAreaEntityIds.flatMap((entityId) => this._candidateItemsForEntity(entityId));
-    const configuredKeys = new Set(sources.map((source) => this._sourceKeyFromSource(source)));
-    const visibleCandidateItems = candidateItems.filter((item) => {
-      if (configuredKeys.has(item.key)) return true;
-      const defaultSignalKey = this._defaultSignalKeyForEntity(item.entityId);
-      return item.signalKey === defaultSignalKey || (!defaultSignalKey && !item.signalKey);
-    });
+    const visibleCandidateItems = candidateItems;
     const candidateItemKeys = new Set(candidateItems.map((item) => item.key));
     const configuredExtraItems = sources
       .filter((source) => !candidateItemKeys.has(this._sourceKeyFromSource(source)))
@@ -2941,8 +2935,8 @@ export class HtLocationInspector extends LitElement {
       return false;
     }
     const attrs = stateObj.attributes || {};
-    // Exclude Topomation-created occupancy entities from source pickers.
-    if (attrs.device_class === "occupancy" && attrs.location_id) return false;
+    // Occupancy-class sensors are outputs/derived state and should not be auto-enumerated as inputs.
+    if (attrs.device_class === "occupancy") return false;
     const domain = entityId.split(".", 1)[0];
     if (["person", "device_tracker", "light", "switch", "fan", "media_player"].includes(domain)) {
       return true;
@@ -2952,7 +2946,6 @@ export class HtLocationInspector extends LitElement {
       if (!deviceClass) return true;
       return [
         "motion",
-        "occupancy",
         "presence",
         "door",
         "garage_door",
@@ -2975,8 +2968,8 @@ export class HtLocationInspector extends LitElement {
     }
 
     const attrs = stateObj.attributes || {};
-    // Never show integration-owned occupancy entities in the core detection list.
-    if (attrs.device_class === "occupancy" && attrs.location_id) return false;
+    // Occupancy-class sensors are outputs/derived state and should not be auto-enumerated as inputs.
+    if (attrs.device_class === "occupancy") return false;
 
     const domain = entityId.split(".", 1)[0];
     if (domain === "light" || domain === "fan" || domain === "media_player") {
@@ -2992,7 +2985,6 @@ export class HtLocationInspector extends LitElement {
       if (!deviceClass) return true;
       return [
         "motion",
-        "occupancy",
         "presence",
         "door",
         "garage_door",
