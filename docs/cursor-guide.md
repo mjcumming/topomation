@@ -5,7 +5,16 @@
 > Contract/policy source of truth is `docs/bidirectional-sync-design.md` and
 > `docs/architecture.md`. If examples here differ, those docs win.
 
-Last Updated: 2026-02-23
+Last Updated: 2026-03-01
+
+---
+
+## Legacy Code Policy (Mandatory)
+
+- Do not keep legacy branches, compatibility paths, or dead code after a new direction is chosen.
+- Replace-and-delete in the same change unless a requirement explicitly mandates temporary coexistence.
+- Never keep commented-out old implementations as rollback strategy; use git history instead.
+- When deleting old behavior, clean up tests and docs tied only to that behavior.
 
 ---
 

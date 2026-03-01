@@ -30,6 +30,15 @@ The framework provides structured workflows for task management, code generation
 
 ---
 
+## Legacy Code Policy (Mandatory)
+
+1. Do not keep legacy code paths, compatibility branches, or "old vs new" implementations after a decision is made.
+2. If behavior is replaced, delete superseded code in the same change unless a written requirement explicitly says otherwise.
+3. Do not comment out old logic for fallback. Use version control history for rollback, not dead code in-tree.
+4. When removing old code, also remove related tests, docs, and references that only exist for the deleted path.
+
+---
+
 ## 1. Project Identity
 
 - **Name**: home-topology-ha

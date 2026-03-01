@@ -11,6 +11,15 @@ This integration uses **two languages**:
 - **Python**: Backend integration (event bridge, coordinator, entities)
 - **TypeScript/Lit**: Frontend panel (UI components)
 
+## 1.1 Legacy Code Removal (Mandatory)
+
+This project does not retain legacy implementations after architectural or product decisions are made.
+
+- Delete superseded code in the same PR/commit that introduces the replacement.
+- Do not keep dual-path logic ("old path/new path") unless there is an explicit, documented requirement.
+- Do not leave commented-out fallback logic in source files.
+- Remove tests and docs that only validate or describe removed behavior.
+
 ---
 
 ## 2. Python Standards (Backend)

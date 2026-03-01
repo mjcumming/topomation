@@ -648,7 +648,6 @@ export class TopomationPanel extends LitElement {
             @location-create=${this._handleLocationCreate}
             @location-edit=${this._handleLocationEdit}
             @location-moved=${this._handleLocationMoved}
-            @location-move-blocked=${this._handleLocationMoveBlocked}
             @location-lock-toggle=${this._handleLocationLockToggle}
             @location-occupancy-toggle=${this._handleLocationOccupancyToggle}
             @location-renamed=${this._handleLocationRenamed}
@@ -1024,54 +1023,10 @@ export class TopomationPanel extends LitElement {
         await this._loadLocations(true);
         this._locationsVersion += 1;
       } catch (error: any) {
-        if (this._isLegacyParentReparentError(error)) {
-          try {
-            // Compatibility fallback for older backend/core behavior that rejects
-            // direct parent-node reparent in reorder flow.
-            await this.hass.callWS(
-              this._withEntryId({
-                type: "topomation/locations/update",
-                location_id: locationId,
-                changes: { parent_id: newParentId ?? null },
-              })
-            );
-            await this.hass.callWS(
-              this._withEntryId({
-                type: "topomation/locations/reorder",
-                location_id: locationId,
-                new_parent_id: newParentId ?? null,
-                new_index: newIndex,
-              })
-            );
-            await this._loadLocations(true);
-            this._locationsVersion += 1;
-            return;
-          } catch (fallbackError: any) {
-            console.error("Legacy parent reparent fallback failed:", fallbackError);
-            this._showToast(fallbackError?.message || error?.message || "Failed to move location", "error");
-            return;
-          }
-        }
         console.error("Failed to move location:", error);
         this._showToast(error?.message || "Failed to move location", "error");
       }
     });
-  }
-
-  private _isLegacyParentReparentError(error: unknown): boolean {
-    const message = String((error as any)?.message || error || "").toLowerCase();
-    return message.includes("parent locations cannot move under a different parent");
-  }
-
-  private _handleLocationMoveBlocked(e: CustomEvent): void {
-    e.stopPropagation();
-    const reason = e?.detail?.reason;
-    this._showToast(
-      typeof reason === "string" && reason.trim()
-        ? reason
-        : "That move is not allowed for this location.",
-      "warning"
-    );
   }
 
   private async _handleLocationLockToggle(e: CustomEvent): Promise<void> {

@@ -11,6 +11,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 (None.)
 
+## [0.2.4] - 2026-03-01
+
+### Fixed
+
+- **Removed all legacy DnD reparent guards and compatibility paths.** The backend
+  no longer blocks reparenting locations that have children. The nested try/except
+  compat path, `_location_has_children`, `_is_parent_reparent_block_error`, and
+  the frontend `_isLegacyParentReparentError` fallback are all deleted. The kernel
+  v1.0.0 `reorder_location` handles subtree moves correctly; the integration now
+  calls it directly without any workarounds.
+
+### Removed
+
+- `_location_has_children()` helper (backend)
+- `_is_parent_reparent_block_error()` helper (backend)
+- Legacy parent-reparent compatibility path in `handle_locations_reorder` (backend)
+- `_isLegacyParentReparentError()` method (frontend)
+- `_handleLocationMoveBlocked()` handler and `@location-move-blocked` listener (frontend)
+- Associated test cases for legacy compat behavior
+
 ## [0.2.3] - 2026-02-28
 
 ### Fixed
