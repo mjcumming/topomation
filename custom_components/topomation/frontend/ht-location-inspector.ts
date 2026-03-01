@@ -2,7 +2,9 @@ import { LitElement, html, css } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { live } from "lit/directives/live.js";
 import type {
+  AdjacencyEdge,
   AutomationConfig,
+  HandoffTrace,
   HomeAssistant,
   Location,
   OccupancyConfig,
@@ -35,6 +37,12 @@ type InspectorLockState = {
   lockModes: string[];
   directLocks: OccupancyLockDirective[];
 };
+type OccupancyTransitionState = {
+  occupied: boolean;
+  previousOccupied?: boolean;
+  reason?: string;
+  changedAt?: string;
+};
 type EntityRegistryMeta = {
   hiddenBy?: string | null;
   disabledBy?: string | null;
@@ -56,19 +64,28 @@ try {
 export class HtLocationInspector extends LitElement {
   @property({ attribute: false }) public hass!: HomeAssistant;
   @property({ attribute: false }) public location?: Location;
+  @property({ attribute: false }) public allLocations: Location[] = [];
+  @property({ attribute: false }) public adjacencyEdges: AdjacencyEdge[] = [];
   @property({ attribute: false }) public entryId?: string;
   @property({ type: Number }) public entityRegistryRevision = 0;
   @property({ type: String }) public forcedTab?: InspectorTabRequest;
   @property({ attribute: false }) public occupancyStates: Record<string, boolean> = {};
+  @property({ attribute: false })
+  public occupancyTransitions: Record<string, OccupancyTransitionState> = {};
+  @property({ attribute: false }) public handoffTraces: HandoffTrace[] = [];
 
   // Ensure reactivity even if decorator transforms are unavailable in a given toolchain.
   static properties = {
     hass: { attribute: false },
     location: { attribute: false },
+    allLocations: { attribute: false },
+    adjacencyEdges: { attribute: false },
     entryId: { attribute: false },
     entityRegistryRevision: { type: Number },
     forcedTab: { type: String },
     occupancyStates: { attribute: false },
+    occupancyTransitions: { attribute: false },
+    handoffTraces: { attribute: false },
   };
 
   @state() private _activeTab: InspectorTab = "detection";
@@ -86,6 +103,13 @@ export class HtLocationInspector extends LitElement {
   @state() private _actionToggleBusy: Record<string, boolean> = {};
   @state() private _actionServiceSelections: Record<string, string> = {};
   @state() private _actionDarkSelections: Record<string, boolean> = {};
+  @state() private _adjacencyNeighborId = "";
+  @state() private _adjacencyBoundaryType = "door";
+  @state() private _adjacencyDirection = "bidirectional";
+  @state() private _adjacencyCrossingSources = "";
+  @state() private _adjacencyHandoffWindowSec = 12;
+  @state() private _adjacencyPriority = 50;
+  @state() private _savingAdjacency = false;
   private _onTimeoutMemory: Record<string, number> = {};
   private _entityAreaLoadPromise?: Promise<void>;
   private _actionRulesLoadSeq = 0;
@@ -160,6 +184,11 @@ export class HtLocationInspector extends LitElement {
       }
 
       .header-vacant-at {
+        font-size: 12px;
+        color: var(--text-secondary-color);
+      }
+
+      .header-vacancy-reason {
         font-size: 12px;
         color: var(--text-secondary-color);
       }
@@ -733,6 +762,124 @@ export class HtLocationInspector extends LitElement {
         max-width: 820px;
       }
 
+      .adjacency-list {
+        display: grid;
+        gap: 8px;
+        margin-bottom: 12px;
+        max-width: 820px;
+      }
+
+      .adjacency-row {
+        border: 1px solid var(--divider-color);
+        border-radius: 8px;
+        padding: 8px 10px;
+        background: rgba(var(--rgb-primary-color), 0.03);
+      }
+
+      .adjacency-row-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+
+      .adjacency-neighbor {
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      .adjacency-meta {
+        margin-top: 4px;
+        color: var(--text-secondary-color);
+        font-size: 12px;
+      }
+
+      .adjacency-delete-btn {
+        font-size: 11px;
+        padding: 4px 8px;
+      }
+
+      .adjacency-empty {
+        color: var(--text-secondary-color);
+        font-size: 12px;
+        margin-bottom: 8px;
+      }
+
+      .adjacency-form {
+        display: grid;
+        gap: 10px;
+        max-width: 820px;
+      }
+
+      .adjacency-form-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 10px;
+      }
+
+      .adjacency-form-field {
+        display: grid;
+        gap: 4px;
+      }
+
+      .adjacency-form-field label {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--text-secondary-color);
+        font-weight: 700;
+      }
+
+      .adjacency-form-field input,
+      .adjacency-form-field select {
+        border: 1px solid var(--divider-color);
+        border-radius: 6px;
+        padding: 6px 8px;
+        font-size: 13px;
+        background: var(--card-background-color);
+        color: var(--primary-text-color);
+      }
+
+      .adjacency-form-actions {
+        display: flex;
+        justify-content: flex-end;
+      }
+
+      .handoff-trace-list {
+        display: grid;
+        gap: 8px;
+        max-width: 820px;
+      }
+
+      .handoff-trace-row {
+        border: 1px solid var(--divider-color);
+        border-radius: 8px;
+        padding: 8px 10px;
+        background: rgba(var(--rgb-primary-color), 0.02);
+      }
+
+      .handoff-trace-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        font-size: 12px;
+      }
+
+      .handoff-trace-route {
+        font-weight: 700;
+      }
+
+      .handoff-trace-time {
+        color: var(--text-secondary-color);
+      }
+
+      .handoff-trace-meta {
+        margin-top: 4px;
+        font-size: 12px;
+        color: var(--text-secondary-color);
+      }
+
       .candidate-item {
         display: grid;
         grid-template-columns: auto minmax(0, 1fr);
@@ -1198,6 +1345,7 @@ export class HtLocationInspector extends LitElement {
     const occupied = occupiedState === true;
     const occupancyLabel =
       occupiedState === true ? "Occupied" : occupiedState === false ? "Vacant" : "Unknown";
+    const vacancyReason = this._resolveVacancyReason(occupancyState, occupiedState);
     const vacantAt = occupancyState ? this._resolveVacantAt(occupancyState.attributes || {}, occupied) : undefined;
     const vacantAtLabel = occupied
       ? vacantAt instanceof Date
@@ -1232,6 +1380,13 @@ export class HtLocationInspector extends LitElement {
                 ? html`
                     <span class="header-vacant-at" data-testid="header-vacant-at">
                       Vacant at ${vacantAtLabel}
+                    </span>
+                  `
+                : ""}
+              ${!occupied && vacancyReason
+                ? html`
+                    <span class="header-vacancy-reason" data-testid="header-vacancy-reason">
+                      ${vacancyReason}
                     </span>
                   `
                 : ""}
@@ -1487,6 +1642,362 @@ export class HtLocationInspector extends LitElement {
           </div>
           ${this._renderExternalSourceComposer(config)}
         </div>
+        ${this._renderAdjacencySection()} ${this._renderHandoffTraceSection()}
+      </div>
+    `;
+  }
+
+  private _adjacencyCandidates(): Location[] {
+    if (!this.location) return [];
+    return (this.allLocations || [])
+      .filter((loc) => loc.id !== this.location!.id)
+      .sort((left, right) => left.name.localeCompare(right.name));
+  }
+
+  private _connectedAdjacencyEdges(): AdjacencyEdge[] {
+    if (!this.location) return [];
+    const locationId = this.location.id;
+    return (this.adjacencyEdges || [])
+      .filter(
+        (edge) =>
+          edge &&
+          (edge.from_location_id === locationId || edge.to_location_id === locationId)
+      )
+      .sort((left, right) => {
+        const leftNeighbor = this._adjacentLocationName(left);
+        const rightNeighbor = this._adjacentLocationName(right);
+        return leftNeighbor.localeCompare(rightNeighbor);
+      });
+  }
+
+  private _adjacentLocationId(edge: AdjacencyEdge): string {
+    if (!this.location) return edge.to_location_id;
+    return edge.from_location_id === this.location.id
+      ? edge.to_location_id
+      : edge.from_location_id;
+  }
+
+  private _adjacentLocationName(edge: AdjacencyEdge): string {
+    const adjacentId = this._adjacentLocationId(edge);
+    return this.allLocations.find((location) => location.id === adjacentId)?.name || adjacentId;
+  }
+
+  private _edgeDirectionLabel(edge: AdjacencyEdge): string {
+    if (!this.location) return edge.directionality;
+    if (edge.directionality === "bidirectional") return "Two-way";
+    const currentId = this.location.id;
+    const outgoing =
+      (edge.directionality === "a_to_b" && edge.from_location_id === currentId) ||
+      (edge.directionality === "b_to_a" && edge.to_location_id === currentId);
+    return outgoing ? "Outbound" : "Inbound";
+  }
+
+  private _parseCrossingSources(raw: string): string[] {
+    return raw
+      .split(",")
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
+  }
+
+  private _emitAdjacencyChanged(): void {
+    this.dispatchEvent(
+      new CustomEvent("adjacency-changed", {
+        bubbles: true,
+        composed: true,
+      })
+    );
+  }
+
+  private async _handleAdjacencyCreate(): Promise<void> {
+    const neighborId = this._adjacencyNeighborId || this._adjacencyCandidates()[0]?.id || "";
+    if (!this.location || !neighborId || this._savingAdjacency) {
+      return;
+    }
+
+    this._savingAdjacency = true;
+    try {
+      let fromLocationId = this.location.id;
+      let toLocationId = neighborId;
+      let directionality: "bidirectional" | "a_to_b" | "b_to_a" = "bidirectional";
+
+      if (this._adjacencyDirection === "outbound") {
+        directionality = "a_to_b";
+      } else if (this._adjacencyDirection === "inbound") {
+        fromLocationId = neighborId;
+        toLocationId = this.location.id;
+        directionality = "a_to_b";
+      }
+
+      await this.hass.callWS(
+        this._withEntryId({
+          type: "topomation/adjacency/create",
+          from_location_id: fromLocationId,
+          to_location_id: toLocationId,
+          directionality,
+          boundary_type: this._adjacencyBoundaryType,
+          crossing_sources: this._parseCrossingSources(this._adjacencyCrossingSources),
+          handoff_window_sec: this._adjacencyHandoffWindowSec,
+          priority: this._adjacencyPriority,
+        })
+      );
+
+      this._adjacencyCrossingSources = "";
+      this._showToast("Adjacency edge created", "success");
+      this._emitAdjacencyChanged();
+    } catch (err: any) {
+      console.error("Failed to create adjacency edge:", err);
+      this._showToast(err?.message || "Failed to create adjacency edge", "error");
+    } finally {
+      this._savingAdjacency = false;
+    }
+  }
+
+  private async _handleAdjacencyDelete(edgeId: string): Promise<void> {
+    if (!edgeId || this._savingAdjacency) return;
+
+    this._savingAdjacency = true;
+    try {
+      await this.hass.callWS(
+        this._withEntryId({
+          type: "topomation/adjacency/delete",
+          edge_id: edgeId,
+        })
+      );
+
+      this._showToast("Adjacency edge deleted", "success");
+      this._emitAdjacencyChanged();
+    } catch (err: any) {
+      console.error("Failed to delete adjacency edge:", err);
+      this._showToast(err?.message || "Failed to delete adjacency edge", "error");
+    } finally {
+      this._savingAdjacency = false;
+    }
+  }
+
+  private _renderAdjacencySection() {
+    if (!this.location) return "";
+
+    const candidates = this._adjacencyCandidates();
+    const edges = this._connectedAdjacencyEdges();
+    const selectedNeighborId = this._adjacencyNeighborId || candidates[0]?.id || "";
+    const canCreate = !!selectedNeighborId && !this._savingAdjacency;
+    const noCandidates = candidates.length === 0;
+
+    return html`
+      <div class="card-section">
+        <div class="section-title">
+          <ha-icon .icon=${"mdi:graph-outline"}></ha-icon>
+          Adjacent Locations
+        </div>
+        <div class="subsection-help">
+          Model pathways between neighboring locations so wasp-in-box handoffs can reason about movement.
+        </div>
+
+        ${edges.length === 0
+          ? html`<div class="adjacency-empty">No adjacency edges for this location yet.</div>`
+          : html`
+              <div class="adjacency-list">
+                ${edges.map((edge) => html`
+                  <div class="adjacency-row">
+                    <div class="adjacency-row-head">
+                      <div class="adjacency-neighbor">${this._adjacentLocationName(edge)}</div>
+                      <button
+                        class="button button-secondary adjacency-delete-btn"
+                        ?disabled=${this._savingAdjacency}
+                        @click=${() => this._handleAdjacencyDelete(edge.edge_id)}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                    <div class="adjacency-meta">
+                      ${this._edgeDirectionLabel(edge)} • ${edge.boundary_type} •
+                      handoff ${edge.handoff_window_sec}s • priority ${edge.priority}
+                    </div>
+                    ${Array.isArray(edge.crossing_sources) && edge.crossing_sources.length > 0
+                      ? html`
+                          <div class="adjacency-meta">
+                            crossings: ${edge.crossing_sources.join(", ")}
+                          </div>
+                        `
+                      : ""}
+                  </div>
+                `)}
+              </div>
+            `}
+
+        <div class="adjacency-form">
+          <div class="adjacency-form-grid">
+            <div class="adjacency-form-field">
+              <label for="adjacency-neighbor">Neighbor</label>
+                <select
+                id="adjacency-neighbor"
+                .value=${selectedNeighborId}
+                ?disabled=${noCandidates || this._savingAdjacency}
+                @change=${(event: Event) => {
+                  const target = event.target as HTMLSelectElement;
+                  this._adjacencyNeighborId = target.value;
+                }}
+              >
+                ${candidates.map((candidate) => html`
+                  <option value=${candidate.id}>${candidate.name}</option>
+                `)}
+              </select>
+            </div>
+            <div class="adjacency-form-field">
+              <label for="adjacency-direction">Direction</label>
+              <select
+                id="adjacency-direction"
+                .value=${this._adjacencyDirection}
+                ?disabled=${this._savingAdjacency}
+                @change=${(event: Event) => {
+                  const target = event.target as HTMLSelectElement;
+                  this._adjacencyDirection = target.value;
+                }}
+              >
+                <option value="bidirectional">Two-way</option>
+                <option value="outbound">This to neighbor</option>
+                <option value="inbound">Neighbor to this</option>
+              </select>
+            </div>
+            <div class="adjacency-form-field">
+              <label for="adjacency-boundary">Boundary</label>
+              <select
+                id="adjacency-boundary"
+                .value=${this._adjacencyBoundaryType}
+                ?disabled=${this._savingAdjacency}
+                @change=${(event: Event) => {
+                  const target = event.target as HTMLSelectElement;
+                  this._adjacencyBoundaryType = target.value;
+                }}
+              >
+                <option value="door">Door</option>
+                <option value="archway">Archway</option>
+                <option value="corridor">Corridor</option>
+                <option value="stairs">Stairs</option>
+                <option value="virtual">Virtual</option>
+              </select>
+            </div>
+            <div class="adjacency-form-field">
+              <label for="adjacency-handoff">Handoff Window (sec)</label>
+              <input
+                id="adjacency-handoff"
+                type="number"
+                min="1"
+                max="300"
+                .value=${String(this._adjacencyHandoffWindowSec)}
+                ?disabled=${this._savingAdjacency}
+                @input=${(event: Event) => {
+                  const target = event.target as HTMLInputElement;
+                  const parsed = Number.parseInt(target.value || "12", 10);
+                  this._adjacencyHandoffWindowSec = Number.isNaN(parsed)
+                    ? 12
+                    : Math.max(1, Math.min(300, parsed));
+                }}
+              />
+            </div>
+            <div class="adjacency-form-field">
+              <label for="adjacency-priority">Priority</label>
+              <input
+                id="adjacency-priority"
+                type="number"
+                min="0"
+                max="1000"
+                .value=${String(this._adjacencyPriority)}
+                ?disabled=${this._savingAdjacency}
+                @input=${(event: Event) => {
+                  const target = event.target as HTMLInputElement;
+                  const parsed = Number.parseInt(target.value || "50", 10);
+                  this._adjacencyPriority = Number.isNaN(parsed)
+                    ? 50
+                    : Math.max(0, Math.min(1000, parsed));
+                }}
+              />
+            </div>
+          </div>
+          <div class="adjacency-form-field">
+            <label for="adjacency-crossings">Crossing sources (comma-separated entity IDs)</label>
+            <input
+              id="adjacency-crossings"
+              type="text"
+              placeholder="binary_sensor.hallway_beam, binary_sensor.kitchen_door"
+              .value=${this._adjacencyCrossingSources}
+              ?disabled=${this._savingAdjacency}
+              @input=${(event: Event) => {
+                const target = event.target as HTMLInputElement;
+                this._adjacencyCrossingSources = target.value;
+              }}
+            />
+          </div>
+          <div class="adjacency-form-actions">
+            <button
+              class="button button-primary"
+              ?disabled=${!canCreate || noCandidates}
+              @click=${this._handleAdjacencyCreate}
+            >
+              Add Adjacency
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  private _locationName(locationId: string): string {
+    if (this.location?.id === locationId) {
+      return this.location.name;
+    }
+    return this.allLocations.find((location) => location.id === locationId)?.name || locationId;
+  }
+
+  private _formatHandoffStatus(status: string): string {
+    const normalized = status.trim();
+    if (!normalized) return "Unknown";
+    return normalized
+      .split("_")
+      .filter((part) => part.length > 0)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
+  }
+
+  private _renderHandoffTraceSection() {
+    if (!this.location) return "";
+    const traces = Array.isArray(this.handoffTraces) ? this.handoffTraces : [];
+
+    return html`
+      <div class="card-section">
+        <div class="section-title">
+          <ha-icon .icon=${"mdi:swap-horizontal-bold"}></ha-icon>
+          Handoff Trace
+        </div>
+        <div class="subsection-help">
+          Recent adjacency handoff triggers touching this location. Use this to validate wasp-in-box
+          movement assumptions and crossing-source tuning.
+        </div>
+        ${traces.length === 0
+          ? html`<div class="adjacency-empty">No recent handoff traces for this location.</div>`
+          : html`
+              <div class="handoff-trace-list">
+                ${traces.map((trace) => {
+                  const occurredAt = this._parseDateValue(trace.timestamp);
+                  const timeLabel = occurredAt ? this._formatDateTime(occurredAt) : trace.timestamp;
+                  const routeLabel = `${this._locationName(trace.from_location_id)} -> ${this._locationName(trace.to_location_id)}`;
+                  const triggerLabel = trace.trigger_entity_id || trace.trigger_source_id || "unknown";
+                  return html`
+                    <div class="handoff-trace-row">
+                      <div class="handoff-trace-head">
+                        <span class="handoff-trace-route">${routeLabel}</span>
+                        <span class="handoff-trace-time">${timeLabel}</span>
+                      </div>
+                      <div class="handoff-trace-meta">
+                        ${this._formatHandoffStatus(trace.status)} • ${trace.boundary_type} • window
+                        ${trace.handoff_window_sec}s
+                      </div>
+                      <div class="handoff-trace-meta">trigger: ${triggerLabel}</div>
+                    </div>
+                  `;
+                })}
+              </div>
+            `}
       </div>
     `;
   }
@@ -3241,6 +3752,48 @@ export class HtLocationInspector extends LitElement {
       return null;
     }
     return latestExpiry;
+  }
+
+  private _resolveVacancyReason(
+    occupancyState: Record<string, any> | undefined,
+    occupiedState: boolean | undefined
+  ): string | undefined {
+    if (occupiedState !== false) return undefined;
+    const locationId = this.location?.id;
+    if (!locationId) return undefined;
+
+    const transitionReason = this.occupancyTransitions?.[locationId]?.reason;
+    const transitionOccupied = this.occupancyTransitions?.[locationId]?.occupied;
+    if (transitionOccupied === false) {
+      const formattedTransitionReason = this._formatVacancyReason(transitionReason);
+      if (formattedTransitionReason) return formattedTransitionReason;
+    }
+
+    return this._formatVacancyReason(occupancyState?.attributes?.reason);
+  }
+
+  private _formatVacancyReason(reason: unknown): string | undefined {
+    if (typeof reason !== "string") return undefined;
+    const rawReason = reason.trim();
+    if (!rawReason) return undefined;
+    const normalizedReason = rawReason.toLowerCase();
+
+    if (normalizedReason === "timeout") {
+      return "Vacated by timeout";
+    }
+    if (normalizedReason === "propagation:parent") {
+      return "Vacated by parent propagation";
+    }
+    if (normalizedReason.startsWith("propagation:child:")) {
+      return "Vacated by child propagation";
+    }
+    if (normalizedReason.startsWith("event:")) {
+      const eventType = normalizedReason.split(":", 2)[1];
+      if (eventType === "clear") return "Vacated by clear event";
+      if (eventType === "vacate") return "Vacated explicitly";
+      if (eventType) return `Vacated by ${eventType} event`;
+    }
+    return `Vacancy reason: ${rawReason}`;
   }
 
   private _parseDateValue(value: unknown): Date | undefined {

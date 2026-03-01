@@ -27,6 +27,10 @@ from custom_components.topomation.const import (  # type: ignore[import]
     DOMAIN,
     STORAGE_KEY_CONFIG,
     STORAGE_VERSION,
+    WS_TYPE_ADJACENCY_CREATE,
+    WS_TYPE_ADJACENCY_DELETE,
+    WS_TYPE_ADJACENCY_LIST,
+    WS_TYPE_ADJACENCY_UPDATE,
     WS_TYPE_ACTION_RULES_CREATE,
     WS_TYPE_ACTION_RULES_DELETE,
     WS_TYPE_ACTION_RULES_LIST,
@@ -42,6 +46,10 @@ from custom_components.topomation.const import (  # type: ignore[import]
     WS_TYPE_SYNC_STATUS,
 )
 from custom_components.topomation.websocket_api import (  # type: ignore[import]
+    handle_adjacency_create,
+    handle_adjacency_delete,
+    handle_adjacency_list,
+    handle_adjacency_update,
     handle_action_rules_create,
     handle_action_rules_delete,
     handle_action_rules_list,
@@ -220,6 +228,160 @@ async def test_locations_create_allows_floor_and_area(hass: HomeAssistant) -> No
     created_area = area_registry.async_get_area(area_payload["location"]["ha_area_id"])
     assert created_area is not None
     assert created_area.name == "Bonus Room"
+
+
+@pytest.mark.asyncio
+async def test_locations_list_includes_adjacency_edges_when_supported(
+    hass: HomeAssistant,
+) -> None:
+    """locations/list should include serialized adjacency edges when available."""
+    store = Store(hass, STORAGE_VERSION, STORAGE_KEY_CONFIG)
+    await store.async_save({"locations": []})
+
+    entry = MockConfigEntry(domain=DOMAIN, data={}, entry_id="test_entry")
+    entry.add_to_hass(hass)
+
+    with patch("custom_components.topomation.async_register_panel", AsyncMock()):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    loc_mgr = hass.data[DOMAIN][entry.entry_id]["location_manager"]
+    if not _supports_adjacency(loc_mgr):
+        pytest.skip("Loaded home-topology runtime does not expose adjacency APIs")
+
+    loc_mgr.create_location(id="area_a", name="Area A", parent_id=None)
+    loc_mgr.create_location(id="area_b", name="Area B", parent_id=None)
+    loc_mgr.create_adjacency_edge(
+        edge_id="edge_area_a_b",
+        from_location_id="area_a",
+        to_location_id="area_b",
+        directionality="bidirectional",
+        boundary_type="door",
+        crossing_sources=["binary_sensor.a_b_door"],
+        handoff_window_sec=15,
+        priority=40,
+    )
+
+    connection = _fake_connection()
+    handle_locations_list(
+        hass,
+        connection,
+        {"id": 120, "type": WS_TYPE_LOCATIONS_LIST},
+    )
+
+    payload = connection.send_result.call_args[0][1]
+    assert "adjacency_edges" in payload
+    assert payload["adjacency_edges"] == [
+        {
+            "edge_id": "edge_area_a_b",
+            "from_location_id": "area_a",
+            "to_location_id": "area_b",
+            "directionality": "bidirectional",
+            "boundary_type": "door",
+            "crossing_sources": ["binary_sensor.a_b_door"],
+            "handoff_window_sec": 15,
+            "priority": 40,
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_adjacency_crud_handlers_schedule_persist(
+    hass: HomeAssistant,
+) -> None:
+    """adjacency create/update/delete handlers should mutate edges and schedule persist."""
+    store = Store(hass, STORAGE_VERSION, STORAGE_KEY_CONFIG)
+    await store.async_save({"locations": []})
+
+    entry = MockConfigEntry(domain=DOMAIN, data={}, entry_id="test_entry")
+    entry.add_to_hass(hass)
+
+    with patch("custom_components.topomation.async_register_panel", AsyncMock()):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    kernel = hass.data[DOMAIN][entry.entry_id]
+    loc_mgr = kernel["location_manager"]
+    if not _supports_adjacency(loc_mgr):
+        pytest.skip("Loaded home-topology runtime does not expose adjacency APIs")
+
+    schedule_persist = Mock()
+    kernel["schedule_persist"] = schedule_persist
+
+    loc_mgr.create_location(id="kitchen", name="Kitchen", parent_id=None)
+    loc_mgr.create_location(id="hallway", name="Hallway", parent_id=None)
+
+    create_conn = _fake_connection()
+    handle_adjacency_create(
+        hass,
+        create_conn,
+        {
+            "id": 121,
+            "type": WS_TYPE_ADJACENCY_CREATE,
+            "from_location_id": "kitchen",
+            "to_location_id": "hallway",
+            "edge_id": "edge_kitchen_hallway",
+            "directionality": "bidirectional",
+            "boundary_type": "door",
+            "crossing_sources": ["binary_sensor.kitchen_hall_door"],
+            "handoff_window_sec": 20,
+            "priority": 60,
+        },
+    )
+    assert create_conn.send_error.call_count == 0
+    create_payload = create_conn.send_result.call_args[0][1]
+    assert create_payload["success"] is True
+    assert create_payload["adjacency_edge"]["edge_id"] == "edge_kitchen_hallway"
+    schedule_persist.assert_called_with("adjacency/create")
+
+    update_conn = _fake_connection()
+    handle_adjacency_update(
+        hass,
+        update_conn,
+        {
+            "id": 122,
+            "type": WS_TYPE_ADJACENCY_UPDATE,
+            "edge_id": "edge_kitchen_hallway",
+            "handoff_window_sec": 10,
+            "priority": 45,
+        },
+    )
+    assert update_conn.send_error.call_count == 0
+    update_payload = update_conn.send_result.call_args[0][1]
+    assert update_payload["adjacency_edge"]["handoff_window_sec"] == 10
+    assert update_payload["adjacency_edge"]["priority"] == 45
+    schedule_persist.assert_called_with("adjacency/update")
+
+    list_conn = _fake_connection()
+    handle_adjacency_list(
+        hass,
+        list_conn,
+        {
+            "id": 123,
+            "type": WS_TYPE_ADJACENCY_LIST,
+            "location_id": "kitchen",
+        },
+    )
+    assert list_conn.send_error.call_count == 0
+    listed_edges = list_conn.send_result.call_args[0][1]["adjacency_edges"]
+    assert len(listed_edges) == 1
+    assert listed_edges[0]["edge_id"] == "edge_kitchen_hallway"
+
+    delete_conn = _fake_connection()
+    handle_adjacency_delete(
+        hass,
+        delete_conn,
+        {
+            "id": 124,
+            "type": WS_TYPE_ADJACENCY_DELETE,
+            "edge_id": "edge_kitchen_hallway",
+        },
+    )
+    assert delete_conn.send_error.call_count == 0
+    delete_payload = delete_conn.send_result.call_args[0][1]
+    assert delete_payload["success"] is True
+    assert delete_payload["edge_id"] == "edge_kitchen_hallway"
+    schedule_persist.assert_called_with("adjacency/delete")
 
 
 @pytest.mark.asyncio
@@ -2069,6 +2231,17 @@ def _create_entity(entity_registry: er.EntityRegistry, entity_id: str, area_entr
         suggested_object_id=object_id,
     )
     entity_registry.async_update_entity(entry.entity_id, area_id=area_entry.id)
+
+
+def _supports_adjacency(location_manager: object) -> bool:
+    """Return True when the loaded LocationManager supports adjacency CRUD."""
+    required = (
+        "all_adjacency_edges",
+        "create_adjacency_edge",
+        "update_adjacency_edge",
+        "delete_adjacency_edge",
+    )
+    return all(callable(getattr(location_manager, name, None)) for name in required)
 
 
 def _fake_connection() -> Mock:

@@ -24,6 +24,10 @@ from .const import (
     WS_TYPE_ACTION_RULES_DELETE,
     WS_TYPE_ACTION_RULES_LIST,
     WS_TYPE_ACTION_RULES_SET_ENABLED,
+    WS_TYPE_ADJACENCY_CREATE,
+    WS_TYPE_ADJACENCY_DELETE,
+    WS_TYPE_ADJACENCY_LIST,
+    WS_TYPE_ADJACENCY_UPDATE,
     WS_TYPE_AMBIENT_AUTO_DISCOVER,
     WS_TYPE_AMBIENT_GET_READING,
     WS_TYPE_AMBIENT_SET_SENSOR,
@@ -437,6 +441,97 @@ def _mark_sibling_group_manual_order(location_manager: object, parent_id: str | 
         )
 
 
+def _supports_adjacency_api(location_manager: object) -> bool:
+    """Return True when adjacency CRUD APIs are available on manager."""
+    manager_type = location_manager.__class__
+    required = (
+        "all_adjacency_edges",
+        "create_adjacency_edge",
+        "update_adjacency_edge",
+        "delete_adjacency_edge",
+    )
+    return all(callable(getattr(manager_type, name, None)) for name in required)
+
+
+def _serialize_adjacency_edge(edge: object) -> dict[str, Any] | None:
+    """Convert an edge object to a response-safe dict."""
+    to_dict = getattr(edge, "to_dict", None)
+    if callable(to_dict):
+        payload = to_dict()
+        if isinstance(payload, dict):
+            return dict(payload)
+        return None
+
+    if isinstance(edge, dict):
+        return dict(edge)
+
+    edge_id = getattr(edge, "edge_id", None)
+    from_location_id = getattr(edge, "from_location_id", None)
+    to_location_id = getattr(edge, "to_location_id", None)
+    if (
+        not isinstance(edge_id, str)
+        or not edge_id
+        or not isinstance(from_location_id, str)
+        or not from_location_id
+        or not isinstance(to_location_id, str)
+        or not to_location_id
+    ):
+        return None
+
+    crossing_sources = getattr(edge, "crossing_sources", [])
+    if not isinstance(crossing_sources, list):
+        crossing_sources = []
+
+    return {
+        "edge_id": edge_id,
+        "from_location_id": from_location_id,
+        "to_location_id": to_location_id,
+        "directionality": str(getattr(edge, "directionality", "bidirectional")),
+        "boundary_type": str(getattr(edge, "boundary_type", "virtual")),
+        "crossing_sources": [str(source) for source in crossing_sources if isinstance(source, str)],
+        "handoff_window_sec": int(getattr(edge, "handoff_window_sec", 12)),
+        "priority": int(getattr(edge, "priority", 50)),
+    }
+
+
+def _list_adjacency_edges(location_manager: object) -> list[dict[str, Any]]:
+    """Return serialized adjacency edges when supported."""
+    if not _supports_adjacency_api(location_manager):
+        return []
+
+    list_edges = getattr(location_manager, "all_adjacency_edges", None)
+    if not callable(list_edges):
+        return []
+
+    raw_edges = list_edges()
+    if not isinstance(raw_edges, list):
+        return []
+
+    edges: list[dict[str, Any]] = []
+    for edge in raw_edges:
+        payload = _serialize_adjacency_edge(edge)
+        if payload is None:
+            continue
+        edges.append(payload)
+    return edges
+
+
+def _next_edge_id(location_manager: object, from_location_id: str, to_location_id: str) -> str:
+    """Build a deterministic unique edge id for adjacency/create when omitted."""
+    stem = f"edge_{_slugify_location_id(from_location_id)}_{_slugify_location_id(to_location_id)}"
+    candidate = stem
+    suffix = 2
+
+    get_edge = getattr(location_manager, "get_adjacency_edge", None)
+    if not callable(get_edge):
+        return stem
+
+    while get_edge(candidate) is not None:
+        candidate = f"{stem}_{suffix}"
+        suffix += 1
+    return candidate
+
+
 
 
 def async_register_websocket_api(hass: HomeAssistant) -> None:
@@ -449,6 +544,10 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, handle_locations_reorder)
     websocket_api.async_register_command(hass, handle_locations_set_module_config)
     websocket_api.async_register_command(hass, handle_locations_assign_entity)
+    websocket_api.async_register_command(hass, handle_adjacency_list)
+    websocket_api.async_register_command(hass, handle_adjacency_create)
+    websocket_api.async_register_command(hass, handle_adjacency_update)
+    websocket_api.async_register_command(hass, handle_adjacency_delete)
 
     # Managed actions
     websocket_api.async_register_command(hass, handle_action_rules_list)
@@ -504,7 +603,253 @@ def handle_locations_list(
             }
         )
 
-    connection.send_result(msg["id"], {"locations": locations})
+    connection.send_result(
+        msg["id"],
+        {
+            "locations": locations,
+            "adjacency_edges": _list_adjacency_edges(loc_mgr),
+        },
+    )
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): WS_TYPE_ADJACENCY_LIST,
+        vol.Optional("location_id"): str,
+        vol.Optional("entry_id"): str,
+    }
+)
+@callback
+def handle_adjacency_list(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Handle adjacency/list command."""
+    kernel = _get_kernel(hass, connection, msg)
+    if kernel is None:
+        return
+
+    loc_mgr = kernel["location_manager"]
+    if not _supports_adjacency_api(loc_mgr):
+        connection.send_result(msg["id"], {"adjacency_edges": []})
+        return
+
+    location_id = msg.get("location_id")
+    edges = _list_adjacency_edges(loc_mgr)
+    if isinstance(location_id, str) and location_id:
+        edges = [
+            edge
+            for edge in edges
+            if edge.get("from_location_id") == location_id or edge.get("to_location_id") == location_id
+        ]
+
+    connection.send_result(msg["id"], {"adjacency_edges": edges})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): WS_TYPE_ADJACENCY_CREATE,
+        vol.Required("from_location_id"): str,
+        vol.Required("to_location_id"): str,
+        vol.Optional("edge_id"): str,
+        vol.Optional("directionality"): str,
+        vol.Optional("boundary_type"): str,
+        vol.Optional("crossing_sources"): [str],
+        vol.Optional("handoff_window_sec"): int,
+        vol.Optional("priority"): int,
+        vol.Optional("entry_id"): str,
+    }
+)
+@callback
+def handle_adjacency_create(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Handle adjacency/create command."""
+    kernel_hint = dict(msg)
+    kernel_hint["location_id"] = msg.get("from_location_id")
+    kernel = _get_kernel(hass, connection, kernel_hint)
+    if kernel is None:
+        return
+
+    loc_mgr = kernel["location_manager"]
+    if not _supports_adjacency_api(loc_mgr):
+        connection.send_error(
+            msg["id"],
+            "not_supported",
+            "Adjacency APIs are unavailable in the loaded home-topology runtime",
+        )
+        return
+
+    from_location_id = msg.get("from_location_id")
+    to_location_id = msg.get("to_location_id")
+    if not isinstance(from_location_id, str) or not from_location_id:
+        connection.send_error(msg["id"], "invalid_from_location", "from_location_id is required")
+        return
+    if not isinstance(to_location_id, str) or not to_location_id:
+        connection.send_error(msg["id"], "invalid_to_location", "to_location_id is required")
+        return
+
+    edge_id_raw = msg.get("edge_id")
+    edge_id = (
+        edge_id_raw
+        if isinstance(edge_id_raw, str) and edge_id_raw.strip()
+        else _next_edge_id(loc_mgr, from_location_id, to_location_id)
+    )
+
+    create_edge = getattr(loc_mgr, "create_adjacency_edge")
+    try:
+        edge = create_edge(
+            edge_id=edge_id,
+            from_location_id=from_location_id,
+            to_location_id=to_location_id,
+            directionality=str(msg.get("directionality", "bidirectional")),
+            boundary_type=str(msg.get("boundary_type", "virtual")),
+            crossing_sources=(
+                list(msg.get("crossing_sources", []))
+                if isinstance(msg.get("crossing_sources"), list)
+                else None
+            ),
+            handoff_window_sec=int(msg.get("handoff_window_sec", 12)),
+            priority=int(msg.get("priority", 50)),
+        )
+        payload = _serialize_adjacency_edge(edge)
+        if payload is None:
+            connection.send_error(msg["id"], "create_failed", "Could not serialize created edge")
+            return
+
+        schedule_persist = kernel.get("schedule_persist")
+        if callable(schedule_persist):
+            schedule_persist("adjacency/create")
+
+        connection.send_result(msg["id"], {"success": True, "adjacency_edge": payload})
+    except (TypeError, ValueError) as err:
+        connection.send_error(msg["id"], "create_failed", str(err))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): WS_TYPE_ADJACENCY_UPDATE,
+        vol.Required("edge_id"): str,
+        vol.Optional("from_location_id"): str,
+        vol.Optional("to_location_id"): str,
+        vol.Optional("directionality"): str,
+        vol.Optional("boundary_type"): str,
+        vol.Optional("crossing_sources"): [str],
+        vol.Optional("handoff_window_sec"): int,
+        vol.Optional("priority"): int,
+        vol.Optional("entry_id"): str,
+    }
+)
+@callback
+def handle_adjacency_update(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Handle adjacency/update command."""
+    kernel = _get_kernel(hass, connection, msg)
+    if kernel is None:
+        return
+
+    loc_mgr = kernel["location_manager"]
+    if not _supports_adjacency_api(loc_mgr):
+        connection.send_error(
+            msg["id"],
+            "not_supported",
+            "Adjacency APIs are unavailable in the loaded home-topology runtime",
+        )
+        return
+
+    update_edge = getattr(loc_mgr, "update_adjacency_edge")
+    edge_id = msg["edge_id"]
+
+    update_kwargs: dict[str, Any] = {}
+    for field in (
+        "from_location_id",
+        "to_location_id",
+        "directionality",
+        "boundary_type",
+        "handoff_window_sec",
+        "priority",
+    ):
+        if field in msg:
+            update_kwargs[field] = msg[field]
+    if "crossing_sources" in msg:
+        update_kwargs["crossing_sources"] = list(msg["crossing_sources"])
+
+    if not update_kwargs:
+        get_edge = getattr(loc_mgr, "get_adjacency_edge", None)
+        if callable(get_edge):
+            existing = get_edge(edge_id)
+            payload = _serialize_adjacency_edge(existing)
+            if payload is not None:
+                connection.send_result(msg["id"], {"success": True, "adjacency_edge": payload})
+                return
+        connection.send_error(msg["id"], "not_found", f"Adjacency edge '{edge_id}' not found")
+        return
+
+    try:
+        edge = update_edge(edge_id=edge_id, **update_kwargs)
+        payload = _serialize_adjacency_edge(edge)
+        if payload is None:
+            connection.send_error(msg["id"], "update_failed", "Could not serialize updated edge")
+            return
+
+        schedule_persist = kernel.get("schedule_persist")
+        if callable(schedule_persist):
+            schedule_persist("adjacency/update")
+
+        connection.send_result(msg["id"], {"success": True, "adjacency_edge": payload})
+    except (TypeError, ValueError) as err:
+        connection.send_error(msg["id"], "update_failed", str(err))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): WS_TYPE_ADJACENCY_DELETE,
+        vol.Required("edge_id"): str,
+        vol.Optional("entry_id"): str,
+    }
+)
+@callback
+def handle_adjacency_delete(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Handle adjacency/delete command."""
+    kernel = _get_kernel(hass, connection, msg)
+    if kernel is None:
+        return
+
+    loc_mgr = kernel["location_manager"]
+    if not _supports_adjacency_api(loc_mgr):
+        connection.send_error(
+            msg["id"],
+            "not_supported",
+            "Adjacency APIs are unavailable in the loaded home-topology runtime",
+        )
+        return
+
+    delete_edge = getattr(loc_mgr, "delete_adjacency_edge")
+    edge_id = msg["edge_id"]
+    try:
+        edge = delete_edge(edge_id)
+        payload = _serialize_adjacency_edge(edge)
+        if payload is None:
+            connection.send_error(msg["id"], "delete_failed", "Could not serialize deleted edge")
+            return
+
+        schedule_persist = kernel.get("schedule_persist")
+        if callable(schedule_persist):
+            schedule_persist("adjacency/delete")
+
+        connection.send_result(msg["id"], {"success": True, "edge_id": edge_id, "adjacency_edge": payload})
+    except ValueError as err:
+        connection.send_error(msg["id"], "delete_failed", str(err))
 
 
 @websocket_api.websocket_command(

@@ -969,6 +969,93 @@ describe('TopomationPanel integration (fake hass)', () => {
     expect(updatedStatus).to.equal("Occupied");
   });
 
+  it("shows vacancy reason in inspector header from topomation_occupancy_changed events", async () => {
+    let occupancyChangedHandler: ((event: any) => void) | undefined;
+
+    const hass: HomeAssistant = {
+      callWS: async <T>(req: Record<string, any>): Promise<T> => {
+        if (req.type === "topomation/locations/list") {
+          return { locations } as T;
+        }
+        if (req.type === "config/entity_registry/list") {
+          return [] as T;
+        }
+        if (req.type === "config/device_registry/list") {
+          return [] as T;
+        }
+        return {} as T;
+      },
+      connection: {
+        subscribeEvents: async (handler: (event: any) => void, eventType: string) => {
+          if (eventType === "topomation_occupancy_changed") {
+            occupancyChangedHandler = handler;
+          }
+          return () => {};
+        },
+      },
+      states: {
+        "binary_sensor.occupancy_kitchen": {
+          entity_id: "binary_sensor.occupancy_kitchen",
+          state: "on",
+          attributes: {
+            device_class: "occupancy",
+            location_id: "kitchen",
+            reason: "event:trigger",
+          },
+        },
+      },
+      areas: {},
+      floors: {},
+      config: {
+        location_name: "Test Property",
+      },
+      localize: (key: string) => key,
+    };
+
+    const element = await fixture<HTMLDivElement>(html`
+      <topomation-panel .hass=${hass}></topomation-panel>
+    `);
+
+    await waitUntil(() => (element as any)._loading === false, "panel did not finish loading");
+    await waitUntil(
+      () => typeof occupancyChangedHandler === "function",
+      "panel did not subscribe to topomation_occupancy_changed"
+    );
+
+    (element as any)._rightPanelMode = "inspector";
+    (element as any)._selectedId = "kitchen";
+    element.requestUpdate();
+    await element.updateComplete;
+
+    occupancyChangedHandler!({
+      data: {
+        location_id: "kitchen",
+        occupied: false,
+        previous_occupied: true,
+        reason: "timeout",
+      },
+    });
+
+    await waitUntil(() => {
+      const inspector = element.shadowRoot!.querySelector("ht-location-inspector") as any;
+      const reason = (
+        inspector?.shadowRoot?.querySelector('[data-testid="header-vacancy-reason"]')?.textContent || ""
+      ).trim();
+      return reason === "Vacated by timeout";
+    }, "vacancy reason did not render");
+
+    const inspector = element.shadowRoot!.querySelector("ht-location-inspector") as any;
+    const occupancyStatus = (
+      inspector.shadowRoot?.querySelector('[data-testid="header-occupancy-status"]')?.textContent || ""
+    ).trim();
+    const vacancyReason = (
+      inspector.shadowRoot?.querySelector('[data-testid="header-vacancy-reason"]')?.textContent || ""
+    ).trim();
+
+    expect(occupancyStatus).to.equal("Vacant");
+    expect(vacancyReason).to.equal("Vacated by timeout");
+  });
+
   it("renders grouped device assignment list with unassigned and location buckets", async () => {
     const locationsWithEntities: Location[] = locations.map((loc) =>
       loc.id === "kitchen"

@@ -14,9 +14,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added occupancy design white paper at `docs/wasp-in-box-whitepaper.md`,
   covering wasp-in-box principles, topology/inference boundaries, magic-area
   alignment, and UI/UX guidance for occupancy management.
+- White paper now aligns with binary occupancy policy (`occupied`/`vacant`)
+  and removes confidence/unknown-state modeling from the design baseline.
 - Persistence now supports optional topology `adjacency_edges` payloads when
   the loaded `home-topology` runtime exposes adjacency APIs, enabling forward
   compatibility for cross-area handoff graph storage.
+- Added adjacency edge WebSocket APIs (`list/create/update/delete`) and now
+  include `adjacency_edges` in `topomation/locations/list` responses.
+- Added an adjacency editor section in the location inspector so users can
+  model neighboring locations, boundary type, direction, handoff window,
+  crossing sources, and remove edges directly in the UI.
+- Event bridge now uses configured adjacency edges to emit provisional
+  cross-location handoff triggers (`signal_key: handoff`) when crossing
+  sources fire, plus `occupancy.handoff` trace events for diagnostics.
+- Added Home Assistant bus event forwarding (`topomation_handoff_trace`) and a
+  new inspector "Handoff Trace" panel section to visualize recent inferred
+  adjacency handoffs per location.
 
 ### Changed
 
@@ -25,6 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`device_class: occupancy` with `location_id`).
 - Managed action service options for `media_player` entities now include
   playback `Pause` alongside `Stop` and power `Turn off`.
+- Integration runtime dependency now targets `home-topology==1.0.1` to ensure
+  adjacency topology APIs are available.
 
 ## [0.2.14] - 2026-03-01
 

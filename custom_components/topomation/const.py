@@ -53,6 +53,10 @@ WS_TYPE_LOCATIONS_DELETE = f"{DOMAIN}/locations/delete"
 WS_TYPE_LOCATIONS_REORDER = f"{DOMAIN}/locations/reorder"
 WS_TYPE_LOCATIONS_SET_MODULE_CONFIG = f"{DOMAIN}/locations/set_module_config"
 WS_TYPE_LOCATIONS_ASSIGN_ENTITY = f"{DOMAIN}/locations/assign_entity"
+WS_TYPE_ADJACENCY_LIST = f"{DOMAIN}/adjacency/list"
+WS_TYPE_ADJACENCY_CREATE = f"{DOMAIN}/adjacency/create"
+WS_TYPE_ADJACENCY_UPDATE = f"{DOMAIN}/adjacency/update"
+WS_TYPE_ADJACENCY_DELETE = f"{DOMAIN}/adjacency/delete"
 
 # Ambient Light WebSocket API types
 WS_TYPE_AMBIENT_GET_READING = f"{DOMAIN}/ambient/get_reading"
@@ -76,3 +80,4 @@ AUTOMATION_REAPPLY_CONFIG_KEY = "reapply_last_state_on_startup"
 AUTOMATION_STARTUP_BUFFER_SECONDS = 20
 EVENT_TOPOMATION_ACTIONS_SUMMARY = f"{DOMAIN}_actions_summary"
 EVENT_TOPOMATION_OCCUPANCY_CHANGED = f"{DOMAIN}_occupancy_changed"
+EVENT_TOPOMATION_HANDOFF_TRACE = f"{DOMAIN}_handoff_trace"

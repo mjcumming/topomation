@@ -1,5 +1,6 @@
 // @ts-nocheck
 import type { HomeAssistant, Location } from "./types";
+import type { AdjacencyEdge } from "./types";
 
 type MockArea = { area_id: string; name: string; icon?: string; floor_id?: string | null };
 
@@ -547,12 +548,20 @@ type PersistedAutomationEntry = {
 
 type PersistedMockSnapshot = {
   locations?: Location[];
+  adjacency_edges?: AdjacencyEdge[];
   automation_configs?: Record<string, Record<string, any>>;
   automation_entries?: PersistedAutomationEntry[];
 };
 
 function cloneLocations(list: Location[]): Location[] {
   return list.map((loc) => cloneLocation(loc));
+}
+
+function cloneAdjacencyEdges(list: AdjacencyEdge[]): AdjacencyEdge[] {
+  return list.map((edge) => ({
+    ...edge,
+    crossing_sources: [...(edge.crossing_sources || [])],
+  }));
 }
 
 export function createMockHass(options: any = {}): any {
@@ -579,6 +588,11 @@ export function createMockHass(options: any = {}): any {
       ? persistedSnapshot!.locations
       : options.locations || MOCK_LOCATIONS;
   let locations = cloneLocations(initialLocations);
+  const initialAdjacencyEdges =
+    Array.isArray(persistedSnapshot?.adjacency_edges) && persistedSnapshot!.adjacency_edges.length > 0
+      ? persistedSnapshot!.adjacency_edges
+      : options.adjacency_edges || [];
+  let adjacencyEdges = cloneAdjacencyEdges(initialAdjacencyEdges);
   let states = { ...(options.states || MOCK_STATES) };
   let areas: Record<string, MockArea> = { ...(options.areas || MOCK_AREAS) };
   let currentTheme = options.theme || "light";
@@ -720,6 +734,7 @@ export function createMockHass(options: any = {}): any {
     try {
       const snapshot: PersistedMockSnapshot = {
         locations: cloneLocations(locations),
+        adjacency_edges: cloneAdjacencyEdges(adjacencyEdges),
         automation_configs: JSON.parse(JSON.stringify(automationConfigsById)),
         automation_entries: Array.from(automationEntryByConfigId.values()).map((entry) => ({
           entity_id: entry.entity_id,
@@ -770,7 +785,10 @@ export function createMockHass(options: any = {}): any {
   const callWS = async (request: any): Promise<any> => {
     if (request.type === "topomation/locations/list") {
       applyPendingModuleConfigIfReady(true);
-      return { locations: cloneLocations(locations) };
+      return {
+        locations: cloneLocations(locations),
+        adjacency_edges: cloneAdjacencyEdges(adjacencyEdges),
+      };
     }
     flushPendingModuleConfig();
     if (request.type === "topomation/actions/rules/list") {
@@ -1163,6 +1181,127 @@ export function createMockHass(options: any = {}): any {
       persistSnapshot();
       connection.fireEvent("topomation_updated", { reason: "update", location_id: request.location_id });
       return { success: true };
+    }
+    if (request.type === "topomation/adjacency/list") {
+      const locationId = typeof request.location_id === "string" ? request.location_id : "";
+      const filtered = locationId
+        ? adjacencyEdges.filter(
+            (edge) =>
+              edge.from_location_id === locationId || edge.to_location_id === locationId
+          )
+        : adjacencyEdges;
+      return { adjacency_edges: cloneAdjacencyEdges(filtered) };
+    }
+    if (request.type === "topomation/adjacency/create") {
+      const fromLocationId = String(request.from_location_id || "").trim();
+      const toLocationId = String(request.to_location_id || "").trim();
+      if (!fromLocationId || !toLocationId) {
+        throw new Error("invalid_payload: from_location_id and to_location_id are required");
+      }
+      if (!locations.some((loc) => loc.id === fromLocationId)) {
+        throw new Error(`invalid_from_location: Location '${fromLocationId}' not found`);
+      }
+      if (!locations.some((loc) => loc.id === toLocationId)) {
+        throw new Error(`invalid_to_location: Location '${toLocationId}' not found`);
+      }
+
+      const makeDefaultEdgeId = (): string => {
+        const stem = `edge_${slugify(fromLocationId)}_${slugify(toLocationId)}`;
+        let candidate = stem;
+        let suffix = 2;
+        while (adjacencyEdges.some((edge) => edge.edge_id === candidate)) {
+          candidate = `${stem}_${suffix}`;
+          suffix += 1;
+        }
+        return candidate;
+      };
+
+      const edgeId = String(request.edge_id || makeDefaultEdgeId()).trim();
+      if (!edgeId) {
+        throw new Error("invalid_payload: edge_id could not be derived");
+      }
+      if (adjacencyEdges.some((edge) => edge.edge_id === edgeId)) {
+        throw new Error(`create_failed: Adjacency edge '${edgeId}' already exists`);
+      }
+
+      const nextEdge: AdjacencyEdge = {
+        edge_id: edgeId,
+        from_location_id: fromLocationId,
+        to_location_id: toLocationId,
+        directionality:
+          request.directionality === "a_to_b" || request.directionality === "b_to_a"
+            ? request.directionality
+            : "bidirectional",
+        boundary_type: String(request.boundary_type || "virtual"),
+        crossing_sources: Array.isArray(request.crossing_sources)
+          ? request.crossing_sources.map((item: any) => String(item).trim()).filter(Boolean)
+          : [],
+        handoff_window_sec: Number.isFinite(Number(request.handoff_window_sec))
+          ? Math.max(1, Math.floor(Number(request.handoff_window_sec)))
+          : 12,
+        priority: Number.isFinite(Number(request.priority))
+          ? Math.floor(Number(request.priority))
+          : 50,
+      };
+
+      adjacencyEdges = [...adjacencyEdges, nextEdge];
+      persistSnapshot();
+      connection.fireEvent("topomation_updated", { reason: "adjacency_create", edge_id: edgeId });
+      return { success: true, adjacency_edge: { ...nextEdge } };
+    }
+    if (request.type === "topomation/adjacency/update") {
+      const edgeId = String(request.edge_id || "").trim();
+      if (!edgeId) throw new Error("invalid_payload: edge_id is required");
+      const edgeIndex = adjacencyEdges.findIndex((edge) => edge.edge_id === edgeId);
+      if (edgeIndex < 0) throw new Error(`not_found: Adjacency edge '${edgeId}' not found`);
+
+      const current = adjacencyEdges[edgeIndex];
+      const next: AdjacencyEdge = {
+        ...current,
+        from_location_id:
+          typeof request.from_location_id === "string" && request.from_location_id
+            ? request.from_location_id
+            : current.from_location_id,
+        to_location_id:
+          typeof request.to_location_id === "string" && request.to_location_id
+            ? request.to_location_id
+            : current.to_location_id,
+        directionality:
+          request.directionality === "a_to_b" ||
+          request.directionality === "b_to_a" ||
+          request.directionality === "bidirectional"
+            ? request.directionality
+            : current.directionality,
+        boundary_type:
+          typeof request.boundary_type === "string" && request.boundary_type
+            ? request.boundary_type
+            : current.boundary_type,
+        crossing_sources: Array.isArray(request.crossing_sources)
+          ? request.crossing_sources.map((item: any) => String(item).trim()).filter(Boolean)
+          : [...current.crossing_sources],
+        handoff_window_sec: Number.isFinite(Number(request.handoff_window_sec))
+          ? Math.max(1, Math.floor(Number(request.handoff_window_sec)))
+          : current.handoff_window_sec,
+        priority: Number.isFinite(Number(request.priority))
+          ? Math.floor(Number(request.priority))
+          : current.priority,
+      };
+
+      adjacencyEdges = adjacencyEdges.map((edge, idx) => (idx === edgeIndex ? next : edge));
+      persistSnapshot();
+      connection.fireEvent("topomation_updated", { reason: "adjacency_update", edge_id: edgeId });
+      return { success: true, adjacency_edge: { ...next } };
+    }
+    if (request.type === "topomation/adjacency/delete") {
+      const edgeId = String(request.edge_id || "").trim();
+      if (!edgeId) throw new Error("invalid_payload: edge_id is required");
+      const existing = adjacencyEdges.find((edge) => edge.edge_id === edgeId);
+      if (!existing) throw new Error(`not_found: Adjacency edge '${edgeId}' not found`);
+
+      adjacencyEdges = adjacencyEdges.filter((edge) => edge.edge_id !== edgeId);
+      persistSnapshot();
+      connection.fireEvent("topomation_updated", { reason: "adjacency_delete", edge_id: edgeId });
+      return { success: true, edge_id: edgeId, adjacency_edge: { ...existing } };
     }
     if (request.type === "topomation/locations/reorder") {
       const location = locations.find(loc => loc.id === request.location_id);
@@ -1596,6 +1735,7 @@ export function createMockHass(options: any = {}): any {
     },
     getReactiveHass: () => buildHass(),
     getLocations: () => cloneLocations(locations),
+    getAdjacencyEdges: () => cloneAdjacencyEdges(adjacencyEdges),
     clearPersistence: () => {
       if (!persistenceAvailable) return;
       window.localStorage.removeItem(persistenceKey);

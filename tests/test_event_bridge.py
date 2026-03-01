@@ -383,6 +383,69 @@ async def test_state_change_publishes_kernel_event(
     assert published_event.payload["new_state"] == STATE_ON
 
 
+async def test_state_change_publishes_adjacency_handoff_events(
+    event_bridge: EventBridge,
+    event_bus: Mock,
+    location_manager: Mock,
+) -> None:
+    """Trigger sources matching adjacency crossings should emit provisional handoff events."""
+    location_manager.all_adjacency_edges = Mock(
+        return_value=[
+            {
+                "edge_id": "edge_kitchen_hallway",
+                "from_location_id": "kitchen",
+                "to_location_id": "hallway",
+                "directionality": "a_to_b",
+                "boundary_type": "door",
+                "crossing_sources": ["binary_sensor.kitchen_motion"],
+                "handoff_window_sec": 14,
+                "priority": 50,
+            }
+        ]
+    )
+
+    old_state = State("binary_sensor.kitchen_motion", STATE_OFF)
+    new_state = State("binary_sensor.kitchen_motion", STATE_ON)
+
+    ha_event = Mock()
+    ha_event.data = {
+        "entity_id": "binary_sensor.kitchen_motion",
+        "old_state": old_state,
+        "new_state": new_state,
+    }
+
+    event_bridge._state_changed_listener(ha_event)
+
+    assert event_bus.publish.call_count == 3
+    published_events = [call.args[0] for call in event_bus.publish.call_args_list]
+
+    source_event: Event = published_events[0]
+    handoff_signal_event: Event = published_events[1]
+    handoff_trace_event: Event = published_events[2]
+
+    assert source_event.type == "occupancy.signal"
+    assert source_event.location_id == "kitchen"
+    assert source_event.payload["event_type"] == "trigger"
+
+    assert handoff_signal_event.type == "occupancy.signal"
+    assert handoff_signal_event.location_id == "hallway"
+    assert handoff_signal_event.payload["event_type"] == "trigger"
+    assert handoff_signal_event.payload["signal_key"] == "handoff"
+    assert handoff_signal_event.payload["timeout"] == 14
+    assert handoff_signal_event.payload["source_id"].startswith("__handoff__:edge_kitchen_hallway:")
+
+    handoff_payload = handoff_signal_event.payload["handoff"]
+    assert handoff_payload["edge_id"] == "edge_kitchen_hallway"
+    assert handoff_payload["from_location_id"] == "kitchen"
+    assert handoff_payload["to_location_id"] == "hallway"
+    assert handoff_payload["boundary_type"] == "door"
+
+    assert handoff_trace_event.type == "occupancy.handoff"
+    assert handoff_trace_event.location_id == "hallway"
+    assert handoff_trace_event.payload["status"] == "provisional_triggered"
+    assert handoff_trace_event.payload["handoff_window_sec"] == 14
+
+
 async def test_media_volume_change_publishes_trigger(
     event_bridge: EventBridge,
     event_bus: Mock,

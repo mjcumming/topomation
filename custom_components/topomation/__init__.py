@@ -27,6 +27,7 @@ from .const import (
     AUTOMATION_REAPPLY_CONFIG_KEY,
     AUTOSAVE_DEBOUNCE_SECONDS,
     DOMAIN,
+    EVENT_TOPOMATION_HANDOFF_TRACE,
     EVENT_TOPOMATION_OCCUPANCY_CHANGED,
     STORAGE_KEY_CONFIG,
     STORAGE_KEY_STATE,
@@ -215,6 +216,31 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.bus.async_fire(EVENT_TOPOMATION_OCCUPANCY_CHANGED, ha_payload)
 
     bus.subscribe(_forward_occupancy_changed, EventFilter(event_type="occupancy.changed"))
+
+    @callback
+    def _forward_handoff_trace(event: Event) -> None:
+        """Mirror adjacency handoff traces to HA bus for UI diagnostics."""
+        payload = event.payload if isinstance(event.payload, Mapping) else {}
+        from_location_id = payload.get("from_location_id")
+        to_location_id = payload.get("to_location_id")
+        if not isinstance(from_location_id, str) or not isinstance(to_location_id, str):
+            return
+
+        ha_payload: dict[str, Any] = {
+            "entry_id": entry.entry_id,
+            "edge_id": str(payload.get("edge_id", "")),
+            "from_location_id": from_location_id,
+            "to_location_id": to_location_id,
+            "trigger_entity_id": str(payload.get("trigger_entity_id", "")),
+            "trigger_source_id": str(payload.get("trigger_source_id", "")),
+            "boundary_type": str(payload.get("boundary_type", "virtual")),
+            "handoff_window_sec": int(payload.get("handoff_window_sec", 12)),
+            "status": str(payload.get("status", "provisional_triggered")),
+            "timestamp": payload.get("timestamp") or event.timestamp.isoformat(),
+        }
+        hass.bus.async_fire(EVENT_TOPOMATION_HANDOFF_TRACE, ha_payload)
+
+    bus.subscribe(_forward_handoff_trace, EventFilter(event_type="occupancy.handoff"))
 
     # 8. Set up sync manager for bidirectional HA ↔ Topology sync
     sync_manager = SyncManager(hass, loc_mgr, bus)

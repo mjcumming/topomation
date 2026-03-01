@@ -157,6 +157,15 @@ class EventBridge:
 
             try:
                 self.bus.publish(kernel_event)
+                self._maybe_publish_handoff_signal(
+                    event_time=new_state.last_changed or datetime.now(UTC),
+                    source_location_id=location_id,
+                    entity_id=entity_id,
+                    source_event=source_event,
+                    normalized_old=normalized_old,
+                    normalized_new=normalized_new,
+                    state_attributes=dict(new_state.attributes),
+                )
             except Exception as e:  # noqa: BLE001
                 _LOGGER.error(
                     "Error publishing event for %s: %s",
@@ -164,6 +173,166 @@ class EventBridge:
                     e,
                     exc_info=True,
                 )
+
+    def _maybe_publish_handoff_signal(
+        self,
+        *,
+        event_time: datetime,
+        source_location_id: str,
+        entity_id: str,
+        source_event: dict[str, Any],
+        normalized_old: str | None,
+        normalized_new: str | None,
+        state_attributes: dict[str, Any],
+    ) -> None:
+        """Publish adjacency-aware provisional handoff trigger when configured."""
+        if source_event.get("event_type") != "trigger":
+            return
+
+        list_edges = getattr(self.loc_mgr, "all_adjacency_edges", None)
+        if not callable(list_edges):
+            return
+
+        raw_edges = list_edges()
+        if not isinstance(raw_edges, list) or not raw_edges:
+            return
+
+        source_id_raw = source_event.get("source_id")
+        source_id = str(source_id_raw).strip() if isinstance(source_id_raw, str) else ""
+        if not source_id:
+            return
+        source_id_base = source_id.split("::", 1)[0]
+
+        for edge in raw_edges:
+            edge_payload = self._serialize_edge(edge)
+            if edge_payload is None:
+                continue
+
+            crossing_sources = {
+                str(source).strip()
+                for source in edge_payload.get("crossing_sources", [])
+                if isinstance(source, str) and str(source).strip()
+            }
+            if not crossing_sources:
+                continue
+            if (
+                entity_id not in crossing_sources
+                and source_id not in crossing_sources
+                and source_id_base not in crossing_sources
+            ):
+                continue
+
+            destination_id = self._handoff_destination(edge_payload, source_location_id)
+            if destination_id is None:
+                continue
+
+            handoff_window_sec = max(1, int(edge_payload.get("handoff_window_sec", 12)))
+            synthetic_source_id = (
+                f"__handoff__:{edge_payload['edge_id']}:{source_id.replace('::', '_')}"
+            )
+
+            handoff_signal = Event(
+                type="occupancy.signal",
+                source="event_bridge",
+                entity_id=entity_id,
+                location_id=destination_id,
+                payload={
+                    "event_type": "trigger",
+                    "source_id": synthetic_source_id,
+                    "signal_key": "handoff",
+                    "old_state": normalized_old,
+                    "new_state": normalized_new,
+                    "attributes": state_attributes,
+                    "timeout": handoff_window_sec,
+                    "handoff": {
+                        "edge_id": edge_payload["edge_id"],
+                        "from_location_id": source_location_id,
+                        "to_location_id": destination_id,
+                        "trigger_entity_id": entity_id,
+                        "trigger_source_id": source_id,
+                        "boundary_type": edge_payload.get("boundary_type", "virtual"),
+                    },
+                },
+                timestamp=event_time,
+            )
+            self.bus.publish(handoff_signal)
+
+            self.bus.publish(
+                Event(
+                    type="occupancy.handoff",
+                    source="event_bridge",
+                    entity_id=entity_id,
+                    location_id=destination_id,
+                    payload={
+                        "edge_id": edge_payload["edge_id"],
+                        "from_location_id": source_location_id,
+                        "to_location_id": destination_id,
+                        "trigger_entity_id": entity_id,
+                        "trigger_source_id": source_id,
+                        "boundary_type": edge_payload.get("boundary_type", "virtual"),
+                        "handoff_window_sec": handoff_window_sec,
+                        "status": "provisional_triggered",
+                        "timestamp": event_time.isoformat(),
+                    },
+                    timestamp=event_time,
+                )
+            )
+
+    def _serialize_edge(self, edge: Any) -> dict[str, Any] | None:
+        """Normalize edge objects across runtime versions."""
+        to_dict = getattr(edge, "to_dict", None)
+        if callable(to_dict):
+            payload = to_dict()
+            if isinstance(payload, dict):
+                return payload
+            return None
+
+        if isinstance(edge, dict):
+            return edge
+
+        edge_id = getattr(edge, "edge_id", None)
+        from_location_id = getattr(edge, "from_location_id", None)
+        to_location_id = getattr(edge, "to_location_id", None)
+        if not isinstance(edge_id, str) or not isinstance(from_location_id, str) or not isinstance(
+            to_location_id, str
+        ):
+            return None
+
+        return {
+            "edge_id": edge_id,
+            "from_location_id": from_location_id,
+            "to_location_id": to_location_id,
+            "directionality": str(getattr(edge, "directionality", "bidirectional")),
+            "boundary_type": str(getattr(edge, "boundary_type", "virtual")),
+            "crossing_sources": list(getattr(edge, "crossing_sources", [])),
+            "handoff_window_sec": int(getattr(edge, "handoff_window_sec", 12)),
+            "priority": int(getattr(edge, "priority", 50)),
+        }
+
+    def _handoff_destination(
+        self,
+        edge_payload: dict[str, Any],
+        source_location_id: str,
+    ) -> str | None:
+        """Return handoff destination location id for one source location and edge."""
+        from_location_id = edge_payload.get("from_location_id")
+        to_location_id = edge_payload.get("to_location_id")
+        directionality = str(edge_payload.get("directionality", "bidirectional"))
+        if not isinstance(from_location_id, str) or not isinstance(to_location_id, str):
+            return None
+
+        if directionality == "bidirectional":
+            if source_location_id == from_location_id:
+                return to_location_id
+            if source_location_id == to_location_id:
+                return from_location_id
+            return None
+
+        if directionality == "a_to_b" and source_location_id == from_location_id:
+            return to_location_id
+        if directionality == "b_to_a" and source_location_id == to_location_id:
+            return from_location_id
+        return None
 
     def _state_to_signal_type(
         self,

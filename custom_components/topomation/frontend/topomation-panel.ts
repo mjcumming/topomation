@@ -1,7 +1,13 @@
 // @ts-nocheck
 import { LitElement, html, css, PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import type { HomeAssistant, Location, LocationType } from "./types";
+import type {
+  AdjacencyEdge,
+  HandoffTrace,
+  HomeAssistant,
+  Location,
+  LocationType,
+} from "./types";
 import { sharedStyles } from "./styles";
 import { getLocationType } from "./hierarchy-rules";
 
@@ -12,6 +18,12 @@ import "./ht-location-dialog";
 type ManagerView = "location" | "occupancy" | "actions";
 type RightPanelMode = "inspector" | "assign";
 type AssignmentFilter = "all" | "unassigned" | "assigned";
+type OccupancyTransitionState = {
+  occupied: boolean;
+  previousOccupied?: boolean;
+  reason?: string;
+  changedAt?: string;
+};
 
 const TREE_PANEL_SPLIT_STORAGE_KEY = "topomation:panel-tree-split";
 const RIGHT_PANEL_MODE_STORAGE_KEY = "topomation:panel-right-mode";
@@ -71,6 +83,9 @@ export class TopomationPanel extends LitElement {
     _eventLogOpen: { state: true },
     _eventLogEntries: { state: true },
     _occupancyStateByLocation: { state: true },
+    _occupancyTransitionByLocation: { state: true },
+    _adjacencyEdges: { state: true },
+    _handoffTraceByLocation: { state: true },
     _treePanelSplit: { state: true },
     _isResizingPanels: { state: true },
     _entityAreaById: { state: true },
@@ -110,6 +125,9 @@ export class TopomationPanel extends LitElement {
     data?: any;
   }> = [];
   @state() private _occupancyStateByLocation: Record<string, boolean> = {};
+  @state() private _occupancyTransitionByLocation: Record<string, OccupancyTransitionState> = {};
+  @state() private _adjacencyEdges: AdjacencyEdge[] = [];
+  @state() private _handoffTraceByLocation: Record<string, HandoffTrace[]> = {};
   @state() private _treePanelSplit = TREE_PANEL_SPLIT_DEFAULT;
   @state() private _isResizingPanels = false;
   @state() private _entityAreaById: Record<string, string | null> = {};
@@ -125,6 +143,7 @@ export class TopomationPanel extends LitElement {
   private _unsubUpdates?: () => void;
   private _unsubStateChanged?: () => void;
   private _unsubOccupancyChanged?: () => void;
+  private _unsubHandoffTrace?: () => void;
   private _unsubActionsSummary?: () => void;
   private _unsubEntityRegistryUpdated?: () => void;
   private _unsubDeviceRegistryUpdated?: () => void;
@@ -225,6 +244,10 @@ export class TopomationPanel extends LitElement {
     if (this._unsubOccupancyChanged) {
       this._unsubOccupancyChanged();
       this._unsubOccupancyChanged = undefined;
+    }
+    if (this._unsubHandoffTrace) {
+      this._unsubHandoffTrace();
+      this._unsubHandoffTrace = undefined;
     }
     if (this._unsubActionsSummary) {
       this._unsubActionsSummary();
@@ -908,11 +931,18 @@ export class TopomationPanel extends LitElement {
                 <ht-location-inspector
                   .hass=${this.hass}
                   .location=${selectedLocation}
+                  .allLocations=${this._locations}
+                  .adjacencyEdges=${this._adjacencyEdges}
                   .entryId=${this._activeEntryId()}
                   .entityRegistryRevision=${this._haRegistryRevision}
                   .forcedTab=${forcedInspectorTab}
                   .occupancyStates=${this._occupancyStateByLocation}
+                  .occupancyTransitions=${this._occupancyTransitionByLocation}
+                  .handoffTraces=${selectedLocation
+                    ? this._handoffTraceByLocation[selectedLocation.id] || []
+                    : []}
                   @source-test=${this._handleSourceTest}
+                  @adjacency-changed=${this._handleAdjacencyChanged}
                 ></ht-location-inspector>
               `}
           ${this._eventLogOpen ? this._renderEventLog() : ""}
@@ -1428,7 +1458,7 @@ export class TopomationPanel extends LitElement {
       }
 
       const result = await Promise.race([
-        this.hass.callWS<{ locations: Location[] }>(
+        this.hass.callWS<{ locations: Location[]; adjacency_edges?: AdjacencyEdge[] }>(
           this._withEntryId({
             type: "topomation/locations/list",
           })
@@ -1438,7 +1468,7 @@ export class TopomationPanel extends LitElement {
         ),
       ]);
 
-      const response = result as { locations?: Location[] };
+      const response = result as { locations?: Location[]; adjacency_edges?: AdjacencyEdge[] };
       if (!response || !response.locations) {
         throw new Error("Invalid response format: missing locations array");
       }
@@ -1454,7 +1484,11 @@ export class TopomationPanel extends LitElement {
       const uniqueLocations = Array.from(byId.values());
       const visibleLocations = uniqueLocations.filter((loc) => !loc.is_explicit_root);
       this._locations = [...visibleLocations];
+      this._adjacencyEdges = Array.isArray(response.adjacency_edges)
+        ? [...response.adjacency_edges]
+        : [];
       this._occupancyStateByLocation = this._buildOccupancyStateMapFromStates();
+      this._occupancyTransitionByLocation = this._buildOccupancyTransitionsFromStates();
       this._locationsVersion += 1;
       this._logEvent("ws", "locations/list loaded", {
         count: this._locations.length,
@@ -1492,6 +1526,10 @@ export class TopomationPanel extends LitElement {
 
   private _handleLocationSelected(e: CustomEvent): void {
     this._selectedId = e.detail.locationId;
+  }
+
+  private _handleAdjacencyChanged(): void {
+    void this._loadLocations(true);
   }
 
   /**
@@ -2095,6 +2133,10 @@ export class TopomationPanel extends LitElement {
       this._unsubOccupancyChanged();
       this._unsubOccupancyChanged = undefined;
     }
+    if (this._unsubHandoffTrace) {
+      this._unsubHandoffTrace();
+      this._unsubHandoffTrace = undefined;
+    }
     if (this._unsubActionsSummary) {
       this._unsubActionsSummary();
       this._unsubActionsSummary = undefined;
@@ -2131,14 +2173,88 @@ export class TopomationPanel extends LitElement {
           const locationId = event?.data?.location_id;
           const occupied = event?.data?.occupied;
           if (!locationId || typeof occupied !== "boolean") return;
-          this._setOccupancyState(locationId, occupied);
-          this._logEvent("ha", "topomation_occupancy_changed", { locationId, occupied });
+          const previousOccupied = event?.data?.previous_occupied;
+          const reason =
+            typeof event?.data?.reason === "string" && event.data.reason.trim().length
+              ? event.data.reason.trim()
+              : undefined;
+          this._setOccupancyState(locationId, occupied, {
+            previousOccupied: typeof previousOccupied === "boolean" ? previousOccupied : undefined,
+            reason,
+          });
+          this._logEvent("ha", "topomation_occupancy_changed", {
+            locationId,
+            occupied,
+            previousOccupied:
+              typeof previousOccupied === "boolean" ? previousOccupied : undefined,
+            reason,
+          });
         },
         "topomation_occupancy_changed"
       );
     } catch (err) {
       console.warn("Failed to subscribe to topomation_occupancy_changed events", err);
       this._logEvent("error", "subscribe failed: topomation_occupancy_changed", String(err));
+    }
+
+    try {
+      this._unsubHandoffTrace = await this.hass.connection.subscribeEvents(
+        (event: any) => {
+          const data = event?.data || {};
+          const edgeId =
+            typeof data.edge_id === "string" && data.edge_id.trim()
+              ? data.edge_id.trim()
+              : "";
+          const fromLocationId =
+            typeof data.from_location_id === "string" && data.from_location_id.trim()
+              ? data.from_location_id.trim()
+              : "";
+          const toLocationId =
+            typeof data.to_location_id === "string" && data.to_location_id.trim()
+              ? data.to_location_id.trim()
+              : "";
+          if (!edgeId || !fromLocationId || !toLocationId) return;
+
+          const trace: HandoffTrace = {
+            edge_id: edgeId,
+            from_location_id: fromLocationId,
+            to_location_id: toLocationId,
+            trigger_entity_id:
+              typeof data.trigger_entity_id === "string" ? data.trigger_entity_id : "",
+            trigger_source_id:
+              typeof data.trigger_source_id === "string" ? data.trigger_source_id : "",
+            boundary_type: typeof data.boundary_type === "string" ? data.boundary_type : "virtual",
+            handoff_window_sec:
+              typeof data.handoff_window_sec === "number" ? data.handoff_window_sec : 12,
+            status: typeof data.status === "string" ? data.status : "provisional_triggered",
+            timestamp:
+              typeof data.timestamp === "string" && data.timestamp.trim()
+                ? data.timestamp
+                : new Date().toISOString(),
+          };
+
+          const appendTrace = (
+            map: Record<string, HandoffTrace[]>,
+            locationId: string,
+            nextTrace: HandoffTrace
+          ): Record<string, HandoffTrace[]> => {
+            const existing = map[locationId] || [];
+            return {
+              ...map,
+              [locationId]: [nextTrace, ...existing].slice(0, 25),
+            };
+          };
+
+          let next = appendTrace(this._handoffTraceByLocation, fromLocationId, trace);
+          next = appendTrace(next, toLocationId, trace);
+          this._handoffTraceByLocation = next;
+          this._logEvent("ha", "topomation_handoff_trace", trace);
+        },
+        "topomation_handoff_trace"
+      );
+    } catch (err) {
+      console.warn("Failed to subscribe to topomation_handoff_trace events", err);
+      this._logEvent("error", "subscribe failed: topomation_handoff_trace", String(err));
     }
 
     try {
@@ -2210,10 +2326,39 @@ export class TopomationPanel extends LitElement {
     }, 200);
   }
 
-  private _setOccupancyState(locationId: string, occupied: boolean): void {
+  private _setOccupancyState(
+    locationId: string,
+    occupied: boolean,
+    details?: {
+      previousOccupied?: boolean;
+      reason?: string;
+      changedAt?: string;
+    }
+  ): void {
+    const reason =
+      typeof details?.reason === "string" && details.reason.trim().length
+        ? details.reason.trim()
+        : undefined;
+    const changedAt =
+      typeof details?.changedAt === "string" && details.changedAt.trim().length
+        ? details.changedAt
+        : new Date().toISOString();
+
     this._occupancyStateByLocation = {
       ...this._occupancyStateByLocation,
       [locationId]: occupied,
+    };
+    this._occupancyTransitionByLocation = {
+      ...this._occupancyTransitionByLocation,
+      [locationId]: {
+        occupied,
+        previousOccupied:
+          typeof details?.previousOccupied === "boolean"
+            ? details.previousOccupied
+            : undefined,
+        reason,
+        changedAt,
+      },
     };
   }
 
@@ -2226,6 +2371,33 @@ export class TopomationPanel extends LitElement {
       const locationId = attrs.location_id;
       if (!locationId) continue;
       map[locationId] = state?.state === "on";
+    }
+    return map;
+  }
+
+  private _buildOccupancyTransitionsFromStates(): Record<string, OccupancyTransitionState> {
+    const map: Record<string, OccupancyTransitionState> = {};
+    const states = this.hass?.states || {};
+    for (const state of Object.values(states) as any[]) {
+      const attrs = state?.attributes || {};
+      if (attrs?.device_class !== "occupancy") continue;
+      const locationId = attrs.location_id;
+      if (!locationId) continue;
+      const previousOccupied = attrs.previous_occupied;
+      const reason =
+        typeof attrs.reason === "string" && attrs.reason.trim().length
+          ? attrs.reason.trim()
+          : undefined;
+      const changedAt =
+        typeof state?.last_changed === "string" && state.last_changed.trim().length
+          ? state.last_changed
+          : undefined;
+      map[locationId] = {
+        occupied: state?.state === "on",
+        previousOccupied: typeof previousOccupied === "boolean" ? previousOccupied : undefined,
+        reason,
+        changedAt,
+      };
     }
     return map;
   }
@@ -2262,7 +2434,21 @@ export class TopomationPanel extends LitElement {
             attrs.device_class === "occupancy" &&
             attrs.location_id
           ) {
-            this._setOccupancyState(attrs.location_id, newStateObj?.state === "on");
+            this._setOccupancyState(attrs.location_id, newStateObj?.state === "on", {
+              previousOccupied:
+                typeof attrs.previous_occupied === "boolean"
+                  ? attrs.previous_occupied
+                  : undefined,
+              reason:
+                typeof attrs.reason === "string" && attrs.reason.trim().length
+                  ? attrs.reason.trim()
+                  : undefined,
+              changedAt:
+                typeof newStateObj?.last_changed === "string" &&
+                newStateObj.last_changed.trim().length
+                  ? newStateObj.last_changed
+                  : undefined,
+            });
           }
 
           if (!this._shouldTrackEntity(entityId)) return;

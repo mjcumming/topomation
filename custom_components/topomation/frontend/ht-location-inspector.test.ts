@@ -1098,6 +1098,314 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(lockDirectiveText).to.include("Subtree");
   });
 
+  it("renders vacancy reason in header when vacancy reason is available", async () => {
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>) => {
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        return [] as T;
+      },
+      connection: {},
+      states: {
+        "binary_sensor.occupancy_area_kitchen": {
+          entity_id: "binary_sensor.occupancy_area_kitchen",
+          state: "off",
+          attributes: {
+            device_class: "occupancy",
+            location_id: "area_kitchen",
+            reason: "timeout",
+          },
+        },
+      },
+      areas: {},
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_kitchen";
+    location.name = "Kitchen";
+    location.modules._meta = { type: "area" };
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${location}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    const vacancyReasonText = (
+      element.shadowRoot!.querySelector('[data-testid="header-vacancy-reason"]')?.textContent || ""
+    ).trim();
+
+    expect(vacancyReasonText).to.equal("Vacated by timeout");
+  });
+
+  it("uses event-driven vacancy reason when occupancy state has not refreshed yet", async () => {
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>) => {
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        return [] as T;
+      },
+      connection: {},
+      states: {
+        "binary_sensor.occupancy_area_kitchen": {
+          entity_id: "binary_sensor.occupancy_area_kitchen",
+          state: "on",
+          attributes: {
+            device_class: "occupancy",
+            location_id: "area_kitchen",
+            reason: "event:trigger",
+          },
+        },
+      },
+      areas: {},
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_kitchen";
+    location.name = "Kitchen";
+    location.modules._meta = { type: "area" };
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${location}
+        .occupancyStates=${{ area_kitchen: false }}
+        .occupancyTransitions=${{
+          area_kitchen: {
+            occupied: false,
+            previousOccupied: true,
+            reason: "event:clear",
+            changedAt: new Date().toISOString(),
+          },
+        }}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    const occupancyStatusText = (
+      element.shadowRoot!.querySelector('[data-testid="header-occupancy-status"]')?.textContent || ""
+    ).trim();
+    const vacancyReasonText = (
+      element.shadowRoot!.querySelector('[data-testid="header-vacancy-reason"]')?.textContent || ""
+    ).trim();
+
+    expect(occupancyStatusText).to.equal("Vacant");
+    expect(vacancyReasonText).to.equal("Vacated by clear event");
+  });
+
+  it("creates adjacency edges from inspector controls", async () => {
+    const callWsRequests: Array<Record<string, any>> = [];
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>) => {
+        callWsRequests.push(request);
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        if (request.type === "topomation/adjacency/create") {
+          return { success: true, adjacency_edge: { edge_id: "edge_area_kitchen_area_hallway" } } as T;
+        }
+        return {} as T;
+      },
+      connection: {},
+      states: {},
+      areas: {},
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_kitchen";
+    location.name = "Kitchen";
+    location.modules._meta = { type: "area" };
+
+    const allLocations: Location[] = [
+      location,
+      {
+        ...structuredClone(baseLocation),
+        id: "area_hallway",
+        name: "Hallway",
+        parent_id: null,
+        modules: { _meta: { type: "area" } },
+      },
+    ];
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${location}
+        .allLocations=${allLocations}
+        .adjacencyEdges=${[]}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    let adjacencyChanged = false;
+    element.addEventListener("adjacency-changed", () => {
+      adjacencyChanged = true;
+    });
+
+    const addButton = element.shadowRoot!.querySelector(
+      ".adjacency-form-actions .button.button-primary"
+    ) as HTMLButtonElement;
+    expect(addButton).to.exist;
+    expect(addButton.disabled).to.equal(false);
+
+    addButton.click();
+    await element.updateComplete;
+
+    const createCall = callWsRequests.find(
+      (request) => request.type === "topomation/adjacency/create"
+    );
+    expect(createCall).to.exist;
+    expect(createCall?.from_location_id).to.equal("area_kitchen");
+    expect(createCall?.to_location_id).to.equal("area_hallway");
+    expect(createCall?.directionality).to.equal("bidirectional");
+    expect(adjacencyChanged).to.equal(true);
+  });
+
+  it("removes adjacency edges from inspector controls", async () => {
+    const callWsRequests: Array<Record<string, any>> = [];
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>) => {
+        callWsRequests.push(request);
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        if (request.type === "topomation/adjacency/delete") {
+          return { success: true } as T;
+        }
+        return {} as T;
+      },
+      connection: {},
+      states: {},
+      areas: {},
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_kitchen";
+    location.name = "Kitchen";
+    location.modules._meta = { type: "area" };
+
+    const allLocations: Location[] = [
+      location,
+      {
+        ...structuredClone(baseLocation),
+        id: "area_hallway",
+        name: "Hallway",
+        parent_id: null,
+        modules: { _meta: { type: "area" } },
+      },
+    ];
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${location}
+        .allLocations=${allLocations}
+        .adjacencyEdges=${[
+          {
+            edge_id: "edge_area_kitchen_area_hallway",
+            from_location_id: "area_kitchen",
+            to_location_id: "area_hallway",
+            directionality: "bidirectional",
+            boundary_type: "door",
+            crossing_sources: [],
+            handoff_window_sec: 12,
+            priority: 50,
+          },
+        ]}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    let adjacencyChanged = false;
+    element.addEventListener("adjacency-changed", () => {
+      adjacencyChanged = true;
+    });
+
+    const removeButton = element.shadowRoot!.querySelector(
+      ".adjacency-delete-btn"
+    ) as HTMLButtonElement;
+    expect(removeButton).to.exist;
+    removeButton.click();
+    await element.updateComplete;
+
+    const deleteCall = callWsRequests.find(
+      (request) => request.type === "topomation/adjacency/delete"
+    );
+    expect(deleteCall).to.exist;
+    expect(deleteCall?.edge_id).to.equal("edge_area_kitchen_area_hallway");
+    expect(adjacencyChanged).to.equal(true);
+  });
+
+  it("renders handoff traces for the selected location", async () => {
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>) => {
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        return {} as T;
+      },
+      connection: {},
+      states: {},
+      areas: {},
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_kitchen";
+    location.name = "Kitchen";
+    location.modules._meta = { type: "area" };
+
+    const allLocations: Location[] = [
+      location,
+      {
+        ...structuredClone(baseLocation),
+        id: "area_hallway",
+        name: "Hallway",
+        parent_id: null,
+        modules: { _meta: { type: "area" } },
+      },
+    ];
+
+    const occurredAt = new Date().toISOString();
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${location}
+        .allLocations=${allLocations}
+        .handoffTraces=${[
+          {
+            edge_id: "edge_area_kitchen_area_hallway",
+            from_location_id: "area_kitchen",
+            to_location_id: "area_hallway",
+            trigger_entity_id: "binary_sensor.kitchen_hallway_door",
+            trigger_source_id: "binary_sensor.kitchen_hallway_door",
+            boundary_type: "door",
+            handoff_window_sec: 12,
+            status: "provisional_triggered",
+            timestamp: occurredAt,
+          },
+        ]}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    const traceRows = element.shadowRoot!.querySelectorAll(".handoff-trace-row");
+    expect(traceRows.length).to.equal(1);
+    const traceText = (traceRows[0].textContent || "").replace(/\s+/g, " ").trim();
+    expect(traceText).to.include("Kitchen -> Hallway");
+    expect(traceText).to.include("Provisional Triggered");
+    expect(traceText).to.include("window 12s");
+    expect(traceText).to.include("trigger: binary_sensor.kitchen_hallway_door");
+  });
+
   it("renders vacant-at timestamp when effective timeout is provided", async () => {
     const vacantAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
     const expectedVacantAtLabel = new Intl.DateTimeFormat(undefined, {

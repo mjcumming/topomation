@@ -53,6 +53,29 @@ export interface Location {
   modules: Record<string, any>; // Keep loose for mock/frontend (backend enforces shape)
 }
 
+export interface AdjacencyEdge {
+  edge_id: string;
+  from_location_id: string;
+  to_location_id: string;
+  directionality: "bidirectional" | "a_to_b" | "b_to_a";
+  boundary_type: string;
+  crossing_sources: string[];
+  handoff_window_sec: number;
+  priority: number;
+}
+
+export interface HandoffTrace {
+  edge_id: string;
+  from_location_id: string;
+  to_location_id: string;
+  trigger_entity_id: string;
+  trigger_source_id: string;
+  boundary_type: string;
+  handoff_window_sec: number;
+  status: string;
+  timestamp: string;
+}
+
 export interface ModuleConfig {
   // Version/enabled are optional in mock data; real modules should set them.
   version?: number;

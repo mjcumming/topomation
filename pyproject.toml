@@ -24,7 +24,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "home-topology==1.0.0",
+    "home-topology==1.0.1",
 ]
 
 [project.optional-dependencies]
