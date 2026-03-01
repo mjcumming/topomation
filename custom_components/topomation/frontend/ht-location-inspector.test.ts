@@ -1645,6 +1645,88 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect((activeTab?.textContent || "").trim()).to.equal("On Occupied");
   });
 
+  it("keeps enabled action devices at the top of the list", async () => {
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>) => {
+        if (request.type === "topomation/actions/rules/list") {
+          return {
+            rules: [
+              {
+                id: "rule_enabled",
+                entity_id: "automation.rule_enabled",
+                name: "Kitchen Occupied: Zeta Light (turn on)",
+                trigger_type: "occupied",
+                action_entity_id: "light.kitchen_zeta",
+                action_service: "turn_on",
+                require_dark: false,
+                enabled: true,
+              },
+            ],
+          } as T;
+        }
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        if (request.type === "automation/config") return { config: undefined } as T;
+        return [] as T;
+      },
+      callApi: async <T>(): Promise<T> => ({ result: "ok" } as T),
+      connection: {},
+      states: {
+        "binary_sensor.kitchen_occupancy": {
+          entity_id: "binary_sensor.kitchen_occupancy",
+          state: "off",
+          attributes: {
+            friendly_name: "Kitchen Occupancy",
+            device_class: "occupancy",
+            location_id: "area_kitchen",
+          },
+        },
+        "light.kitchen_alpha": {
+          entity_id: "light.kitchen_alpha",
+          state: "off",
+          attributes: {
+            friendly_name: "Kitchen Alpha",
+            area_id: "kitchen",
+          },
+        },
+        "light.kitchen_zeta": {
+          entity_id: "light.kitchen_zeta",
+          state: "off",
+          attributes: {
+            friendly_name: "Kitchen Zeta",
+            area_id: "kitchen",
+          },
+        },
+      },
+      areas: {},
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_kitchen";
+    location.ha_area_id = "kitchen";
+    location.modules._meta = { type: "area" };
+    location.entity_ids = ["light.kitchen_alpha", "light.kitchen_zeta"];
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${location}
+        .forcedTab=${"actions"}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    await waitUntil(
+      () => element.shadowRoot!.querySelectorAll(".action-device-row").length === 2,
+      "expected two action rows to render"
+    );
+
+    const rows = Array.from(element.shadowRoot!.querySelectorAll(".action-device-row"));
+    expect((rows[0].textContent || "")).to.include("Kitchen Zeta");
+  });
+
   it("creates managed automation rule when inline action include toggle is enabled", async () => {
     const createCalls: Array<Record<string, any>> = [];
     const rules: Array<Record<string, any>> = [];

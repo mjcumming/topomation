@@ -49,6 +49,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Integration runtime dependency now targets `home-topology==1.0.1` to ensure
   adjacency topology APIs are available.
 
+## [0.2.15] - 2026-03-01
+
+### Fixed
+
+- Synced committed frontend runtime bundle
+  (`custom_components/topomation/frontend/topomation-panel.js`) with the
+  current TypeScript sources/build output so CI bundle drift checks pass and
+  shipped UI behavior matches the source implementation.
+
 ## [0.2.14] - 2026-03-01
 
 ### Fixed
