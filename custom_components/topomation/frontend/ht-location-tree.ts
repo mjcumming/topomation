@@ -21,6 +21,7 @@ export interface ActiveDropTarget {
   zone: DropZone;
 }
 export type { DropZone } from "./tree-dnd-zones";
+const ENTITY_DND_MIME = "application/x-topomation-entity-id";
 
 interface DropIndicator {
   top: number;
@@ -62,6 +63,7 @@ export class HtLocationTree extends LitElement {
     _editingValue: { state: true },
     _isDragging: { state: true },
     _dropIndicator: { state: true },
+    _entityDropTargetId: { state: true },
   };
 
   @state() private _expandedIds = new Set<string>();
@@ -69,6 +71,7 @@ export class HtLocationTree extends LitElement {
   @state() private _editingValue = "";
   @state() private _isDragging = false;
   @state() private _dropIndicator?: DropIndicator;
+  @state() private _entityDropTargetId?: string;
 
   private _sortable?: Sortable;
   private _draggedId?: string;
@@ -195,6 +198,11 @@ export class HtLocationTree extends LitElement {
 
       .tree-item.selected:hover {
         background: rgba(var(--rgb-primary-color), 0.2);
+      }
+
+      .tree-item.entity-drop-target {
+        background: rgba(var(--rgb-success-color), 0.18);
+        box-shadow: inset 0 0 0 1px rgba(var(--rgb-success-color), 0.45);
       }
 
       .drag-handle {
@@ -466,6 +474,7 @@ export class HtLocationTree extends LitElement {
     this._sortable = undefined;
     this._boundDragOver = undefined;
     this._draggedId = undefined;
+    this._entityDropTargetId = undefined;
   }
 
   protected updated(changedProps: PropertyValues): void {
@@ -514,6 +523,7 @@ export class HtLocationTree extends LitElement {
         onStart: (evt) => {
           this._isDragging = true;
           this._dropIndicator = undefined;
+          this._entityDropTargetId = undefined;
           this._draggedId = (evt.item as HTMLElement)?.getAttribute("data-id") ?? undefined;
           this._boundDragOver = this._handleContinuousDragOver.bind(this);
           list.addEventListener("dragover", this._boundDragOver);
@@ -550,6 +560,7 @@ export class HtLocationTree extends LitElement {
         onEnd: (evt) => {
           this._isDragging = false;
           this._dropIndicator = undefined;
+          this._entityDropTargetId = undefined;
           if (this._boundDragOver) {
             list.removeEventListener("dragover", this._boundDragOver);
             this._boundDragOver = undefined;
@@ -767,10 +778,13 @@ export class HtLocationTree extends LitElement {
 
     return html`
       <div
-        class="tree-item ${isSelected ? "selected" : ""} ${type === "floor" ? "floor-item" : ""}"
+        class="tree-item ${isSelected ? "selected" : ""} ${type === "floor" ? "floor-item" : ""} ${this._entityDropTargetId === location.id ? "entity-drop-target" : ""}"
         data-id=${location.id}
         style="margin-left: ${indent}px"
         @click=${(e: Event) => this._handleClick(e, location)}
+        @dragover=${(e: DragEvent) => this._handleEntityDragOver(e, location.id)}
+        @dragleave=${(e: DragEvent) => this._handleEntityDragLeave(e, location.id)}
+        @drop=${(e: DragEvent) => this._handleEntityDrop(e, location.id)}
       >
         <div
           class="drag-handle ${!this.allowMove ? "disabled" : ""}"
@@ -913,6 +927,52 @@ export class HtLocationTree extends LitElement {
     }
     const type = getLocationType(location);
     return getTypeFallbackIcon(type);
+  }
+
+  private _hasEntityDragPayload(event: DragEvent): boolean {
+    const types = Array.from(event.dataTransfer?.types || []);
+    if (types.includes(ENTITY_DND_MIME)) return true;
+    return !this._isDragging && types.includes("text/plain");
+  }
+
+  private _readEntityIdFromDrop(event: DragEvent): string | undefined {
+    const fromMime = event.dataTransfer?.getData(ENTITY_DND_MIME);
+    if (fromMime) return fromMime;
+    const fallback = event.dataTransfer?.getData("text/plain") || "";
+    return fallback.includes(".") ? fallback : undefined;
+  }
+
+  private _handleEntityDragOver(event: DragEvent, locationId: string): void {
+    if (!this._hasEntityDragPayload(event)) return;
+    event.preventDefault();
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = "move";
+    }
+    this._entityDropTargetId = locationId;
+  }
+
+  private _handleEntityDragLeave(event: DragEvent, locationId: string): void {
+    if (!this._hasEntityDragPayload(event)) return;
+    const related = event.relatedTarget as HTMLElement | null;
+    if (related?.closest?.(`[data-id="${locationId}"]`)) return;
+    if (this._entityDropTargetId === locationId) {
+      this._entityDropTargetId = undefined;
+    }
+  }
+
+  private _handleEntityDrop(event: DragEvent, locationId: string): void {
+    const entityId = this._readEntityIdFromDrop(event);
+    if (!entityId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    this._entityDropTargetId = undefined;
+    this.dispatchEvent(
+      new CustomEvent("entity-dropped", {
+        detail: { entityId, targetLocationId: locationId },
+        bubbles: true,
+        composed: true,
+      })
+    );
   }
 
   private _handleClick(e: Event, location: Location): void {

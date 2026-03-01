@@ -2,7 +2,7 @@
 
 DOMAIN = "topomation"
 NAME = "Topomation"
-VERSION = "0.2.5"
+VERSION = "0.2.6"
 
 # Storage
 STORAGE_VERSION = 1
@@ -52,6 +52,7 @@ WS_TYPE_LOCATIONS_UPDATE = f"{DOMAIN}/locations/update"
 WS_TYPE_LOCATIONS_DELETE = f"{DOMAIN}/locations/delete"
 WS_TYPE_LOCATIONS_REORDER = f"{DOMAIN}/locations/reorder"
 WS_TYPE_LOCATIONS_SET_MODULE_CONFIG = f"{DOMAIN}/locations/set_module_config"
+WS_TYPE_LOCATIONS_ASSIGN_ENTITY = f"{DOMAIN}/locations/assign_entity"
 
 # Ambient Light WebSocket API types
 WS_TYPE_AMBIENT_GET_READING = f"{DOMAIN}/ambient/get_reading"

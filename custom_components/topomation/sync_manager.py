@@ -180,8 +180,20 @@ class SyncManager:
 
         Includes entities with direct area_id and those inheriting area from their device.
         """
+        # Integration-owned structural assignment (floor/building/grounds/subarea) is
+        # an explicit override. Keep those entities out of HA-area wrapper reconciliation.
+        topology_override_by_entity: dict[str, str] = {}
+        for location in sorted(self.loc_mgr.all_locations(), key=lambda item: str(item.id)):
+            if self._is_ha_area_wrapper(location):
+                continue
+            for entity_id in location.entity_ids:
+                if entity_id and entity_id not in topology_override_by_entity:
+                    topology_override_by_entity[entity_id] = location.id
+
         desired_by_location: dict[str, set[str]] = {}
         for entity in self.entity_registry.entities.values():
+            if entity.entity_id in topology_override_by_entity:
+                continue
             area_id = self._entity_area_id(entity)
             if not area_id:
                 continue

@@ -34,6 +34,7 @@ from custom_components.topomation.const import (  # type: ignore[import]
     WS_TYPE_LOCATIONS_CREATE,
     WS_TYPE_LOCATIONS_DELETE,
     WS_TYPE_LOCATIONS_LIST,
+    WS_TYPE_LOCATIONS_ASSIGN_ENTITY,
     WS_TYPE_LOCATIONS_REORDER,
     WS_TYPE_LOCATIONS_SET_MODULE_CONFIG,
     WS_TYPE_LOCATIONS_UPDATE,
@@ -48,6 +49,7 @@ from custom_components.topomation.websocket_api import (  # type: ignore[import]
     handle_locations_create,
     handle_locations_delete,
     handle_locations_list,
+    handle_locations_assign_entity,
     handle_locations_reorder,
     handle_locations_set_module_config,
     handle_locations_update,
@@ -1144,6 +1146,128 @@ async def test_locations_update_allows_rename(hass: HomeAssistant) -> None:
 
 
 @pytest.mark.asyncio
+async def test_locations_assign_entity_updates_ha_area_for_ha_backed_target(
+    hass: HomeAssistant,
+) -> None:
+    """Assigning to an HA-backed area updates entity registry area_id."""
+    area_registry = ar.async_get(hass)
+    entity_registry = er.async_get(hass)
+
+    kitchen = area_registry.async_create("Kitchen")
+    living = area_registry.async_create("Living Room")
+
+    light_entry = entity_registry.async_get_or_create(
+        domain="light",
+        platform="test",
+        unique_id="light_assignment_move",
+        suggested_object_id="assignment_move",
+    )
+    entity_registry.async_update_entity(light_entry.entity_id, area_id=kitchen.id)
+
+    entry = MockConfigEntry(domain=DOMAIN, data={}, entry_id="test_entry")
+    entry.add_to_hass(hass)
+
+    with patch("custom_components.topomation.async_register_panel", AsyncMock()):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    connection = _fake_connection()
+    handle_locations_assign_entity(
+        hass,
+        connection,
+        {
+            "id": 301,
+            "type": WS_TYPE_LOCATIONS_ASSIGN_ENTITY,
+            "entity_id": light_entry.entity_id,
+            "target_location_id": f"area_{living.id}",
+        },
+    )
+
+    assert connection.send_error.call_count == 0
+    connection.send_result.assert_called_once()
+    payload = connection.send_result.call_args[0][1]
+    assert payload["success"] is True
+    assert payload["target_location_id"] == f"area_{living.id}"
+    assert payload["ha_area_id"] == living.id
+
+    updated_entry = entity_registry.async_get(light_entry.entity_id)
+    assert updated_entry is not None
+    assert updated_entry.area_id == living.id
+
+    loc_mgr = hass.data[DOMAIN][entry.entry_id]["location_manager"]
+    kitchen_loc = loc_mgr.get_location(f"area_{kitchen.id}")
+    living_loc = loc_mgr.get_location(f"area_{living.id}")
+    assert kitchen_loc is not None
+    assert living_loc is not None
+    assert light_entry.entity_id not in kitchen_loc.entity_ids
+    assert light_entry.entity_id in living_loc.entity_ids
+
+
+@pytest.mark.asyncio
+async def test_locations_assign_entity_to_non_area_survives_ha_reconcile(
+    hass: HomeAssistant,
+) -> None:
+    """Non-area topology assignment should override HA-area entity mapping."""
+    area_registry = ar.async_get(hass)
+    entity_registry = er.async_get(hass)
+
+    kitchen = area_registry.async_create("Kitchen")
+    light_entry = entity_registry.async_get_or_create(
+        domain="light",
+        platform="test",
+        unique_id="light_assignment_non_area",
+        suggested_object_id="assignment_non_area",
+    )
+    entity_registry.async_update_entity(light_entry.entity_id, area_id=kitchen.id)
+
+    entry = MockConfigEntry(domain=DOMAIN, data={}, entry_id="test_entry")
+    entry.add_to_hass(hass)
+
+    with patch("custom_components.topomation.async_register_panel", AsyncMock()):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    loc_mgr = hass.data[DOMAIN][entry.entry_id]["location_manager"]
+    if loc_mgr.get_location("building_main") is None:
+        loc_mgr.create_location(id="building_main", name="Home", parent_id=None)
+        loc_mgr.set_module_config("building_main", "_meta", {"type": "building", "sync_source": "topology"})
+    loc_mgr.create_location(id="floor_custom", name="Custom Floor", parent_id="building_main")
+    loc_mgr.set_module_config("floor_custom", "_meta", {"type": "floor", "sync_source": "topology"})
+
+    connection = _fake_connection()
+    handle_locations_assign_entity(
+        hass,
+        connection,
+        {
+            "id": 302,
+            "type": WS_TYPE_LOCATIONS_ASSIGN_ENTITY,
+            "entity_id": light_entry.entity_id,
+            "target_location_id": "floor_custom",
+        },
+    )
+
+    assert connection.send_error.call_count == 0
+    connection.send_result.assert_called_once()
+
+    kitchen_loc = loc_mgr.get_location(f"area_{kitchen.id}")
+    floor_loc = loc_mgr.get_location("floor_custom")
+    assert kitchen_loc is not None
+    assert floor_loc is not None
+    assert light_entry.entity_id not in kitchen_loc.entity_ids
+    assert light_entry.entity_id in floor_loc.entity_ids
+
+    sync_manager = hass.data[DOMAIN][entry.entry_id]["sync_manager"]
+    await sync_manager._map_entities()
+
+    kitchen_loc = loc_mgr.get_location(f"area_{kitchen.id}")
+    floor_loc = loc_mgr.get_location("floor_custom")
+    assert kitchen_loc is not None
+    assert floor_loc is not None
+    assert light_entry.entity_id not in kitchen_loc.entity_ids
+    assert light_entry.entity_id in floor_loc.entity_ids
+
+
+@pytest.mark.asyncio
 async def test_set_module_config_rejects_floor_occupancy_sources(hass: HomeAssistant) -> None:
     """Occupancy source config is blocked for floor locations."""
     entry = MockConfigEntry(domain=DOMAIN, data={}, entry_id="test_entry")
@@ -1543,6 +1667,55 @@ async def test_action_rules_list_requires_entry_id_when_location_ambiguous(
     assert err_args[0] == 191
     assert err_args[1] == "entry_required"
     assert "contain location 'interior'" in err_args[2]
+
+
+@pytest.mark.asyncio
+async def test_action_rules_list_ignores_non_kernel_domain_metadata(
+    hass: HomeAssistant,
+) -> None:
+    """actions/rules/list should ignore non-dict metadata under DOMAIN storage."""
+    expected_rules = [
+        {
+            "id": "rule_1",
+            "entity_id": "automation.rule_1",
+            "name": "Interior Vacant: Garage (turn off)",
+            "trigger_type": "vacant",
+            "action_entity_id": "light.garage",
+            "action_service": "turn_off",
+            "require_dark": False,
+            "enabled": True,
+        }
+    ]
+    managed_action_rules = AsyncMock()
+    managed_action_rules.async_list_rules = AsyncMock(return_value=expected_rules)
+    location_manager = Mock()
+    location_manager.get_location.side_effect = (
+        lambda location_id: object() if location_id == "interior" else None
+    )
+
+    hass.data[DOMAIN] = {
+        "entry_1": {
+            "location_manager": location_manager,
+            "managed_action_rules": managed_action_rules,
+        },
+        "_automation_api_refresh_token": object(),
+    }
+
+    connection = _fake_connection()
+    handle_action_rules_list(
+        hass,
+        connection,
+        {
+            "id": 192,
+            "type": WS_TYPE_ACTION_RULES_LIST,
+            "location_id": "interior",
+        },
+    )
+    await hass.async_block_till_done()
+
+    managed_action_rules.async_list_rules.assert_awaited_once_with("interior")
+    connection.send_error.assert_not_called()
+    connection.send_result.assert_called_once_with(192, {"rules": expected_rules})
 
 
 @pytest.mark.asyncio

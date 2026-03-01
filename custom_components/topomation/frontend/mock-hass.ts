@@ -1310,6 +1310,67 @@ export function createMockHass(options: any = {}): any {
       connection.fireEvent("topomation_updated", { reason: "reorder" });
       return { success: true, ha_floor_id: movedRoot.modules?._meta?.ha_floor_id ?? null };
     }
+    if (request.type === "topomation/locations/assign_entity") {
+      const entityId = String(request?.entity_id || "").trim();
+      const targetLocationId = request?.target_location_id
+        ? String(request.target_location_id).trim()
+        : "";
+      if (!entityId) {
+        throw new Error("invalid_entity: entity_id is required");
+      }
+      const target = locations.find((loc) => loc.id === targetLocationId);
+      if (!target) {
+        throw new Error(`target_not_found: Target location '${targetLocationId}' not found.`);
+      }
+
+      const previousLocationIds: string[] = [];
+      const nextLocations = locations.map((loc) => {
+        const currentIds = Array.isArray(loc.entity_ids) ? [...loc.entity_ids] : [];
+        if (currentIds.includes(entityId)) {
+          previousLocationIds.push(loc.id);
+        }
+        return {
+          ...loc,
+          entity_ids: currentIds.filter((id) => id !== entityId),
+        };
+      });
+
+      const targetIndex = nextLocations.findIndex((loc) => loc.id === targetLocationId);
+      if (targetIndex >= 0 && !nextLocations[targetIndex].entity_ids.includes(entityId)) {
+        nextLocations[targetIndex] = {
+          ...nextLocations[targetIndex],
+          entity_ids: [...nextLocations[targetIndex].entity_ids, entityId],
+        };
+      }
+      locations = nextLocations;
+
+      if (target.ha_area_id && states[entityId]) {
+        states = {
+          ...states,
+          [entityId]: {
+            ...states[entityId],
+            attributes: {
+              ...(states[entityId]?.attributes || {}),
+              area_id: target.ha_area_id,
+            },
+          },
+        };
+      }
+
+      persistSnapshot();
+      connection.fireEvent("topomation_updated", {
+        reason: "assign_entity",
+        location_id: targetLocationId,
+        entity_id: entityId,
+      });
+      return {
+        success: true,
+        entity_id: entityId,
+        previous_location_ids: previousLocationIds,
+        target_location_id: targetLocationId,
+        ha_area_id: target.ha_area_id ?? null,
+      };
+    }
     if (request.type === "topomation/locations/delete") {
       const locationId = String(request?.location_id || "");
       const target = locations.find((loc) => loc.id === locationId);

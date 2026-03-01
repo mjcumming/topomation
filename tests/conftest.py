@@ -16,9 +16,11 @@ import os
 import sys
 from collections.abc import Generator
 from pathlib import Path
+from urllib.parse import urlparse
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
+import pytest_socket
 from homeassistant.const import CONF_ID
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -121,6 +123,22 @@ def live_ha_config():
         pytest.skip("Live HA tests require HA_TOKEN environment variable")
 
     return _LiveHAConfig(config)
+
+
+@pytest.fixture
+def live_ha_socket_enabled(live_ha_config, socket_enabled):
+    """Enable sockets for live HA tests and allowlist the configured HA host."""
+    if live_ha_config["mode"] != "live":
+        yield
+        return
+
+    host = urlparse(str(live_ha_config["url"])).hostname
+    allowed_hosts = ["127.0.0.1"]
+    if host:
+        allowed_hosts.append(host)
+
+    pytest_socket.socket_allow_hosts(allowed_hosts, allow_unix_socket=True)
+    yield
 
 
 @pytest.fixture

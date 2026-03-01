@@ -790,4 +790,56 @@ describe('HtLocationTree - shouldUpdate Performance', () => {
     expect(__TEST__.zoneFromPointerInRow(row, 110, 18, true)).to.equal('outdent');
     expect(__TEST__.zoneFromPointerInRow(row, 130, 18, true)).to.equal('inside');
   });
+
+  it('marks drop target on entity dragover and clears on dragleave', async () => {
+    const element = await fixture<HtLocationTree>(html`
+      <ht-location-tree
+        .hass=${mockHass as HomeAssistant}
+        .locations=${mockLocations}
+      ></ht-location-tree>
+    `);
+
+    const dragEvent = {
+      dataTransfer: { types: ['application/x-topomation-entity-id'] },
+      preventDefault: () => {},
+    } as unknown as DragEvent;
+    (element as any)._handleEntityDragOver(dragEvent, 'kitchen');
+    expect((element as any)._entityDropTargetId).to.equal('kitchen');
+
+    const leaveEvent = {
+      dataTransfer: { types: ['application/x-topomation-entity-id'] },
+      relatedTarget: null,
+    } as unknown as DragEvent;
+    (element as any)._handleEntityDragLeave(leaveEvent, 'kitchen');
+    expect((element as any)._entityDropTargetId).to.equal(undefined);
+  });
+
+  it('emits entity-dropped when a device payload is dropped on a location row', async () => {
+    const element = await fixture<HtLocationTree>(html`
+      <ht-location-tree
+        .hass=${mockHass as HomeAssistant}
+        .locations=${mockLocations}
+      ></ht-location-tree>
+    `);
+
+    let detail: any;
+    element.addEventListener('entity-dropped', (event: Event) => {
+      detail = (event as CustomEvent).detail;
+    });
+
+    const dropEvent = {
+      dataTransfer: {
+        getData: (type: string) =>
+          type === 'application/x-topomation-entity-id' ? 'light.kitchen' : '',
+      },
+      preventDefault: () => {},
+      stopPropagation: () => {},
+    } as unknown as DragEvent;
+    (element as any)._handleEntityDrop(dropEvent, 'living-room');
+
+    expect(detail).to.deep.equal({
+      entityId: 'light.kitchen',
+      targetLocationId: 'living-room',
+    });
+  });
 });

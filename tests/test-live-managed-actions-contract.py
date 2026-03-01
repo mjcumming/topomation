@@ -76,7 +76,7 @@ async def _wait_for(
 @pytest.mark.asyncio
 async def test_managed_action_rule_registers_and_enumerates_in_live_ha(
     live_ha_config,
-    socket_enabled,
+    live_ha_socket_enabled,
 ):
     """Validate managed-rule contract against a real HA instance."""
     if live_ha_config["mode"] != "live":
@@ -134,6 +134,35 @@ async def test_managed_action_rule_registers_and_enumerates_in_live_ha(
         location_id = occupancy_state["attributes"]["location_id"]
         action_entity_id = action_target["entity_id"]
         ws_url = _ws_url_from_http(ha_url)
+        occupancy_entity_id = str(occupancy_state.get("entity_id", ""))
+
+        registry_entries = await _ws_command(
+            session,
+            ws_url,
+            token,
+            {"type": "config/entity_registry/list"},
+            msg_id=9,
+        )
+        if not isinstance(registry_entries, list):
+            pytest.skip("Entity registry unavailable; cannot resolve Topomation entry_id")
+
+        occupancy_registry_entry = next(
+            (
+                entry
+                for entry in registry_entries
+                if isinstance(entry, dict) and entry.get("entity_id") == occupancy_entity_id
+            ),
+            None,
+        )
+        entry_id = (
+            str(occupancy_registry_entry.get("config_entry_id", "")).strip()
+            if isinstance(occupancy_registry_entry, dict)
+            else ""
+        )
+        if not entry_id:
+            pytest.skip(
+                f"Could not resolve config entry for occupancy entity {occupancy_entity_id}"
+            )
 
         nonce = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
         create_message = await _ws_command(
@@ -148,6 +177,7 @@ async def test_managed_action_rule_registers_and_enumerates_in_live_ha(
                 "action_entity_id": action_entity_id,
                 "action_service": "turn_on",
                 "require_dark": False,
+                "entry_id": entry_id,
             },
             msg_id=10,
             expect_success=False,
@@ -200,6 +230,7 @@ async def test_managed_action_rule_registers_and_enumerates_in_live_ha(
             {
                 "type": "topomation/actions/rules/list",
                 "location_id": location_id,
+                "entry_id": entry_id,
             },
             msg_id=13,
         )
@@ -238,6 +269,7 @@ async def test_managed_action_rule_registers_and_enumerates_in_live_ha(
                 "type": "topomation/actions/rules/set_enabled",
                 "entity_id": automation_entity_id,
                 "enabled": False,
+                "entry_id": entry_id,
             },
             msg_id=15,
             expect_success=False,
@@ -262,6 +294,7 @@ async def test_managed_action_rule_registers_and_enumerates_in_live_ha(
                 "type": "topomation/actions/rules/set_enabled",
                 "entity_id": automation_entity_id,
                 "enabled": True,
+                "entry_id": entry_id,
             },
             msg_id=16,
             expect_success=False,
@@ -286,6 +319,7 @@ async def test_managed_action_rule_registers_and_enumerates_in_live_ha(
                 "type": "topomation/actions/rules/delete",
                 "automation_id": automation_id,
                 "entity_id": automation_entity_id,
+                "entry_id": entry_id,
             },
             msg_id=17,
             expect_success=False,

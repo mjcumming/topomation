@@ -1594,6 +1594,53 @@ Tree drag-and-drop used a flat-list engine (SortableJS) and inferred tree intent
 
 ---
 
+### ADR-HA-040: Device Assignment Workspace Uses Single-Depth Grouped List + Left-Tree Targets (2026-03-01)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+
+Device assignment UX needed to support both HA-backed areas and integration-owned
+structural nodes (`floor`/`building`/`grounds`) without introducing a second
+recursive tree in the right panel. Prior discussions identified two risks:
+
+- Tree-on-tree interaction complexity and accidental drag/drop errors.
+- Loss of visibility when showing only unassigned devices.
+
+**Decision**:
+
+1. Keep a single recursive hierarchy control on the left (`ht-location-tree`).
+2. Add a right-side **grouped device list** (single depth), not a recursive tree:
+   `Unassigned` + assigned groups by Topomation location.
+3. Support assignment by:
+   - Dragging a device row (right) and dropping on a left tree location row.
+   - Single-click assign from device row to currently selected left location.
+4. Enforce single assignment with a dedicated backend command:
+   `topomation/locations/assign_entity`.
+5. Preserve integration-owned non-area assignments during HA area reconciliation:
+   sync manager excludes explicitly assigned non-HA entities from HA area wrapper
+   remapping.
+6. If assignment target is HA-backed area, update HA entity registry `area_id`.
+   For non-area targets, assignment remains Topomation metadata.
+
+**Rationale**:
+
+1. One hierarchy widget reduces DnD cognitive load and implementation risk.
+2. Grouped list preserves full device visibility without right-side recursion.
+3. Dedicated assign command clarifies contract and keeps assignment logic server-side.
+4. Sync exclusion prevents HA canonical area mapping from overwriting explicit
+   Topomation floor/building/grounds placement.
+
+**Consequences**:
+
+- ✅ Assignment UX remains simple: source list on right, targets on left.
+- ✅ Supports locations Home Assistant cannot model directly.
+- ✅ No sync-status/reassignment banner noise; reconciliation is silent.
+- ⚠️ Topology-owned non-area assignments can diverge from HA area placement by design.
+- ℹ️ Future enhancement can add bulk assignment on top of the same command.
+
+---
+
 ## How to Use This Log
 
 ### When to Create an ADR

@@ -9,7 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-(None.)
+## [0.2.6] - 2026-03-01
+
+### Added
+
+- Device assignment WebSocket command: `topomation/locations/assign_entity`.
+  It enforces single-location assignment per entity, updates HA `area_id` when
+  assigning to HA-backed area wrappers, and persists assignment changes.
+
+### Changed
+
+- Topology panel right side now includes a grouped device assignment workspace
+  (`Unassigned` + Topomation location groups) with search and per-row assign
+  controls.
+- Left tree rows now accept device drops from the right-side list and emit a
+  dedicated `entity-dropped` event for assignment handling.
+- Sync reconciliation now preserves explicit non-HA location assignments
+  (for example floor/building/grounds) by excluding those entities from HA-area
+  wrapper remapping.
 
 ## [0.2.5] - 2026-03-01
 

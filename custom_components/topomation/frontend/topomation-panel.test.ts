@@ -905,6 +905,157 @@ describe('TopomationPanel integration (fake hass)', () => {
     );
   });
 
+  it("renders grouped device assignment list with unassigned and location buckets", async () => {
+    const locationsWithEntities: Location[] = locations.map((loc) =>
+      loc.id === "kitchen"
+        ? { ...loc, entity_ids: ["light.kitchen_main"] }
+        : loc.id === "main_floor"
+          ? { ...loc, entity_ids: ["switch.floor_fan"] }
+          : { ...loc }
+    );
+
+    const hass: HomeAssistant = {
+      callWS: async <T>(req: Record<string, any>): Promise<T> => {
+        if (req.type === "topomation/locations/list") {
+          return { locations: locationsWithEntities } as T;
+        }
+        if (req.type === "config/entity_registry/list") {
+          return [
+            { entity_id: "light.kitchen_main", area_id: "kitchen", device_id: null },
+            { entity_id: "switch.floor_fan", area_id: null, device_id: null },
+            { entity_id: "light.unassigned", area_id: null, device_id: null },
+          ] as T;
+        }
+        if (req.type === "config/device_registry/list") {
+          return [] as T;
+        }
+        throw new Error("Unexpected WS call");
+      },
+      connection: {},
+      states: {
+        "light.kitchen_main": {
+          entity_id: "light.kitchen_main",
+          state: "off",
+          attributes: { friendly_name: "Kitchen Main", area_id: "kitchen" },
+        },
+        "switch.floor_fan": {
+          entity_id: "switch.floor_fan",
+          state: "off",
+          attributes: { friendly_name: "Floor Fan" },
+        },
+        "light.unassigned": {
+          entity_id: "light.unassigned",
+          state: "off",
+          attributes: { friendly_name: "Spare Lamp" },
+        },
+      },
+      areas: {
+        kitchen: { area_id: "kitchen", name: "Kitchen" },
+      } as any,
+      floors: {},
+      config: { location_name: "Test Property" },
+      localize: (key: string) => key,
+    };
+
+    const element = await fixture<HTMLDivElement>(html`
+      <topomation-panel .hass=${hass}></topomation-panel>
+    `);
+
+    await waitUntil(() => (element as any)._loading === false, "panel did not finish loading");
+    await (element as any).updateComplete;
+
+    const unassignedGroup = element.shadowRoot!.querySelector(
+      '[data-testid="device-group-unassigned"]'
+    );
+    const kitchenGroup = element.shadowRoot!.querySelector('[data-testid="device-group-kitchen"]');
+    const floorGroup = element.shadowRoot!.querySelector('[data-testid="device-group-main_floor"]');
+
+    expect(unassignedGroup?.textContent || "").to.contain("Spare Lamp");
+    expect(kitchenGroup?.textContent || "").to.contain("Kitchen Main");
+    expect(floorGroup?.textContent || "").to.contain("Floor Fan");
+  });
+
+  it("assigns a device when dropped on tree and calls assign websocket command", async () => {
+    const callWsCalls: Array<Record<string, any>> = [];
+    let locationsState: Location[] = locations.map((loc) =>
+      loc.id === "kitchen" ? { ...loc, entity_ids: [] } : { ...loc }
+    );
+
+    const hass: HomeAssistant = {
+      callWS: async <T>(req: Record<string, any>): Promise<T> => {
+        callWsCalls.push(req);
+        if (req.type === "topomation/locations/list") {
+          return { locations: locationsState } as T;
+        }
+        if (req.type === "config/entity_registry/list") {
+          return [{ entity_id: "light.unassigned", area_id: null, device_id: null }] as T;
+        }
+        if (req.type === "config/device_registry/list") {
+          return [] as T;
+        }
+        if (req.type === "topomation/locations/assign_entity") {
+          locationsState = locationsState.map((loc) => ({
+            ...loc,
+            entity_ids:
+              loc.id === req.target_location_id
+                ? [...(loc.entity_ids || []).filter((id) => id !== req.entity_id), req.entity_id]
+                : (loc.entity_ids || []).filter((id) => id !== req.entity_id),
+          }));
+          return {
+            success: true,
+            entity_id: req.entity_id,
+            target_location_id: req.target_location_id,
+            ha_area_id: null,
+          } as T;
+        }
+        throw new Error("Unexpected WS call");
+      },
+      connection: {},
+      states: {
+        "light.unassigned": {
+          entity_id: "light.unassigned",
+          state: "off",
+          attributes: { friendly_name: "Spare Lamp" },
+        },
+      },
+      areas: {},
+      floors: {},
+      config: { location_name: "Test Property" },
+      localize: (key: string) => key,
+    };
+
+    const element = await fixture<HTMLDivElement>(html`
+      <topomation-panel .hass=${hass}></topomation-panel>
+    `);
+
+    await waitUntil(() => (element as any)._loading === false, "panel did not finish loading");
+
+    const tree = element.shadowRoot!.querySelector("ht-location-tree") as HTMLElement;
+    expect(tree).to.exist;
+
+    tree.dispatchEvent(
+      new CustomEvent("entity-dropped", {
+        detail: { entityId: "light.unassigned", targetLocationId: "kitchen" },
+        bubbles: true,
+        composed: true,
+      })
+    );
+
+    await waitUntil(
+      () =>
+        callWsCalls.some(
+          (call) =>
+            call.type === "topomation/locations/assign_entity" &&
+            call.entity_id === "light.unassigned" &&
+            call.target_location_id === "kitchen"
+        ),
+      "assign websocket command was not called"
+    );
+
+    const kitchen = (element as any)._locations.find((loc: Location) => loc.id === "kitchen");
+    expect(kitchen?.entity_ids || []).to.include("light.unassigned");
+  });
+
   it("resolves manager view from panel config and path", async () => {
     const element = document.createElement("topomation-panel") as any;
 

@@ -119,6 +119,17 @@ export HA_TOKEN
 export TEST_MODE="${TEST_MODE:-live}"
 export TEST_TIMEOUT="${TEST_TIMEOUT:-10}"
 
+# pytest-socket blocks non-local hosts by default in our test stack.
+# Allow the configured HA host so live contract tests can connect.
+HA_HOST="$(python - "$HA_URL" <<'PY'
+from urllib.parse import urlparse
+import sys
+
+parsed = urlparse(sys.argv[1])
+print(parsed.hostname or "")
+PY
+)"
+
 # Run tests
 echo ""
 echo -e "${BLUE}🧪 Running real-world tests against live HA...${NC}"
@@ -134,7 +145,11 @@ fi
 
 # Run pytest with live-ha mode enabled.
 # Live contract checks should not trip coverage thresholds from unit suites.
-pytest "$TEST_PATH" -v -m "not mock_only" --live-ha --no-cov "$@" || TEST_RESULT=$?
+if [ -n "$HA_HOST" ]; then
+    pytest "$TEST_PATH" -v -m "not mock_only" --live-ha --no-cov --allow-hosts="$HA_HOST" "$@" || TEST_RESULT=$?
+else
+    pytest "$TEST_PATH" -v -m "not mock_only" --live-ha --no-cov "$@" || TEST_RESULT=$?
+fi
 
 echo ""
 if [ ${TEST_RESULT:-0} -eq 0 ]; then

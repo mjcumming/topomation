@@ -3,6 +3,7 @@ import { LitElement, html, css, PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import type { HomeAssistant, Location, LocationType } from "./types";
 import { sharedStyles } from "./styles";
+import { getLocationType } from "./hierarchy-rules";
 
 import "./ht-location-tree";
 import "./ht-location-inspector";
@@ -14,6 +15,15 @@ const TREE_PANEL_SPLIT_STORAGE_KEY = "topomation:panel-tree-split";
 const TREE_PANEL_SPLIT_DEFAULT = 0.4;
 const TREE_PANEL_SPLIT_MIN = 0.25;
 const TREE_PANEL_SPLIT_MAX = 0.75;
+const ENTITY_DND_MIME = "application/x-topomation-entity-id";
+
+type DeviceGroup = {
+  key: string;
+  label: string;
+  type: "unassigned" | "area" | "subarea" | "floor" | "building" | "grounds" | "other";
+  locationId?: string;
+  entities: string[];
+};
 
 console.log("[topomation-panel] module loaded");
 
@@ -62,6 +72,9 @@ export class TopomationPanel extends LitElement {
     _occupancyStateByLocation: { state: true },
     _treePanelSplit: { state: true },
     _isResizingPanels: { state: true },
+    _entityAreaById: { state: true },
+    _entitySearch: { state: true },
+    _assignBusyByEntityId: { state: true },
   };
 
   @state() private _locations: Location[] = [];
@@ -94,6 +107,9 @@ export class TopomationPanel extends LitElement {
   @state() private _occupancyStateByLocation: Record<string, boolean> = {};
   @state() private _treePanelSplit = TREE_PANEL_SPLIT_DEFAULT;
   @state() private _isResizingPanels = false;
+  @state() private _entityAreaById: Record<string, string | null> = {};
+  @state() private _entitySearch = "";
+  @state() private _assignBusyByEntityId: Record<string, boolean> = {};
 
   private _hasLoaded = false;
   private _pendingLoadTimer?: number;
@@ -390,6 +406,122 @@ export class TopomationPanel extends LitElement {
         min-height: 0;
       }
 
+      ht-location-inspector {
+        flex: 1 1 auto;
+        min-height: 0;
+      }
+
+      .device-assignment-panel {
+        flex: 0 0 auto;
+        min-height: 180px;
+        max-height: 42%;
+        overflow: auto;
+        border-bottom: 1px solid var(--divider-color);
+        padding: 0 var(--spacing-md) var(--spacing-md);
+      }
+
+      .device-panel-head {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        background: var(--card-background-color);
+        padding: var(--spacing-md) 0 var(--spacing-sm);
+      }
+
+      .device-panel-title {
+        font-size: 16px;
+        font-weight: 600;
+        margin-bottom: 2px;
+      }
+
+      .device-panel-subtitle {
+        font-size: 12px;
+        color: var(--text-secondary-color);
+      }
+
+      .device-search {
+        width: 100%;
+        margin-top: var(--spacing-sm);
+        padding: 8px 10px;
+        border-radius: 8px;
+        border: 1px solid var(--divider-color);
+        background: var(--card-background-color);
+        color: var(--primary-text-color);
+      }
+
+      .device-group {
+        margin-top: var(--spacing-sm);
+        border: 1px solid var(--divider-color);
+        border-radius: 8px;
+        overflow: hidden;
+      }
+
+      .device-group-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 8px 10px;
+        background: rgba(var(--rgb-primary-color), 0.06);
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+      }
+
+      .device-group-count {
+        color: var(--text-secondary-color);
+        font-weight: 600;
+        font-size: 11px;
+      }
+
+      .device-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 12px;
+        align-items: center;
+        padding: 8px 10px;
+        border-top: 1px solid rgba(var(--rgb-primary-text-color, 0, 0, 0), 0.06);
+        background: var(--card-background-color);
+      }
+
+      .device-row[draggable="true"] {
+        cursor: grab;
+      }
+
+      .device-row[draggable="true"]:active {
+        cursor: grabbing;
+      }
+
+      .device-name {
+        font-size: 13px;
+        font-weight: 600;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .device-meta {
+        margin-top: 2px;
+        color: var(--text-secondary-color);
+        font-size: 11px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .device-assign-btn {
+        font-size: 11px;
+        padding: 4px 8px;
+        border-radius: 6px;
+      }
+
+      .device-empty {
+        padding: 14px 10px;
+        color: var(--text-secondary-color);
+        font-size: 12px;
+      }
+
       /* Loading and error states */
       .loading-container {
         display: flex;
@@ -652,6 +784,7 @@ export class TopomationPanel extends LitElement {
             @location-occupancy-toggle=${this._handleLocationOccupancyToggle}
             @location-renamed=${this._handleLocationRenamed}
             @location-delete=${this._handleLocationDelete}
+            @entity-dropped=${this._handleEntityDropped}
           ></ht-location-tree>
         </div>
 
@@ -674,6 +807,7 @@ export class TopomationPanel extends LitElement {
           <div class="header">
             <div class="header-title">${rightHeaderTitle}</div>
           </div>
+          ${this._renderDeviceAssignmentPanel(selectedLocation)}
           <ht-location-inspector
             .hass=${this.hass}
             .location=${selectedLocation}
@@ -737,6 +871,317 @@ export class TopomationPanel extends LitElement {
         @saved=${this._handleLocationDialogSaved}
       ></ht-location-dialog>
     `;
+  }
+
+  private async _loadEntityAreaIndex(): Promise<void> {
+    if (!this.hass?.callWS) return;
+
+    try {
+      const [entityRegistry, deviceRegistry] = await Promise.all([
+        this.hass.callWS<any[]>({ type: "config/entity_registry/list" }),
+        this.hass.callWS<any[]>({ type: "config/device_registry/list" }),
+      ]);
+
+      const deviceAreaById = new Map<string, string>();
+      if (Array.isArray(deviceRegistry)) {
+        for (const device of deviceRegistry) {
+          const deviceId = typeof device?.id === "string" ? device.id : undefined;
+          const areaId = typeof device?.area_id === "string" ? device.area_id : undefined;
+          if (deviceId && areaId) {
+            deviceAreaById.set(deviceId, areaId);
+          }
+        }
+      }
+
+      const areaByEntityId: Record<string, string | null> = {};
+      if (Array.isArray(entityRegistry)) {
+        for (const entity of entityRegistry) {
+          const entityId = typeof entity?.entity_id === "string" ? entity.entity_id : undefined;
+          if (!entityId) continue;
+          const explicitAreaId = typeof entity?.area_id === "string" ? entity.area_id : undefined;
+          const inheritedAreaId =
+            typeof entity?.device_id === "string"
+              ? deviceAreaById.get(entity.device_id)
+              : undefined;
+          areaByEntityId[entityId] = explicitAreaId || inheritedAreaId || null;
+        }
+      }
+
+      this._entityAreaById = areaByEntityId;
+    } catch (err) {
+      // Non-admin or restricted installs may block registry endpoints; fallback to state attrs.
+      console.debug("[topomation-panel] failed to load entity/device registry area mapping", err);
+    }
+  }
+
+  private _renderDeviceAssignmentPanel(selectedLocation?: Location) {
+    const groups = this._buildDeviceGroups();
+    const targetLabel = selectedLocation ? selectedLocation.name : "Select a location";
+
+    return html`
+      <div class="device-assignment-panel">
+        <div class="device-panel-head">
+          <div class="device-panel-title">Device Assignment</div>
+          <div class="device-panel-subtitle">
+            Assign target: <strong>${targetLabel}</strong>
+          </div>
+          <input
+            class="device-search"
+            type="search"
+            .value=${this._entitySearch}
+            placeholder="Search devices..."
+            @input=${this._handleDeviceSearch}
+          />
+        </div>
+
+        ${groups.length === 0
+          ? html`<div class="device-empty">No devices available.</div>`
+          : groups.map((group) => this._renderDeviceGroup(group, selectedLocation?.id))}
+      </div>
+    `;
+  }
+
+  private _renderDeviceGroup(group: DeviceGroup, selectedLocationId?: string) {
+    return html`
+      <section class="device-group" data-testid=${`device-group-${group.key}`}>
+        <div class="device-group-header">
+          <span>${group.label}</span>
+          <span class="device-group-count">${group.entities.length}</span>
+        </div>
+        ${group.entities.length === 0
+          ? html`<div class="device-empty">No devices in this group.</div>`
+          : group.entities.map((entityId) => {
+              const busy = Boolean(this._assignBusyByEntityId[entityId]);
+              const entityName = this._entityDisplayName(entityId);
+              const areaId = this._effectiveAreaIdForEntity(entityId);
+              const areaLabel = this._areaLabel(areaId);
+              return html`
+                <div
+                  class="device-row"
+                  draggable="true"
+                  data-entity-id=${entityId}
+                  @dragstart=${(event: DragEvent) => this._handleDeviceDragStart(event, entityId)}
+                >
+                  <div>
+                    <div class="device-name">${entityName}</div>
+                    <div class="device-meta">${entityId} · HA Area: ${areaLabel}</div>
+                  </div>
+                  <button
+                    class="button button-secondary device-assign-btn"
+                    ?disabled=${!selectedLocationId || busy}
+                    @click=${() => this._handleAssignButton(entityId, selectedLocationId)}
+                  >
+                    ${busy ? "Assigning..." : "Assign"}
+                  </button>
+                </div>
+              `;
+            })}
+      </section>
+    `;
+  }
+
+  private _handleDeviceSearch = (event: Event): void => {
+    const value = (event.target as HTMLInputElement | null)?.value ?? "";
+    this._entitySearch = value;
+  };
+
+  private _handleDeviceDragStart(event: DragEvent, entityId: string): void {
+    event.dataTransfer?.setData(ENTITY_DND_MIME, entityId);
+    event.dataTransfer?.setData("text/plain", entityId);
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = "move";
+    }
+  }
+
+  private _handleEntityDropped = (event: CustomEvent): void => {
+    event.stopPropagation();
+    const entityId = event.detail?.entityId;
+    const targetLocationId = event.detail?.targetLocationId;
+    if (!entityId || !targetLocationId) return;
+    void this._assignEntityToLocation(entityId, targetLocationId);
+  };
+
+  private _handleAssignButton(entityId: string, selectedLocationId?: string): void {
+    if (!selectedLocationId) {
+      this._showToast("Select a location first", "warning");
+      return;
+    }
+    void this._assignEntityToLocation(entityId, selectedLocationId);
+  }
+
+  private _allKnownEntityIds(): string[] {
+    const ids = new Set<string>();
+    for (const entityId of Object.keys(this.hass?.states || {})) ids.add(entityId);
+    for (const entityId of Object.keys(this._entityAreaById)) ids.add(entityId);
+    for (const location of this._locations) {
+      for (const entityId of location.entity_ids || []) {
+        ids.add(entityId);
+      }
+    }
+    return [...ids];
+  }
+
+  private _entityDisplayName(entityId: string): string {
+    const stateObj = this.hass?.states?.[entityId];
+    const friendly = stateObj?.attributes?.friendly_name;
+    return typeof friendly === "string" && friendly.trim() ? friendly : entityId;
+  }
+
+  private _effectiveAreaIdForEntity(entityId: string): string | null {
+    if (Object.prototype.hasOwnProperty.call(this._entityAreaById, entityId)) {
+      return this._entityAreaById[entityId];
+    }
+    const attrs = this.hass?.states?.[entityId]?.attributes || {};
+    return typeof attrs.area_id === "string" ? attrs.area_id : null;
+  }
+
+  private _areaLabel(areaId: string | null): string {
+    if (!areaId) return "Unassigned";
+    return this.hass?.areas?.[areaId]?.name || areaId;
+  }
+
+  private _isAssignableEntity(entityId: string): boolean {
+    const attrs = this.hass?.states?.[entityId]?.attributes || {};
+    return !(attrs?.device_class === "occupancy" && attrs?.location_id);
+  }
+
+  private _groupTypeForLocation(location: Location): DeviceGroup["type"] {
+    const type = getLocationType(location);
+    if (type === "area") return "area";
+    if (type === "subarea") return "subarea";
+    if (type === "floor") return "floor";
+    if (type === "building") return "building";
+    if (type === "grounds") return "grounds";
+    return "other";
+  }
+
+  private _buildDeviceGroups(): DeviceGroup[] {
+    const byLocationId = new Map(this._locations.map((location) => [location.id, location]));
+    const assignedByEntityId = new Map<string, string>();
+    for (const location of this._locations) {
+      for (const entityId of location.entity_ids || []) {
+        if (entityId && !assignedByEntityId.has(entityId)) {
+          assignedByEntityId.set(entityId, location.id);
+        }
+      }
+    }
+
+    const query = this._entitySearch.trim().toLowerCase();
+    const groupsByKey = new Map<string, DeviceGroup>();
+
+    const ensureGroup = (key: string, label: string, type: DeviceGroup["type"], locationId?: string): DeviceGroup => {
+      const existing = groupsByKey.get(key);
+      if (existing) return existing;
+      const created: DeviceGroup = { key, label, type, locationId, entities: [] };
+      groupsByKey.set(key, created);
+      return created;
+    };
+
+    ensureGroup("unassigned", "Unassigned", "unassigned");
+
+    for (const entityId of this._allKnownEntityIds()) {
+      if (!this._isAssignableEntity(entityId)) continue;
+      const entityName = this._entityDisplayName(entityId);
+      const assignedLocationId = assignedByEntityId.get(entityId);
+      const assignedLocation = assignedLocationId ? byLocationId.get(assignedLocationId) : undefined;
+      const areaLabel = this._areaLabel(this._effectiveAreaIdForEntity(entityId));
+
+      if (query) {
+        const haystack = `${entityName} ${entityId} ${assignedLocation?.name || ""} ${areaLabel}`.toLowerCase();
+        if (!haystack.includes(query)) continue;
+      }
+
+      if (!assignedLocation) {
+        ensureGroup("unassigned", "Unassigned", "unassigned").entities.push(entityId);
+        continue;
+      }
+
+      const groupType = this._groupTypeForLocation(assignedLocation);
+      ensureGroup(
+        assignedLocation.id,
+        assignedLocation.name,
+        groupType,
+        assignedLocation.id
+      ).entities.push(entityId);
+    }
+
+    for (const group of groupsByKey.values()) {
+      group.entities.sort((left, right) =>
+        this._entityDisplayName(left).localeCompare(this._entityDisplayName(right))
+      );
+    }
+
+    const rank: Record<DeviceGroup["type"], number> = {
+      unassigned: 0,
+      area: 1,
+      subarea: 2,
+      floor: 3,
+      building: 4,
+      grounds: 5,
+      other: 6,
+    };
+
+    return [...groupsByKey.values()]
+      .filter((group) => group.entities.length > 0 || group.key === "unassigned")
+      .sort((left, right) => {
+        const rankDiff = rank[left.type] - rank[right.type];
+        if (rankDiff !== 0) return rankDiff;
+        return left.label.localeCompare(right.label);
+      });
+  }
+
+  private _applyEntityAssignmentLocally(entityId: string, targetLocationId: string): void {
+    const nextLocations = this._locations.map((location) => ({
+      ...location,
+      entity_ids: (location.entity_ids || []).filter((item) => item !== entityId),
+    }));
+
+    const target = nextLocations.find((location) => location.id === targetLocationId);
+    if (target && !target.entity_ids.includes(entityId)) {
+      target.entity_ids = [...target.entity_ids, entityId];
+    }
+
+    this._locations = nextLocations;
+    this._locationsVersion += 1;
+    if (target?.ha_area_id) {
+      this._entityAreaById = { ...this._entityAreaById, [entityId]: target.ha_area_id };
+    }
+  }
+
+  private async _assignEntityToLocation(entityId: string, targetLocationId: string): Promise<void> {
+    if (!entityId || !targetLocationId) return;
+    if (this._assignBusyByEntityId[entityId]) return;
+    const target = this._locations.find((location) => location.id === targetLocationId);
+    if (!target) {
+      this._showToast("Target location not found", "error");
+      return;
+    }
+
+    const snapshot = this._locations.map((location) => ({
+      ...location,
+      entity_ids: [...(location.entity_ids || [])],
+    }));
+    this._assignBusyByEntityId = { ...this._assignBusyByEntityId, [entityId]: true };
+    this._applyEntityAssignmentLocally(entityId, targetLocationId);
+
+    try {
+      await this.hass.callWS(
+        this._withEntryId({
+          type: "topomation/locations/assign_entity",
+          entity_id: entityId,
+          target_location_id: targetLocationId,
+        })
+      );
+      await this._loadLocations(true);
+    } catch (error: any) {
+      this._locations = snapshot;
+      this._locationsVersion += 1;
+      console.error("Failed to assign entity:", error);
+      this._showToast(error?.message || "Failed to assign device", "error");
+    } finally {
+      const { [entityId]: _omit, ...remaining } = this._assignBusyByEntityId;
+      this._assignBusyByEntityId = remaining;
+    }
   }
 
   private async _loadLocations(silent = false): Promise<void> {
@@ -807,6 +1252,8 @@ export class TopomationPanel extends LitElement {
       ) {
         this._selectedId = this._locations[0]?.id;
       }
+
+      await this._loadEntityAreaIndex();
     } catch (err: any) {
       console.error("Failed to load locations:", err);
       this._error = err.message || "Failed to load locations";

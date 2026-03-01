@@ -11,6 +11,7 @@ import voluptuous as vol
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import area_registry as ar
+from homeassistant.helpers import entity_registry as er
 
 try:  # Floor registry is optional on older HA builds.
     from homeassistant.helpers import floor_registry as fr
@@ -26,6 +27,7 @@ from .const import (
     WS_TYPE_AMBIENT_AUTO_DISCOVER,
     WS_TYPE_AMBIENT_GET_READING,
     WS_TYPE_AMBIENT_SET_SENSOR,
+    WS_TYPE_LOCATIONS_ASSIGN_ENTITY,
     WS_TYPE_LOCATIONS_CREATE,
     WS_TYPE_LOCATIONS_DELETE,
     WS_TYPE_LOCATIONS_LIST,
@@ -97,14 +99,25 @@ def _get_kernel(
     msg: dict[str, Any],
 ) -> dict[str, Any] | None:
     """Resolve the integration runtime data for a WebSocket command."""
-    domain_data: dict[str, Any] = hass.data.get(DOMAIN, {})
+    raw_domain_data: Any = hass.data.get(DOMAIN, {})
+    if not isinstance(raw_domain_data, dict) or not raw_domain_data:
+        connection.send_error(msg["id"], "not_loaded", "Integration not loaded")
+        return None
+
+    # DOMAIN data may include non-kernel integration metadata (for example
+    # managed-actions API tokens). Only route against dict-based runtime kernels.
+    domain_data: dict[str, dict[str, Any]] = {
+        str(entry_id): kernel
+        for entry_id, kernel in raw_domain_data.items()
+        if isinstance(kernel, dict)
+    }
     if not domain_data:
         connection.send_error(msg["id"], "not_loaded", "Integration not loaded")
         return None
 
     requested_entry_id = msg.get("entry_id")
     if requested_entry_id is not None:
-        kernel = domain_data.get(requested_entry_id)
+        kernel = domain_data.get(str(requested_entry_id))
         if kernel is None:
             connection.send_error(
                 msg["id"],
@@ -112,7 +125,7 @@ def _get_kernel(
                 f"Config entry '{requested_entry_id}' not found",
             )
             return None
-        _remember_connection_entry_hint(connection, requested_entry_id)
+        _remember_connection_entry_hint(connection, str(requested_entry_id))
         return kernel
 
     if len(domain_data) == 1:
@@ -435,6 +448,7 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, handle_locations_delete)
     websocket_api.async_register_command(hass, handle_locations_reorder)
     websocket_api.async_register_command(hass, handle_locations_set_module_config)
+    websocket_api.async_register_command(hass, handle_locations_assign_entity)
 
     # Managed actions
     websocket_api.async_register_command(hass, handle_action_rules_list)
@@ -1002,6 +1016,90 @@ def handle_locations_set_module_config(
         connection.send_result(msg["id"], {"success": True})
     except (ValueError, KeyError) as e:
         connection.send_error(msg["id"], "config_failed", str(e))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): WS_TYPE_LOCATIONS_ASSIGN_ENTITY,
+        vol.Required("entity_id"): str,
+        vol.Required("target_location_id"): vol.Any(str, None),
+        vol.Optional("entry_id"): str,
+    }
+)
+@callback
+def handle_locations_assign_entity(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Assign an entity to exactly one topology location.
+
+    Policy:
+    - Entity is removed from every location before assignment.
+    - Assigning to an HA-backed area also updates HA entity registry `area_id`.
+    - Assigning to non-area topology nodes is integration-only metadata.
+    """
+    kernel = _get_kernel(hass, connection, msg)
+    if kernel is None:
+        return
+
+    loc_mgr = kernel["location_manager"]
+    entity_id = str(msg.get("entity_id", "")).strip()
+    raw_target = msg.get("target_location_id")
+    target_location_id = str(raw_target).strip() if isinstance(raw_target, str) and raw_target.strip() else None
+
+    if not entity_id:
+        connection.send_error(msg["id"], "invalid_entity", "entity_id is required")
+        return
+
+    target_location = loc_mgr.get_location(target_location_id) if target_location_id else None
+    if target_location_id and target_location is None:
+        connection.send_error(
+            msg["id"],
+            "target_not_found",
+            f"Target location '{target_location_id}' not found",
+        )
+        return
+
+    previous_location_ids = [
+        str(getattr(location, "id", ""))
+        for location in loc_mgr.all_locations()
+        if entity_id in (getattr(location, "entity_ids", []) or [])
+    ]
+
+    try:
+        # Enforce single-assignment invariant.
+        if previous_location_ids:
+            loc_mgr.remove_entities_from_location([entity_id])
+
+        if target_location_id:
+            loc_mgr.add_entity_to_location(entity_id, target_location_id)
+
+        synced_ha_area_id: str | None = None
+        if target_location is not None:
+            synced_ha_area_id = _location_ha_area_id(target_location)
+            if synced_ha_area_id:
+                entity_registry = er.async_get(hass)
+                entity_entry = entity_registry.async_get(entity_id)
+                if entity_entry is not None and entity_entry.area_id != synced_ha_area_id:
+                    entity_registry.async_update_entity(entity_id, area_id=synced_ha_area_id)
+
+        schedule_persist = kernel.get("schedule_persist")
+        if callable(schedule_persist):
+            schedule_persist("locations/assign_entity")
+
+        connection.send_result(
+            msg["id"],
+            {
+                "success": True,
+                "entity_id": entity_id,
+                "previous_location_ids": previous_location_ids,
+                "target_location_id": target_location_id,
+                "ha_area_id": synced_ha_area_id,
+            },
+        )
+    except (ValueError, KeyError) as err:
+        connection.send_error(msg["id"], "assign_failed", str(err))
 
 
 # =============================================================================
