@@ -198,6 +198,71 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(testOff.disabled).to.equal(true);
   });
 
+  it("renders light power editor when source_id is keyed but signal_key is missing", async () => {
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>): Promise<T> => {
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        return {} as T;
+      },
+      connection: {},
+      states: {
+        "light.office_lights": {
+          entity_id: "light.office_lights",
+          state: "off",
+          attributes: {
+            friendly_name: "Office Lights",
+            supported_color_modes: ["brightness"],
+          },
+        },
+      },
+      areas: {
+        office: { area_id: "office", name: "Office" },
+      },
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_office";
+    location.name = "Office";
+    location.ha_area_id = "office";
+    location.modules._meta = { type: "area" };
+    location.entity_ids = ["light.office_lights"];
+    location.modules.occupancy = {
+      enabled: true,
+      default_timeout: 300,
+      default_trailing_timeout: 120,
+      occupancy_sources: [
+        {
+          entity_id: "light.office_lights",
+          source_id: "light.office_lights::power",
+          mode: "any_change",
+          on_event: "trigger",
+          on_timeout: 1800,
+          off_event: "none",
+          off_trailing: 0,
+        },
+      ],
+    };
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${location}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    const cards = Array.from(element.shadowRoot!.querySelectorAll(".source-card"));
+    const powerCard = cards.find((card) => (card.textContent || "").includes("Office Lights — Power"));
+    const cardsText = cards.map((card) => (card.textContent || "").trim()).join("\n");
+
+    expect(powerCard).to.exist;
+    expect(powerCard?.querySelector(".source-editor")).to.exist;
+    expect(cardsText).to.not.include("Office Lights — Playback");
+  });
+
   it("loads area entities from HA entity registry when state attributes lack area_id", async () => {
     const callWsCalls: string[] = [];
     const hass: HomeAssistant = {

@@ -1321,7 +1321,7 @@ function z(a) {
     newDraggableIndex: nt
   }, a));
 }
-var m, C, w, D, vt, re, T, rt, At, W, Wt, nt, te, O, kt = !1, he = !1, pe = [], gt, j, Ie, Le, Ei, ki, Nt, $t, Kt, jt = !1, ee = !1, se, R, Pe = [], Ke = !1, fe = [], Se = typeof document < "u", ie = ii, Ai = Qt || et ? "cssFloat" : "float", dn = Se && !Ji && !ii && "draggable" in document.createElement("div"), so = function() {
+var m, C, w, D, vt, re, T, rt, At, W, Wt, nt, te, O, kt = !1, he = !1, pe = [], gt, j, Ie, Le, Ei, ki, Nt, $t, Kt, jt = !1, ee = !1, se, N, Pe = [], Ke = !1, fe = [], Se = typeof document < "u", ie = ii, Ai = Qt || et ? "cssFloat" : "float", dn = Se && !Ji && !ii && "draggable" in document.createElement("div"), so = function() {
   if (Se) {
     if (et)
       return !1;
@@ -1592,7 +1592,7 @@ b.prototype = /** @lends Sortable.prototype */
   },
   _onTouchMove: function(t) {
     if (gt) {
-      var e = this.options, i = e.fallbackTolerance, o = e.fallbackOffset, n = t.touches ? t.touches[0] : t, r = w && Dt(w, !0), s = w && r && r.a, c = w && r && r.d, d = ie && R && $i(R), u = (n.clientX - gt.clientX + o.x) / (s || 1) + (d ? d[0] - Pe[0] : 0) / (s || 1), l = (n.clientY - gt.clientY + o.y) / (c || 1) + (d ? d[1] - Pe[1] : 0) / (c || 1);
+      var e = this.options, i = e.fallbackTolerance, o = e.fallbackOffset, n = t.touches ? t.touches[0] : t, r = w && Dt(w, !0), s = w && r && r.a, c = w && r && r.d, d = ie && N && $i(N), u = (n.clientX - gt.clientX + o.x) / (s || 1) + (d ? d[0] - Pe[0] : 0) / (s || 1), l = (n.clientY - gt.clientY + o.y) / (c || 1) + (d ? d[1] - Pe[1] : 0) / (c || 1);
       if (!b.active && !kt) {
         if (i && Math.max(Math.abs(n.clientX - this._lastX), Math.abs(n.clientY - this._lastY)) < i)
           return;
@@ -1617,9 +1617,9 @@ b.prototype = /** @lends Sortable.prototype */
     if (!w) {
       var t = this.options.fallbackOnBody ? document.body : D, e = L(m, !0, ie, !0, t), i = this.options;
       if (ie) {
-        for (R = t; y(R, "position") === "static" && y(R, "transform") === "none" && R !== document; )
-          R = R.parentNode;
-        R !== document.body && R !== document.documentElement ? (R === document && (R = X()), e.top += R.scrollTop, e.left += R.scrollLeft) : R = X(), Pe = $i(R);
+        for (N = t; y(N, "position") === "static" && y(N, "transform") === "none" && N !== document; )
+          N = N.parentNode;
+        N !== document.body && N !== document.documentElement ? (N === document && (N = X()), e.top += N.scrollTop, e.left += N.scrollLeft) : N = X(), Pe = $i(N);
       }
       w = m.cloneNode(!0), H(w, i.ghostClass, !1), H(w, i.fallbackClass, !0), H(w, i.dragClass, !0), y(w, "transition", ""), y(w, "transform", ""), y(w, "box-sizing", "border-box"), y(w, "margin", 0), y(w, "top", e.top), y(w, "left", e.left), y(w, "width", e.width), y(w, "height", e.height), y(w, "opacity", "0.8"), y(w, "position", ie ? "absolute" : "fixed"), y(w, "zIndex", "100000"), y(w, "pointerEvents", "none"), b.ghost = w, t.appendChild(w), y(w, "transform-origin", Ei / parseInt(w.style.width) * 100 + "% " + ki / parseInt(w.style.height) * 100 + "%");
     }
@@ -1695,27 +1695,27 @@ b.prototype = /** @lends Sortable.prototype */
         if (x && e === t.target && (i = x), i && (n = L(i)), oe(D, e, m, o, i, n, t, !!i) !== !1)
           return k(), x && x.nextSibling ? e.insertBefore(m, x.nextSibling) : e.appendChild(m), C = e, A(), E(!0);
       } else if (x && mn(t, f, this)) {
-        var N = Ct(e, 0, s, !0);
-        if (N === m)
+        var B = Ct(e, 0, s, !0);
+        if (B === m)
           return E(!1);
-        if (i = N, n = L(i), oe(D, e, m, o, i, n, t, !1) !== !1)
-          return k(), e.insertBefore(m, N), C = e, A(), E(!0);
+        if (i = B, n = L(i), oe(D, e, m, o, i, n, t, !1) !== !1)
+          return k(), e.insertBefore(m, B), C = e, A(), E(!0);
       } else if (i.parentNode === e) {
         n = L(i);
-        var B = 0, M, Y = m.parentNode !== e, F = !un(m.animated && m.toRect || o, i.animated && i.toRect || n, f), ut = f ? "top" : "left", it = Si(i, "top", "top") || Si(m, "top", "top"), Lt = it ? it.scrollTop : void 0;
-        $t !== i && (M = n[ut], jt = !1, ee = !F && s.invertSwap || Y), B = vn(t, i, n, f, F ? 1 : s.swapThreshold, s.invertedSwapThreshold == null ? s.swapThreshold : s.invertedSwapThreshold, ee, $t === i);
+        var F = 0, M, Y = m.parentNode !== e, R = !un(m.animated && m.toRect || o, i.animated && i.toRect || n, f), ut = f ? "top" : "left", it = Si(i, "top", "top") || Si(m, "top", "top"), Lt = it ? it.scrollTop : void 0;
+        $t !== i && (M = n[ut], jt = !1, ee = !R && s.invertSwap || Y), F = vn(t, i, n, f, R ? 1 : s.swapThreshold, s.invertedSwapThreshold == null ? s.swapThreshold : s.invertedSwapThreshold, ee, $t === i);
         var Z;
-        if (B !== 0) {
+        if (F !== 0) {
           var ht = K(m);
           do
-            ht -= B, Z = C.children[ht];
+            ht -= F, Z = C.children[ht];
           while (Z && (y(Z, "display") === "none" || Z === w));
         }
-        if (B === 0 || Z === i)
+        if (F === 0 || Z === i)
           return E(!1);
-        $t = i, Kt = B;
+        $t = i, Kt = F;
         var Pt = i.nextElementSibling, ot = !1;
-        ot = B === 1;
+        ot = F === 1;
         var Jt = oe(D, e, m, o, i, n, t, ot);
         if (Jt !== !1)
           return (Jt === 1 || Jt === -1) && (ot = Jt === 1), Ke = !0, setTimeout(gn, 30), k(), ot && !Pt ? e.appendChild(m) : i.parentNode.insertBefore(m, ot ? Pt : i), it && no(it, 0, Lt - it.scrollTop), C = m.parentNode, M !== void 0 && !ee && (se = Math.abs(M - L(i)[ut])), A(), E(!0);
@@ -2049,9 +2049,9 @@ var Ne = oo(function(a, t, e, i) {
     Ve !== e && (Ve = e, le(), Bt = t.scroll, u = t.scrollFn, Bt === !0 && (Bt = ct(e, !0)));
     var l = 0, h = Bt;
     do {
-      var f = h, p = L(f), g = p.top, v = p.bottom, k = p.left, E = p.right, A = p.width, x = p.height, N = void 0, B = void 0, M = f.scrollWidth, Y = f.scrollHeight, F = y(f), ut = f.scrollLeft, it = f.scrollTop;
-      f === c ? (N = A < M && (F.overflowX === "auto" || F.overflowX === "scroll" || F.overflowX === "visible"), B = x < Y && (F.overflowY === "auto" || F.overflowY === "scroll" || F.overflowY === "visible")) : (N = A < M && (F.overflowX === "auto" || F.overflowX === "scroll"), B = x < Y && (F.overflowY === "auto" || F.overflowY === "scroll"));
-      var Lt = N && (Math.abs(E - o) <= r && ut + A < M) - (Math.abs(k - o) <= r && !!ut), Z = B && (Math.abs(v - n) <= r && it + x < Y) - (Math.abs(g - n) <= r && !!it);
+      var f = h, p = L(f), g = p.top, v = p.bottom, k = p.left, E = p.right, A = p.width, x = p.height, B = void 0, F = void 0, M = f.scrollWidth, Y = f.scrollHeight, R = y(f), ut = f.scrollLeft, it = f.scrollTop;
+      f === c ? (B = A < M && (R.overflowX === "auto" || R.overflowX === "scroll" || R.overflowX === "visible"), F = x < Y && (R.overflowY === "auto" || R.overflowY === "scroll" || R.overflowY === "visible")) : (B = A < M && (R.overflowX === "auto" || R.overflowX === "scroll"), F = x < Y && (R.overflowY === "auto" || R.overflowY === "scroll"));
+      var Lt = B && (Math.abs(E - o) <= r && ut + A < M) - (Math.abs(k - o) <= r && !!ut), Z = F && (Math.abs(v - n) <= r && it + x < Y) - (Math.abs(g - n) <= r && !!it);
       if (!I[l])
         for (var ht = 0; ht <= l; ht++)
           I[ht] || (I[ht] = {});
@@ -3308,11 +3308,11 @@ async function Kn(a, t) {
           const v = Bn(g.description);
           if (!v || v.location_id !== t)
             return;
-          const k = qn(l, g), E = Fn(g), A = (h = a.states) == null ? void 0 : h[l.entity_id], x = A ? A.state !== "off" : !0, N = typeof g.alias == "string" && g.alias.trim() || ((f = A == null ? void 0 : A.attributes) == null ? void 0 : f.friendly_name) || l.entity_id;
+          const k = qn(l, g), E = Fn(g), A = (h = a.states) == null ? void 0 : h[l.entity_id], x = A ? A.state !== "off" : !0, B = typeof g.alias == "string" && g.alias.trim() || ((f = A == null ? void 0 : A.attributes) == null ? void 0 : f.friendly_name) || l.entity_id;
           return {
             id: k || l.entity_id,
             entity_id: l.entity_id,
-            name: N,
+            name: B,
             trigger_type: v.trigger_type,
             action_entity_id: E.action_entity_id,
             action_service: E.action_service,
@@ -3725,7 +3725,14 @@ const ve = class ve extends dt {
     return e ? `${t}::${e}` : t;
   }
   _sourceKeyFromSource(t) {
-    return t.signal_key ? this._sourceKey(t.entity_id, t.signal_key) : this._sourceKey(t.entity_id);
+    var e;
+    if (t.signal_key) return this._sourceKey(t.entity_id, t.signal_key);
+    if ((e = t.source_id) != null && e.includes("::")) {
+      const i = t.source_id.split("::")[1];
+      if (i && ["playback", "volume", "mute", "power", "level", "color"].includes(i))
+        return this._sourceKey(t.entity_id, i);
+    }
+    return this._sourceKey(t.entity_id);
   }
   _sourceCardGroupKey(t) {
     return t.entityId.startsWith("light.") && (t.signalKey === "power" || t.signalKey === "level") ? `${t.entityId}::power-level` : t.key;
@@ -3862,7 +3869,7 @@ const ve = class ve extends dt {
       return _`
             <div class="source-card ${g ? "enabled" : ""}">
               ${p.map((v, k) => {
-        const E = o.get(v.key), A = E !== void 0, x = A ? i[E] : void 0, N = A && x ? x : void 0, B = this._modeOptionsForEntity(v.entityId);
+        const E = o.get(v.key), A = E !== void 0, x = A ? i[E] : void 0, B = A && x ? x : void 0, F = this._modeOptionsForEntity(v.entityId);
         return _`
                   <div class=${`source-card-item${k > 0 ? " grouped" : ""}`}>
                     <div class="candidate-item">
@@ -3877,25 +3884,25 @@ const ve = class ve extends dt {
           Y && !A ? this._addSourceWithDefaults(v.entityId, t, {
             resetExternalPicker: !1,
             signalKey: v.signalKey
-          }) : !Y && A && this._removeSource(E, t);
+          }) || this.requestUpdate() : !Y && A && this._removeSource(E, t);
         }}
                         />
                       </div>
                       <div>
                         <div class="candidate-headline">
                           <div class="candidate-title">${this._candidateTitle(v.entityId, v.signalKey)}</div>
-                          ${A && N && B.length > 1 ? _`
+                          ${A && B && F.length > 1 ? _`
                                 <div class="inline-mode-group">
                                   <span class="inline-mode-label">Mode</span>
                                   <select
                                     class="inline-mode-select"
-                                    .value=${B.some((M) => M.value === N.mode) ? N.mode : B[0].value}
+                                    .value=${F.some((M) => M.value === B.mode) ? B.mode : F[0].value}
                                     @change=${(M) => {
-          const Y = M.target.value, F = this.hass.states[v.entityId], ut = Pn(N, Y, F);
-          this._updateSourceDraft(t, E, { ...ut, entity_id: N.entity_id });
+          const Y = M.target.value, R = this.hass.states[v.entityId], ut = Pn(B, Y, R);
+          this._updateSourceDraft(t, E, { ...ut, entity_id: B.entity_id });
         }}
                                   >
-                                    ${B.map((M) => _`<option value=${M.value}>${M.label}</option>`)}
+                                    ${F.map((M) => _`<option value=${M.value}>${M.label}</option>`)}
                                   </select>
                                 </div>
                               ` : ""}
@@ -4595,19 +4602,19 @@ const ve = class ve extends dt {
     delete n[this._sourceKeyFromSource(o)], this._onTimeoutMemory = n, this._setWorkingSources(e, i);
   }
   _addSourceWithDefaults(t, e, i) {
-    if (!this.location || this._isFloorLocation()) return;
+    if (!this.location) return !1;
+    if (this._isFloorLocation())
+      return this._showToast("Floor locations do not support occupancy sources.", "error"), !1;
     const o = this._workingSources(e), n = this._sourceKey(t, i == null ? void 0 : i.signalKey);
     if (o.some((u) => this._sourceKeyFromSource(u) === n))
-      return;
+      return !1;
     const r = this.hass.states[t];
-    if (!r) {
-      this._showToast(`Entity not found: ${t}`, "error");
-      return;
-    }
+    if (!r)
+      return this._showToast(`Entity not found: ${t}`, "error"), !1;
     let c = _o(r);
     (i == null ? void 0 : i.signalKey) === "playback" || (i == null ? void 0 : i.signalKey) === "volume" || (i == null ? void 0 : i.signalKey) === "mute" ? c = this._mediaSignalDefaults(t, i.signalKey) : ((i == null ? void 0 : i.signalKey) === "power" || (i == null ? void 0 : i.signalKey) === "level" || (i == null ? void 0 : i.signalKey) === "color") && (c = this._lightSignalDefaults(t, i.signalKey));
     const d = this._normalizeSource(t, c);
-    this._setWorkingSources(e, [...o, d]), i != null && i.resetExternalPicker && (this._externalAreaId = "", this._externalEntityId = "", this.requestUpdate());
+    return this._setWorkingSources(e, [...o, d]), i != null && i.resetExternalPicker && (this._externalAreaId = "", this._externalEntityId = "", this.requestUpdate()), !0;
   }
   async _persistOccupancySources(t) {
     if (!this.location) return;

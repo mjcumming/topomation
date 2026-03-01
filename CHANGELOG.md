@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Detection source rows now reliably render editable controls when a light
+  source is already configured with a keyed `source_id` (for example
+  `light.office_lights::power`) but lacks an explicit `signal_key`.
+- Source-row toggle handling now forces UI resync after no-op add attempts, so
+  checked rows no longer appear without their editor content.
+
 ## [0.2.10] - 2026-03-01
 
 ### Changed

@@ -1543,6 +1543,12 @@ export class HtLocationInspector extends LitElement {
 
   private _sourceKeyFromSource(source: OccupancySource): string {
     if (source.signal_key) return this._sourceKey(source.entity_id, source.signal_key);
+    if (source.source_id?.includes("::")) {
+      const parsedSignal = source.source_id.split("::")[1] as SourceSignalKey | undefined;
+      if (parsedSignal && ["playback", "volume", "mute", "power", "level", "color"].includes(parsedSignal)) {
+        return this._sourceKey(source.entity_id, parsedSignal);
+      }
+    }
     return this._sourceKey(source.entity_id);
   }
 
@@ -1784,10 +1790,11 @@ export class HtLocationInspector extends LitElement {
                           @change=${(ev: Event) => {
                             const checked = (ev.target as HTMLInputElement).checked;
                             if (checked && !configured) {
-                              this._addSourceWithDefaults(item.entityId, config, {
+                              const added = this._addSourceWithDefaults(item.entityId, config, {
                                 resetExternalPicker: false,
                                 signalKey: item.signalKey,
                               });
+                              if (!added) this.requestUpdate();
                             } else if (!checked && configured) {
                               this._removeSource(sourceIndex, config);
                             }
@@ -2822,18 +2829,22 @@ export class HtLocationInspector extends LitElement {
     entityId: string,
     config: OccupancyConfig,
     options?: { resetExternalPicker?: boolean; signalKey?: SourceSignalKey }
-  ): void {
-    if (!this.location || this._isFloorLocation()) return;
+  ): boolean {
+    if (!this.location) return false;
+    if (this._isFloorLocation()) {
+      this._showToast("Floor locations do not support occupancy sources.", "error");
+      return false;
+    }
     const existing = this._workingSources(config);
     const targetKey = this._sourceKey(entityId, options?.signalKey);
     if (existing.some((source) => this._sourceKeyFromSource(source) === targetKey)) {
-      return;
+      return false;
     }
 
     const entity = this.hass.states[entityId];
     if (!entity) {
       this._showToast(`Entity not found: ${entityId}`, "error");
-      return;
+      return false;
     }
 
     const defaults = getSourceDefaultsForEntity(entity);
@@ -2851,6 +2862,7 @@ export class HtLocationInspector extends LitElement {
       this._externalEntityId = "";
       this.requestUpdate();
     }
+    return true;
   }
 
   private _discardSourceChanges = (): void => {
