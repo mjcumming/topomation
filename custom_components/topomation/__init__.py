@@ -506,10 +506,22 @@ async def _load_configuration(hass: HomeAssistant, loc_mgr: LocationManager) -> 
             normalized["parent_id"] = None
         pending[location_id] = normalized
 
+    def _pending_restore_key(location_id: str, item: Mapping[str, Any]) -> tuple[str, int, str, str]:
+        """Stable create ordering that preserves sibling order indexes on restore."""
+        parent_id = item.get("parent_id")
+        parent_key = str(parent_id) if isinstance(parent_id, str) and parent_id else ""
+        raw_order = item.get("order")
+        order_key = raw_order if isinstance(raw_order, int) else 10**9
+        name_key = str(item.get("name", location_id)).casefold()
+        return parent_key, order_key, name_key, location_id
+
     created: set[str] = set()
     while pending:
         progressed = False
-        for location_id, item in list(pending.items()):
+        for location_id, item in sorted(
+            pending.items(),
+            key=lambda entry: _pending_restore_key(entry[0], entry[1]),
+        ):
             parent_id = item.get("parent_id")
             if parent_id and parent_id not in created and loc_mgr.get_location(parent_id) is None:
                 continue
@@ -534,7 +546,11 @@ async def _load_configuration(hass: HomeAssistant, loc_mgr: LocationManager) -> 
             continue
 
         # Break cycles or bad parent references by forcing creation.
-        location_id, item = pending.popitem()
+        location_id, item = min(
+            pending.items(),
+            key=lambda entry: _pending_restore_key(entry[0], entry[1]),
+        )
+        pending.pop(location_id)
         if loc_mgr.get_location(location_id) is None:
             try:
                 loc_mgr.create_location(

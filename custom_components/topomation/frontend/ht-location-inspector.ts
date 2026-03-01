@@ -71,7 +71,6 @@ export class HtLocationInspector extends LitElement {
 
   @state() private _activeTab: InspectorTab = "detection";
   @state() private _stagedSources?: OccupancySource[];
-  @state() private _sourcesDirty = false;
   @state() private _savingSource = false;
   @state() private _externalAreaId = "";
   @state() private _externalEntityId = "";
@@ -90,6 +89,9 @@ export class HtLocationInspector extends LitElement {
   private _clockTimer?: number;
   private _unsubAutomationStateChanged?: () => void;
   private _actionRulesReloadTimer?: number;
+  private _sourcePersistTimer?: number;
+  private _sourcePersistInFlight = false;
+  private _sourcePersistQueued = false;
 
   static styles = [
     sharedStyles,
@@ -1063,8 +1065,7 @@ export class HtLocationInspector extends LitElement {
       const prevId = prev?.id || "";
       const nextId = this.location?.id || "";
       if (prevId !== nextId) {
-        this._stagedSources = undefined;
-        this._sourcesDirty = false;
+        this._resetSourceDraftState();
         this._externalAreaId = "";
         this._externalEntityId = "";
         this._onTimeoutMemory = {};
@@ -1314,6 +1315,7 @@ export class HtLocationInspector extends LitElement {
   disconnectedCallback(): void {
     super.disconnectedCallback();
     this._stopClockTicker();
+    this._resetSourceDraftState();
     if (this._actionRulesReloadTimer) {
       window.clearTimeout(this._actionRulesReloadTimer);
       this._actionRulesReloadTimer = undefined;
@@ -1447,24 +1449,6 @@ export class HtLocationInspector extends LitElement {
               : "Add sources from any HA area (or unassigned entities)."}
           </div>
           ${this._renderExternalSourceComposer(config)}
-          ${this._sourcesDirty ? html`
-            <div class="editor-actions sources-actions">
-              <button
-                class="button button-secondary"
-                ?disabled=${this._savingSource}
-                @click=${this._discardSourceChanges}
-              >
-                Discard
-              </button>
-              <button
-                class="button button-primary"
-                ?disabled=${this._savingSource}
-                @click=${this._saveSourceChanges}
-              >
-                Save
-              </button>
-            </div>
-          ` : ""}
         </div>
       </div>
     `;
@@ -2784,7 +2768,7 @@ export class HtLocationInspector extends LitElement {
     return this._stagedSources ? [...this._stagedSources] : [...(config.occupancy_sources || [])];
   }
 
-  private _setWorkingSources(config: OccupancyConfig, sources: OccupancySource[]): void {
+  private _setWorkingSources(sources: OccupancySource[]): void {
     const normalized = sources.map((source) => this._normalizeSource(source.entity_id, source));
     const nextMemory = { ...this._onTimeoutMemory };
     for (const source of normalized) {
@@ -2794,7 +2778,7 @@ export class HtLocationInspector extends LitElement {
     }
     this._onTimeoutMemory = nextMemory;
     this._stagedSources = normalized;
-    this._sourcesDirty = true;
+    this._scheduleSourcePersist();
     this.requestUpdate();
   }
 
@@ -2811,7 +2795,7 @@ export class HtLocationInspector extends LitElement {
       }
     );
     sources[sourceIndex] = normalizedDraft;
-    this._setWorkingSources(config, sources);
+    this._setWorkingSources(sources);
   }
 
   private _removeSource(sourceIndex: number, config: OccupancyConfig): void {
@@ -2822,7 +2806,7 @@ export class HtLocationInspector extends LitElement {
     const nextMemory = { ...this._onTimeoutMemory };
     delete nextMemory[this._sourceKeyFromSource(removed)];
     this._onTimeoutMemory = nextMemory;
-    this._setWorkingSources(config, sources);
+    this._setWorkingSources(sources);
   }
 
   private _addSourceWithDefaults(
@@ -2855,7 +2839,7 @@ export class HtLocationInspector extends LitElement {
       signalDefaults = this._lightSignalDefaults(entityId, options.signalKey);
     }
     const source = this._normalizeSource(entityId, signalDefaults);
-    this._setWorkingSources(config, [...existing, source]);
+    this._setWorkingSources([...existing, source]);
 
     if (options?.resetExternalPicker) {
       this._externalAreaId = "";
@@ -2865,35 +2849,72 @@ export class HtLocationInspector extends LitElement {
     return true;
   }
 
-  private _discardSourceChanges = (): void => {
+  private _resetSourceDraftState(): void {
+    if (this._sourcePersistTimer) {
+      window.clearTimeout(this._sourcePersistTimer);
+      this._sourcePersistTimer = undefined;
+    }
+    this._sourcePersistQueued = false;
     this._stagedSources = undefined;
-    this._sourcesDirty = false;
-    this.requestUpdate();
-  };
+  }
 
-  private _saveSourceChanges = async (): Promise<void> => {
-    if (!this.location || !this._stagedSources || !this._sourcesDirty) return;
-    await this._persistOccupancySources(this._stagedSources);
-    this._stagedSources = undefined;
-    this._sourcesDirty = false;
+  private _scheduleSourcePersist(delayMs = 250): void {
+    if (this._sourcePersistTimer) {
+      window.clearTimeout(this._sourcePersistTimer);
+      this._sourcePersistTimer = undefined;
+    }
+    this._sourcePersistTimer = window.setTimeout(() => {
+      this._sourcePersistTimer = undefined;
+      void this._flushSourcePersist();
+    }, delayMs);
+  }
+
+  private async _flushSourcePersist(): Promise<void> {
+    if (!this.location || !this._stagedSources) return;
+    if (this._sourcePersistInFlight) {
+      this._sourcePersistQueued = true;
+      return;
+    }
+
+    const pending = this._stagedSources.map((source) => ({ ...source }));
+    this._sourcePersistInFlight = true;
+    this._savingSource = true;
     this.requestUpdate();
-    this._showToast("Saved source changes", "success");
+
+    try {
+      await this._persistOccupancySources(pending);
+      if (this._sourcesEqual(this._stagedSources, pending)) {
+        this._stagedSources = undefined;
+      }
+    } catch (err: any) {
+      console.error("Failed to persist occupancy source changes", {
+        locationId: this.location?.id,
+        error: err,
+      });
+      this._showToast(err?.message || "Failed to save source changes", "error");
+    } finally {
+      this._sourcePersistInFlight = false;
+      this._savingSource = false;
+      this.requestUpdate();
+      if (this._sourcePersistQueued) {
+        this._sourcePersistQueued = false;
+        void this._flushSourcePersist();
+      }
+    }
+  }
+
+  private _sourcesEqual(left: OccupancySource[] | undefined, right: OccupancySource[]): boolean {
+    if (!left || left.length !== right.length) return false;
+    return left.every((source, index) => JSON.stringify(source) === JSON.stringify(right[index]));
   }
 
   private async _persistOccupancySources(sources: OccupancySource[]): Promise<void> {
     if (!this.location) return;
     const config = this._getOccupancyConfig();
-    this._savingSource = true;
-    this.requestUpdate();
-    try {
-      await this._updateConfig({
-        ...config,
-        occupancy_sources: sources,
-      });
-    } finally {
-      this._savingSource = false;
-      this.requestUpdate();
-    }
+    await this._updateConfig({
+      ...config,
+      occupancy_sources: sources,
+    });
   }
 
   private _normalizeSource(entityId: string, partial: Partial<OccupancySource>): OccupancySource {

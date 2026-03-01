@@ -550,7 +550,8 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(optionValues).to.not.include("climate.kitchen_hvac");
   });
 
-  it("adds selected external entity as staged occupancy source", async () => {
+  it("persists selected external entity as occupancy source immediately", async () => {
+    const sourceUpdates: Array<Record<string, any>> = [];
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>): Promise<T> => {
         if (request.type === "config/entity_registry/list") {
@@ -566,6 +567,7 @@ describe("HtLocationInspector occupancy source composer", () => {
           return [] as T;
         }
         if (request.type === "topomation/locations/set_module_config") {
+          sourceUpdates.push(request);
           return { success: true } as T;
         }
         return {} as T;
@@ -627,12 +629,20 @@ describe("HtLocationInspector occupancy source composer", () => {
     await element.updateComplete;
 
     await waitUntil(
-      () => ((element as any)._stagedSources || []).length === 1,
-      "source was not staged"
+      () =>
+        sourceUpdates.some((request) => {
+          const sources = request?.config?.occupancy_sources;
+          return Array.isArray(sources) && sources.length === 1;
+        }),
+      "source update was not persisted"
     );
 
-    const staged = (element as any)._stagedSources as Array<Record<string, any>>;
-    expect(staged[0].entity_id).to.equal("binary_sensor.kitchen_motion");
+    const persisted = sourceUpdates.find((request) => {
+      const sources = request?.config?.occupancy_sources;
+      return Array.isArray(sources) && sources.length === 1;
+    });
+    expect(persisted).to.not.equal(undefined);
+    expect(persisted!.config.occupancy_sources[0].entity_id).to.equal("binary_sensor.kitchen_motion");
   });
 
   it("does not show occupancy-class entities in source candidates", async () => {

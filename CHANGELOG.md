@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.12] - 2026-03-01
+
+### Changed
+
+- Detection source edits now auto-save immediately on change; the explicit
+  `Save/Discard` action row was removed for consistency with the other inspector
+  tabs.
+
+### Fixed
+
+- Occupancy binary sensors now hydrate from the occupancy module's current
+  state on entity startup, so lock/occupied attributes are correct after reload
+  before the next live event arrives.
+- Configuration restore now creates pending locations in stable order so manual
+  sibling reordering survives persistence round trips.
+
 ## [0.2.11] - 2026-03-01
 
 ### Fixed

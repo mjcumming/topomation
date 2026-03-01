@@ -169,7 +169,7 @@ test("location delete workflow updates topology", async ({ page }) => {
     .toBe(false);
 });
 
-test("detection workflow saves occupancy source configuration", async ({ page }) => {
+test("detection workflow persists occupancy source configuration", async ({ page }) => {
   await page.goto("/mock-harness.html");
 
   await selectKitchen(page);
@@ -180,9 +180,6 @@ test("detection workflow saves occupancy source configuration", async ({ page })
   await expect(motionSourceRow).toBeVisible();
 
   await motionSourceRow.locator("input.source-enable-input").check();
-  await page
-    .locator("ht-location-inspector .sources-actions .button.button-primary", { hasText: "Save" })
-    .click();
 
   await expect
     .poll(async () => {

@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from home_topology.core.bus import Event, EventBus, EventFilter
 from homeassistant.components.binary_sensor import (
@@ -81,52 +82,96 @@ class OccupancyBinarySensor(BinarySensorEntity):
             "location_name": self._location_name,
         }
 
+    def _effective_timeout_details(self) -> tuple[str | None, int | None]:
+        """Read current timeout details for this location."""
+        effective_timeout_at = None
+        seconds_until_vacant = None
+        if self._occupancy_module is None:
+            return effective_timeout_at, seconds_until_vacant
+
+        try:
+            effective_timeout = self._occupancy_module.get_effective_timeout(self._location_id)
+        except Exception:  # pragma: no cover - defensive logging
+            _LOGGER.debug(
+                "Failed to read effective timeout for %s",
+                self._location_id,
+                exc_info=True,
+            )
+            return effective_timeout_at, seconds_until_vacant
+
+        if effective_timeout is not None:
+            effective_timeout_at = effective_timeout.isoformat()
+            now = datetime.now(UTC)
+            seconds_until_vacant = max(
+                0,
+                int((effective_timeout - now).total_seconds()),
+            )
+        return effective_timeout_at, seconds_until_vacant
+
+    def _apply_state_payload(self, payload: Mapping[str, Any]) -> None:
+        """Apply occupancy payload to HA entity fields."""
+        effective_timeout_at, seconds_until_vacant = self._effective_timeout_details()
+
+        self._attr_is_on = bool(payload.get("occupied", False))
+        self._attr_extra_state_attributes = {
+            "location_id": self._location_id,
+            "location_name": self._location_name,
+            "locked_by": payload.get("locked_by", []),
+            "is_locked": payload.get("is_locked", False),
+            "lock_modes": payload.get("lock_modes", []),
+            "direct_locks": payload.get("direct_locks", []),
+            "contributions": payload.get("contributions", []),
+            "effective_timeout_at": effective_timeout_at,
+            "vacant_at": effective_timeout_at,
+            "seconds_until_vacant": seconds_until_vacant,
+            "previous_occupied": payload.get("previous_occupied", False),
+            "reason": payload.get("reason"),
+        }
+
+    def _hydrate_from_module_state(self) -> bool:
+        """Initialize entity state from current occupancy module state."""
+        if self._occupancy_module is None:
+            return False
+
+        get_state = getattr(self._occupancy_module, "get_location_state", None)
+        if not callable(get_state):
+            return False
+
+        try:
+            payload = get_state(self._location_id)
+        except Exception:  # pragma: no cover - defensive logging
+            _LOGGER.debug(
+                "Failed to hydrate occupancy state for %s",
+                self._location_id,
+                exc_info=True,
+            )
+            return False
+
+        if not isinstance(payload, Mapping):
+            return False
+
+        self._apply_state_payload(payload)
+        self.async_write_ha_state()
+        _LOGGER.debug(
+            "Hydrated occupancy for %s: %s",
+            self._location_id,
+            "occupied" if self._attr_is_on else "vacant",
+        )
+        return True
+
     async def async_added_to_hass(self) -> None:
         """Subscribe to occupancy events when added."""
         _LOGGER.debug("Binary sensor added: %s", self._location_id)
+        self._hydrate_from_module_state()
 
         @callback
         def on_occupancy_changed(event: Event) -> None:
             """Update state when occupancy changes."""
             if event.location_id == self._location_id:
                 payload = event.payload
-                effective_timeout_at = None
-                seconds_until_vacant = None
-                if self._occupancy_module is not None:
-                    try:
-                        effective_timeout = self._occupancy_module.get_effective_timeout(
-                            self._location_id
-                        )
-                    except Exception:  # pragma: no cover - defensive logging
-                        _LOGGER.debug(
-                            "Failed to read effective timeout for %s",
-                            self._location_id,
-                            exc_info=True,
-                        )
-                        effective_timeout = None
-                    if effective_timeout is not None:
-                        effective_timeout_at = effective_timeout.isoformat()
-                        now = datetime.now(UTC)
-                        seconds_until_vacant = max(
-                            0,
-                            int((effective_timeout - now).total_seconds()),
-                        )
-
-                self._attr_is_on = payload.get("occupied", False)
-                self._attr_extra_state_attributes = {
-                    "location_id": self._location_id,
-                    "location_name": self._location_name,
-                    "locked_by": payload.get("locked_by", []),
-                    "is_locked": payload.get("is_locked", False),
-                    "lock_modes": payload.get("lock_modes", []),
-                    "direct_locks": payload.get("direct_locks", []),
-                    "contributions": payload.get("contributions", []),
-                    "effective_timeout_at": effective_timeout_at,
-                    "vacant_at": effective_timeout_at,
-                    "seconds_until_vacant": seconds_until_vacant,
-                    "previous_occupied": payload.get("previous_occupied", False),
-                    "reason": payload.get("reason"),
-                }
+                if not isinstance(payload, Mapping):
+                    return
+                self._apply_state_payload(payload)
                 self.async_write_ha_state()
                 _LOGGER.debug(
                     "Updated occupancy for %s: %s",

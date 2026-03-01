@@ -148,6 +148,35 @@ async def test_custom_structural_types_round_trip_in_persistence(
     assert "binary_sensor.patio_motion" in patio_zone.entity_ids
 
 
+async def test_manual_sibling_order_round_trips_in_persistence(
+    hass: HomeAssistant,
+) -> None:
+    """Sibling reorder indexes should restore exactly across restart."""
+    source_mgr = LocationManager()
+    source_mgr.create_location(id="a", name="Alpha", parent_id=None, is_explicit_root=False)
+    source_mgr.create_location(id="b", name="Bravo", parent_id=None, is_explicit_root=False)
+    source_mgr.create_location(id="c", name="Charlie", parent_id=None, is_explicit_root=False)
+    source_mgr.create_location(id="d", name="Delta", parent_id=None, is_explicit_root=False)
+
+    source_mgr.reorder_location("d", None, 1)
+    source_mgr.reorder_location("c", None, 2)
+
+    occupancy = Mock()
+    occupancy.dump_state.return_value = {"dummy": "state"}
+    modules = {"occupancy": occupancy}
+
+    await _save_state(hass, "test_entry", source_mgr, modules)
+
+    restored_mgr = LocationManager()
+    await _load_configuration(hass, restored_mgr)
+
+    restored_root = sorted(
+        [loc for loc in restored_mgr.all_locations() if loc.parent_id is None],
+        key=lambda loc: (loc.order, loc.name),
+    )
+    assert [loc.id for loc in restored_root] == ["a", "d", "c", "b"]
+
+
 async def test_policy_source_bindings_round_trip_in_persistence(
     hass: HomeAssistant,
 ) -> None:

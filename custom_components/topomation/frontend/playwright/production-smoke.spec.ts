@@ -83,7 +83,7 @@ test.describe("Production profile smoke", () => {
     await expect(toggleAfterReload).toBeChecked();
   });
 
-  test("occupancy source save survives production-profile stale reloads", async ({ page }) => {
+  test("occupancy source update survives production-profile stale reloads", async ({ page }) => {
     await selectKitchen(page);
 
     const sourceRow = page
@@ -93,11 +93,6 @@ test.describe("Production profile smoke", () => {
 
     await expect(sourceRow).toBeVisible();
     await sourceToggle.check();
-    await page
-      .locator("ht-location-inspector .sources-actions .button.button-primary", {
-        hasText: "Save",
-      })
-      .click();
 
     await expect
       .poll(async () => {
