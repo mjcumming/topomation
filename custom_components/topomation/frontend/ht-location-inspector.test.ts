@@ -809,9 +809,13 @@ describe("HtLocationInspector occupancy source composer", () => {
     const cardsText = Array.from(element.shadowRoot!.querySelectorAll(".source-card"))
       .map((card) => (card.textContent || "").trim())
       .join("\n");
+    const mudroomLightCards = Array.from(element.shadowRoot!.querySelectorAll(".source-card")).filter((card) =>
+      (card.textContent || "").includes("Mudroom Lights")
+    );
 
     expect(cardsText).to.include("Mudroom Lights — Power");
     expect(cardsText).to.include("Mudroom Lights — Level change");
+    expect(mudroomLightCards).to.have.length(1);
     expect(cardsText).to.include("Mudroom Relay Light");
     expect(cardsText).to.include("Mudroom Exhaust");
     expect(cardsText).to.include("Mudroom Speaker — Playback");

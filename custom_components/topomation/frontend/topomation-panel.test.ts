@@ -905,6 +905,70 @@ describe('TopomationPanel integration (fake hass)', () => {
     );
   });
 
+  it("updates inspector header occupancy from event-driven location occupancy state", async () => {
+    const hass: HomeAssistant = {
+      callWS: async <T>(req: Record<string, any>): Promise<T> => {
+        if (req.type === "topomation/locations/list") {
+          return { locations } as T;
+        }
+        if (req.type === "config/entity_registry/list") {
+          return [] as T;
+        }
+        if (req.type === "config/device_registry/list") {
+          return [] as T;
+        }
+        return {} as T;
+      },
+      connection: {},
+      states: {
+        "binary_sensor.occupancy_kitchen": {
+          entity_id: "binary_sensor.occupancy_kitchen",
+          state: "off",
+          attributes: {
+            device_class: "occupancy",
+            location_id: "kitchen",
+          },
+        },
+      },
+      areas: {},
+      floors: {},
+      config: {
+        location_name: "Test Property",
+      },
+      localize: (key: string) => key,
+    };
+
+    const element = await fixture<HTMLDivElement>(html`
+      <topomation-panel .hass=${hass}></topomation-panel>
+    `);
+
+    await waitUntil(() => (element as any)._loading === false, "panel did not finish loading");
+    (element as any)._rightPanelMode = "inspector";
+    (element as any)._selectedId = "kitchen";
+    element.requestUpdate();
+    await element.updateComplete;
+
+    const inspector = element.shadowRoot!.querySelector("ht-location-inspector") as any;
+    expect(inspector).to.exist;
+    await inspector.updateComplete;
+
+    const initialStatus = (
+      inspector.shadowRoot?.querySelector('[data-testid="header-occupancy-status"]')?.textContent ||
+      ""
+    ).trim();
+    expect(initialStatus).to.equal("Vacant");
+
+    (element as any)._setOccupancyState("kitchen", true);
+    await element.updateComplete;
+    await inspector.updateComplete;
+
+    const updatedStatus = (
+      inspector.shadowRoot?.querySelector('[data-testid="header-occupancy-status"]')?.textContent ||
+      ""
+    ).trim();
+    expect(updatedStatus).to.equal("Occupied");
+  });
+
   it("renders grouped device assignment list with unassigned and location buckets", async () => {
     const locationsWithEntities: Location[] = locations.map((loc) =>
       loc.id === "kitchen"

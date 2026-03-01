@@ -20,6 +20,7 @@ import {
 } from "./ha-automation-rules";
 
 type SourceSignalKey = OccupancySource["signal_key"];
+type CandidateItem = { key: string; entityId: string; signalKey?: SourceSignalKey };
 type ActionDeviceType = "light" | "dimmer" | "color_light" | "fan" | "stereo" | "tv";
 type InspectorTab = "detection" | "occupied_actions" | "vacant_actions";
 type InspectorTabRequest = InspectorTab | "occupancy" | "actions";
@@ -57,6 +58,7 @@ export class HtLocationInspector extends LitElement {
   @property({ attribute: false }) public location?: Location;
   @property({ attribute: false }) public entryId?: string;
   @property({ type: String }) public forcedTab?: InspectorTabRequest;
+  @property({ attribute: false }) public occupancyStates: Record<string, boolean> = {};
 
   // Ensure reactivity even if decorator transforms are unavailable in a given toolchain.
   static properties = {
@@ -64,6 +66,7 @@ export class HtLocationInspector extends LitElement {
     location: { attribute: false },
     entryId: { attribute: false },
     forcedTab: { type: String },
+    occupancyStates: { attribute: false },
   };
 
   @state() private _activeTab: InspectorTab = "detection";
@@ -714,6 +717,10 @@ export class HtLocationInspector extends LitElement {
         background: rgba(var(--rgb-primary-color), 0.03);
       }
 
+      .source-card-item.grouped {
+        border-top: 1px solid var(--divider-color);
+      }
+
       .subsection-help {
         margin-bottom: var(--spacing-sm);
         color: var(--text-secondary-color);
@@ -1178,14 +1185,10 @@ export class HtLocationInspector extends LitElement {
     const metaValue = areaId || this.location.id;
     const lockState = this._getLockState();
     const occupancyState = this._getOccupancyState();
-    const occupied = occupancyState?.state === "on";
-    const occupancyLabel = occupancyState
-      ? occupied
-        ? "Occupied"
-        : occupancyState.state === "off"
-          ? "Vacant"
-          : "Unknown"
-      : "Unknown";
+    const occupiedState = this._resolveOccupiedState(occupancyState);
+    const occupied = occupiedState === true;
+    const occupancyLabel =
+      occupiedState === true ? "Occupied" : occupiedState === false ? "Vacant" : "Unknown";
     const vacantAt = occupancyState ? this._resolveVacantAt(occupancyState.attributes || {}, occupied) : undefined;
     const vacantAtLabel = occupied
       ? vacantAt instanceof Date
@@ -1469,7 +1472,8 @@ export class HtLocationInspector extends LitElement {
 
   private _renderRuntimeStatus(lockState: InspectorLockState) {
     const occupancyState = this._getOccupancyState();
-    if (!occupancyState) {
+    const occupiedState = this._resolveOccupiedState(occupancyState);
+    if (!occupancyState && occupiedState === undefined) {
       return html`
         <div class="runtime-summary">
           <div class="runtime-summary-head">
@@ -1480,10 +1484,11 @@ export class HtLocationInspector extends LitElement {
       `;
     }
 
-    const attrs = occupancyState.attributes || {};
-    const occupied = occupancyState.state === "on";
+    const attrs = occupancyState?.attributes || {};
+    const occupied = occupiedState === true;
     const vacantAt = this._resolveVacantAt(attrs, occupied);
-    const occupancyLabel = occupied ? "Occupied" : occupancyState.state === "off" ? "Vacant" : "Unknown";
+    const occupancyLabel =
+      occupiedState === true ? "Occupied" : occupiedState === false ? "Vacant" : "Unknown";
     const vacantAtLabel = occupied
       ? vacantAt instanceof Date
         ? this._formatDateTime(vacantAt)
@@ -1541,15 +1546,20 @@ export class HtLocationInspector extends LitElement {
     return this._sourceKey(source.entity_id);
   }
 
+  private _sourceCardGroupKey(item: CandidateItem): string {
+    if (item.entityId.startsWith("light.") && (item.signalKey === "power" || item.signalKey === "level")) {
+      return `${item.entityId}::power-level`;
+    }
+    return item.key;
+  }
+
   private _defaultSignalKeyForEntity(entityId: string): SourceSignalKey | undefined {
     if (this._isMediaEntity(entityId)) return "playback";
     if (this._isDimmableEntity(entityId) || this._isColorCapableEntity(entityId)) return "power";
     return undefined;
   }
 
-  private _candidateItemsForEntity(
-    entityId: string
-  ): Array<{ key: string; entityId: string; signalKey?: SourceSignalKey }> {
+  private _candidateItemsForEntity(entityId: string): CandidateItem[] {
     if (!this._isMediaEntity(entityId)) {
       const isDimmable = this._isDimmableEntity(entityId);
       const isColorCapable = this._isColorCapableEntity(entityId);
@@ -1701,10 +1711,12 @@ export class HtLocationInspector extends LitElement {
       this._entityName(a).localeCompare(this._entityName(b))
     );
     const candidateAreaEntityIds = areaEntityIds.filter((entityId) => this._isCoreAreaSourceEntity(entityId));
-    const candidateItems = candidateAreaEntityIds.flatMap((entityId) => this._candidateItemsForEntity(entityId));
+    const candidateItems: CandidateItem[] = candidateAreaEntityIds.flatMap((entityId) =>
+      this._candidateItemsForEntity(entityId)
+    );
     const visibleCandidateItems = candidateItems;
     const candidateItemKeys = new Set(candidateItems.map((item) => item.key));
-    const configuredExtraItems = sources
+    const configuredExtraItems: CandidateItem[] = sources
       .filter((source) => !candidateItemKeys.has(this._sourceKeyFromSource(source)))
       .map((source) => ({
         key: this._sourceKeyFromSource(source),
@@ -1722,7 +1734,21 @@ export class HtLocationInspector extends LitElement {
       return this._signalSortWeight(a.signalKey) - this._signalSortWeight(b.signalKey);
     });
 
-    if (!items.length) {
+    const itemGroups: CandidateItem[][] = [];
+    const groupByKey = new Map<string, CandidateItem[]>();
+    for (const item of items) {
+      const groupKey = this._sourceCardGroupKey(item);
+      const existing = groupByKey.get(groupKey);
+      if (existing) {
+        existing.push(item);
+        continue;
+      }
+      const created = [item];
+      groupByKey.set(groupKey, created);
+      itemGroups.push(created);
+    }
+
+    if (!itemGroups.length) {
       return html`
         <div class="empty-state">
           <div class="text-muted">
@@ -1736,68 +1762,75 @@ export class HtLocationInspector extends LitElement {
 
     return html`
       <div class="candidate-list">
-        ${items.map((item) => {
-          const sourceIndex = sourceIndexByKey.get(item.key);
-          const configured = sourceIndex !== undefined;
-          const source = configured ? sources[sourceIndex] : undefined;
-          const draft = configured && source ? source : undefined;
-          const modeOptions = this._modeOptionsForEntity(item.entityId);
+        ${itemGroups.map((group) => {
+          const groupConfigured = group.some((item) => sourceIndexByKey.has(item.key));
           return html`
-            <div class="source-card ${configured ? "enabled" : ""}">
-              <div class="candidate-item">
-                <div class="source-enable-control">
-                  <input
-                    type="checkbox"
-                    class="source-enable-input"
-                    aria-label="Include source"
-                    .checked=${configured}
-                    @change=${(ev: Event) => {
-                      const checked = (ev.target as HTMLInputElement).checked;
-                      if (checked && !configured) {
-                        this._addSourceWithDefaults(item.entityId, config, {
-                          resetExternalPicker: false,
-                          signalKey: item.signalKey,
-                        });
-                      } else if (!checked && configured) {
-                        this._removeSource(sourceIndex, config);
-                      }
-                    }}
-                  />
-                </div>
-                <div>
-                  <div class="candidate-headline">
-                    <div class="candidate-title">${this._candidateTitle(item.entityId, item.signalKey)}</div>
-                    ${configured && draft && modeOptions.length > 1
-                      ? html`
-                          <div class="inline-mode-group">
-                            <span class="inline-mode-label">Mode</span>
-                            <select
-                              class="inline-mode-select"
-                              .value=${modeOptions.some((opt) => opt.value === draft.mode)
-                                ? draft.mode
-                                : modeOptions[0].value}
-                              @change=${(ev: Event) => {
-                                const mode = (ev.target as HTMLSelectElement).value as "any_change" | "specific_states";
-                                const entity = this.hass.states[item.entityId];
-                                const next = applyModeDefaults(draft, mode, entity) as OccupancySource;
-                                this._updateSourceDraft(config, sourceIndex, { ...next, entity_id: draft.entity_id });
-                              }}
-                            >
-                              ${modeOptions.map((opt) => html`<option value=${opt.value}>${opt.label}</option>`)}
-                            </select>
-                          </div>
-                        `
+            <div class="source-card ${groupConfigured ? "enabled" : ""}">
+              ${group.map((item, itemIndex) => {
+                const sourceIndex = sourceIndexByKey.get(item.key);
+                const configured = sourceIndex !== undefined;
+                const source = configured ? sources[sourceIndex] : undefined;
+                const draft = configured && source ? source : undefined;
+                const modeOptions = this._modeOptionsForEntity(item.entityId);
+                return html`
+                  <div class=${`source-card-item${itemIndex > 0 ? " grouped" : ""}`}>
+                    <div class="candidate-item">
+                      <div class="source-enable-control">
+                        <input
+                          type="checkbox"
+                          class="source-enable-input"
+                          aria-label="Include source"
+                          .checked=${configured}
+                          @change=${(ev: Event) => {
+                            const checked = (ev.target as HTMLInputElement).checked;
+                            if (checked && !configured) {
+                              this._addSourceWithDefaults(item.entityId, config, {
+                                resetExternalPicker: false,
+                                signalKey: item.signalKey,
+                              });
+                            } else if (!checked && configured) {
+                              this._removeSource(sourceIndex, config);
+                            }
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <div class="candidate-headline">
+                          <div class="candidate-title">${this._candidateTitle(item.entityId, item.signalKey)}</div>
+                          ${configured && draft && modeOptions.length > 1
+                            ? html`
+                                <div class="inline-mode-group">
+                                  <span class="inline-mode-label">Mode</span>
+                                  <select
+                                    class="inline-mode-select"
+                                    .value=${modeOptions.some((opt) => opt.value === draft.mode)
+                                      ? draft.mode
+                                      : modeOptions[0].value}
+                                    @change=${(ev: Event) => {
+                                      const mode = (ev.target as HTMLSelectElement).value as "any_change" | "specific_states";
+                                      const entity = this.hass.states[item.entityId];
+                                      const next = applyModeDefaults(draft, mode, entity) as OccupancySource;
+                                      this._updateSourceDraft(config, sourceIndex, { ...next, entity_id: draft.entity_id });
+                                    }}
+                                  >
+                                    ${modeOptions.map((opt) => html`<option value=${opt.value}>${opt.label}</option>`)}
+                                  </select>
+                                </div>
+                              `
+                            : ""}
+                        </div>
+                        <div class="candidate-meta">${item.entityId} • ${this._entityState(item.entityId)}</div>
+                        ${(this._isMediaEntity(item.entityId) || item.entityId.startsWith("light.")) && item.signalKey
+                          ? html`<div class="candidate-submeta">Signal: ${this._mediaSignalLabel(item.signalKey)}</div>`
+                          : ""}
+                      </div>
+                    </div>
+                    ${configured && source
+                      ? this._renderSourceEditor(config, source, sourceIndex)
                       : ""}
                   </div>
-                  <div class="candidate-meta">${item.entityId} • ${this._entityState(item.entityId)}</div>
-                  ${(this._isMediaEntity(item.entityId) || item.entityId.startsWith("light.")) && item.signalKey
-                    ? html`<div class="candidate-submeta">Signal: ${this._mediaSignalLabel(item.signalKey)}</div>`
-                    : ""}
-                </div>
-              </div>
-              ${configured && source
-                ? this._renderSourceEditor(config, source, sourceIndex)
-                : ""}
+                `;
+              })}
             </div>
           `;
         })}
@@ -3011,6 +3044,24 @@ export class HtLocationInspector extends LitElement {
       if (attrs.device_class !== "occupancy") continue;
       if (attrs.location_id !== this.location.id) continue;
       return stateObj as Record<string, any>;
+    }
+    return undefined;
+  }
+
+  private _resolveOccupiedState(occupancyState?: Record<string, any>): boolean | undefined {
+    const locationId = this.location?.id;
+    const override = locationId ? this.occupancyStates?.[locationId] : undefined;
+    if (typeof override === "boolean") {
+      return override;
+    }
+    if (!occupancyState) {
+      return undefined;
+    }
+    if (occupancyState.state === "on") {
+      return true;
+    }
+    if (occupancyState.state === "off") {
+      return false;
     }
     return undefined;
   }

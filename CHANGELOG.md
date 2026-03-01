@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.10] - 2026-03-01
+
+### Changed
+
+- Detection source cards now group light `Power` and `Level change` into one
+  shared box while keeping independent toggles and per-signal behavior controls.
+- Panel now passes event-driven location occupancy state into the inspector so
+  header occupancy status can update immediately from runtime events.
+- README refreshed for clearer positioning, capability summary, and workflow
+  guidance.
+
 ## [0.2.9] - 2026-03-01
 
 ### Changed

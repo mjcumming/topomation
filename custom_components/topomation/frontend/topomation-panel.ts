@@ -888,6 +888,7 @@ export class TopomationPanel extends LitElement {
                   .location=${selectedLocation}
                   .entryId=${this._activeEntryId()}
                   .forcedTab=${forcedInspectorTab}
+                  .occupancyStates=${this._occupancyStateByLocation}
                   @source-test=${this._handleSourceTest}
                 ></ht-location-inspector>
               `}
