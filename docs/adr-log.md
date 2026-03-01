@@ -1641,6 +1641,58 @@ recursive tree in the right panel. Prior discussions identified two risks:
 
 ---
 
+### ADR-HA-041: Detection Source Enumeration Is Curated; Add Source Handles Edge Cases (2026-03-01)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+
+Detection source auto-enumeration in the panel regressed toward a broad
+"show everything in area" list. This surfaced non-core entities (for example
+`climate.*`, `vacuum.*`) and integration-owned occupancy entities in the same
+list users rely on for common occupancy detection setup. It also blurred intent
+between default behavior and explicit opt-in edge cases.
+
+In parallel, `On Vacant` exposed a dark-condition toggle that is not part of
+intended vacant semantics.
+
+**Decision**:
+
+1. Curate Detection tab in-area source enumeration to core occupancy signals:
+   - `light.*`
+   - `fan.*`
+   - `media_player.*`
+   - `binary_sensor.*` for motion/presence/occupancy/door/opening/window/lock,
+     plus no-device-class camera-style binaries
+   - `switch.*` only when explicitly light-classified (`device_class: light`)
+2. Exclude Topomation-created occupancy entities from source selection
+   (`device_class: occupancy` with `location_id`).
+3. Exclude non-core appliance/control domains from core auto-enumeration
+   (including `climate`, `vacuum`, `cover`).
+4. Keep explicit **Add Source** broader so users can opt into edge-case/manual
+   entities (for example generic switches) without cluttering default discovery.
+5. Restrict dark-condition UI/behavior to **On Occupied**; **On Vacant** does
+   not show dark toggle and persists `require_dark: false`.
+
+**Rationale**:
+
+1. Default list should reflect high-signal, common occupancy inputs.
+2. Integration-owned occupancy entities are outputs and must not be looped back
+   into source discovery.
+3. A curated default reduces accidental misconfiguration and noisy UX.
+4. Add Source preserves flexibility without weakening core defaults.
+5. Vacant behavior should be deterministic and not gated by ambient light.
+
+**Consequences**:
+
+- ✅ Detection list now matches documented core-device policy.
+- ✅ Non-core entities no longer appear in default in-area source list.
+- ✅ Users still retain edge-case flexibility through Add Source.
+- ✅ On Vacant actions are simpler and consistent (`require_dark: false`).
+- ⚠️ Some users may need to use Add Source more often for uncommon devices.
+
+---
+
 ## How to Use This Log
 
 ### When to Create an ADR

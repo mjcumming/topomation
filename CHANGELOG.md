@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.7] - 2026-03-01
+
+### Added
+
+- ADR-HA-041 documenting curated detection-source enumeration defaults and
+  occupied-only dark-condition behavior.
+
+### Changed
+
+- Detection tab core in-area source enumeration is now curated to common
+  occupancy inputs: lights, light-classified switches, fans, media players, and
+  relevant binary sensors.
+- Topomation-created occupancy entities are excluded from source candidates.
+- Non-core domains (`climate`, `vacuum`, `cover`) are excluded from core
+  auto-enumeration; edge cases remain available through Add Source.
+- `On Vacant` managed actions no longer expose or persist `Only when dark`
+  (`require_dark` is always `false` for vacant rules).
+
 ## [0.2.6] - 2026-03-01
 
 ### Added

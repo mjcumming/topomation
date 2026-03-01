@@ -1704,7 +1704,7 @@ export class HtLocationInspector extends LitElement {
       this._entityName(a).localeCompare(this._entityName(b))
     );
     const areaEntitySet = new Set(areaEntityIds);
-    const candidateAreaEntityIds = areaEntityIds.filter((entityId) => this._isCandidateEntity(entityId));
+    const candidateAreaEntityIds = areaEntityIds.filter((entityId) => this._isCoreAreaSourceEntity(entityId));
     const candidateItems = candidateAreaEntityIds.flatMap((entityId) => this._candidateItemsForEntity(entityId));
     const configuredKeys = new Set(sources.map((source) => this._sourceKeyFromSource(source)));
     const visibleCandidateItems = candidateItems.filter((item) => {
@@ -2117,6 +2117,7 @@ export class HtLocationInspector extends LitElement {
                     const busy = Boolean(this._actionToggleBusy[busyKey]);
                     const service = this._selectedManagedActionService(entityId, triggerType);
                     const requireDark = this._selectedManagedActionRequireDark(entityId, triggerType);
+                    const supportsDarkCondition = this._supportsDarkCondition(triggerType);
                     const serviceOptions = this._actionServiceOptions(entityId, triggerType);
                     return html`
                     <div class="source-item action-device-row ${enabled ? "enabled" : ""}">
@@ -2164,21 +2165,25 @@ export class HtLocationInspector extends LitElement {
                               html`<option value=${option.value}>${option.label}</option>`
                           )}
                         </select>
-                        <label class="action-dark-toggle">
-                          <input
-                            type="checkbox"
-                            class="action-dark-input"
-                            .checked=${requireDark}
-                            ?disabled=${busy || this._loadingActionRules}
-                            @change=${(ev: Event) =>
-                              this._handleManagedActionDarkChange(
-                                entityId,
-                                triggerType,
-                                (ev.target as HTMLInputElement).checked
-                              )}
-                          />
-                          Only when dark
-                        </label>
+                        ${supportsDarkCondition
+                          ? html`
+                              <label class="action-dark-toggle">
+                                <input
+                                  type="checkbox"
+                                  class="action-dark-input"
+                                  .checked=${requireDark}
+                                  ?disabled=${busy || this._loadingActionRules}
+                                  @change=${(ev: Event) =>
+                                    this._handleManagedActionDarkChange(
+                                      entityId,
+                                      triggerType,
+                                      (ev.target as HTMLInputElement).checked
+                                    )}
+                                />
+                                Only when dark
+                              </label>
+                            `
+                          : ""}
                         ${busy ? html`<span class="text-muted">Saving...</span>` : ""}
                       </div>
                     </div>
@@ -2354,6 +2359,10 @@ export class HtLocationInspector extends LitElement {
       .join(" ");
   }
 
+  private _supportsDarkCondition(triggerType: "occupied" | "vacant"): boolean {
+    return triggerType === "occupied";
+  }
+
   private _selectedManagedActionService(entityId: string, triggerType: "occupied" | "vacant"): string {
     const key = this._actionToggleKey(entityId, triggerType);
     const selected = this._actionServiceSelections[key];
@@ -2380,6 +2389,10 @@ export class HtLocationInspector extends LitElement {
     entityId: string,
     triggerType: "occupied" | "vacant"
   ): boolean {
+    if (!this._supportsDarkCondition(triggerType)) {
+      return false;
+    }
+
     const key = this._actionToggleKey(entityId, triggerType);
     if (Object.prototype.hasOwnProperty.call(this._actionDarkSelections, key)) {
       return Boolean(this._actionDarkSelections[key]);
@@ -2624,6 +2637,10 @@ export class HtLocationInspector extends LitElement {
     triggerType: "occupied" | "vacant",
     requireDark: boolean
   ): Promise<void> {
+    if (!this._supportsDarkCondition(triggerType)) {
+      return;
+    }
+
     const key = this._actionToggleKey(entityId, triggerType);
     this._actionDarkSelections = {
       ...this._actionDarkSelections,
@@ -2981,9 +2998,10 @@ export class HtLocationInspector extends LitElement {
       return false;
     }
     const attrs = stateObj.attributes || {};
+    // Exclude Topomation-created occupancy entities from source pickers.
     if (attrs.device_class === "occupancy" && attrs.location_id) return false;
     const domain = entityId.split(".", 1)[0];
-    if (["person", "device_tracker", "light", "switch", "fan", "media_player", "climate", "cover", "vacuum"].includes(domain)) {
+    if (["person", "device_tracker", "light", "switch", "fan", "media_player"].includes(domain)) {
       return true;
     }
     if (domain === "binary_sensor") {
@@ -3001,6 +3019,49 @@ export class HtLocationInspector extends LitElement {
       ].includes(deviceClass);
     }
     return false;
+  }
+
+  private _isCoreAreaSourceEntity(entityId: string): boolean {
+    const stateObj = this.hass?.states?.[entityId];
+    if (!stateObj) return false;
+    const registryMeta = this._entityRegistryMetaById[entityId];
+    if (registryMeta?.hiddenBy || registryMeta?.disabledBy || registryMeta?.entityCategory) {
+      return false;
+    }
+
+    const attrs = stateObj.attributes || {};
+    // Never show integration-owned occupancy entities in the core detection list.
+    if (attrs.device_class === "occupancy" && attrs.location_id) return false;
+
+    const domain = entityId.split(".", 1)[0];
+    if (domain === "light" || domain === "fan" || domain === "media_player") {
+      return true;
+    }
+
+    if (domain === "switch") {
+      return this._isLightClassifiedSwitch(attrs);
+    }
+
+    if (domain === "binary_sensor") {
+      const deviceClass = String(attrs.device_class || "");
+      if (!deviceClass) return true;
+      return [
+        "motion",
+        "occupancy",
+        "presence",
+        "door",
+        "garage_door",
+        "opening",
+        "window",
+        "lock",
+      ].includes(deviceClass);
+    }
+
+    return false;
+  }
+
+  private _isLightClassifiedSwitch(attrs: Record<string, any>): boolean {
+    return String(attrs.device_class || "").toLowerCase() === "light";
   }
 
   private _getOccupancyState() {
@@ -3204,7 +3265,7 @@ export class HtLocationInspector extends LitElement {
       ];
     }
 
-    if (["light", "switch", "fan", "media_player", "climate", "cover", "vacuum"].includes(domain)) {
+    if (["light", "switch", "fan", "media_player"].includes(domain)) {
       return [{ value: "any_change", label: "Any change" }];
     }
 

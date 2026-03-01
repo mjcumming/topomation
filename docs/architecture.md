@@ -554,6 +554,15 @@ loc_mgr.set_module_config(
 - HA-backed wrappers (`sync_source=homeassistant`) keep HA-native linkage:
   - `floor_*` and `area_*` wrappers continue to import from HA registries.
   - Occupancy source discovery can use linked HA area entities.
+  - Detection core auto-enumeration is curated to keep the list relevant:
+    - `light.*` (power/level/color signals as supported)
+    - `fan.*`
+    - `media_player.*` (playback/volume/mute signals)
+    - `binary_sensor.*` for motion/presence/occupancy/door/opening classes and no-class camera-style binaries
+    - `switch.*` only when explicitly light-classified (`device_class: light`)
+  - Exclude Topomation-created occupancy entities (`device_class: occupancy` + `location_id`) and
+    non-core domains (`climate`, `vacuum`, `cover`) from core auto-discovery.
+  - Keep explicit **Add Source** flow broader for edge cases (for example generic switches).
 - Integration-owned nodes (`sync_source=topology`) require explicit source mapping:
   - Sources are selected directly by entity ID (no implicit area linkage).
   - This enables global/building/grounds scopes where HA has no native area parent.

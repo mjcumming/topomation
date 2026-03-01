@@ -402,6 +402,89 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(optionValues).to.not.include("switch.kitchen_config");
   });
 
+  it("filters unsupported climate entities from area source options", async () => {
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>): Promise<T> => {
+        if (request.type === "config/entity_registry/list") {
+          return [
+            {
+              entity_id: "binary_sensor.kitchen_motion",
+              area_id: "kitchen",
+              device_id: null,
+            },
+            {
+              entity_id: "climate.kitchen_hvac",
+              area_id: "kitchen",
+              device_id: null,
+            },
+          ] as T;
+        }
+        if (request.type === "config/device_registry/list") {
+          return [] as T;
+        }
+        if (request.type === "topomation/locations/set_module_config") {
+          return { success: true } as T;
+        }
+        return {} as T;
+      },
+      connection: {},
+      states: {
+        "binary_sensor.kitchen_motion": {
+          entity_id: "binary_sensor.kitchen_motion",
+          state: "off",
+          attributes: {
+            friendly_name: "Kitchen Motion",
+            device_class: "motion",
+          },
+        },
+        "climate.kitchen_hvac": {
+          entity_id: "climate.kitchen_hvac",
+          state: "auto",
+          attributes: {
+            friendly_name: "Kitchen HVAC",
+            hvac_mode: "auto",
+          },
+        },
+      },
+      areas: {
+        kitchen: { area_id: "kitchen", name: "Kitchen" },
+      },
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${structuredClone(baseLocation)}
+      ></ht-location-inspector>
+    `);
+
+    const areaSelect = element.shadowRoot!.querySelector(
+      '[data-testid="external-source-area-select"]'
+    ) as HTMLSelectElement;
+    areaSelect.value = "kitchen";
+    areaSelect.dispatchEvent(new Event("change"));
+    await element.updateComplete;
+
+    await waitUntil(() => {
+      const entitySelect = element.shadowRoot!.querySelector(
+        '[data-testid="external-source-entity-select"]'
+      ) as HTMLSelectElement;
+      return Array.from(entitySelect.options).some(
+        (option) => option.value === "binary_sensor.kitchen_motion"
+      );
+    }, "motion entity option did not appear");
+
+    const entitySelect = element.shadowRoot!.querySelector(
+      '[data-testid="external-source-entity-select"]'
+    ) as HTMLSelectElement;
+    const optionValues = Array.from(entitySelect.options).map((option) => option.value);
+
+    expect(optionValues).to.include("binary_sensor.kitchen_motion");
+    expect(optionValues).to.not.include("climate.kitchen_hvac");
+  });
+
   it("adds selected external entity as staged occupancy source", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>): Promise<T> => {
@@ -485,6 +568,243 @@ describe("HtLocationInspector occupancy source composer", () => {
 
     const staged = (element as any)._stagedSources as Array<Record<string, any>>;
     expect(staged[0].entity_id).to.equal("binary_sensor.kitchen_motion");
+  });
+
+  it("does not show Topomation occupancy entities in source candidates", async () => {
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>): Promise<T> => {
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        if (request.type === "topomation/locations/set_module_config") {
+          return { success: true } as T;
+        }
+        return {} as T;
+      },
+      connection: {},
+      states: {
+        "binary_sensor.kitchen_occupancy": {
+          entity_id: "binary_sensor.kitchen_occupancy",
+          state: "unavailable",
+          attributes: {
+            friendly_name: "Kitchen Occupancy",
+            device_class: "occupancy",
+            location_id: "area_kitchen",
+          },
+        },
+      },
+      areas: {
+        kitchen: { area_id: "kitchen", name: "Kitchen" },
+      },
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_kitchen";
+    location.name = "Kitchen";
+    location.ha_area_id = "kitchen";
+    location.modules._meta = { type: "area" };
+    location.entity_ids = ["binary_sensor.kitchen_occupancy"];
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${location}
+      ></ht-location-inspector>
+    `);
+
+    await waitUntil(
+      () => !!element.shadowRoot?.querySelector(".card-section"),
+      "inspector did not render"
+    );
+
+    const matchingCard = Array.from(element.shadowRoot!.querySelectorAll(".source-card")).find((row) =>
+      (row.textContent || "").includes("Kitchen Occupancy")
+    );
+    expect(matchingCard).to.equal(undefined);
+  });
+
+  it("shows only core detection entities in area source candidates while keeping generic switches in Add Source", async () => {
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>): Promise<T> => {
+        if (request.type === "config/entity_registry/list") {
+          return [
+            { entity_id: "light.mudroom_lights", area_id: "mudroom", device_id: null },
+            { entity_id: "switch.mudroom_indicator", area_id: "mudroom", device_id: null },
+            { entity_id: "switch.mudroom_light_relay", area_id: "mudroom", device_id: null },
+            { entity_id: "fan.mudroom_exhaust", area_id: "mudroom", device_id: null },
+            { entity_id: "media_player.mudroom_speaker", area_id: "mudroom", device_id: null },
+            { entity_id: "binary_sensor.mudroom_motion", area_id: "mudroom", device_id: null },
+            { entity_id: "binary_sensor.mudroom_camera_person", area_id: "mudroom", device_id: null },
+            { entity_id: "binary_sensor.mudroom_occupancy", area_id: "mudroom", device_id: null },
+            { entity_id: "climate.mudroom", area_id: "mudroom", device_id: null },
+            { entity_id: "vacuum.main_floor", area_id: "mudroom", device_id: null },
+          ] as T;
+        }
+        if (request.type === "config/device_registry/list") return [] as T;
+        if (request.type === "topomation/locations/set_module_config") {
+          return { success: true } as T;
+        }
+        return {} as T;
+      },
+      connection: {},
+      states: {
+        "light.mudroom_lights": {
+          entity_id: "light.mudroom_lights",
+          state: "on",
+          attributes: {
+            friendly_name: "Mudroom Lights",
+            area_id: "mudroom",
+            supported_color_modes: ["brightness"],
+          },
+        },
+        "switch.mudroom_indicator": {
+          entity_id: "switch.mudroom_indicator",
+          state: "on",
+          attributes: {
+            friendly_name: "All Lights KeypadLinc Indicator",
+            area_id: "mudroom",
+            device_class: "switch",
+          },
+        },
+        "switch.mudroom_light_relay": {
+          entity_id: "switch.mudroom_light_relay",
+          state: "off",
+          attributes: {
+            friendly_name: "Mudroom Relay Light",
+            area_id: "mudroom",
+            device_class: "light",
+          },
+        },
+        "fan.mudroom_exhaust": {
+          entity_id: "fan.mudroom_exhaust",
+          state: "off",
+          attributes: {
+            friendly_name: "Mudroom Exhaust",
+            area_id: "mudroom",
+          },
+        },
+        "media_player.mudroom_speaker": {
+          entity_id: "media_player.mudroom_speaker",
+          state: "off",
+          attributes: {
+            friendly_name: "Mudroom Speaker",
+            area_id: "mudroom",
+          },
+        },
+        "binary_sensor.mudroom_motion": {
+          entity_id: "binary_sensor.mudroom_motion",
+          state: "off",
+          attributes: {
+            friendly_name: "Mudroom Motion",
+            area_id: "mudroom",
+            device_class: "motion",
+          },
+        },
+        "binary_sensor.mudroom_camera_person": {
+          entity_id: "binary_sensor.mudroom_camera_person",
+          state: "off",
+          attributes: {
+            friendly_name: "Mudroom Camera Person",
+            area_id: "mudroom",
+          },
+        },
+        "binary_sensor.mudroom_occupancy": {
+          entity_id: "binary_sensor.mudroom_occupancy",
+          state: "off",
+          attributes: {
+            friendly_name: "Mudroom Occupancy",
+            area_id: "mudroom",
+            device_class: "occupancy",
+            location_id: "area_mudroom",
+          },
+        },
+        "climate.mudroom": {
+          entity_id: "climate.mudroom",
+          state: "auto",
+          attributes: {
+            friendly_name: "Mudroom Heat",
+            area_id: "mudroom",
+          },
+        },
+        "vacuum.main_floor": {
+          entity_id: "vacuum.main_floor",
+          state: "idle",
+          attributes: {
+            friendly_name: "Main Floor Vacuum",
+            area_id: "mudroom",
+          },
+        },
+      },
+      areas: {
+        mudroom: { area_id: "mudroom", name: "Mudroom" },
+      },
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_mudroom";
+    location.name = "Mudroom";
+    location.ha_area_id = "mudroom";
+    location.modules._meta = { type: "area" };
+    location.entity_ids = [
+      "light.mudroom_lights",
+      "switch.mudroom_indicator",
+      "switch.mudroom_light_relay",
+      "fan.mudroom_exhaust",
+      "media_player.mudroom_speaker",
+      "binary_sensor.mudroom_motion",
+      "binary_sensor.mudroom_camera_person",
+      "binary_sensor.mudroom_occupancy",
+      "climate.mudroom",
+      "vacuum.main_floor",
+    ];
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${location}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    const cardsText = Array.from(element.shadowRoot!.querySelectorAll(".source-card"))
+      .map((card) => (card.textContent || "").trim())
+      .join("\n");
+
+    expect(cardsText).to.include("Mudroom Lights");
+    expect(cardsText).to.include("Mudroom Relay Light");
+    expect(cardsText).to.include("Mudroom Exhaust");
+    expect(cardsText).to.include("Mudroom Speaker");
+    expect(cardsText).to.include("Mudroom Motion");
+    expect(cardsText).to.include("Mudroom Camera Person");
+    expect(cardsText).to.not.include("All Lights KeypadLinc Indicator");
+    expect(cardsText).to.not.include("Mudroom Occupancy");
+    expect(cardsText).to.not.include("Mudroom Heat");
+    expect(cardsText).to.not.include("Main Floor Vacuum");
+
+    const areaSelect = element.shadowRoot!.querySelector(
+      '[data-testid="external-source-area-select"]'
+    ) as HTMLSelectElement;
+    areaSelect.value = "__all__";
+    areaSelect.dispatchEvent(new Event("change"));
+    await element.updateComplete;
+
+    await waitUntil(() => {
+      const entitySelect = element.shadowRoot!.querySelector(
+        '[data-testid="external-source-entity-select"]'
+      ) as HTMLSelectElement;
+      return Array.from(entitySelect.options).some(
+        (option) => option.value === "switch.mudroom_indicator"
+      );
+    }, "generic switch option did not appear in Add Source picker");
+
+    const entitySelect = element.shadowRoot!.querySelector(
+      '[data-testid="external-source-entity-select"]'
+    ) as HTMLSelectElement;
+    const optionValues = Array.from(entitySelect.options).map((option) => option.value);
+    expect(optionValues).to.include("switch.mudroom_indicator");
   });
 
   it("renders Detection/On Occupied/On Vacant tabs", async () => {
@@ -1222,6 +1542,191 @@ describe("HtLocationInspector occupancy source composer", () => {
 
     await waitUntil(() => createCalls.length > 0, "managed rule creation call did not occur");
     expect(createCalls[0].require_dark).to.equal(true);
+  });
+
+  it("does not render dark toggle on On Vacant tab", async () => {
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>) => {
+        if (request.type === "topomation/actions/rules/list") {
+          return { rules: [] } as T;
+        }
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        if (request.type === "automation/config") return { config: undefined } as T;
+        return [] as T;
+      },
+      callApi: async <T>(): Promise<T> => ({ result: "ok" } as T),
+      connection: {},
+      states: {
+        "binary_sensor.kitchen_occupancy": {
+          entity_id: "binary_sensor.kitchen_occupancy",
+          state: "off",
+          attributes: {
+            friendly_name: "Kitchen Occupancy",
+            device_class: "occupancy",
+            location_id: "area_kitchen",
+          },
+        },
+        "light.kitchen_ceiling": {
+          entity_id: "light.kitchen_ceiling",
+          state: "off",
+          attributes: {
+            friendly_name: "Kitchen Ceiling",
+            area_id: "kitchen",
+          },
+        },
+      },
+      areas: {},
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_kitchen";
+    location.ha_area_id = "kitchen";
+    location.modules._meta = { type: "area" };
+    location.entity_ids = ["light.kitchen_ceiling"];
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${location}
+        .forcedTab=${"actions"}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    await waitUntil(
+      () =>
+        !!Array.from(element.shadowRoot!.querySelectorAll(".action-device-row")).find((el) =>
+          (el.textContent || "").includes("Kitchen Ceiling")
+        ),
+      "inline action device row did not render"
+    );
+
+    const vacantTab = Array.from(element.shadowRoot!.querySelectorAll(".tab")).find((el) =>
+      (el.textContent || "").includes("On Vacant")
+    ) as HTMLButtonElement | undefined;
+    expect(vacantTab).to.exist;
+    vacantTab!.click();
+    (element as any)._activeTab = "vacant_actions";
+    element.requestUpdate();
+    await element.updateComplete;
+
+    const row = Array.from(element.shadowRoot!.querySelectorAll(".action-device-row")).find((el) =>
+      (el.textContent || "").includes("Kitchen Ceiling")
+    ) as HTMLElement | undefined;
+    expect(row).to.exist;
+    const darkToggle = row!.querySelector("input.action-dark-input");
+    expect(darkToggle).to.equal(null);
+  });
+
+  it("forces require_dark false for On Vacant managed rule saves", async () => {
+    const createCalls: Array<Record<string, any>> = [];
+    const rules: Array<Record<string, any>> = [];
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>) => {
+        if (request.type === "topomation/actions/rules/list") {
+          return { rules } as T;
+        }
+        if (request.type === "topomation/actions/rules/create") {
+          createCalls.push(request);
+          const rule = {
+            id: `rule_${createCalls.length}`,
+            entity_id: `automation.rule_${createCalls.length}`,
+            name: request.name,
+            trigger_type: request.trigger_type,
+            action_entity_id: request.action_entity_id,
+            action_service: request.action_service,
+            require_dark: Boolean(request.require_dark),
+            enabled: true,
+          };
+          rules.push(rule);
+          return { rule } as T;
+        }
+        if (request.type === "topomation/actions/rules/delete") {
+          return { success: true } as T;
+        }
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        if (request.type === "automation/config") return { config: undefined } as T;
+        return [] as T;
+      },
+      callApi: async <T>(): Promise<T> => ({ result: "ok" } as T),
+      connection: {},
+      states: {
+        "binary_sensor.kitchen_occupancy": {
+          entity_id: "binary_sensor.kitchen_occupancy",
+          state: "off",
+          attributes: {
+            friendly_name: "Kitchen Occupancy",
+            device_class: "occupancy",
+            location_id: "area_kitchen",
+          },
+        },
+        "light.kitchen_ceiling": {
+          entity_id: "light.kitchen_ceiling",
+          state: "off",
+          attributes: {
+            friendly_name: "Kitchen Ceiling",
+            area_id: "kitchen",
+          },
+        },
+      },
+      areas: {},
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_kitchen";
+    location.ha_area_id = "kitchen";
+    location.modules._meta = { type: "area" };
+    location.entity_ids = ["light.kitchen_ceiling"];
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${location}
+        .forcedTab=${"actions"}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    await waitUntil(
+      () =>
+        !!Array.from(element.shadowRoot!.querySelectorAll(".action-device-row")).find((el) =>
+          (el.textContent || "").includes("Kitchen Ceiling")
+        ),
+      "inline action device row did not render"
+    );
+
+    (element as any)._actionDarkSelections = {
+      "vacant:light.kitchen_ceiling": true,
+    };
+
+    const vacantTab = Array.from(element.shadowRoot!.querySelectorAll(".tab")).find((el) =>
+      (el.textContent || "").includes("On Vacant")
+    ) as HTMLButtonElement | undefined;
+    expect(vacantTab).to.exist;
+    vacantTab!.click();
+    (element as any)._activeTab = "vacant_actions";
+    element.requestUpdate();
+    await element.updateComplete;
+
+    const row = Array.from(element.shadowRoot!.querySelectorAll(".action-device-row")).find((el) =>
+      (el.textContent || "").includes("Kitchen Ceiling")
+    ) as HTMLElement | undefined;
+    expect(row).to.exist;
+
+    const includeToggle = row!.querySelector("input.action-include-input") as HTMLInputElement | null;
+    expect(includeToggle).to.exist;
+    includeToggle!.click();
+    await element.updateComplete;
+
+    await waitUntil(() => createCalls.length > 0, "vacant managed rule creation call did not occur");
+    expect(createCalls[0].trigger_type).to.equal("vacant");
+    expect(createCalls[0].require_dark).to.equal(false);
   });
 
   it("recognizes managed rules when automation unique_id is opaque", async () => {

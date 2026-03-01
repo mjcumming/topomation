@@ -487,6 +487,22 @@ Use `signal_key` when an entity exposes multiple interaction channels:
 Persist source IDs as `{entity_id}::{signal_key}` to keep routing deterministic.
 For single-channel entities (e.g., basic motion/door/fan), omit `signal_key`.
 
+### Detection Source Enumeration Defaults (Panel)
+
+Topomation's Detection tab intentionally keeps the in-area source list curated:
+
+- `light.*` (including dimmer/color-capable signal variants)
+- `fan.*`
+- `media_player.*` (`playback`, `volume`, `mute`)
+- `binary_sensor.*` motion/presence/door/opening style classes, plus no-class camera-style binaries
+- `switch.*` only when explicitly light-classified (`device_class: light`)
+
+The Detection tab excludes Topomation-created occupancy entities (`device_class: occupancy` with
+`location_id`) and excludes non-core appliance/control domains (`climate`, `vacuum`, `cover`) from
+core auto-enumeration.
+
+Use the explicit **Add Source** flow for edge-case entities (for example generic/manual switches).
+
 ### Event Payload Guidelines
 
 Keep payloads **platform-neutral**:

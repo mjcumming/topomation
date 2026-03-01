@@ -89,7 +89,8 @@ Additional save points:
 
 ## C-008 Managed action dark-guard contract
 
-- Managed action rows support an optional `Only when dark` guard.
+- Managed action rows support an optional `Only when dark` guard on **On Occupied** only.
+- **On Vacant** rules do not expose dark guard UI and always persist with `require_dark: false`.
 - When enabled, created automation config must include:
   - `condition: state`
   - `entity_id: sun.sun`
@@ -160,3 +161,20 @@ Additional save points:
 - **Ordering mechanics.** SortableJS (or equivalent) is used only for list reorder and pointer capture. The final (parentId, siblingIndex) is computed from the **active drop zone** at drop time, not from flat index + heuristics.
 - **Domain rules.** All moves are validated by `canMoveLocation` (hierarchy-rules): floor/building/area constraints, no cycles, no self-parent. Invalid drops are rejected and the tree is restored to pre-drag order.
 - **Single source of truth.** The drag contract is specified in this contract and in the implementation’s drop-zone logic; no duplicate or divergent heuristic logic (e.g. x-offset thresholds) determines intent.
+
+## C-012 Detection Source Enumeration Contract
+
+- The Detection tab core area list (entities already in the selected location) is intentionally curated to:
+  - `light.*` (including power/level/color signal variants as supported)
+  - `fan.*`
+  - `media_player.*` (playback/volume/mute signal variants)
+  - `binary_sensor.*` where:
+    - `device_class` is one of `motion`, `presence`, `occupancy`, `door`, `garage_door`, `opening`, `window`, `lock`, or
+    - `device_class` is absent (for integrations that emit semantic binary sensors such as camera person/motion variants)
+  - `switch.*` only when explicitly light-classified (`device_class: light`)
+- The Detection tab must exclude Topomation-created occupancy entities from source selection
+  (`device_class: occupancy` with `location_id` attribute).
+- The Detection tab must exclude non-core appliance/control domains from core auto-enumeration
+  (for example `climate`, `vacuum`, `cover`).
+- The explicit **Add Source** picker remains broader for edge cases and may include generic `switch.*`
+  entities so users can opt into uncommon/manual workflows without cluttering core discovery.
