@@ -28,6 +28,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (for example floor/building/grounds) by excluding those entities from HA-area
   wrapper remapping.
 
+## [0.2.6] - 2026-03-01
+
+### Changed
+
+- **DnD "child" drop zone enlarged from 33% to 50% of row height.** The before/after
+  zones are now the top and bottom 25%; the inside (child) zone is the middle 50%,
+  making it much easier to drop an item as a child of another location.
+
 ## [0.2.5] - 2026-03-01
 
 ### Fixed

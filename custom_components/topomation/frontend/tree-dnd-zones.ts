@@ -108,9 +108,9 @@ export function zoneFromPointerInRow(
     if (clientX >= leftEdge && clientX < leftEdge + OUTDENT_STRIP_WIDTH_PX) return "outdent";
   }
   const relY = clientY - rowRect.top;
-  const third = rowRect.height / 3;
-  if (relY < third) return "before";
-  if (relY < 2 * third) return "inside";
+  const h = rowRect.height;
+  if (relY < h * 0.25) return "before";
+  if (relY < h * 0.75) return "inside";
   return "after";
 }
 

@@ -2219,8 +2219,8 @@ function Ci(a, t, e, i) {
     const r = a.left;
     if (t >= r && t < r + En) return "outdent";
   }
-  const o = e - a.top, n = a.height / 3;
-  return o < n ? "before" : o < 2 * n ? "inside" : "after";
+  const o = e - a.top, n = a.height;
+  return o < n * 0.25 ? "before" : o < n * 0.75 ? "inside" : "after";
 }
 function An(a, t, e, i, o) {
   const n = kn(a, t), r = a.filter((d) => !n.has(d.location.id)), s = r.find((d) => d.location.id === i);
