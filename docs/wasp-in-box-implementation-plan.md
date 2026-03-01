@@ -1,7 +1,7 @@
 # Wasp-in-Box Implementation Plan (TopoMation)
 
 **Date**: 2026-03-01  
-**Status**: Draft implementation guidance
+**Status**: Active implementation guidance (Phase 1 shipped)
 
 ## 1. Goal
 
@@ -39,13 +39,28 @@ across neighboring locations while keeping occupancy state binary
   - Crossing sources are visible and editable.
   - Direction is shown relative to current location (`Inbound`/`Outbound`/`Two-way`).
 
-## 4. Near-Term Implementation Sequence
+## 4. Implementation Status
+
+### 4.1 Shipped in TopoMation
 
 1. Topology edge CRUD in integration WebSocket contract.
-2. Include `adjacency_edges` in `locations/list`.
-3. Inspector adjacency editor (create/remove, key metadata).
-4. Occupancy engine handoff helper consumes adjacency graph.
-5. Add handoff trace UI in occupancy timeline (future).
+2. `adjacency_edges` included in `topomation/locations/list`.
+3. Inspector adjacency editor (create/remove + edge metadata).
+4. Event bridge emits adjacency-driven provisional handoff triggers.
+5. Inspector handoff trace panel for runtime diagnostics.
+6. Detection tab WIAB preset editor:
+   - `Enclosed Room (Door Latch)`
+   - `Home Containment`
+   - `Hybrid`
+7. WIAB runtime now uses occupancy lock/trigger/clear primitives:
+   - door-close latch and door-open release for enclosed spaces
+   - interior-trigger latch and exterior-door release for home containment
+
+### 4.2 Next Iteration
+
+1. Add richer WIAB traces in dedicated timeline cards (beyond handoff-style diagnostic payloads).
+2. Add preset templates tied to location class (`bathroom`, `bedroom`, `entryway`, `whole_home`).
+3. Add rule explanation strings surfaced directly in location runtime status.
 
 ## 5. Guardrails
 

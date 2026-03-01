@@ -33,6 +33,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added system health diagnostics reporting for Topomation and
   `home-topology` versions, so the integration info window shows the currently
   active topology runtime version.
+- Added Detection-tab WIAB preset configuration (`Enclosed Room`, `Home Containment`,
+  `Hybrid`) with per-location interior/boundary entity selectors and latch/release
+  timeout controls.
+- Added WIAB runtime handling in the event bridge for room/home latch semantics
+  using occupancy trigger/lock/unlock/clear primitives and diagnostic trace events.
 
 ### Changed
 

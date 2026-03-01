@@ -87,6 +87,18 @@ export interface OccupancyConfig extends ModuleConfig {
   default_timeout: number;
   default_trailing_timeout?: number;
   occupancy_sources?: OccupancySource[];
+  wiab?: WaspInBoxConfig;
+}
+
+export type WaspInBoxPreset = "off" | "enclosed_room" | "home_containment" | "hybrid";
+
+export interface WaspInBoxConfig {
+  preset?: WaspInBoxPreset;
+  interior_entities?: string[];
+  door_entities?: string[];
+  exterior_door_entities?: string[];
+  hold_timeout_sec?: number;
+  release_timeout_sec?: number;
 }
 
 export interface AutomationConfig extends ModuleConfig {

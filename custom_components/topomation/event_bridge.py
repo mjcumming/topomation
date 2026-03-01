@@ -80,12 +80,6 @@ class EventBridge:
         policy_actions = self._resolve_policy_actions(entity_id, new_state.state)
         self._execute_policy_actions(policy_actions)
 
-        # Get location for entity
-        location_id = self.loc_mgr.get_entity_location(entity_id)
-        if not location_id:
-            # Entity not mapped to any location
-            return
-
         # Normalize state
         domain = entity_id.split(".", 1)[0]
         normalized_old = self._normalize_state(
@@ -116,6 +110,20 @@ class EventBridge:
         if signal_type is None:
             signal_type = self._state_to_signal_type(normalized_old, normalized_new)
         if signal_type is None:
+            return
+
+        event_time = new_state.last_changed or datetime.now(UTC)
+        self._execute_wiab_actions(
+            entity_id=entity_id,
+            signal_type=signal_type,
+            normalized_new=normalized_new,
+            event_time=event_time,
+        )
+
+        # Get location for entity
+        location_id = self.loc_mgr.get_entity_location(entity_id)
+        if not location_id:
+            # Entity not mapped to any location
             return
 
         occupancy_config = self.loc_mgr.get_module_config(location_id, "occupancy")
@@ -152,13 +160,13 @@ class EventBridge:
                 entity_id=entity_id,
                 location_id=location_id,
                 payload=payload,
-                timestamp=new_state.last_changed or datetime.now(UTC),
+                timestamp=event_time,
             )
 
             try:
                 self.bus.publish(kernel_event)
                 self._maybe_publish_handoff_signal(
-                    event_time=new_state.last_changed or datetime.now(UTC),
+                    event_time=event_time,
                     source_location_id=location_id,
                     entity_id=entity_id,
                     source_event=source_event,
@@ -173,6 +181,290 @@ class EventBridge:
                     e,
                     exc_info=True,
                 )
+
+    def _execute_wiab_actions(
+        self,
+        *,
+        entity_id: str,
+        signal_type: str,
+        normalized_new: str | None,
+        event_time: datetime,
+    ) -> None:
+        """Evaluate wasp-in-box presets configured in occupancy module config."""
+        if self.occupancy is None:
+            return
+
+        for location in self._all_locations():
+            location_id = getattr(location, "id", None)
+            if not isinstance(location_id, str) or not location_id:
+                continue
+
+            occupancy_config = self.loc_mgr.get_module_config(location_id, "occupancy")
+            if not isinstance(occupancy_config, dict):
+                continue
+
+            wiab_raw = occupancy_config.get("wiab")
+            if not isinstance(wiab_raw, dict):
+                continue
+            preset = str(wiab_raw.get("preset", "off")).strip().lower()
+            if preset in {"", "off"}:
+                continue
+
+            if preset in {"enclosed_room", "hybrid"}:
+                self._apply_wiab_enclosed_room(
+                    location_id=location_id,
+                    wiab=wiab_raw,
+                    entity_id=entity_id,
+                    signal_type=signal_type,
+                    normalized_new=normalized_new,
+                    event_time=event_time,
+                )
+
+            if preset in {"home_containment", "hybrid"}:
+                self._apply_wiab_home_containment(
+                    location_id=location_id,
+                    wiab=wiab_raw,
+                    entity_id=entity_id,
+                    signal_type=signal_type,
+                    normalized_new=normalized_new,
+                    event_time=event_time,
+                )
+
+    def _apply_wiab_enclosed_room(
+        self,
+        *,
+        location_id: str,
+        wiab: dict[str, Any],
+        entity_id: str,
+        signal_type: str,
+        normalized_new: str | None,
+        event_time: datetime,
+    ) -> None:
+        """Apply enclosed-room WIAB latch semantics for one location."""
+        interior_entities = self._wiab_entities(wiab, "interior_entities")
+        door_entities = self._wiab_entities(wiab, "door_entities")
+        if not interior_entities and not door_entities:
+            return
+
+        source_id = f"wiab:enclosed_room:{location_id}"
+        release_timeout_sec = self._wiab_int(wiab.get("release_timeout_sec"), default=90)
+        hold_timeout_sec = self._wiab_int(wiab.get("hold_timeout_sec"), default=900)
+
+        if entity_id in interior_entities and signal_type == "trigger":
+            self._safe_trigger(location_id, source_id, hold_timeout_sec)
+            return
+
+        if entity_id not in door_entities:
+            return
+
+        door_state = self._wiab_door_state(normalized_new=normalized_new, signal_type=signal_type)
+        if door_state == "closed":
+            if self._location_is_occupied(location_id):
+                self._safe_lock(location_id, source_id, mode="block_vacant", scope="self")
+                self._publish_wiab_trace(
+                    location_id=location_id,
+                    event_time=event_time,
+                    preset="enclosed_room",
+                    status="latched",
+                    trigger_entity_id=entity_id,
+                )
+            return
+
+        if door_state == "open":
+            self._safe_unlock(location_id, source_id)
+            self._safe_clear(location_id, source_id, release_timeout_sec)
+            self._publish_wiab_trace(
+                location_id=location_id,
+                event_time=event_time,
+                preset="enclosed_room",
+                status="released",
+                trigger_entity_id=entity_id,
+            )
+
+    def _apply_wiab_home_containment(
+        self,
+        *,
+        location_id: str,
+        wiab: dict[str, Any],
+        entity_id: str,
+        signal_type: str,
+        normalized_new: str | None,
+        event_time: datetime,
+    ) -> None:
+        """Apply home-containment WIAB latch semantics for one location."""
+        interior_entities = self._wiab_entities(wiab, "interior_entities")
+        exterior_door_entities = self._wiab_entities(wiab, "exterior_door_entities")
+        if not interior_entities and not exterior_door_entities:
+            return
+
+        source_id = f"wiab:home_containment:{location_id}"
+        release_timeout_sec = self._wiab_int(wiab.get("release_timeout_sec"), default=120)
+        hold_timeout_sec = self._wiab_int(wiab.get("hold_timeout_sec"), default=3600)
+
+        if entity_id in interior_entities and signal_type == "trigger":
+            self._safe_trigger(location_id, source_id, hold_timeout_sec)
+            self._safe_lock(location_id, source_id, mode="block_vacant", scope="self")
+            self._publish_wiab_trace(
+                location_id=location_id,
+                event_time=event_time,
+                preset="home_containment",
+                status="latched",
+                trigger_entity_id=entity_id,
+            )
+            return
+
+        if entity_id not in exterior_door_entities:
+            return
+
+        door_state = self._wiab_door_state(normalized_new=normalized_new, signal_type=signal_type)
+        if door_state == "open":
+            self._safe_unlock(location_id, source_id)
+            self._safe_clear(location_id, source_id, release_timeout_sec)
+            self._publish_wiab_trace(
+                location_id=location_id,
+                event_time=event_time,
+                preset="home_containment",
+                status="released",
+                trigger_entity_id=entity_id,
+            )
+
+    def _wiab_entities(self, wiab: dict[str, Any], key: str) -> set[str]:
+        """Return configured WIAB entity IDs for one key."""
+        raw_entities = wiab.get(key)
+        if not isinstance(raw_entities, list):
+            return set()
+        return {
+            str(entity_id).strip()
+            for entity_id in raw_entities
+            if isinstance(entity_id, str) and str(entity_id).strip()
+        }
+
+    def _wiab_int(self, value: Any, *, default: int) -> int:
+        """Parse WIAB numeric fields defensively."""
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            return default
+        return max(0, min(86_400, parsed))
+
+    def _wiab_door_state(self, *, normalized_new: str | None, signal_type: str) -> str | None:
+        """Normalize door semantics for WIAB presets across open/closed and on/off sensors."""
+        if normalized_new == "open":
+            return "open"
+        if normalized_new == "closed":
+            return "closed"
+
+        if signal_type == "trigger":
+            return "open"
+        if signal_type == "clear":
+            return "closed"
+        return None
+
+    def _location_is_occupied(self, location_id: str) -> bool:
+        """Return current occupied state for a location from occupancy runtime."""
+        if self.occupancy is None:
+            return False
+        get_state = getattr(self.occupancy, "get_location_state", None)
+        if not callable(get_state):
+            return False
+        try:
+            payload = get_state(location_id)
+        except Exception:  # noqa: BLE001
+            return False
+        if not isinstance(payload, dict):
+            return False
+        return bool(payload.get("occupied", False))
+
+    def _safe_trigger(self, location_id: str, source_id: str, timeout: int) -> None:
+        """Call occupancy.trigger with defensive logging."""
+        if self.occupancy is None:
+            return
+        try:
+            self.occupancy.trigger(location_id, source_id, timeout)
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.error(
+                "WIAB trigger failed for %s (%s): %s",
+                location_id,
+                source_id,
+                err,
+                exc_info=True,
+            )
+
+    def _safe_clear(self, location_id: str, source_id: str, trailing_timeout: int) -> None:
+        """Call occupancy.clear with defensive logging."""
+        if self.occupancy is None:
+            return
+        try:
+            self.occupancy.clear(location_id, source_id, trailing_timeout)
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.error(
+                "WIAB clear failed for %s (%s): %s",
+                location_id,
+                source_id,
+                err,
+                exc_info=True,
+            )
+
+    def _safe_lock(self, location_id: str, source_id: str, *, mode: str, scope: str) -> None:
+        """Call occupancy.lock with defensive logging."""
+        if self.occupancy is None:
+            return
+        try:
+            self.occupancy.lock(location_id, source_id, mode, scope)
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.error(
+                "WIAB lock failed for %s (%s): %s",
+                location_id,
+                source_id,
+                err,
+                exc_info=True,
+            )
+
+    def _safe_unlock(self, location_id: str, source_id: str) -> None:
+        """Call occupancy.unlock with defensive logging."""
+        if self.occupancy is None:
+            return
+        try:
+            self.occupancy.unlock(location_id, source_id)
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.error(
+                "WIAB unlock failed for %s (%s): %s",
+                location_id,
+                source_id,
+                err,
+                exc_info=True,
+            )
+
+    def _publish_wiab_trace(
+        self,
+        *,
+        location_id: str,
+        event_time: datetime,
+        preset: str,
+        status: str,
+        trigger_entity_id: str,
+    ) -> None:
+        """Publish a WIAB diagnostic event for UI/event-log visibility."""
+        self.bus.publish(
+            Event(
+                type="occupancy.handoff",
+                source="event_bridge",
+                entity_id=trigger_entity_id,
+                location_id=location_id,
+                payload={
+                    "edge_id": f"wiab:{preset}:{location_id}",
+                    "from_location_id": location_id,
+                    "to_location_id": location_id,
+                    "trigger_entity_id": trigger_entity_id,
+                    "trigger_source_id": trigger_entity_id,
+                    "boundary_type": "virtual",
+                    "handoff_window_sec": 0,
+                    "status": f"wiab_{preset}_{status}",
+                    "timestamp": event_time.isoformat(),
+                },
+                timestamp=event_time,
+            )
+        )
 
     def _maybe_publish_handoff_signal(
         self,

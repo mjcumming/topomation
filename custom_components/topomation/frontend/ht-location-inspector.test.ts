@@ -255,7 +255,7 @@ describe("HtLocationInspector occupancy source composer", () => {
     await element.updateComplete;
 
     const cards = Array.from(element.shadowRoot!.querySelectorAll(".source-card"));
-    const powerCard = cards.find((card) => (card.textContent || "").includes("Office Lights — Power"));
+    const powerCard = cards.find((card) => (card.textContent || "").includes("Office Lights"));
     const cardsText = cards.map((card) => (card.textContent || "").trim()).join("\n");
 
     expect(powerCard).to.exist;
@@ -888,9 +888,12 @@ describe("HtLocationInspector occupancy source composer", () => {
       (card.textContent || "").includes("Mudroom Lights")
     );
 
-    expect(cardsText).to.include("Mudroom Lights — Power");
-    expect(cardsText).to.include("Mudroom Lights — Level change");
+    expect(cardsText).to.include("Mudroom Lights");
     expect(mudroomLightCards).to.have.length(1);
+    const mudroomLightCardText = mudroomLightCards[0]?.textContent || "";
+    expect(mudroomLightCardText).to.include("Signal inputs:");
+    expect(mudroomLightCardText).to.include("Power");
+    expect(mudroomLightCardText).to.include("Level change");
     expect(cardsText).to.include("Mudroom Relay Light");
     expect(cardsText).to.include("Mudroom Exhaust");
     expect(cardsText).to.include("Mudroom Speaker — Playback");
@@ -1030,8 +1033,9 @@ describe("HtLocationInspector occupancy source composer", () => {
       (card.textContent || "").includes("Mike Closet Light")
     );
     expect(lightCards).to.have.length(1);
-    expect((lightCards[0].textContent || "")).to.include("Mike Closet Light — Power");
-    expect((lightCards[0].textContent || "")).to.include("Mike Closet Light — Level change");
+    expect((lightCards[0].textContent || "")).to.include("Signal inputs:");
+    expect((lightCards[0].textContent || "")).to.include("Power");
+    expect((lightCards[0].textContent || "")).to.include("Level change");
   });
 
   it("renders header occupancy/lock status and lock diagnostics", async () => {
@@ -3065,5 +3069,174 @@ describe("HtLocationInspector occupancy source composer", () => {
       | null;
     expect(vacantSelectAfter).to.exist;
     expect(vacantSelectAfter!.value).to.equal(vacantNextValue);
+  });
+});
+
+describe("HtLocationInspector WIAB configuration", () => {
+  it("renders WIAB preset and configured entities", async () => {
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>): Promise<T> => {
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        if (request.type === "topomation/locations/set_module_config") return { success: true } as T;
+        return {} as T;
+      },
+      connection: {},
+      states: {
+        "binary_sensor.bathroom_motion": {
+          entity_id: "binary_sensor.bathroom_motion",
+          state: "off",
+          attributes: { friendly_name: "Bathroom Motion", device_class: "motion" },
+        },
+        "binary_sensor.bathroom_door": {
+          entity_id: "binary_sensor.bathroom_door",
+          state: "off",
+          attributes: { friendly_name: "Bathroom Door", device_class: "door" },
+        },
+      },
+      areas: { bathroom: { area_id: "bathroom", name: "Bathroom" } },
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_bathroom";
+    location.name = "Bathroom";
+    location.ha_area_id = "bathroom";
+    location.modules._meta = { type: "area" };
+    location.modules.occupancy = {
+      enabled: true,
+      default_timeout: 300,
+      default_trailing_timeout: 120,
+      occupancy_sources: [],
+      wiab: {
+        preset: "enclosed_room",
+        interior_entities: ["binary_sensor.bathroom_motion"],
+        door_entities: ["binary_sensor.bathroom_door"],
+        hold_timeout_sec: 900,
+        release_timeout_sec: 90,
+      },
+    };
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector .hass=${hass} .location=${location}></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    const presetSelect = element.shadowRoot!.querySelector(
+      '[data-testid="wiab-preset-select"]'
+    ) as HTMLSelectElement | null;
+    expect(presetSelect).to.exist;
+    expect(presetSelect!.value).to.equal("enclosed_room");
+
+    const interiorChips = element.shadowRoot!.querySelectorAll('[data-testid="wiab-interior-chip"]');
+    const doorChips = element.shadowRoot!.querySelectorAll('[data-testid="wiab-door-chip"]');
+    expect(interiorChips.length).to.equal(1);
+    expect(doorChips.length).to.equal(1);
+  });
+
+  it("persists WIAB preset and entity list changes", async () => {
+    const setConfigCalls: Array<Record<string, any>> = [];
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>): Promise<T> => {
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        if (request.type === "topomation/locations/set_module_config") {
+          setConfigCalls.push(request);
+          return { success: true } as T;
+        }
+        return {} as T;
+      },
+      connection: {},
+      states: {
+        "binary_sensor.house_motion": {
+          entity_id: "binary_sensor.house_motion",
+          state: "off",
+          attributes: { friendly_name: "House Motion", device_class: "motion" },
+        },
+        "binary_sensor.front_door": {
+          entity_id: "binary_sensor.front_door",
+          state: "off",
+          attributes: { friendly_name: "Front Door", device_class: "door" },
+        },
+      },
+      areas: { hallway: { area_id: "hallway", name: "Hallway" } },
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "building_home";
+    location.name = "Home";
+    location.ha_area_id = "hallway";
+    location.modules._meta = { type: "building" };
+    location.entity_ids = ["binary_sensor.house_motion", "binary_sensor.front_door"];
+    location.modules.occupancy = {
+      enabled: true,
+      default_timeout: 300,
+      default_trailing_timeout: 120,
+      occupancy_sources: [],
+      wiab: { preset: "off" },
+    };
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector .hass=${hass} .location=${location}></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    const presetSelect = element.shadowRoot!.querySelector(
+      '[data-testid="wiab-preset-select"]'
+    ) as HTMLSelectElement;
+    presetSelect.value = "enclosed_room";
+    presetSelect.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+
+    await waitUntil(
+      () => setConfigCalls.some((request) => request.config?.wiab?.preset === "enclosed_room"),
+      "WIAB preset change was not persisted"
+    );
+
+    const interiorSelect = element.shadowRoot!.querySelector(
+      '[data-testid="wiab-interior-select"]'
+    ) as HTMLSelectElement;
+    interiorSelect.value = "binary_sensor.house_motion";
+    interiorSelect.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+    await element.updateComplete;
+    const interiorAdd = element.shadowRoot!.querySelector(
+      '[data-testid="wiab-interior-add"]'
+    ) as HTMLButtonElement;
+    interiorAdd.click();
+    await element.updateComplete;
+
+    await waitUntil(
+      () =>
+        setConfigCalls.some(
+          (request) =>
+            Array.isArray(request.config?.wiab?.interior_entities) &&
+            request.config.wiab.interior_entities.includes("binary_sensor.house_motion")
+        ),
+      "WIAB interior entity change was not persisted"
+    );
+
+    const doorSelect = element.shadowRoot!.querySelector(
+      '[data-testid="wiab-door-select"]'
+    ) as HTMLSelectElement;
+    doorSelect.value = "binary_sensor.front_door";
+    doorSelect.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+    await element.updateComplete;
+    const doorAdd = element.shadowRoot!.querySelector(
+      '[data-testid="wiab-door-add"]'
+    ) as HTMLButtonElement;
+    doorAdd.click();
+    await element.updateComplete;
+
+    await waitUntil(
+      () =>
+        setConfigCalls.some(
+          (request) =>
+            Array.isArray(request.config?.wiab?.door_entities) &&
+            request.config.wiab.door_entities.includes("binary_sensor.front_door")
+        ),
+      "WIAB door entity change was not persisted"
+    );
   });
 });

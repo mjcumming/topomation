@@ -1775,6 +1775,53 @@ sensors prevented these devices from being configured in Detection.
 
 ---
 
+### ADR-HA-044: WIAB Presets Use Occupancy Lock Primitives; Topology Stores Structure Only (2026-03-01)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+
+Operators needed practical WIAB behavior for enclosed rooms and whole-home
+containment without introducing confidence scoring or a separate occupancy
+state model. We also needed clear boundaries between topology storage and
+inference behavior.
+
+**Decision**:
+
+1. Add per-location WIAB preset config in occupancy module config:
+   - `off`
+   - `enclosed_room`
+   - `home_containment`
+   - `hybrid`
+2. Implement preset behavior in the integration event bridge using existing
+   occupancy runtime APIs:
+   - `trigger`
+   - `clear`
+   - `lock(mode="block_vacant", scope="self")`
+   - `unlock`
+3. Keep topology layer responsibilities structural only (locations, adjacency,
+   crossing sources). Do not move WIAB inference logic into topology.
+4. Keep occupancy state binary (`occupied`/`vacant`); do not add confidence or
+   unknown-state transitions for WIAB v1.
+
+**Rationale**:
+
+1. Reuses proven occupancy semantics and avoids parallel state machines.
+2. Preserves a clean architecture boundary: topology data vs inference policy.
+3. Minimizes complexity while covering primary WIAB use-cases.
+4. Keeps behavior deterministic and explainable through runtime events.
+
+**Consequences**:
+
+- ✅ WIAB can be configured directly in Detection UI per location.
+- ✅ Enclosed-room and home-containment latching behavior is now available.
+- ✅ Root-level/home WIAB scenarios can operate even when trigger entities are
+  not directly mapped to the root location.
+- ⚠️ Preset logic is intentionally opinionated; advanced custom heuristics
+  still require explicit occupancy source tuning and automations.
+
+---
+
 ## How to Use This Log
 
 ### When to Create an ADR

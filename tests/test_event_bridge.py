@@ -9,6 +9,7 @@ Following HA integration testing best practices:
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
@@ -1002,3 +1003,141 @@ async def test_policy_source_all_roots_re_evaluates_after_topology_changes(
     bridge._state_changed_listener(ha_event)
     second_targets = sorted(call.args[0] for call in occupancy.vacate_area.call_args_list)
     assert second_targets == ["building_main", "grounds"]
+
+
+async def test_wiab_enclosed_room_handles_binary_door_states(
+    hass: HomeAssistant,
+) -> None:
+    """Enclosed-room WIAB should treat binary on/off door states as open/closed."""
+    bus = Mock(spec=EventBus)
+    bus.publish = Mock()
+
+    loc_mgr = Mock(spec=LocationManager)
+    loc_mgr.get_entity_location.return_value = None
+    loc_mgr.all_locations.return_value = [SimpleNamespace(id="area_bathroom")]
+
+    def _module_config(location_id: str, module_id: str) -> dict:
+        if module_id != "occupancy" or location_id != "area_bathroom":
+            return {}
+        return {
+            "wiab": {
+                "preset": "enclosed_room",
+                "interior_entities": ["binary_sensor.bathroom_motion"],
+                "door_entities": ["binary_sensor.bathroom_door"],
+            }
+        }
+
+    loc_mgr.get_module_config.side_effect = _module_config
+    occupancy = Mock()
+    occupancy.get_location_state.return_value = {"occupied": True}
+    bridge = EventBridge(hass, bus, loc_mgr, occupancy_module=occupancy)
+
+    bridge._state_changed_listener(
+        Mock(
+            data={
+                "entity_id": "binary_sensor.bathroom_motion",
+                "old_state": State("binary_sensor.bathroom_motion", STATE_OFF),
+                "new_state": State("binary_sensor.bathroom_motion", STATE_ON),
+            }
+        )
+    )
+    occupancy.trigger.assert_called_with(
+        "area_bathroom",
+        "wiab:enclosed_room:area_bathroom",
+        900,
+    )
+
+    bridge._state_changed_listener(
+        Mock(
+            data={
+                "entity_id": "binary_sensor.bathroom_door",
+                "old_state": State("binary_sensor.bathroom_door", STATE_ON),
+                "new_state": State("binary_sensor.bathroom_door", STATE_OFF),
+            }
+        )
+    )
+    occupancy.lock.assert_called_with(
+        "area_bathroom",
+        "wiab:enclosed_room:area_bathroom",
+        "block_vacant",
+        "self",
+    )
+
+    bridge._state_changed_listener(
+        Mock(
+            data={
+                "entity_id": "binary_sensor.bathroom_door",
+                "old_state": State("binary_sensor.bathroom_door", STATE_OFF),
+                "new_state": State("binary_sensor.bathroom_door", STATE_ON),
+            }
+        )
+    )
+    occupancy.unlock.assert_called_with("area_bathroom", "wiab:enclosed_room:area_bathroom")
+    occupancy.clear.assert_called_with("area_bathroom", "wiab:enclosed_room:area_bathroom", 90)
+
+
+async def test_wiab_home_containment_runs_for_unmapped_entity(
+    hass: HomeAssistant,
+) -> None:
+    """Home-containment WIAB must evaluate even when source entity has no location mapping."""
+    bus = Mock(spec=EventBus)
+    bus.publish = Mock()
+
+    loc_mgr = Mock(spec=LocationManager)
+    loc_mgr.get_entity_location.return_value = None
+    loc_mgr.all_locations.return_value = [SimpleNamespace(id="building_home")]
+
+    def _module_config(location_id: str, module_id: str) -> dict:
+        if module_id != "occupancy" or location_id != "building_home":
+            return {}
+        return {
+            "wiab": {
+                "preset": "home_containment",
+                "interior_entities": ["binary_sensor.hall_motion"],
+                "exterior_door_entities": ["binary_sensor.front_door_contact"],
+            }
+        }
+
+    loc_mgr.get_module_config.side_effect = _module_config
+    occupancy = Mock()
+    bridge = EventBridge(hass, bus, loc_mgr, occupancy_module=occupancy)
+
+    bridge._state_changed_listener(
+        Mock(
+            data={
+                "entity_id": "binary_sensor.hall_motion",
+                "old_state": State("binary_sensor.hall_motion", STATE_OFF),
+                "new_state": State("binary_sensor.hall_motion", STATE_ON),
+            }
+        )
+    )
+    occupancy.trigger.assert_called_with(
+        "building_home",
+        "wiab:home_containment:building_home",
+        3600,
+    )
+    occupancy.lock.assert_called_with(
+        "building_home",
+        "wiab:home_containment:building_home",
+        "block_vacant",
+        "self",
+    )
+
+    bridge._state_changed_listener(
+        Mock(
+            data={
+                "entity_id": "binary_sensor.front_door_contact",
+                "old_state": State("binary_sensor.front_door_contact", STATE_OFF),
+                "new_state": State("binary_sensor.front_door_contact", STATE_ON),
+            }
+        )
+    )
+    occupancy.unlock.assert_called_with(
+        "building_home",
+        "wiab:home_containment:building_home",
+    )
+    occupancy.clear.assert_called_with(
+        "building_home",
+        "wiab:home_containment:building_home",
+        120,
+    )

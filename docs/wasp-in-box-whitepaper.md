@@ -308,6 +308,34 @@ Phase-oriented goals:
 6. Build inspector timeline and handoff trace UI.
 7. Add mode/profile overlays inspired by magic-area behavior.
 
+### 12.1 Current TopoMation Design Contract
+
+The current implementation uses WIAB presets in occupancy module config:
+
+- `off`
+- `enclosed_room`
+- `home_containment`
+- `hybrid`
+
+Preset behavior is implemented in the integration inference layer (event bridge),
+not in topology storage:
+
+- `enclosed_room`: interior trigger + door-close latch (`block_vacant`) until door-open release.
+- `home_containment`: interior trigger latches home occupancy until exterior-door release.
+- `hybrid`: applies both models for mixed spaces.
+
+Topology remains responsible for structural truth:
+
+- location hierarchy
+- adjacency edges and boundary metadata
+- crossing-source wiring
+
+Occupancy/WIAB remains responsible for inference behavior:
+
+- trigger/clear lock semantics
+- hold/release timing
+- deterministic transition reasoning
+
 ## 13. Risks and Mitigations
 
 - Overfitting to one home layout: use source profiles + per-zone tuning.

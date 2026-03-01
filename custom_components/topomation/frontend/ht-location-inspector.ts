@@ -1,6 +1,7 @@
 import { LitElement, html, css } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { live } from "lit/directives/live.js";
+import { repeat } from "lit/directives/repeat.js";
 import type {
   AdjacencyEdge,
   AutomationConfig,
@@ -10,6 +11,8 @@ import type {
   OccupancyConfig,
   OccupancySource,
   TopomationActionRule,
+  WaspInBoxConfig,
+  WaspInBoxPreset,
 } from "./types";
 import { sharedStyles } from "./styles";
 import { getLocationIcon } from "./icon-utils";
@@ -23,6 +26,7 @@ import {
 
 type SourceSignalKey = OccupancySource["signal_key"];
 type CandidateItem = { key: string; entityId: string; signalKey?: SourceSignalKey };
+type WiabEntityListKey = "interior_entities" | "door_entities" | "exterior_door_entities";
 type ActionDeviceType = "light" | "dimmer" | "color_light" | "fan" | "stereo" | "tv";
 type InspectorTab = "detection" | "occupied_actions" | "vacant_actions";
 type InspectorTabRequest = InspectorTab | "occupancy" | "actions";
@@ -110,6 +114,9 @@ export class HtLocationInspector extends LitElement {
   @state() private _adjacencyHandoffWindowSec = 12;
   @state() private _adjacencyPriority = 50;
   @state() private _savingAdjacency = false;
+  @state() private _wiabInteriorEntityId = "";
+  @state() private _wiabDoorEntityId = "";
+  @state() private _wiabExteriorDoorEntityId = "";
   private _onTimeoutMemory: Record<string, number> = {};
   private _entityAreaLoadPromise?: Promise<void>;
   private _actionRulesLoadSeq = 0;
@@ -912,6 +919,27 @@ export class HtLocationInspector extends LitElement {
         font-size: 11px;
       }
 
+      .light-signal-toggles {
+        margin-top: 6px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .light-signal-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11px;
+        color: var(--primary-text-color);
+      }
+
+      .light-signal-toggle input {
+        width: 14px;
+        height: 14px;
+        accent-color: var(--primary-color);
+      }
+
       .candidate-headline {
         display: flex;
         align-items: center;
@@ -1083,6 +1111,85 @@ export class HtLocationInspector extends LitElement {
 
       .external-composer .editor-field {
         min-width: 0;
+      }
+
+      .wiab-config {
+        display: grid;
+        gap: 10px;
+        max-width: 820px;
+      }
+
+      .wiab-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 10px;
+      }
+
+      .wiab-entity-editor {
+        border: 1px solid var(--divider-color);
+        border-radius: 8px;
+        padding: 10px;
+        background: rgba(var(--rgb-primary-color), 0.03);
+      }
+
+      .wiab-entity-editor label {
+        display: block;
+        margin-bottom: 6px;
+        color: var(--text-secondary-color);
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+
+      .wiab-entity-input {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .wiab-entity-input select {
+        min-width: 0;
+        border: 1px solid var(--divider-color);
+        border-radius: 6px;
+        padding: 6px 8px;
+        font-size: 13px;
+        background: var(--card-background-color);
+        color: var(--primary-text-color);
+      }
+
+      .wiab-chip-list {
+        margin-top: 8px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+
+      .wiab-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        border: 1px solid var(--divider-color);
+        border-radius: 999px;
+        padding: 2px 8px;
+        background: var(--card-background-color);
+        font-size: 12px;
+      }
+
+      .wiab-chip button {
+        border: none;
+        background: transparent;
+        color: var(--text-secondary-color);
+        cursor: pointer;
+        font-size: 14px;
+        line-height: 1;
+      }
+
+      .wiab-empty {
+        margin-top: 6px;
+        font-size: 12px;
+        color: var(--text-secondary-color);
       }
 
       .mini-button:disabled {
@@ -1642,6 +1749,7 @@ export class HtLocationInspector extends LitElement {
           </div>
           ${this._renderExternalSourceComposer(config)}
         </div>
+        ${this._renderWiabSection(config)}
         ${this._renderAdjacencySection()} ${this._renderHandoffTraceSection()}
       </div>
     `;
@@ -2082,11 +2190,25 @@ export class HtLocationInspector extends LitElement {
     const normalizedSignalKey = this._normalizedSignalKey(item.entityId, item.signalKey);
     if (
       item.entityId.startsWith("light.") &&
-      (normalizedSignalKey === "power" || normalizedSignalKey === "level")
+      (normalizedSignalKey === "power" ||
+        normalizedSignalKey === "level" ||
+        normalizedSignalKey === "color")
     ) {
       return `${item.entityId}::power-level`;
     }
     return item.key;
+  }
+
+  private _isLightSignalKey(signalKey?: SourceSignalKey): signalKey is "power" | "level" | "color" {
+    return signalKey === "power" || signalKey === "level" || signalKey === "color";
+  }
+
+  private _isIntegratedLightGroup(group: CandidateItem[]): boolean {
+    return (
+      group.length > 1 &&
+      group[0].entityId.startsWith("light.") &&
+      group.every((item) => item.entityId === group[0].entityId)
+    );
   }
 
   private _defaultSignalKeyForEntity(entityId: string): SourceSignalKey | undefined {
@@ -2288,16 +2410,16 @@ export class HtLocationInspector extends LitElement {
       return this._signalSortWeight(a.signalKey) - this._signalSortWeight(b.signalKey);
     });
 
-    const itemGroups: CandidateItem[][] = [];
-    const groupByKey = new Map<string, CandidateItem[]>();
+    const itemGroups: Array<{ key: string; items: CandidateItem[] }> = [];
+    const groupByKey = new Map<string, { key: string; items: CandidateItem[] }>();
     for (const item of items) {
       const groupKey = this._sourceCardGroupKey(item);
       const existing = groupByKey.get(groupKey);
       if (existing) {
-        existing.push(item);
+        existing.items.push(item);
         continue;
       }
-      const created = [item];
+      const created = { key: groupKey, items: [item] };
       groupByKey.set(groupKey, created);
       itemGroups.push(created);
     }
@@ -2316,11 +2438,15 @@ export class HtLocationInspector extends LitElement {
 
     return html`
       <div class="candidate-list">
-        ${itemGroups.map((group) => {
-          const groupConfigured = group.some((item) => sourceIndexByKey.has(item.key));
+        ${repeat(itemGroups, (group) => group.key, (group) => {
+          if (this._isIntegratedLightGroup(group.items)) {
+            return this._renderIntegratedLightCard(config, group.items, sources, sourceIndexByKey);
+          }
+
+          const groupConfigured = group.items.some((item) => sourceIndexByKey.has(item.key));
           return html`
             <div class="source-card ${groupConfigured ? "enabled" : ""}">
-              ${group.map((item, itemIndex) => {
+              ${repeat(group.items, (item) => item.key, (item, itemIndex) => {
                 const sourceIndex = sourceIndexByKey.get(item.key);
                 const configured = sourceIndex !== undefined;
                 const source = configured ? sources[sourceIndex] : undefined;
@@ -2389,6 +2515,127 @@ export class HtLocationInspector extends LitElement {
             </div>
           `;
         })}
+      </div>
+    `;
+  }
+
+  private _renderIntegratedLightCard(
+    config: OccupancyConfig,
+    group: CandidateItem[],
+    sources: OccupancySource[],
+    sourceIndexByKey: Map<string, number>
+  ) {
+    const entityId = group[0]?.entityId;
+    if (!entityId) return "";
+
+    const signalItems = [...group]
+      .filter((item) => this._isLightSignalKey(item.signalKey))
+      .sort((a, b) => this._signalSortWeight(a.signalKey) - this._signalSortWeight(b.signalKey));
+    if (signalItems.length === 0) return "";
+
+    const configuredItems = signalItems.filter((item) => sourceIndexByKey.has(item.key));
+    const groupConfigured = configuredItems.length > 0;
+    const primaryItem =
+      configuredItems.find((item) => item.signalKey === "power") || configuredItems[0] || signalItems[0];
+    const primarySourceIndex = sourceIndexByKey.get(primaryItem.key);
+    const primarySource = primarySourceIndex !== undefined ? sources[primarySourceIndex] : undefined;
+    const modeOptions = this._modeOptionsForEntity(entityId);
+
+    return html`
+      <div class="source-card ${groupConfigured ? "enabled" : ""}">
+        <div class="source-card-item">
+          <div class="candidate-item">
+            <div class="source-enable-control">
+              <input
+                type="checkbox"
+                class="source-enable-input"
+                aria-label="Include light source"
+                .checked=${groupConfigured}
+                @change=${(ev: Event) => {
+                  const checked = (ev.target as HTMLInputElement).checked;
+                  if (checked && !groupConfigured) {
+                    const addSignal =
+                      signalItems.find((item) => item.signalKey === "power")?.signalKey || signalItems[0].signalKey;
+                    const added = this._addSourceWithDefaults(entityId, config, {
+                      resetExternalPicker: false,
+                      signalKey: addSignal,
+                    });
+                    if (!added) this.requestUpdate();
+                    return;
+                  }
+                  if (!checked && groupConfigured) {
+                    this._removeSourcesByKey(
+                      signalItems.map((item) => item.key),
+                      config
+                    );
+                  }
+                }}
+              />
+            </div>
+            <div>
+              <div class="candidate-headline">
+                <div class="candidate-title">${this._entityName(entityId)}</div>
+                ${primarySource && primarySourceIndex !== undefined && modeOptions.length > 1
+                  ? html`
+                      <div class="inline-mode-group">
+                        <span class="inline-mode-label">Mode</span>
+                        <select
+                          class="inline-mode-select"
+                          .value=${modeOptions.some((opt) => opt.value === primarySource.mode)
+                            ? primarySource.mode
+                            : modeOptions[0].value}
+                          @change=${(ev: Event) => {
+                            const mode = (ev.target as HTMLSelectElement).value as "any_change" | "specific_states";
+                            const entity = this.hass.states[entityId];
+                            const next = applyModeDefaults(primarySource, mode, entity) as OccupancySource;
+                            this._updateSourceDraft(config, primarySourceIndex, {
+                              ...next,
+                              entity_id: primarySource.entity_id,
+                            });
+                          }}
+                        >
+                          ${modeOptions.map((opt) => html`<option value=${opt.value}>${opt.label}</option>`)}
+                        </select>
+                      </div>
+                    `
+                  : ""}
+              </div>
+              <div class="candidate-meta">${entityId} • ${this._entityState(entityId)}</div>
+              <div class="candidate-submeta">Signal inputs:</div>
+              <div class="light-signal-toggles">
+                ${signalItems.map((signalItem) => {
+                  const signalConfigured = sourceIndexByKey.has(signalItem.key);
+                  return html`
+                    <label class="light-signal-toggle">
+                      <input
+                        type="checkbox"
+                        .checked=${signalConfigured}
+                        @change=${(ev: Event) => {
+                          const checked = (ev.target as HTMLInputElement).checked;
+                          if (checked && !signalConfigured) {
+                            const added = this._addSourceWithDefaults(entityId, config, {
+                              resetExternalPicker: false,
+                              signalKey: signalItem.signalKey,
+                            });
+                            if (!added) this.requestUpdate();
+                            return;
+                          }
+                          if (!checked && signalConfigured) {
+                            this._removeSourcesByKey([signalItem.key], config);
+                          }
+                        }}
+                      />
+                      <span>${this._mediaSignalLabel(signalItem.signalKey)}</span>
+                    </label>
+                  `;
+                })}
+              </div>
+            </div>
+          </div>
+          ${primarySource && primarySourceIndex !== undefined
+            ? this._renderSourceEditor(config, primarySource, primarySourceIndex)
+            : ""}
+        </div>
       </div>
     `;
   }
@@ -2465,6 +2712,355 @@ export class HtLocationInspector extends LitElement {
         </button>
       </div>
     `;
+  }
+
+  private _renderWiabSection(config: OccupancyConfig) {
+    const wiab = this._getWiabConfig(config);
+    const interiorCandidates = this._wiabInteriorCandidates();
+    const doorCandidates = this._wiabDoorCandidates();
+    const preset = wiab.preset || "off";
+    const presetLabel =
+      preset === "enclosed_room"
+        ? "Enclosed Room (Door Latch)"
+        : preset === "home_containment"
+          ? "Home Containment"
+          : preset === "hybrid"
+            ? "Hybrid"
+            : "Off";
+
+    return html`
+      <div class="card-section">
+        <div class="section-title">
+          <ha-icon .icon=${"mdi:box-shadow"}></ha-icon>
+          Wasp In A Box
+        </div>
+        <div class="subsection-help">
+          Preset occupancy latch behavior for enclosed rooms and whole-home containment.
+          Use this when boundary sensors should hold occupancy until a release event occurs.
+        </div>
+
+        <div class="wiab-config">
+          <div class="editor-field" style="max-width: 420px;">
+            <label for="wiab-preset">Preset</label>
+            <select
+              id="wiab-preset"
+              data-testid="wiab-preset-select"
+              .value=${preset}
+              @change=${(ev: Event) => {
+                const nextPreset = this._normalizeWiabPreset(
+                  (ev.target as HTMLSelectElement).value
+                );
+                const defaults = this._defaultWiabTimeouts(nextPreset);
+                void this._updateConfig({
+                  ...config,
+                  wiab: {
+                    ...wiab,
+                    preset: nextPreset,
+                    hold_timeout_sec: defaults.hold_timeout_sec,
+                    release_timeout_sec: defaults.release_timeout_sec,
+                  },
+                });
+              }}
+            >
+              <option value="off">Off</option>
+              <option value="enclosed_room">Enclosed Room (Door Latch)</option>
+              <option value="home_containment">Home Containment</option>
+              <option value="hybrid">Hybrid</option>
+            </select>
+          </div>
+
+          ${preset === "off"
+            ? html`<div class="policy-note">WIAB is disabled for this location.</div>`
+            : html`<div class="policy-note">Active preset: ${presetLabel}</div>`}
+
+          ${preset === "off"
+            ? ""
+            : html`
+                ${this._renderWiabEntityEditor({
+                  label: "Interior entities",
+                  listKey: "interior_entities",
+                  candidates: interiorCandidates,
+                  selectedEntityId: this._wiabInteriorEntityId,
+                  setSelectedEntityId: (value: string) => {
+                    this._wiabInteriorEntityId = value;
+                  },
+                  config,
+                  testIdPrefix: "wiab-interior",
+                })}
+
+                ${preset === "enclosed_room" || preset === "hybrid"
+                  ? this._renderWiabEntityEditor({
+                      label: "Boundary door entities",
+                      listKey: "door_entities",
+                      candidates: doorCandidates,
+                      selectedEntityId: this._wiabDoorEntityId,
+                      setSelectedEntityId: (value: string) => {
+                        this._wiabDoorEntityId = value;
+                      },
+                      config,
+                      testIdPrefix: "wiab-door",
+                    })
+                  : ""}
+
+                ${preset === "home_containment" || preset === "hybrid"
+                  ? this._renderWiabEntityEditor({
+                      label: "Exterior door entities",
+                      listKey: "exterior_door_entities",
+                      candidates: doorCandidates,
+                      selectedEntityId: this._wiabExteriorDoorEntityId,
+                      setSelectedEntityId: (value: string) => {
+                        this._wiabExteriorDoorEntityId = value;
+                      },
+                      config,
+                      testIdPrefix: "wiab-exterior-door",
+                    })
+                  : ""}
+
+                <div class="wiab-grid">
+                  <div class="editor-field">
+                    <label for="wiab-hold-timeout">Hold timeout (sec)</label>
+                    <input
+                      id="wiab-hold-timeout"
+                      data-testid="wiab-hold-timeout"
+                      type="number"
+                      min="0"
+                      max="86400"
+                      .value=${String(wiab.hold_timeout_sec ?? 0)}
+                      @change=${(ev: Event) => {
+                        const value = Number((ev.target as HTMLInputElement).value);
+                        this._updateWiabValue(config, "hold_timeout_sec", value);
+                      }}
+                    />
+                  </div>
+                  <div class="editor-field">
+                    <label for="wiab-release-timeout">Release timeout (sec)</label>
+                    <input
+                      id="wiab-release-timeout"
+                      data-testid="wiab-release-timeout"
+                      type="number"
+                      min="0"
+                      max="86400"
+                      .value=${String(wiab.release_timeout_sec ?? 0)}
+                      @change=${(ev: Event) => {
+                        const value = Number((ev.target as HTMLInputElement).value);
+                        this._updateWiabValue(config, "release_timeout_sec", value);
+                      }}
+                    />
+                  </div>
+                </div>
+              `}
+        </div>
+      </div>
+    `;
+  }
+
+  private _renderWiabEntityEditor(options: {
+    label: string;
+    listKey: WiabEntityListKey;
+    candidates: string[];
+    selectedEntityId: string;
+    setSelectedEntityId: (entityId: string) => void;
+    config: OccupancyConfig;
+    testIdPrefix: string;
+  }) {
+    const wiab = this._getWiabConfig(options.config);
+    const configured = wiab[options.listKey] || [];
+    const configuredSet = new Set(configured);
+    const availableCandidates = options.candidates.filter((entityId) => !configuredSet.has(entityId));
+    const selectedEntityId = configuredSet.has(options.selectedEntityId)
+      ? ""
+      : options.selectedEntityId;
+
+    return html`
+      <div class="wiab-entity-editor">
+        <label>${options.label}</label>
+        <div class="wiab-entity-input">
+          <select
+            data-testid=${`${options.testIdPrefix}-select`}
+            .value=${selectedEntityId}
+            @change=${(ev: Event) => {
+              options.setSelectedEntityId((ev.target as HTMLSelectElement).value);
+              this.requestUpdate();
+            }}
+          >
+            <option value="">Select entity...</option>
+            ${availableCandidates.map((entityId) => html`
+              <option value=${entityId}>${this._entityName(entityId)} (${entityId})</option>
+            `)}
+          </select>
+          <button
+            class="button button-secondary"
+            data-testid=${`${options.testIdPrefix}-add`}
+            ?disabled=${!selectedEntityId}
+            @click=${() => {
+              if (this._addWiabEntity(options.config, options.listKey, selectedEntityId)) {
+                options.setSelectedEntityId("");
+                this.requestUpdate();
+              }
+            }}
+          >
+            Add
+          </button>
+        </div>
+
+        ${configured.length === 0
+          ? html`<div class="wiab-empty">No entities configured.</div>`
+          : html`
+              <div class="wiab-chip-list">
+                ${configured.map((entityId) => html`
+                  <span class="wiab-chip" data-testid=${`${options.testIdPrefix}-chip`}>
+                    ${this._entityName(entityId)}
+                    <button
+                      type="button"
+                      aria-label="Remove entity"
+                      data-testid=${`${options.testIdPrefix}-remove`}
+                      @click=${() => this._removeWiabEntity(options.config, options.listKey, entityId)}
+                    >
+                      ×
+                    </button>
+                  </span>
+                `)}
+              </div>
+            `}
+      </div>
+    `;
+  }
+
+  private _getWiabConfig(config: OccupancyConfig): WaspInBoxConfig {
+    const raw = config.wiab || {};
+    const preset = this._normalizeWiabPreset(raw.preset);
+    const defaults = this._defaultWiabTimeouts(preset);
+    return {
+      preset,
+      interior_entities: this._normalizeWiabEntities(raw.interior_entities),
+      door_entities: this._normalizeWiabEntities(raw.door_entities),
+      exterior_door_entities: this._normalizeWiabEntities(raw.exterior_door_entities),
+      hold_timeout_sec: this._clampWiabSeconds(raw.hold_timeout_sec, defaults.hold_timeout_sec),
+      release_timeout_sec: this._clampWiabSeconds(raw.release_timeout_sec, defaults.release_timeout_sec),
+    };
+  }
+
+  private _normalizeWiabPreset(value: unknown): WaspInBoxPreset {
+    const normalized = String(value || "").trim().toLowerCase();
+    if (normalized === "enclosed_room") return "enclosed_room";
+    if (normalized === "home_containment") return "home_containment";
+    if (normalized === "hybrid") return "hybrid";
+    return "off";
+  }
+
+  private _defaultWiabTimeouts(
+    preset: WaspInBoxPreset
+  ): { hold_timeout_sec: number; release_timeout_sec: number } {
+    if (preset === "home_containment") {
+      return { hold_timeout_sec: 3600, release_timeout_sec: 120 };
+    }
+    if (preset === "hybrid") {
+      return { hold_timeout_sec: 1800, release_timeout_sec: 120 };
+    }
+    return { hold_timeout_sec: 900, release_timeout_sec: 90 };
+  }
+
+  private _normalizeWiabEntities(value: unknown): string[] {
+    if (!Array.isArray(value)) return [];
+    const seen = new Set<string>();
+    const normalized: string[] = [];
+    for (const item of value) {
+      if (typeof item !== "string") continue;
+      const entityId = item.trim();
+      if (!entityId || seen.has(entityId)) continue;
+      seen.add(entityId);
+      normalized.push(entityId);
+    }
+    return normalized;
+  }
+
+  private _clampWiabSeconds(value: unknown, fallback: number): number {
+    const parsed = Number.parseInt(String(value ?? fallback), 10);
+    if (Number.isNaN(parsed)) return fallback;
+    return Math.max(0, Math.min(86400, parsed));
+  }
+
+  private _updateWiabValue(
+    config: OccupancyConfig,
+    key: "hold_timeout_sec" | "release_timeout_sec",
+    value: number
+  ): void {
+    const wiab = this._getWiabConfig(config);
+    const fallback = wiab[key] ?? this._defaultWiabTimeouts(wiab.preset || "off")[key];
+    const nextValue = this._clampWiabSeconds(value, fallback);
+    void this._updateConfig({
+      ...config,
+      wiab: {
+        ...wiab,
+        [key]: nextValue,
+      },
+    });
+  }
+
+  private _addWiabEntity(
+    config: OccupancyConfig,
+    listKey: WiabEntityListKey,
+    entityId: string
+  ): boolean {
+    const normalizedEntityId = entityId.trim();
+    if (!normalizedEntityId) return false;
+    const wiab = this._getWiabConfig(config);
+    const current = wiab[listKey] || [];
+    if (current.includes(normalizedEntityId)) return false;
+    void this._updateConfig({
+      ...config,
+      wiab: {
+        ...wiab,
+        [listKey]: [...current, normalizedEntityId],
+      },
+    });
+    return true;
+  }
+
+  private _removeWiabEntity(
+    config: OccupancyConfig,
+    listKey: WiabEntityListKey,
+    entityId: string
+  ): void {
+    const wiab = this._getWiabConfig(config);
+    const current = wiab[listKey] || [];
+    const filtered = current.filter((candidate) => candidate !== entityId);
+    if (filtered.length === current.length) return;
+    void this._updateConfig({
+      ...config,
+      wiab: {
+        ...wiab,
+        [listKey]: filtered,
+      },
+    });
+  }
+
+  private _wiabInteriorCandidates(): string[] {
+    const states = this.hass?.states || {};
+    return Object.keys(states)
+      .filter((entityId) => this._isCandidateEntity(entityId))
+      .sort((a, b) => this._entityName(a).localeCompare(this._entityName(b)));
+  }
+
+  private _wiabDoorCandidates(): string[] {
+    const states = this.hass?.states || {};
+    return Object.keys(states)
+      .filter((entityId) => this._isDoorBoundaryEntity(entityId))
+      .sort((a, b) => this._entityName(a).localeCompare(this._entityName(b)));
+  }
+
+  private _isDoorBoundaryEntity(entityId: string): boolean {
+    const stateObj = this.hass?.states?.[entityId];
+    if (!stateObj) return false;
+    const registryMeta = this._entityRegistryMetaById[entityId];
+    if (registryMeta?.hiddenBy || registryMeta?.disabledBy || registryMeta?.entityCategory) {
+      return false;
+    }
+
+    const domain = entityId.split(".", 1)[0];
+    if (domain !== "binary_sensor") return false;
+    const deviceClass = String(stateObj.attributes?.device_class || "").toLowerCase();
+    return ["door", "garage_door", "opening", "window"].includes(deviceClass);
   }
 
   private _renderSourceEditor(config: OccupancyConfig, source: OccupancySource, sourceIndex: number) {
@@ -2647,7 +3243,7 @@ export class HtLocationInspector extends LitElement {
   private _renderActionsTab(triggerType: "occupied" | "vacant") {
     if (!this.location) return "";
 
-    const actionEntities = this._actionTargetEntities();
+    const actionEntities = this._actionTargetEntities(triggerType);
     const sectionTitle = triggerType === "occupied" ? "When Occupied" : "When Vacant";
     const infoText =
       triggerType === "occupied"
@@ -2689,7 +3285,9 @@ export class HtLocationInspector extends LitElement {
                     </div>
                   </div>
                 `
-              : actionEntities.map(
+              : repeat(
+                  actionEntities,
+                  (entityId) => entityId,
                   (entityId) => {
                     const enabled = this._isManagedActionEnabled(entityId, triggerType);
                     const busyKey = this._actionToggleKey(entityId, triggerType);
@@ -2766,7 +3364,8 @@ export class HtLocationInspector extends LitElement {
                         ${busy ? html`<span class="text-muted">Saving...</span>` : ""}
                       </div>
                     </div>
-                  `;}
+                  `;
+                  }
                 )}
           </div>
         </div>
@@ -2816,7 +3415,7 @@ export class HtLocationInspector extends LitElement {
     return `${triggerType}:${entityId}`;
   }
 
-  private _actionTargetEntities(): string[] {
+  private _actionTargetEntities(triggerType: "occupied" | "vacant"): string[] {
     if (!this.location) return [];
     const ids = new Set<string>();
 
@@ -2835,6 +3434,10 @@ export class HtLocationInspector extends LitElement {
     }
 
     return [...ids].sort((a, b) => {
+      const aEnabled = this._isManagedActionEnabled(a, triggerType);
+      const bEnabled = this._isManagedActionEnabled(b, triggerType);
+      if (aEnabled !== bEnabled) return aEnabled ? -1 : 1;
+
       const aType = this._actionDeviceType(a) || "zzzz";
       const bType = this._actionDeviceType(b) || "zzzz";
       if (aType !== bType) return aType.localeCompare(bType);
@@ -3372,6 +3975,24 @@ export class HtLocationInspector extends LitElement {
     delete nextMemory[this._sourceKeyFromSource(removed)];
     this._onTimeoutMemory = nextMemory;
     this._setWorkingSources(sources);
+  }
+
+  private _removeSourcesByKey(keys: string[], config: OccupancyConfig): void {
+    if (!keys.length) return;
+    const keySet = new Set(keys);
+    const sources = this._workingSources(config);
+    const retained = sources.filter((source) => !keySet.has(this._sourceKeyFromSource(source)));
+    if (retained.length === sources.length) return;
+
+    const nextMemory = { ...this._onTimeoutMemory };
+    for (const source of sources) {
+      const sourceKey = this._sourceKeyFromSource(source);
+      if (keySet.has(sourceKey)) {
+        delete nextMemory[sourceKey];
+      }
+    }
+    this._onTimeoutMemory = nextMemory;
+    this._setWorkingSources(retained);
   }
 
   private _addSourceWithDefaults(
