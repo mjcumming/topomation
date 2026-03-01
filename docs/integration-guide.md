@@ -494,7 +494,7 @@ Topomation's Detection tab intentionally keeps the in-area source list curated:
 - `light.*` (including dimmer/color-capable signal variants)
 - `fan.*`
 - `media_player.*` (`playback`, `volume`, `mute`)
-- `binary_sensor.*` motion/presence/door/opening style classes, plus no-class camera-style binaries
+- `binary_sensor.*` motion/presence/occupancy/door/opening/window/lock/vibration/sound classes, plus no-class camera-style binaries
 - `switch.*` only when explicitly light-classified (`device_class: light`)
 
 The Detection tab excludes Topomation-created occupancy entities (`device_class: occupancy` with

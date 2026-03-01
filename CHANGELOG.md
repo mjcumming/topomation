@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.8] - 2026-03-01
+
+### Changed
+
+- Device assignment UX now uses a clearer list workflow: `All/Unassigned/Assigned`
+  filters, per-group collapse/expand, and quick `Expand all/Collapse all`
+  controls.
+- Assignment rows now use simplified metadata for faster visual scanning (entity
+  id shown first; HA area only shown where useful in unassigned grouping).
+- Assignment rendering is now on-demand in the `Assign Devices` mode and no
+  longer performs redundant double-reload cycles, reducing UI lag on large
+  entity sets.
+- Frontend panel/inspector runtime logging was reduced to warnings/errors only,
+  cutting noisy debug/trace output during normal operation.
+- Detection binary sensor inclusion now also supports `vibration` and `sound`
+  device classes (without including `tamper`/`problem`), in both core area
+  discovery and Add Source candidates.
+
 ## [0.2.7] - 2026-03-01
 
 ### Added

@@ -40,8 +40,6 @@ type EntityRegistryMeta = {
   entityCategory?: string | null;
 };
 
-console.log("[ht-location-inspector] module loaded");
-
 // Dev UX: custom elements cannot be hot-replaced. On HMR updates, force a quick reload.
 try {
   (import.meta as any)?.hot?.accept(() => window.location.reload());
@@ -1162,7 +1160,6 @@ export class HtLocationInspector extends LitElement {
         this._entityAreaById = assignments;
         this._entityRegistryMetaById = entityRegistryMetaById;
       } catch (err) {
-        console.debug("[ht-location-inspector] failed to load entity/device registry area mapping", err);
         this._entityAreaById = {};
         this._entityRegistryMetaById = {};
       } finally {
@@ -1356,7 +1353,7 @@ export class HtLocationInspector extends LitElement {
         "state_changed"
       );
     } catch (err) {
-      console.debug("[ht-location-inspector] failed to subscribe to automation state changes", err);
+      // ignore subscribe failures in restricted/test contexts
     }
   }
 
@@ -2571,16 +2568,8 @@ export class HtLocationInspector extends LitElement {
     this._actionToggleBusy = { ...this._actionToggleBusy, [key]: true };
     this.requestUpdate();
 
-    const startedAt = Date.now();
     try {
       const requireDark = this._selectedManagedActionRequireDark(entityId, triggerType);
-      console.debug("[ht-location-inspector] managed action service save start", {
-        locationId: this.location?.id,
-        entityId,
-        triggerType,
-        actionService,
-        requireDark,
-      });
       const created = await this._replaceManagedActionRules(
         entityId,
         triggerType,
@@ -2601,15 +2590,6 @@ export class HtLocationInspector extends LitElement {
           this._isManagedActionServiceSelected(entityId, triggerType, actionService) &&
           this._isManagedActionRequireDarkSelected(entityId, triggerType, requireDark)
       );
-      console.debug("[ht-location-inspector] managed action service save complete", {
-        locationId: this.location?.id,
-        entityId,
-        triggerType,
-        actionService,
-        requireDark,
-        converged,
-        duration_ms: Date.now() - startedAt,
-      });
       if (!converged) {
         this._showToast(
           "Saved, but Topomation could not verify the updated automation yet. Check browser console logs for details.",
@@ -2656,16 +2636,8 @@ export class HtLocationInspector extends LitElement {
     this._actionToggleBusy = { ...this._actionToggleBusy, [key]: true };
     this.requestUpdate();
 
-    const startedAt = Date.now();
     try {
       const actionService = this._selectedManagedActionService(entityId, triggerType);
-      console.debug("[ht-location-inspector] managed action dark save start", {
-        locationId: this.location?.id,
-        entityId,
-        triggerType,
-        actionService,
-        requireDark,
-      });
       const created = await this._replaceManagedActionRules(
         entityId,
         triggerType,
@@ -2686,15 +2658,6 @@ export class HtLocationInspector extends LitElement {
           this._isManagedActionServiceSelected(entityId, triggerType, actionService) &&
           this._isManagedActionRequireDarkSelected(entityId, triggerType, requireDark)
       );
-      console.debug("[ht-location-inspector] managed action dark save complete", {
-        locationId: this.location?.id,
-        entityId,
-        triggerType,
-        actionService,
-        requireDark,
-        converged,
-        duration_ms: Date.now() - startedAt,
-      });
       if (!converged) {
         this._showToast(
           "Saved, but Topomation could not verify the updated automation yet. Check browser console logs for details.",
@@ -2727,20 +2690,10 @@ export class HtLocationInspector extends LitElement {
     this._actionToggleBusy = { ...this._actionToggleBusy, [busyKey]: true };
     this.requestUpdate();
 
-    const startedAt = Date.now();
     try {
       const rules = this._rulesForManagedActionEntity(entityId, triggerType);
       const actionService = this._selectedManagedActionService(entityId, triggerType);
       const requireDark = this._selectedManagedActionRequireDark(entityId, triggerType);
-      console.debug("[ht-location-inspector] managed action toggle start", {
-        locationId: this.location.id,
-        entityId,
-        triggerType,
-        nextEnabled,
-        actionService,
-        requireDark,
-        existingRuleCount: rules.length,
-      });
       if (nextEnabled) {
         const created = await this._replaceManagedActionRules(
           entityId,
@@ -2771,16 +2724,6 @@ export class HtLocationInspector extends LitElement {
             (this._isManagedActionServiceSelected(entityId, triggerType, actionService) &&
               this._isManagedActionRequireDarkSelected(entityId, triggerType, requireDark)))
       );
-      console.debug("[ht-location-inspector] managed action toggle complete", {
-        locationId: this.location.id,
-        entityId,
-        triggerType,
-        nextEnabled,
-        actionService,
-        requireDark,
-        converged,
-        duration_ms: Date.now() - startedAt,
-      });
       if (!converged) {
         this._showToast(
           "Saved, but Topomation could not verify the updated automation yet. Check browser console logs for details.",
@@ -3016,6 +2959,8 @@ export class HtLocationInspector extends LitElement {
         "opening",
         "window",
         "lock",
+        "vibration",
+        "sound",
       ].includes(deviceClass);
     }
     return false;
@@ -3054,6 +2999,8 @@ export class HtLocationInspector extends LitElement {
         "opening",
         "window",
         "lock",
+        "vibration",
+        "sound",
       ].includes(deviceClass);
     }
 
@@ -3256,7 +3203,19 @@ export class HtLocationInspector extends LitElement {
     }
 
     if (domain === "binary_sensor") {
-      if (["door", "garage_door", "opening", "window", "motion", "presence", "occupancy"].includes(deviceClass)) {
+      if (
+        [
+          "door",
+          "garage_door",
+          "opening",
+          "window",
+          "motion",
+          "presence",
+          "occupancy",
+          "vibration",
+          "sound",
+        ].includes(deviceClass)
+      ) {
         return [{ value: "specific_states", label: "Specific states" }];
       }
       return [
@@ -3586,7 +3545,6 @@ export class HtLocationInspector extends LitElement {
 
 if (!customElements.get("ht-location-inspector")) {
   try {
-    console.log("[ht-location-inspector] registering custom element");
     customElements.define("ht-location-inspector", HtLocationInspector);
   } catch (err) {
     console.error("[ht-location-inspector] failed to define element", err);

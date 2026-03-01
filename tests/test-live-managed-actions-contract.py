@@ -73,6 +73,11 @@ async def _wait_for(
         await asyncio.sleep(step_seconds)
 
 
+def _normalize_entry_id(value: Any) -> str:
+    text = str(value).strip() if value is not None else ""
+    return "" if text.lower() == "none" else text
+
+
 @pytest.mark.asyncio
 async def test_managed_action_rule_registers_and_enumerates_in_live_ha(
     live_ha_config,
@@ -101,18 +106,15 @@ async def test_managed_action_rule_registers_and_enumerates_in_live_ha(
         states = await states_resp.json()
         assert isinstance(states, list)
 
-        occupancy_state = next(
-            (
-                state
-                for state in states
-                if isinstance(state, dict)
-                and str(state.get("entity_id", "")).startswith("binary_sensor.")
-                and state.get("attributes", {}).get("device_class") == "occupancy"
-                and state.get("attributes", {}).get("location_id")
-            ),
-            None,
-        )
-        if occupancy_state is None:
+        occupancy_candidates = [
+            state
+            for state in states
+            if isinstance(state, dict)
+            and str(state.get("entity_id", "")).startswith("binary_sensor.")
+            and state.get("attributes", {}).get("device_class") == "occupancy"
+            and state.get("attributes", {}).get("location_id")
+        ]
+        if not occupancy_candidates:
             pytest.skip("No occupancy binary sensor with location_id found in live HA")
 
         action_target = next(
@@ -131,9 +133,9 @@ async def test_managed_action_rule_registers_and_enumerates_in_live_ha(
         if action_target is None:
             pytest.skip("No light/switch/fan entity available for action target")
 
-        location_id = occupancy_state["attributes"]["location_id"]
         action_entity_id = action_target["entity_id"]
         ws_url = _ws_url_from_http(ha_url)
+        occupancy_state = occupancy_candidates[0]
         occupancy_entity_id = str(occupancy_state.get("entity_id", ""))
 
         registry_entries = await _ws_command(
@@ -155,14 +157,81 @@ async def test_managed_action_rule_registers_and_enumerates_in_live_ha(
             None,
         )
         entry_id = (
-            str(occupancy_registry_entry.get("config_entry_id", "")).strip()
+            _normalize_entry_id(occupancy_registry_entry.get("config_entry_id"))
             if isinstance(occupancy_registry_entry, dict)
             else ""
         )
         if not entry_id:
+            config_entries = await _ws_command(
+                session,
+                ws_url,
+                token,
+                {"type": "config_entries/get"},
+                msg_id=9_1,
+            )
+            if isinstance(config_entries, list):
+                topomation_entry = next(
+                    (
+                        entry
+                        for entry in config_entries
+                        if isinstance(entry, dict)
+                        and str(entry.get("domain", "")).strip() == "topomation"
+                        and str(entry.get("state", "")).strip().lower() == "loaded"
+                    ),
+                    None,
+                )
+                if topomation_entry is None:
+                    topomation_entry = next(
+                        (
+                            entry
+                            for entry in config_entries
+                            if isinstance(entry, dict)
+                            and str(entry.get("domain", "")).strip() == "topomation"
+                        ),
+                        None,
+                    )
+                if isinstance(topomation_entry, dict):
+                    entry_id = _normalize_entry_id(topomation_entry.get("entry_id"))
+        if not entry_id:
             pytest.skip(
                 f"Could not resolve config entry for occupancy entity {occupancy_entity_id}"
             )
+
+        locations_payload = await _ws_command(
+            session,
+            ws_url,
+            token,
+            {
+                "type": "topomation/locations/list",
+                "entry_id": entry_id,
+            },
+            msg_id=9_2,
+        )
+        location_items = (
+            locations_payload.get("locations", [])
+            if isinstance(locations_payload, dict)
+            else []
+        )
+        valid_location_ids = {
+            str(item.get("id", "")).strip()
+            for item in location_items
+            if isinstance(item, dict) and str(item.get("id", "")).strip()
+        }
+        occupancy_state = next(
+            (
+                state
+                for state in occupancy_candidates
+                if str(state.get("attributes", {}).get("location_id", "")).strip()
+                in valid_location_ids
+            ),
+            None,
+        )
+        if occupancy_state is None:
+            pytest.skip(
+                "No occupancy entity location_id matched current Topomation topology "
+                f"for entry {entry_id}"
+            )
+        location_id = occupancy_state["attributes"]["location_id"]
 
         nonce = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
         create_message = await _ws_command(

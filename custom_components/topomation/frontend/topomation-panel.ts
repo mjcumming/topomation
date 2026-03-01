@@ -10,8 +10,11 @@ import "./ht-location-inspector";
 import "./ht-location-dialog";
 
 type ManagerView = "location" | "occupancy" | "actions";
+type RightPanelMode = "inspector" | "assign";
+type AssignmentFilter = "all" | "unassigned" | "assigned";
 
 const TREE_PANEL_SPLIT_STORAGE_KEY = "topomation:panel-tree-split";
+const RIGHT_PANEL_MODE_STORAGE_KEY = "topomation:panel-right-mode";
 const TREE_PANEL_SPLIT_DEFAULT = 0.4;
 const TREE_PANEL_SPLIT_MIN = 0.25;
 const TREE_PANEL_SPLIT_MAX = 0.75;
@@ -24,8 +27,6 @@ type DeviceGroup = {
   locationId?: string;
   entities: string[];
 };
-
-console.log("[topomation-panel] module loaded");
 
 // Dev UX: custom elements cannot be hot-replaced. On HMR updates, force a quick reload.
 // This keeps iteration fast in the mock harness without leaving stale component definitions.
@@ -75,6 +76,9 @@ export class TopomationPanel extends LitElement {
     _entityAreaById: { state: true },
     _entitySearch: { state: true },
     _assignBusyByEntityId: { state: true },
+    _rightPanelMode: { state: true },
+    _assignmentFilter: { state: true },
+    _deviceGroupExpanded: { state: true },
   };
 
   @state() private _locations: Location[] = [];
@@ -110,6 +114,9 @@ export class TopomationPanel extends LitElement {
   @state() private _entityAreaById: Record<string, string | null> = {};
   @state() private _entitySearch = "";
   @state() private _assignBusyByEntityId: Record<string, boolean> = {};
+  @state() private _rightPanelMode: RightPanelMode = "inspector";
+  @state() private _assignmentFilter: AssignmentFilter = "all";
+  @state() private _deviceGroupExpanded: Record<string, boolean> = {};
 
   private _hasLoaded = false;
   private _pendingLoadTimer?: number;
@@ -120,7 +127,11 @@ export class TopomationPanel extends LitElement {
   @state() private _newLocationDefaults?: { parentId?: string; type?: LocationType };
   private _loadSeq = 0;
   private _reloadTimer?: number;
-  private _consistencyReloadTimer?: number;
+  private _entityAreaIndexLoaded = false;
+  private _entityAreaIndexPromise?: Promise<void>;
+  private _entityAreaRevision = 0;
+  private _deviceGroupsCacheKey?: string;
+  private _deviceGroupsCache: DeviceGroup[] = [];
   private _lastKnownEntryId?: string;
   private _opQueueByLocationId = new Map<string, Promise<void>>();
   private _panelResizePointerId?: number;
@@ -141,32 +152,20 @@ export class TopomationPanel extends LitElement {
       window.clearTimeout(this._reloadTimer);
       this._reloadTimer = undefined;
     }
-    if (this._consistencyReloadTimer) {
-      window.clearTimeout(this._consistencyReloadTimer);
-      this._consistencyReloadTimer = undefined;
-    }
     this._reloadTimer = window.setTimeout(() => {
       this._reloadTimer = undefined;
       this._loadLocations(silent);
     }, 150);
-    // Production-like integrations can briefly return stale reads after an update event.
-    // Run one trailing reload to converge without requiring manual refresh.
-    this._consistencyReloadTimer = window.setTimeout(() => {
-      this._consistencyReloadTimer = undefined;
-      this._loadLocations(true);
-    }, 1100);
   }
 
   constructor() {
     super();
-    console.log("TopomationPanel constructed");
   }
 
   protected willUpdate(changedProps: PropertyValues): void {
     super.willUpdate(changedProps);
     if (!this._hasLoaded && this.hass) {
       this._hasLoaded = true;
-      console.log("Hass available, loading locations...");
       this._loadLocations();
     }
 
@@ -177,8 +176,8 @@ export class TopomationPanel extends LitElement {
 
   connectedCallback(): void {
     super.connectedCallback();
-    console.log("TopomationPanel connected");
     this._restorePanelSplitPreference();
+    this._restoreRightPanelModePreference();
     this._scheduleInitialLoad();
 
     // Keyboard shortcuts
@@ -202,10 +201,6 @@ export class TopomationPanel extends LitElement {
     if (this._reloadTimer) {
       clearTimeout(this._reloadTimer);
       this._reloadTimer = undefined;
-    }
-    if (this._consistencyReloadTimer) {
-      clearTimeout(this._consistencyReloadTimer);
-      this._consistencyReloadTimer = undefined;
     }
 
     // Clean up subscriptions
@@ -395,6 +390,12 @@ export class TopomationPanel extends LitElement {
         flex-wrap: wrap;
       }
 
+      .right-panel-modes {
+        margin-top: var(--spacing-sm);
+        display: flex;
+        gap: 8px;
+      }
+
       .header-actions .button {
         visibility: visible !important;
         opacity: 1 !important;
@@ -412,11 +413,9 @@ export class TopomationPanel extends LitElement {
       }
 
       .device-assignment-panel {
-        flex: 0 0 auto;
-        min-height: 180px;
-        max-height: 42%;
+        flex: 1 1 auto;
+        min-height: 0;
         overflow: auto;
-        border-bottom: 1px solid var(--divider-color);
         padding: 0 var(--spacing-md) var(--spacing-md);
       }
 
@@ -449,6 +448,32 @@ export class TopomationPanel extends LitElement {
         color: var(--primary-text-color);
       }
 
+      .device-toolbar {
+        margin-top: var(--spacing-sm);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .device-filter-group {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .device-filter-chip {
+        font-size: 11px;
+        padding: 4px 10px;
+        border-radius: 999px;
+      }
+
+      .device-group-actions {
+        display: flex;
+        gap: 6px;
+      }
+
       .device-group {
         margin-top: var(--spacing-sm);
         border: 1px solid var(--divider-color);
@@ -457,6 +482,8 @@ export class TopomationPanel extends LitElement {
       }
 
       .device-group-header {
+        width: 100%;
+        border: 0;
         display: flex;
         align-items: center;
         justify-content: space-between;
@@ -467,6 +494,32 @@ export class TopomationPanel extends LitElement {
         font-weight: 700;
         letter-spacing: 0.02em;
         text-transform: uppercase;
+        cursor: pointer;
+        color: var(--primary-text-color);
+        text-align: left;
+      }
+
+      .device-group-header:focus-visible {
+        outline: 2px solid var(--primary-color);
+        outline-offset: -2px;
+      }
+
+      .device-group-header-left {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+      }
+
+      .device-group-label {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .device-group-chevron {
+        font-size: 12px;
+        color: var(--text-secondary-color);
       }
 
       .device-group-count {
@@ -806,15 +859,38 @@ export class TopomationPanel extends LitElement {
         <div class="panel-right">
           <div class="header">
             <div class="header-title">${rightHeaderTitle}</div>
+            <div class="right-panel-modes" role="tablist" aria-label="Right panel mode">
+              <button
+                class="button ${this._rightPanelMode === "inspector" ? "button-primary" : "button-secondary"}"
+                role="tab"
+                aria-selected=${this._rightPanelMode === "inspector"}
+                data-testid="right-mode-configure"
+                @click=${() => this._handleRightPanelModeChange("inspector")}
+              >
+                Configure
+              </button>
+              <button
+                class="button ${this._rightPanelMode === "assign" ? "button-primary" : "button-secondary"}"
+                role="tab"
+                aria-selected=${this._rightPanelMode === "assign"}
+                data-testid="right-mode-assign"
+                @click=${() => this._handleRightPanelModeChange("assign")}
+              >
+                Assign Devices
+              </button>
+            </div>
           </div>
-          ${this._renderDeviceAssignmentPanel(selectedLocation)}
-          <ht-location-inspector
-            .hass=${this.hass}
-            .location=${selectedLocation}
-            .entryId=${this._activeEntryId()}
-            .forcedTab=${forcedInspectorTab}
-            @source-test=${this._handleSourceTest}
-          ></ht-location-inspector>
+          ${this._rightPanelMode === "assign"
+            ? this._renderDeviceAssignmentPanel(selectedLocation)
+            : html`
+                <ht-location-inspector
+                  .hass=${this.hass}
+                  .location=${selectedLocation}
+                  .entryId=${this._activeEntryId()}
+                  .forcedTab=${forcedInspectorTab}
+                  @source-test=${this._handleSourceTest}
+                ></ht-location-inspector>
+              `}
           ${this._eventLogOpen ? this._renderEventLog() : ""}
         </div>
       </div>
@@ -863,7 +939,6 @@ export class TopomationPanel extends LitElement {
         .defaultParentId=${this._newLocationDefaults?.parentId}
         .defaultType=${this._newLocationDefaults?.type}
         @dialog-closed=${() => {
-          console.log("[Panel] Dialog closed event received");
           this._locationDialogOpen = false;
           this._editingLocation = undefined;
           this._newLocationDefaults = undefined;
@@ -873,49 +948,75 @@ export class TopomationPanel extends LitElement {
     `;
   }
 
-  private async _loadEntityAreaIndex(): Promise<void> {
+  private async _ensureEntityAreaIndex(force = false): Promise<void> {
     if (!this.hass?.callWS) return;
+    if (!force && this._entityAreaIndexLoaded) return;
+    if (this._entityAreaIndexPromise) {
+      await this._entityAreaIndexPromise;
+      return;
+    }
 
-    try {
-      const [entityRegistry, deviceRegistry] = await Promise.all([
-        this.hass.callWS<any[]>({ type: "config/entity_registry/list" }),
-        this.hass.callWS<any[]>({ type: "config/device_registry/list" }),
-      ]);
+    this._entityAreaIndexPromise = (async () => {
+      try {
+        const [entityRegistry, deviceRegistry] = await Promise.all([
+          this.hass.callWS<any[]>({ type: "config/entity_registry/list" }),
+          this.hass.callWS<any[]>({ type: "config/device_registry/list" }),
+        ]);
 
-      const deviceAreaById = new Map<string, string>();
-      if (Array.isArray(deviceRegistry)) {
-        for (const device of deviceRegistry) {
-          const deviceId = typeof device?.id === "string" ? device.id : undefined;
-          const areaId = typeof device?.area_id === "string" ? device.area_id : undefined;
-          if (deviceId && areaId) {
-            deviceAreaById.set(deviceId, areaId);
+        const deviceAreaById = new Map<string, string>();
+        if (Array.isArray(deviceRegistry)) {
+          for (const device of deviceRegistry) {
+            const deviceId = typeof device?.id === "string" ? device.id : undefined;
+            const areaId = typeof device?.area_id === "string" ? device.area_id : undefined;
+            if (deviceId && areaId) {
+              deviceAreaById.set(deviceId, areaId);
+            }
           }
         }
-      }
 
-      const areaByEntityId: Record<string, string | null> = {};
-      if (Array.isArray(entityRegistry)) {
-        for (const entity of entityRegistry) {
-          const entityId = typeof entity?.entity_id === "string" ? entity.entity_id : undefined;
-          if (!entityId) continue;
-          const explicitAreaId = typeof entity?.area_id === "string" ? entity.area_id : undefined;
-          const inheritedAreaId =
-            typeof entity?.device_id === "string"
-              ? deviceAreaById.get(entity.device_id)
-              : undefined;
-          areaByEntityId[entityId] = explicitAreaId || inheritedAreaId || null;
+        const areaByEntityId: Record<string, string | null> = {};
+        if (Array.isArray(entityRegistry)) {
+          for (const entity of entityRegistry) {
+            const entityId = typeof entity?.entity_id === "string" ? entity.entity_id : undefined;
+            if (!entityId) continue;
+            const explicitAreaId = typeof entity?.area_id === "string" ? entity.area_id : undefined;
+            const inheritedAreaId =
+              typeof entity?.device_id === "string"
+                ? deviceAreaById.get(entity.device_id)
+                : undefined;
+            areaByEntityId[entityId] = explicitAreaId || inheritedAreaId || null;
+          }
         }
-      }
 
-      this._entityAreaById = areaByEntityId;
-    } catch (err) {
-      // Non-admin or restricted installs may block registry endpoints; fallback to state attrs.
-      console.debug("[topomation-panel] failed to load entity/device registry area mapping", err);
+        const previous = this._entityAreaById;
+        const prevKeys = Object.keys(previous);
+        const nextKeys = Object.keys(areaByEntityId);
+        const changed =
+          prevKeys.length !== nextKeys.length ||
+          nextKeys.some((key) => previous[key] !== areaByEntityId[key]);
+
+        if (changed) {
+          this._entityAreaById = areaByEntityId;
+          this._entityAreaRevision += 1;
+        }
+        this._entityAreaIndexLoaded = true;
+      } catch (err) {
+        // Non-admin or restricted installs may block registry endpoints; fallback to state attrs.
+      }
+    })();
+
+    try {
+      await this._entityAreaIndexPromise;
+    } finally {
+      this._entityAreaIndexPromise = undefined;
     }
   }
 
   private _renderDeviceAssignmentPanel(selectedLocation?: Location) {
+    const loadingAreaIndex = !this._entityAreaIndexLoaded && !!this._entityAreaIndexPromise;
     const groups = this._buildDeviceGroups();
+    const visibleGroups = this._visibleDeviceGroups(groups);
+    const stats = this._assignmentFilterStats(groups);
     const targetLabel = selectedLocation ? selectedLocation.name : "Select a location";
 
     return html`
@@ -932,29 +1033,71 @@ export class TopomationPanel extends LitElement {
             placeholder="Search devices..."
             @input=${this._handleDeviceSearch}
           />
+          <div class="device-toolbar">
+            <div class="device-filter-group">
+              <button
+                class="button ${this._assignmentFilter === "all" ? "button-primary" : "button-secondary"} device-filter-chip"
+                @click=${() => this._handleAssignmentFilterChange("all")}
+              >
+                All (${stats.all})
+              </button>
+              <button
+                class="button ${this._assignmentFilter === "unassigned" ? "button-primary" : "button-secondary"} device-filter-chip"
+                @click=${() => this._handleAssignmentFilterChange("unassigned")}
+              >
+                Unassigned (${stats.unassigned})
+              </button>
+              <button
+                class="button ${this._assignmentFilter === "assigned" ? "button-primary" : "button-secondary"} device-filter-chip"
+                @click=${() => this._handleAssignmentFilterChange("assigned")}
+              >
+                Assigned (${stats.assigned})
+              </button>
+            </div>
+            <div class="device-group-actions">
+              <button class="button button-secondary device-filter-chip" @click=${() => this._setAllDeviceGroups(true, visibleGroups)}>
+                Expand all
+              </button>
+              <button class="button button-secondary device-filter-chip" @click=${() => this._setAllDeviceGroups(false, visibleGroups)}>
+                Collapse all
+              </button>
+            </div>
+          </div>
         </div>
+        ${loadingAreaIndex
+          ? html`<div class="device-empty">Loading area mapping…</div>`
+          : ""}
 
-        ${groups.length === 0
-          ? html`<div class="device-empty">No devices available.</div>`
-          : groups.map((group) => this._renderDeviceGroup(group, selectedLocation?.id))}
+        ${visibleGroups.length === 0
+          ? html`<div class="device-empty">No devices match the current filter.</div>`
+          : visibleGroups.map((group) => this._renderDeviceGroup(group, selectedLocation?.id))}
       </div>
     `;
   }
 
   private _renderDeviceGroup(group: DeviceGroup, selectedLocationId?: string) {
+    const expanded = this._isGroupExpanded(group.key);
     return html`
       <section class="device-group" data-testid=${`device-group-${group.key}`}>
-        <div class="device-group-header">
-          <span>${group.label}</span>
+        <button
+          class="device-group-header"
+          @click=${() => this._toggleDeviceGroup(group.key)}
+          aria-expanded=${expanded}
+          aria-label=${`Toggle ${group.label} devices`}
+        >
+          <span class="device-group-header-left">
+            <span class="device-group-chevron">${expanded ? "▾" : "▸"}</span>
+            <span class="device-group-label">${group.label}</span>
+          </span>
           <span class="device-group-count">${group.entities.length}</span>
-        </div>
-        ${group.entities.length === 0
+        </button>
+        ${!expanded
+          ? ""
+          : group.entities.length === 0
           ? html`<div class="device-empty">No devices in this group.</div>`
           : group.entities.map((entityId) => {
               const busy = Boolean(this._assignBusyByEntityId[entityId]);
               const entityName = this._entityDisplayName(entityId);
-              const areaId = this._effectiveAreaIdForEntity(entityId);
-              const areaLabel = this._areaLabel(areaId);
               return html`
                 <div
                   class="device-row"
@@ -964,7 +1107,7 @@ export class TopomationPanel extends LitElement {
                 >
                   <div>
                     <div class="device-name">${entityName}</div>
-                    <div class="device-meta">${entityId} · HA Area: ${areaLabel}</div>
+                    <div class="device-meta">${this._deviceMetaForGroup(entityId, group)}</div>
                   </div>
                   <button
                     class="button button-secondary device-assign-btn"
@@ -984,6 +1127,61 @@ export class TopomationPanel extends LitElement {
     const value = (event.target as HTMLInputElement | null)?.value ?? "";
     this._entitySearch = value;
   };
+
+  private _handleAssignmentFilterChange(filter: AssignmentFilter): void {
+    this._assignmentFilter = filter;
+  }
+
+  private _assignmentFilterStats(groups: DeviceGroup[]): { all: number; unassigned: number; assigned: number } {
+    const unassigned = groups
+      .filter((group) => group.type === "unassigned")
+      .reduce((sum, group) => sum + group.entities.length, 0);
+    const assigned = groups
+      .filter((group) => group.type !== "unassigned")
+      .reduce((sum, group) => sum + group.entities.length, 0);
+    return { all: unassigned + assigned, unassigned, assigned };
+  }
+
+  private _visibleDeviceGroups(groups: DeviceGroup[]): DeviceGroup[] {
+    if (this._assignmentFilter === "all") return groups;
+    if (this._assignmentFilter === "unassigned") {
+      return groups.filter((group) => group.type === "unassigned");
+    }
+    return groups.filter((group) => group.type !== "unassigned");
+  }
+
+  private _isGroupExpanded(groupKey: string): boolean {
+    const value = this._deviceGroupExpanded[groupKey];
+    if (typeof value === "boolean") return value;
+    return groupKey === "unassigned";
+  }
+
+  private _toggleDeviceGroup(groupKey: string): void {
+    const expanded = this._isGroupExpanded(groupKey);
+    this._deviceGroupExpanded = {
+      ...this._deviceGroupExpanded,
+      [groupKey]: !expanded,
+    };
+  }
+
+  private _setAllDeviceGroups(expanded: boolean, groups: DeviceGroup[]): void {
+    const next = { ...this._deviceGroupExpanded };
+    for (const group of groups) {
+      next[group.key] = expanded;
+    }
+    this._deviceGroupExpanded = next;
+  }
+
+  private _deviceMetaForGroup(entityId: string, group: DeviceGroup): string {
+    if (group.type !== "unassigned") {
+      return entityId;
+    }
+    const areaLabel = this._areaLabel(this._effectiveAreaIdForEntity(entityId));
+    if (areaLabel === "Unassigned") {
+      return entityId;
+    }
+    return `${entityId} · HA Area: ${areaLabel}`;
+  }
 
   private _handleDeviceDragStart(event: DragEvent, entityId: string): void {
     event.dataTransfer?.setData(ENTITY_DND_MIME, entityId);
@@ -1056,6 +1254,13 @@ export class TopomationPanel extends LitElement {
   }
 
   private _buildDeviceGroups(): DeviceGroup[] {
+    const query = this._entitySearch.trim().toLowerCase();
+    const stateCount = Object.keys(this.hass?.states || {}).length;
+    const cacheKey = `${query}|${stateCount}|${this._locationsVersion}|${this._entityAreaRevision}`;
+    if (this._deviceGroupsCacheKey === cacheKey) {
+      return this._deviceGroupsCache;
+    }
+
     const byLocationId = new Map(this._locations.map((location) => [location.id, location]));
     const assignedByEntityId = new Map<string, string>();
     for (const location of this._locations) {
@@ -1066,7 +1271,6 @@ export class TopomationPanel extends LitElement {
       }
     }
 
-    const query = this._entitySearch.trim().toLowerCase();
     const groupsByKey = new Map<string, DeviceGroup>();
 
     const ensureGroup = (key: string, label: string, type: DeviceGroup["type"], locationId?: string): DeviceGroup => {
@@ -1121,13 +1325,16 @@ export class TopomationPanel extends LitElement {
       other: 6,
     };
 
-    return [...groupsByKey.values()]
+    const groups = [...groupsByKey.values()]
       .filter((group) => group.entities.length > 0 || group.key === "unassigned")
       .sort((left, right) => {
         const rankDiff = rank[left.type] - rank[right.type];
         if (rankDiff !== 0) return rankDiff;
         return left.label.localeCompare(right.label);
       });
+    this._deviceGroupsCacheKey = cacheKey;
+    this._deviceGroupsCache = groups;
+    return groups;
   }
 
   private _applyEntityAssignmentLocally(entityId: string, targetLocationId: string): void {
@@ -1145,6 +1352,7 @@ export class TopomationPanel extends LitElement {
     this._locationsVersion += 1;
     if (target?.ha_area_id) {
       this._entityAreaById = { ...this._entityAreaById, [entityId]: target.ha_area_id };
+      this._entityAreaRevision += 1;
     }
   }
 
@@ -1195,9 +1403,6 @@ export class TopomationPanel extends LitElement {
         throw new Error("Home Assistant connection not ready");
       }
 
-      console.log("Calling WebSocket API: topomation/locations/list");
-      console.log("hass.callWS available:", typeof this.hass.callWS);
-
       const result = await Promise.race([
         this.hass.callWS<{ locations: Location[] }>(
           this._withEntryId({
@@ -1209,7 +1414,6 @@ export class TopomationPanel extends LitElement {
         ),
       ]);
 
-      console.log("WebSocket result:", result);
       const response = result as { locations?: Location[] };
       if (!response || !response.locations) {
         throw new Error("Invalid response format: missing locations array");
@@ -1217,7 +1421,6 @@ export class TopomationPanel extends LitElement {
 
       // Prevent out-of-order loads from reverting UI state when rapid updates occur.
       if (seq !== this._loadSeq) {
-        console.log("[Panel] Ignoring stale locations load", { seq, current: this._loadSeq });
         return;
       }
 
@@ -1225,22 +1428,10 @@ export class TopomationPanel extends LitElement {
       const byId = new Map<string, Location>();
       for (const loc of response.locations) byId.set(loc.id, loc);
       const uniqueLocations = Array.from(byId.values());
-      if (uniqueLocations.length !== response.locations.length) {
-        console.warn("[Panel] Deduped locations from backend", {
-          before: response.locations.length,
-          after: uniqueLocations.length,
-        });
-      }
       const visibleLocations = uniqueLocations.filter((loc) => !loc.is_explicit_root);
-      if (visibleLocations.length !== uniqueLocations.length) {
-        console.log("[Panel] Hidden explicit root locations from manager tree", {
-          hidden: uniqueLocations.length - visibleLocations.length,
-        });
-      }
       this._locations = [...visibleLocations];
       this._occupancyStateByLocation = this._buildOccupancyStateMapFromStates();
       this._locationsVersion += 1;
-      console.log("Loaded locations:", this._locations.length, this._locations);
       this._logEvent("ws", "locations/list loaded", {
         count: this._locations.length,
       });
@@ -1252,15 +1443,15 @@ export class TopomationPanel extends LitElement {
       ) {
         this._selectedId = this._locations[0]?.id;
       }
-
-      await this._loadEntityAreaIndex();
+      if (this._rightPanelMode === "assign") {
+        void this._ensureEntityAreaIndex();
+      }
     } catch (err: any) {
       console.error("Failed to load locations:", err);
       this._error = err.message || "Failed to load locations";
       this._logEvent("error", "locations/list failed", err?.message || err);
     } finally {
       this._loading = false;
-      this.requestUpdate(); // Force re-render
     }
   }
 
@@ -1268,7 +1459,6 @@ export class TopomationPanel extends LitElement {
     if (this._hasLoaded) return;
     if (this.hass) {
       this._hasLoaded = true;
-      console.log("Hass available, loading locations...");
       this._loadLocations();
       return;
     }
@@ -1352,11 +1542,7 @@ export class TopomationPanel extends LitElement {
   private _handleConflictKeepLocal() {
     if (!this._renameConflict) return;
 
-    const { locationId, localName } = this._renameConflict;
-    console.log(`[Panel] Keeping local name "${localName}" for location ${locationId}`);
-
-    // In a real implementation, this would update HA with the local name
-    // For now, just dismiss the conflict
+    // In a real implementation, this would update HA with the local name.
     this._renameConflict = undefined;
   }
 
@@ -1364,7 +1550,6 @@ export class TopomationPanel extends LitElement {
     if (!this._renameConflict) return;
 
     const { locationId, haName } = this._renameConflict;
-    console.log(`[Panel] Accepting HA name "${haName}" for location ${locationId}`);
 
     // Update the local location with HA's name
     const location = this._locations.find(loc => loc.id === locationId);
@@ -1377,7 +1562,6 @@ export class TopomationPanel extends LitElement {
   }
 
   private _handleConflictDismiss() {
-    console.log('[Panel] Dismissing rename conflict');
     this._renameConflict = undefined;
   }
 
@@ -1661,7 +1845,6 @@ export class TopomationPanel extends LitElement {
 
   private async _handleLocationDialogSaved(e: CustomEvent): Promise<void> {
     const locationData = e.detail;
-    console.log("Location saved from dialog", locationData);
 
     // Dialog already called the WebSocket API, just reload locations
     const wasEditing = !!this._editingLocation;
@@ -1695,14 +1878,12 @@ export class TopomationPanel extends LitElement {
     if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
       e.preventDefault();
       // TODO: Implement undo
-      console.log('Undo requested');
     }
 
     // Ctrl+Shift+Z or Ctrl+Y - Redo (future implementation)
     if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
       e.preventDefault();
       // TODO: Implement redo
-      console.log('Redo requested');
     }
 
     // Escape - Discard pending changes
@@ -1766,6 +1947,37 @@ export class TopomationPanel extends LitElement {
       window.localStorage?.setItem(TREE_PANEL_SPLIT_STORAGE_KEY, this._treePanelSplit.toFixed(4));
     } catch {
       // ignore storage failures
+    }
+  }
+
+  private _restoreRightPanelModePreference(): void {
+    try {
+      const saved = window.localStorage?.getItem(RIGHT_PANEL_MODE_STORAGE_KEY);
+      if (saved === "assign" || saved === "inspector") {
+        this._rightPanelMode = saved;
+      }
+    } catch {
+      // ignore storage failures
+    }
+    if (this._rightPanelMode === "assign") {
+      void this._ensureEntityAreaIndex();
+    }
+  }
+
+  private _persistRightPanelModePreference(): void {
+    try {
+      window.localStorage?.setItem(RIGHT_PANEL_MODE_STORAGE_KEY, this._rightPanelMode);
+    } catch {
+      // ignore storage failures
+    }
+  }
+
+  private _handleRightPanelModeChange(mode: RightPanelMode): void {
+    if (this._rightPanelMode === mode) return;
+    this._rightPanelMode = mode;
+    this._persistRightPanelModePreference();
+    if (mode === "assign") {
+      void this._ensureEntityAreaIndex();
     }
   }
 
@@ -1844,6 +2056,7 @@ export class TopomationPanel extends LitElement {
 
   private async _subscribeToUpdates(): Promise<void> {
     if (!this.hass || !this.hass.connection) return;
+    if (typeof this.hass.connection.subscribeEvents !== "function") return;
 
     // Clean up any prior subscription
     if (this._unsubUpdates) {
@@ -1934,6 +2147,7 @@ export class TopomationPanel extends LitElement {
 
   private async _syncStateChangedSubscription(): Promise<void> {
     if (!this.hass?.connection) return;
+    if (typeof this.hass.connection.subscribeEvents !== "function") return;
 
     if (!this._eventLogOpen) {
       if (this._unsubStateChanged) {
@@ -2253,9 +2467,6 @@ export class TopomationPanel extends LitElement {
       composed: true,
     });
     this.dispatchEvent(event);
-
-    // Fallback log for debugging
-    console.log(`[Toast:${type}] ${message}`);
   }
 
   private async _seedDemoData(): Promise<void> {
@@ -2268,7 +2479,6 @@ export class TopomationPanel extends LitElement {
 
 if (!customElements.get("topomation-panel")) {
   try {
-    console.log("[topomation-panel] registering custom element");
     customElements.define("topomation-panel", TopomationPanel);
   } catch (err) {
     console.error("[topomation-panel] failed to define element", err);

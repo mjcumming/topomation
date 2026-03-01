@@ -962,6 +962,11 @@ describe('TopomationPanel integration (fake hass)', () => {
     `);
 
     await waitUntil(() => (element as any)._loading === false, "panel did not finish loading");
+    const assignModeButton = element.shadowRoot!.querySelector(
+      '[data-testid="right-mode-assign"]'
+    ) as HTMLButtonElement | null;
+    expect(assignModeButton).to.exist;
+    assignModeButton!.click();
     await (element as any).updateComplete;
 
     const unassignedGroup = element.shadowRoot!.querySelector(
@@ -971,6 +976,13 @@ describe('TopomationPanel integration (fake hass)', () => {
     const floorGroup = element.shadowRoot!.querySelector('[data-testid="device-group-main_floor"]');
 
     expect(unassignedGroup?.textContent || "").to.contain("Spare Lamp");
+    expect(kitchenGroup?.textContent || "").to.contain("Kitchen");
+    expect(floorGroup?.textContent || "").to.contain("Main Floor");
+
+    (kitchenGroup?.querySelector(".device-group-header") as HTMLButtonElement | null)?.click();
+    (floorGroup?.querySelector(".device-group-header") as HTMLButtonElement | null)?.click();
+    await (element as any).updateComplete;
+
     expect(kitchenGroup?.textContent || "").to.contain("Kitchen Main");
     expect(floorGroup?.textContent || "").to.contain("Floor Fan");
   });

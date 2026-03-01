@@ -635,6 +635,8 @@ describe("HtLocationInspector occupancy source composer", () => {
             { entity_id: "fan.mudroom_exhaust", area_id: "mudroom", device_id: null },
             { entity_id: "media_player.mudroom_speaker", area_id: "mudroom", device_id: null },
             { entity_id: "binary_sensor.mudroom_motion", area_id: "mudroom", device_id: null },
+            { entity_id: "binary_sensor.mudroom_glass_vibration", area_id: "mudroom", device_id: null },
+            { entity_id: "binary_sensor.mudroom_alarm_sound", area_id: "mudroom", device_id: null },
             { entity_id: "binary_sensor.mudroom_camera_person", area_id: "mudroom", device_id: null },
             { entity_id: "binary_sensor.mudroom_occupancy", area_id: "mudroom", device_id: null },
             { entity_id: "climate.mudroom", area_id: "mudroom", device_id: null },
@@ -701,6 +703,24 @@ describe("HtLocationInspector occupancy source composer", () => {
             device_class: "motion",
           },
         },
+        "binary_sensor.mudroom_glass_vibration": {
+          entity_id: "binary_sensor.mudroom_glass_vibration",
+          state: "off",
+          attributes: {
+            friendly_name: "Mudroom Glass Vibration",
+            area_id: "mudroom",
+            device_class: "vibration",
+          },
+        },
+        "binary_sensor.mudroom_alarm_sound": {
+          entity_id: "binary_sensor.mudroom_alarm_sound",
+          state: "off",
+          attributes: {
+            friendly_name: "Mudroom Alarm Sound",
+            area_id: "mudroom",
+            device_class: "sound",
+          },
+        },
         "binary_sensor.mudroom_camera_person": {
           entity_id: "binary_sensor.mudroom_camera_person",
           state: "off",
@@ -755,6 +775,8 @@ describe("HtLocationInspector occupancy source composer", () => {
       "fan.mudroom_exhaust",
       "media_player.mudroom_speaker",
       "binary_sensor.mudroom_motion",
+      "binary_sensor.mudroom_glass_vibration",
+      "binary_sensor.mudroom_alarm_sound",
       "binary_sensor.mudroom_camera_person",
       "binary_sensor.mudroom_occupancy",
       "climate.mudroom",
@@ -778,6 +800,8 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(cardsText).to.include("Mudroom Exhaust");
     expect(cardsText).to.include("Mudroom Speaker");
     expect(cardsText).to.include("Mudroom Motion");
+    expect(cardsText).to.include("Mudroom Glass Vibration");
+    expect(cardsText).to.include("Mudroom Alarm Sound");
     expect(cardsText).to.include("Mudroom Camera Person");
     expect(cardsText).to.not.include("All Lights KeypadLinc Indicator");
     expect(cardsText).to.not.include("Mudroom Occupancy");

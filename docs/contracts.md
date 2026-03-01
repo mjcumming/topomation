@@ -169,7 +169,7 @@ Additional save points:
   - `fan.*`
   - `media_player.*` (playback/volume/mute signal variants)
   - `binary_sensor.*` where:
-    - `device_class` is one of `motion`, `presence`, `occupancy`, `door`, `garage_door`, `opening`, `window`, `lock`, or
+    - `device_class` is one of `motion`, `presence`, `occupancy`, `door`, `garage_door`, `opening`, `window`, `lock`, `vibration`, `sound`, or
     - `device_class` is absent (for integrations that emit semantic binary sensors such as camera person/motion variants)
   - `switch.*` only when explicitly light-classified (`device_class: light`)
 - The Detection tab must exclude Topomation-created occupancy entities from source selection

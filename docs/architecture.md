@@ -558,7 +558,7 @@ loc_mgr.set_module_config(
     - `light.*` (power/level/color signals as supported)
     - `fan.*`
     - `media_player.*` (playback/volume/mute signals)
-    - `binary_sensor.*` for motion/presence/occupancy/door/opening classes and no-class camera-style binaries
+    - `binary_sensor.*` for motion/presence/occupancy/door/opening/lock/vibration/sound classes and no-class camera-style binaries
     - `switch.*` only when explicitly light-classified (`device_class: light`)
   - Exclude Topomation-created occupancy entities (`device_class: occupancy` + `location_id`) and
     non-core domains (`climate`, `vacuum`, `cover`) from core auto-discovery.
