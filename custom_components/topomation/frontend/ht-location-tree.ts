@@ -71,6 +71,8 @@ export class HtLocationTree extends LitElement {
   @state() private _dropIndicator?: DropIndicator;
 
   private _sortable?: Sortable;
+  private _draggedId?: string;
+  private _boundDragOver?: (e: DragEvent) => void;
   private _hasInitializedExpansion = false;
   private _activeDropTarget?: ActiveDropTarget;
 
@@ -462,6 +464,8 @@ export class HtLocationTree extends LitElement {
     super.disconnectedCallback();
     this._sortable?.destroy();
     this._sortable = undefined;
+    this._boundDragOver = undefined;
+    this._draggedId = undefined;
   }
 
   protected updated(changedProps: PropertyValues): void {
@@ -507,9 +511,12 @@ export class HtLocationTree extends LitElement {
         ghostClass: "sortable-ghost",
         // Keep all rows as valid drop targets; hierarchy-rules.ts enforces move constraints.
         draggable: ".tree-item",
-        onStart: () => {
+        onStart: (evt) => {
           this._isDragging = true;
           this._dropIndicator = undefined;
+          this._draggedId = (evt.item as HTMLElement)?.getAttribute("data-id") ?? undefined;
+          this._boundDragOver = this._handleContinuousDragOver.bind(this);
+          list.addEventListener("dragover", this._boundDragOver);
         },
         onMove: (evt) => {
           const draggedId =
@@ -543,8 +550,13 @@ export class HtLocationTree extends LitElement {
         onEnd: (evt) => {
           this._isDragging = false;
           this._dropIndicator = undefined;
+          if (this._boundDragOver) {
+            list.removeEventListener("dragover", this._boundDragOver);
+            this._boundDragOver = undefined;
+          }
           this._handleDragEnd(evt);
           this._activeDropTarget = undefined;
+          this._draggedId = undefined;
           // Re-sync Sortable after drop to match Lit-rendered tree state.
           this.updateComplete.then(() => {
             this._cleanupDuplicateTreeItems();
@@ -595,6 +607,25 @@ export class HtLocationTree extends LitElement {
       bubbles: true,
       composed: true,
     }));
+  }
+
+  private _handleContinuousDragOver(e: DragEvent): void {
+    e.preventDefault();
+    const draggedId = this._draggedId;
+    if (!draggedId) return;
+
+    const target = (e.target as HTMLElement)?.closest?.(".tree-item") as HTMLElement | null;
+    if (!target) return;
+    const relatedId = target.getAttribute("data-id");
+    if (!relatedId || relatedId === draggedId) return;
+
+    const rect = target.getBoundingClientRect();
+    const dragged = this.locations.find((l) => l.id === draggedId);
+    const currentParentId = dragged?.parent_id ?? null;
+    const isCurrentParentRow = relatedId === currentParentId;
+    const zone = zoneFromPointerInRow(rect, e.clientX, e.clientY, isCurrentParentRow);
+    this._activeDropTarget = { relatedId, zone };
+    this._updateDropIndicator(draggedId, target, zone);
   }
 
   private _restoreTreeAfterCancelledDrop(): void {

@@ -11,6 +11,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 (None.)
 
+## [0.2.5] - 2026-03-01
+
+### Fixed
+
+- **DnD zone detection now updates continuously during drag.** SortableJS onMove
+  only fires once per row entry, so the zone (before/inside/after) was locked to
+  whichever third the pointer entered from — making the "inside" (child) zone
+  nearly impossible to hit. Added a continuous dragover listener that recalculates
+  the zone on every pointer move, so all three zones respond in real time.
+
 ## [0.2.4] - 2026-03-01
 
 ### Fixed
