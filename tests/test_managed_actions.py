@@ -86,6 +86,75 @@ async def test_async_list_rules_filters_to_location_and_extracts_summary(
     assert rule["enabled"] is False
 
 
+@pytest.mark.asyncio
+async def test_async_delete_rules_for_location_deletes_only_matching_automations(
+    hass: HomeAssistant,
+) -> None:
+    """Delete helper should only delete Topomation automations for target location."""
+    manager = TopomationManagedActions(hass)
+    metadata_kitchen = {
+        "version": 2,
+        "location_id": "kitchen",
+        "trigger_type": "occupied",
+        "require_dark": False,
+    }
+    metadata_bedroom = {
+        "version": 2,
+        "location_id": "bedroom",
+        "trigger_type": "vacant",
+        "require_dark": False,
+    }
+    kitchen_description = (
+        "Managed by Topomation.\n"
+        f"{TOPOMATION_AUTOMATION_METADATA_PREFIX} {json.dumps(metadata_kitchen)}"
+    )
+    bedroom_description = (
+        "Managed by Topomation.\n"
+        f"{TOPOMATION_AUTOMATION_METADATA_PREFIX} {json.dumps(metadata_bedroom)}"
+    )
+
+    hass.data[AUTOMATION_DATA_COMPONENT] = SimpleNamespace(
+        entities=[
+            SimpleNamespace(
+                entity_id="automation.kitchen_occupied",
+                raw_config={
+                    CONF_ID: "topomation_kitchen_occupied_light_kitchen",
+                    "description": kitchen_description,
+                },
+                unique_id="topomation_kitchen_occupied_light_kitchen",
+            ),
+            SimpleNamespace(
+                entity_id="automation.bedroom_vacant",
+                raw_config={
+                    CONF_ID: "topomation_bedroom_vacant_light_bedroom",
+                    "description": bedroom_description,
+                },
+                unique_id="topomation_bedroom_vacant_light_bedroom",
+            ),
+            SimpleNamespace(
+                entity_id="automation.unmanaged",
+                raw_config={
+                    CONF_ID: "unmanaged_rule",
+                    "description": "Plain automation",
+                },
+                unique_id="unmanaged_rule",
+            ),
+        ]
+    )
+
+    deleted: list[str] = []
+
+    async def _fake_delete_rule(*, automation_id: str, entity_id: str | None = None) -> None:
+        deleted.append(automation_id)
+
+    manager.async_delete_rule = _fake_delete_rule  # type: ignore[method-assign]
+
+    deleted_ids = await manager.async_delete_rules_for_location("kitchen")
+
+    assert deleted_ids == ["topomation_kitchen_occupied_light_kitchen"]
+    assert deleted == ["topomation_kitchen_occupied_light_kitchen"]
+
+
 def test_private_helpers_parse_and_mutate_config() -> None:
     """Internal helper functions preserve managed metadata and config ids."""
     manager = TopomationManagedActions(cast(HomeAssistant, SimpleNamespace()))
@@ -146,3 +215,100 @@ def test_private_helpers_parse_and_mutate_config() -> None:
         }
     )
     assert not manager._has_sun_dark_condition({"conditions": []})  # noqa: SLF001
+
+
+@pytest.mark.asyncio
+async def test_resolve_created_entity_id_retries_registry_lookup(
+    hass: HomeAssistant,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Entity resolution retries registry lookup before giving up."""
+    manager = TopomationManagedActions(hass)
+
+    class _FakeRegistry:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def async_get_entity_id(self, domain: str, platform: str, unique_id: str) -> str | None:
+            self.calls += 1
+            if self.calls < 3:
+                return None
+            assert domain == "automation"
+            assert platform == "automation"
+            assert unique_id == "topomation_kitchen_occupied_light_kitchen"
+            return "automation.kitchen_occupied"
+
+    fake_registry = _FakeRegistry()
+
+    async def _no_sleep(_: float) -> None:
+        return None
+
+    monkeypatch.setattr("custom_components.topomation.managed_actions.er.async_get", lambda _: fake_registry)
+    monkeypatch.setattr("custom_components.topomation.managed_actions.asyncio.sleep", _no_sleep)
+
+    entity_id = await manager._resolve_created_entity_id(  # noqa: SLF001
+        "topomation_kitchen_occupied_light_kitchen",
+        max_attempts=5,
+        wait_seconds=0.01,
+    )
+
+    assert entity_id == "automation.kitchen_occupied"
+    assert fake_registry.calls == 3
+
+
+def test_apply_topomation_grouping_uses_topomation_labels_and_category(
+    hass: HomeAssistant,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Grouping writes TopoMation labels/category while preserving existing metadata."""
+    manager = TopomationManagedActions(hass)
+    captured: dict[str, object] = {}
+    requested_label_names: list[str] = []
+
+    registry_entry = SimpleNamespace(
+        labels=("existing_label",),
+        categories={"diagnostic": "category_existing"},
+    )
+
+    class _FakeRegistry:
+        def async_get(self, entity_id: str) -> SimpleNamespace | None:
+            if entity_id == "automation.kitchen_occupied":
+                return registry_entry
+            return None
+
+        def async_update_entity(self, entity_id: str, **kwargs: object) -> None:
+            captured["entity_id"] = entity_id
+            captured.update(kwargs)
+
+    fake_registry = _FakeRegistry()
+
+    def _ensure_label(name: str) -> str:
+        requested_label_names.append(name)
+        if name == "TopoMation":
+            return "label_topomation"
+        if name == "TopoMation - On Occupied":
+            return "label_occupied"
+        return "label_unknown"
+
+    monkeypatch.setattr("custom_components.topomation.managed_actions.er.async_get", lambda _: fake_registry)
+    monkeypatch.setattr(manager, "_ensure_label", _ensure_label)
+    monkeypatch.setattr(manager, "_ensure_automation_category", lambda _: "category_topomation")
+
+    manager._apply_topomation_grouping(  # noqa: SLF001
+        "automation.kitchen_occupied",
+        "occupied",
+        area_id="area_kitchen",
+    )
+
+    assert requested_label_names == ["TopoMation", "TopoMation - On Occupied"]
+    assert captured["entity_id"] == "automation.kitchen_occupied"
+    assert set(cast(set[str], captured["labels"])) == {
+        "existing_label",
+        "label_topomation",
+        "label_occupied",
+    }
+    assert cast(dict[str, str], captured["categories"]) == {
+        "diagnostic": "category_existing",
+        "automation": "category_topomation",
+    }
+    assert captured["area_id"] == "area_kitchen"

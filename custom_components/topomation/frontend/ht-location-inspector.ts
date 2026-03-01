@@ -57,6 +57,7 @@ export class HtLocationInspector extends LitElement {
   @property({ attribute: false }) public hass!: HomeAssistant;
   @property({ attribute: false }) public location?: Location;
   @property({ attribute: false }) public entryId?: string;
+  @property({ type: Number }) public entityRegistryRevision = 0;
   @property({ type: String }) public forcedTab?: InspectorTabRequest;
   @property({ attribute: false }) public occupancyStates: Record<string, boolean> = {};
 
@@ -65,6 +66,7 @@ export class HtLocationInspector extends LitElement {
     hass: { attribute: false },
     location: { attribute: false },
     entryId: { attribute: false },
+    entityRegistryRevision: { type: Number },
     forcedTab: { type: String },
     occupancyStates: { attribute: false },
   };
@@ -79,6 +81,7 @@ export class HtLocationInspector extends LitElement {
   @state() private _actionRules: TopomationActionRule[] = [];
   @state() private _loadingActionRules = false;
   @state() private _actionRulesError?: string;
+  @state() private _liveOccupancyStateByLocation: Record<string, Record<string, any>> = {};
   @state() private _nowEpochMs = Date.now();
   @state() private _actionToggleBusy: Record<string, boolean> = {};
   @state() private _actionServiceSelections: Record<string, string> = {};
@@ -1044,6 +1047,7 @@ export class HtLocationInspector extends LitElement {
     if (changedProps.has("hass")) {
       this._entityAreaById = {};
       this._entityAreaLoadPromise = undefined;
+      this._liveOccupancyStateByLocation = {};
       if (this.hass) {
         void this._loadEntityAreaAssignments();
         void this._loadActionRules();
@@ -1084,6 +1088,10 @@ export class HtLocationInspector extends LitElement {
       if (prevEntryId !== nextEntryId) {
         void this._loadActionRules();
       }
+    }
+
+    if (changedProps.has("entityRegistryRevision")) {
+      void this._loadEntityAreaAssignments();
     }
   }
 
@@ -1348,6 +1356,35 @@ export class HtLocationInspector extends LitElement {
       this._unsubAutomationStateChanged = await this.hass.connection.subscribeEvents(
         (event: any) => {
           const entityId = event?.data?.entity_id;
+          const newStateObj = event?.data?.new_state;
+          const oldStateObj = event?.data?.old_state;
+          const newAttrs = newStateObj?.attributes || {};
+          const oldAttrs = oldStateObj?.attributes || {};
+
+          if (typeof entityId === "string" && entityId.startsWith("binary_sensor.")) {
+            const newLocationId =
+              typeof newAttrs.location_id === "string" ? newAttrs.location_id : undefined;
+            const oldLocationId =
+              typeof oldAttrs.location_id === "string" ? oldAttrs.location_id : undefined;
+            const locationId = newLocationId || oldLocationId;
+            const newIsOccupancy = newAttrs.device_class === "occupancy";
+            const oldIsOccupancy = oldAttrs.device_class === "occupancy";
+            if (locationId && (newIsOccupancy || oldIsOccupancy)) {
+              if (newStateObj && newIsOccupancy) {
+                this._liveOccupancyStateByLocation = {
+                  ...this._liveOccupancyStateByLocation,
+                  [locationId]: newStateObj,
+                };
+              } else {
+                const { [locationId]: _omit, ...remaining } = this._liveOccupancyStateByLocation;
+                this._liveOccupancyStateByLocation = remaining;
+              }
+              if (this.location?.id === locationId) {
+                this.requestUpdate();
+              }
+            }
+          }
+
           if (typeof entityId !== "string" || !entityId.startsWith("automation.")) {
             return;
           }
@@ -1526,18 +1563,16 @@ export class HtLocationInspector extends LitElement {
   }
 
   private _sourceKeyFromSource(source: OccupancySource): string {
-    if (source.signal_key) return this._sourceKey(source.entity_id, source.signal_key);
-    if (source.source_id?.includes("::")) {
-      const parsedSignal = source.source_id.split("::")[1] as SourceSignalKey | undefined;
-      if (parsedSignal && ["playback", "volume", "mute", "power", "level", "color"].includes(parsedSignal)) {
-        return this._sourceKey(source.entity_id, parsedSignal);
-      }
-    }
-    return this._sourceKey(source.entity_id);
+    const normalizedSignalKey = this._normalizedSignalKeyForSource(source);
+    return this._sourceKey(source.entity_id, normalizedSignalKey);
   }
 
   private _sourceCardGroupKey(item: CandidateItem): string {
-    if (item.entityId.startsWith("light.") && (item.signalKey === "power" || item.signalKey === "level")) {
+    const normalizedSignalKey = this._normalizedSignalKey(item.entityId, item.signalKey);
+    if (
+      item.entityId.startsWith("light.") &&
+      (normalizedSignalKey === "power" || normalizedSignalKey === "level")
+    ) {
       return `${item.entityId}::power-level`;
     }
     return item.key;
@@ -1582,14 +1617,32 @@ export class HtLocationInspector extends LitElement {
   }
 
   private _candidateTitle(entityId: string, signalKey?: SourceSignalKey): string {
+    const normalizedSignalKey = this._normalizedSignalKey(entityId, signalKey);
     const baseName = this._entityName(entityId);
-    if (signalKey && (entityId.startsWith("media_player.") || entityId.startsWith("light."))) {
-      return `${baseName} — ${this._mediaSignalLabel(signalKey)}`;
+    if (normalizedSignalKey && (entityId.startsWith("media_player.") || entityId.startsWith("light."))) {
+      return `${baseName} — ${this._mediaSignalLabel(normalizedSignalKey)}`;
     }
     if (!this._isMediaEntity(entityId) && !this._isDimmableEntity(entityId) && !this._isColorCapableEntity(entityId)) {
       return baseName;
     }
-    return `${baseName} — ${this._mediaSignalLabel(signalKey)}`;
+    return `${baseName} — ${this._mediaSignalLabel(normalizedSignalKey)}`;
+  }
+
+  private _normalizedSignalKeyForSource(source: OccupancySource): SourceSignalKey | undefined {
+    const parsedSignal =
+      source.source_id?.includes("::")
+        ? (source.source_id.split("::")[1] as SourceSignalKey | undefined)
+        : undefined;
+    const rawSignalKey = source.signal_key || parsedSignal;
+    return this._normalizedSignalKey(source.entity_id, rawSignalKey);
+  }
+
+  private _normalizedSignalKey(
+    entityId: string,
+    signalKey?: SourceSignalKey
+  ): SourceSignalKey | undefined {
+    if (signalKey) return signalKey;
+    return this._defaultSignalKeyForEntity(entityId);
   }
 
   private _mediaSignalDefaults(
@@ -1711,7 +1764,7 @@ export class HtLocationInspector extends LitElement {
       .map((source) => ({
         key: this._sourceKeyFromSource(source),
         entityId: source.entity_id,
-        signalKey: source.signal_key,
+        signalKey: this._normalizedSignalKeyForSource(source),
       }));
     const items = [...visibleCandidateItems, ...configuredExtraItems].sort((a, b) => {
       const aConfigured = sourceIndexByKey.has(a.key);
@@ -2356,6 +2409,7 @@ export class HtLocationInspector extends LitElement {
       const defaultService = this._defaultManagedActionService(entityId, triggerType);
       return [
         { value: "media_stop", label: "Stop" },
+        { value: "media_pause", label: "Pause" },
         { value: "turn_off", label: "Turn off" },
       ].sort((a, b) => (a.value === defaultService ? -1 : b.value === defaultService ? 1 : 0));
     }
@@ -3001,8 +3055,7 @@ export class HtLocationInspector extends LitElement {
       return false;
     }
     const attrs = stateObj.attributes || {};
-    // Occupancy-class sensors are outputs/derived state and should not be auto-enumerated as inputs.
-    if (attrs.device_class === "occupancy") return false;
+    if (this._isTopomationOccupancyOutput(attrs)) return false;
     const domain = entityId.split(".", 1)[0];
     if (["person", "device_tracker", "light", "switch", "fan", "media_player"].includes(domain)) {
       return true;
@@ -3013,6 +3066,7 @@ export class HtLocationInspector extends LitElement {
       return [
         "motion",
         "presence",
+        "occupancy",
         "door",
         "garage_door",
         "opening",
@@ -3034,8 +3088,7 @@ export class HtLocationInspector extends LitElement {
     }
 
     const attrs = stateObj.attributes || {};
-    // Occupancy-class sensors are outputs/derived state and should not be auto-enumerated as inputs.
-    if (attrs.device_class === "occupancy") return false;
+    if (this._isTopomationOccupancyOutput(attrs)) return false;
 
     const domain = entityId.split(".", 1)[0];
     if (domain === "light" || domain === "fan" || domain === "media_player") {
@@ -3052,6 +3105,7 @@ export class HtLocationInspector extends LitElement {
       return [
         "motion",
         "presence",
+        "occupancy",
         "door",
         "garage_door",
         "opening",
@@ -3069,8 +3123,19 @@ export class HtLocationInspector extends LitElement {
     return String(attrs.device_class || "").toLowerCase() === "light";
   }
 
+  private _isTopomationOccupancyOutput(attrs: Record<string, any>): boolean {
+    if (attrs.device_class !== "occupancy") return false;
+    const locationId = attrs.location_id;
+    return typeof locationId === "string" && locationId.trim().length > 0;
+  }
+
   private _getOccupancyState() {
     if (!this.location) return undefined;
+    const locationId = this.location.id;
+    const liveState = this._liveOccupancyStateByLocation[locationId];
+    if (liveState) {
+      return liveState;
+    }
     const states = this.hass?.states || {};
     for (const stateObj of Object.values(states)) {
       const attrs = stateObj?.attributes || {};

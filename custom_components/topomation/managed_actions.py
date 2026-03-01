@@ -33,12 +33,14 @@ from .const import DOMAIN, TOPOMATION_AUTOMATION_METADATA_PREFIX
 ActionTriggerType = Literal["occupied", "vacant"]
 
 _TOPOMATION_AUTOMATION_ID_PREFIX = "topomation_"
-_TOPOMATION_LABEL_NAME = "Topomation"
-_TOPOMATION_OCCUPIED_LABEL_NAME = "Topomation - On Occupied"
-_TOPOMATION_VACANT_LABEL_NAME = "Topomation - On Vacant"
-_TOPOMATION_CATEGORY_NAME = "Topomation"
+_TOPOMATION_LABEL_NAME = "TopoMation"
+_TOPOMATION_OCCUPIED_LABEL_NAME = "TopoMation - On Occupied"
+_TOPOMATION_VACANT_LABEL_NAME = "TopoMation - On Vacant"
+_TOPOMATION_CATEGORY_NAME = "TopoMation"
 _TOPOMATION_SYSTEM_USER_NAME = "Topomation"
 _AUTOMATION_API_REFRESH_TOKEN_KEY = "_automation_api_refresh_token"  # noqa: S105
+_ENTITY_RESOLVE_MAX_ATTEMPTS = 20
+_ENTITY_RESOLVE_WAIT_SECONDS = 0.25
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -255,21 +257,11 @@ class TopomationManagedActions:
             raise ValueError("Automation config validation returned no result")
         await self._call_automation_config_api("POST", automation_id, config_payload)
 
-        entity_registry = er.async_get(self.hass)
-        entity_id = entity_registry.async_get_entity_id(
-            AUTOMATION_DOMAIN, AUTOMATION_DOMAIN, automation_id
+        entity_id = await self._resolve_created_entity_id(
+            automation_id,
+            max_attempts=_ENTITY_RESOLVE_MAX_ATTEMPTS,
+            wait_seconds=_ENTITY_RESOLVE_WAIT_SECONDS,
         )
-        if entity_id is None:
-            _LOGGER.debug(
-                "[managed_actions] Entity not in registry, checking component entities for automation_id=%s",
-                automation_id,
-            )
-            component = self.hass.data.get(AUTOMATION_DATA_COMPONENT)
-            entities = getattr(component, "entities", []) if component else []
-            for ent in entities:
-                if getattr(ent, "unique_id", None) == automation_id:
-                    entity_id = getattr(ent, "entity_id", None)
-                    break
         if entity_id:
             _LOGGER.info(
                 "[managed_actions] Rule created automation_id=%s entity_id=%s",
@@ -286,10 +278,12 @@ class TopomationManagedActions:
             )
         else:
             _LOGGER.warning(
-                "[managed_actions] Rule written via config API but entity did not appear. "
+                "[managed_actions] Rule written via config API but entity did not appear after %.1fs. "
+                "Area/label/category grouping was skipped. "
                 "The integration uses the same REST API as the HA automation UI (writes to automations.yaml). "
                 "Ensure configuration.yaml includes that file (e.g. automation: !include automations.yaml). "
                 "automation_id=%s",
+                _ENTITY_RESOLVE_MAX_ATTEMPTS * _ENTITY_RESOLVE_WAIT_SECONDS,
                 automation_id,
             )
 
@@ -328,6 +322,60 @@ class TopomationManagedActions:
             {"entity_id": entity_id},
             blocking=True,
         )
+
+    async def async_delete_rules_for_location(self, location_id: str) -> list[str]:
+        """Delete all Topomation-managed automations linked to a location."""
+        deleted_automation_ids: list[str] = []
+        target_location_id = location_id.strip()
+        if not target_location_id:
+            return deleted_automation_ids
+
+        component = self.hass.data.get(AUTOMATION_DATA_COMPONENT)
+        entities = getattr(component, "entities", []) if component is not None else []
+        entity_registry = er.async_get(self.hass)
+
+        for automation_entity in entities:
+            entity_id = getattr(automation_entity, "entity_id", None)
+            raw_config = getattr(automation_entity, "raw_config", None)
+            unique_id = getattr(automation_entity, "unique_id", None)
+            if not isinstance(entity_id, str) or not entity_id:
+                continue
+            if not isinstance(raw_config, Mapping):
+                continue
+
+            metadata = self._parse_metadata(raw_config.get("description"))
+            if metadata is None or metadata.location_id != target_location_id:
+                continue
+
+            automation_id = self._resolve_automation_id(
+                entity_registry,
+                entity_id,
+                raw_config,
+                unique_id,
+            ) or self._config_id_for_entity_id(entity_id)
+            if not automation_id:
+                _LOGGER.debug(
+                    "Skipping managed automation delete with unknown config id: entity_id=%s location=%s",
+                    entity_id,
+                    target_location_id,
+                )
+                continue
+
+            try:
+                await self.async_delete_rule(
+                    automation_id=automation_id,
+                    entity_id=entity_id,
+                )
+                deleted_automation_ids.append(automation_id)
+            except Exception:  # pragma: no cover - defensive logging
+                _LOGGER.warning(
+                    "Failed to delete managed automation %s for deleted location %s",
+                    automation_id,
+                    target_location_id,
+                    exc_info=True,
+                )
+
+        return deleted_automation_ids
 
     def _find_occupancy_entity_id(self, location_id: str) -> str | None:
         """Resolve occupancy binary sensor entity_id for a location id."""
@@ -476,6 +524,35 @@ class TopomationManagedActions:
             return True
         return state.state != "off"
 
+    async def _resolve_created_entity_id(
+        self,
+        automation_id: str,
+        *,
+        max_attempts: int,
+        wait_seconds: float,
+    ) -> str | None:
+        """Resolve automation entity_id after create/reload races settle."""
+        entity_registry = er.async_get(self.hass)
+        for attempt in range(max_attempts):
+            entity_id = entity_registry.async_get_entity_id(
+                AUTOMATION_DOMAIN, AUTOMATION_DOMAIN, automation_id
+            )
+            if isinstance(entity_id, str) and entity_id:
+                return entity_id
+
+            component = self.hass.data.get(AUTOMATION_DATA_COMPONENT)
+            entities = getattr(component, "entities", []) if component else []
+            for automation_entity in entities:
+                if getattr(automation_entity, "unique_id", None) != automation_id:
+                    continue
+                candidate = getattr(automation_entity, "entity_id", None)
+                if isinstance(candidate, str) and candidate:
+                    return candidate
+
+            if attempt < max_attempts - 1:
+                await asyncio.sleep(wait_seconds)
+        return None
+
     def _apply_topomation_grouping(
         self,
         entity_id: str,
@@ -488,7 +565,7 @@ class TopomationManagedActions:
         entry = entity_registry.async_get(entity_id)
         if entry is None:
             return
-        labels = set(entry.labels)
+        labels = set(entry.labels or ())
         primary_label = self._ensure_label(_TOPOMATION_LABEL_NAME)
         trigger_label = self._ensure_label(
             _TOPOMATION_OCCUPIED_LABEL_NAME
@@ -499,7 +576,7 @@ class TopomationManagedActions:
             labels.add(primary_label)
         if trigger_label:
             labels.add(trigger_label)
-        categories = dict(entry.categories)
+        categories = dict(entry.categories or {})
         category_id = self._ensure_automation_category(_TOPOMATION_CATEGORY_NAME)
         if category_id is not None:
             categories["automation"] = category_id

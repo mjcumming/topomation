@@ -1739,6 +1739,42 @@ After ADR-HA-041 shipped, two UX/contract gaps remained:
 
 ---
 
+### ADR-HA-043: Detection Re-allows External Occupancy-Class Sensors (2026-03-01)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+
+Some integrations expose primary motion/presence intent only as
+`binary_sensor.*` with `device_class: occupancy`. Excluding all occupancy-class
+sensors prevented these devices from being configured in Detection.
+
+**Decision**:
+
+1. Keep excluding Topomation-managed occupancy outputs from Detection source
+   selection (`device_class: occupancy` with `location_id`).
+2. Re-allow external occupancy-class sensors in Detection source candidates
+   (core list and Add Source picker) when they are not Topomation-managed
+   outputs.
+3. Keep ADR-HA-042 signal-variant behavior unchanged for light/media entities.
+
+**Rationale**:
+
+1. Topomation occupancy entities are outputs and must not loop back as inputs.
+2. External occupancy-class entities can represent valid upstream detectors and
+   should be selectable.
+3. This preserves no-loop safety while restoring compatibility for
+   occupancy-only integrations.
+
+**Consequences**:
+
+- ✅ Occupancy-only detectors can be configured as Detection sources.
+- ✅ Topomation occupancy outputs remain excluded.
+- ⚠️ Occupancy-class entities may appear in candidate lists if they are
+  external to Topomation.
+
+---
+
 ## How to Use This Log
 
 ### When to Create an ADR

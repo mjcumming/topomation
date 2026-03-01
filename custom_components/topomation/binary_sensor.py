@@ -14,6 +14,7 @@ from homeassistant.components.binary_sensor import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
@@ -22,6 +23,45 @@ if TYPE_CHECKING:
     from home_topology.modules.occupancy import OccupancyModule
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _location_ha_area_id(location: object) -> str | None:
+    """Resolve canonical HA area linkage for a location-like object."""
+    linked = getattr(location, "ha_area_id", None)
+    if linked:
+        return str(linked)
+
+    modules = getattr(location, "modules", {}) or {}
+    if not isinstance(modules, dict):
+        return None
+    meta = modules.get("_meta", {})
+    if not isinstance(meta, dict):
+        return None
+    raw_area_id = meta.get("ha_area_id")
+    return str(raw_area_id) if raw_area_id else None
+
+
+def _remove_occupancy_entity_for_location(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    location_id: str,
+) -> str | None:
+    """Remove occupancy entity registry entry for one location ID."""
+    registry = er.async_get(hass)
+    unique_id = f"occupancy_{location_id}"
+
+    entity_id = registry.async_get_entity_id("binary_sensor", DOMAIN, unique_id)
+    if entity_id is None:
+        for reg_entry in er.async_entries_for_config_entry(registry, entry.entry_id):
+            if str(reg_entry.unique_id or "") == unique_id:
+                entity_id = reg_entry.entity_id
+                break
+
+    if not entity_id:
+        return None
+
+    registry.async_remove(entity_id)
+    return entity_id
 
 
 async def async_setup_entry(
@@ -39,19 +79,66 @@ async def async_setup_entry(
     occupancy_module = modules.get("occupancy")
 
     # Create occupancy sensor for each location
-    entities = []
+    entities: list[OccupancyBinarySensor] = []
+    sensors_by_location_id: dict[str, OccupancyBinarySensor] = {}
     for location in loc_mgr.all_locations():
-        entities.append(
-            OccupancyBinarySensor(
-                location.id,
-                location.name,
-                bus,
-                occupancy_module=occupancy_module,
-            )
+        sensor = OccupancyBinarySensor(
+            location.id,
+            location.name,
+            bus,
+            occupancy_module=occupancy_module,
+            ha_area_id=_location_ha_area_id(location),
         )
+        sensors_by_location_id[location.id] = sensor
+        entities.append(sensor)
 
     async_add_entities(entities)
     _LOGGER.info("Created %d binary sensors", len(entities))
+
+    @callback
+    def _on_location_created(event: Event) -> None:
+        """Add occupancy entities for topology locations created after startup."""
+        location_id = event.location_id
+        if not isinstance(location_id, str) or not location_id:
+            return
+        if location_id in sensors_by_location_id:
+            return
+
+        location = loc_mgr.get_location(location_id)
+        if location is None:
+            return
+
+        sensor = OccupancyBinarySensor(
+            location.id,
+            location.name,
+            bus,
+            occupancy_module=occupancy_module,
+            ha_area_id=_location_ha_area_id(location),
+        )
+        sensors_by_location_id[location_id] = sensor
+        async_add_entities([sensor])
+
+    @callback
+    def _on_location_deleted(event: Event) -> None:
+        """Remove occupancy entities when their topology location is deleted."""
+        location_id = event.location_id
+        if not isinstance(location_id, str) or not location_id:
+            return
+
+        sensors_by_location_id.pop(location_id, None)
+        removed_entity = _remove_occupancy_entity_for_location(hass, entry, location_id)
+        if removed_entity:
+            _LOGGER.debug(
+                "Removed occupancy entity %s for deleted location %s",
+                removed_entity,
+                location_id,
+            )
+
+    bus.subscribe(_on_location_created, EventFilter(event_type="location.created"))
+    bus.subscribe(_on_location_deleted, EventFilter(event_type="location.deleted"))
+
+    entry.async_on_unload(lambda: bus.unsubscribe(_on_location_created))
+    entry.async_on_unload(lambda: bus.unsubscribe(_on_location_deleted))
 
 
 class OccupancyBinarySensor(BinarySensorEntity):
@@ -66,15 +153,19 @@ class OccupancyBinarySensor(BinarySensorEntity):
         location_name: str,
         bus: EventBus,
         occupancy_module: OccupancyModule | None = None,
+        ha_area_id: str | None = None,
     ) -> None:
         """Initialize the sensor."""
         self._location_id = location_id
         self._location_name = location_name
         self._bus = bus
         self._occupancy_module = occupancy_module
+        self._ha_area_id = ha_area_id
 
         self._attr_unique_id = f"occupancy_{location_id}"
         self._attr_name = f"{location_name} Occupancy"
+        if ha_area_id:
+            self._attr_suggested_area = ha_area_id
 
         self._attr_is_on = False
         self._attr_extra_state_attributes = {
@@ -159,9 +250,30 @@ class OccupancyBinarySensor(BinarySensorEntity):
         )
         return True
 
+    def _ensure_registry_area_assignment(self) -> None:
+        """Assign this entity to its HA area when location linkage exists."""
+        if not self._ha_area_id or self.hass is None or not self.entity_id:
+            return
+
+        registry = er.async_get(self.hass)
+        entry = registry.async_get(self.entity_id)
+        if entry is None or entry.area_id == self._ha_area_id:
+            return
+
+        try:
+            registry.async_update_entity(self.entity_id, area_id=self._ha_area_id)
+        except Exception:  # pragma: no cover - defensive logging
+            _LOGGER.debug(
+                "Failed to assign occupancy entity %s to area %s",
+                self.entity_id,
+                self._ha_area_id,
+                exc_info=True,
+            )
+
     async def async_added_to_hass(self) -> None:
         """Subscribe to occupancy events when added."""
         _LOGGER.debug("Binary sensor added: %s", self._location_id)
+        self._ensure_registry_area_assignment()
         self._hydrate_from_module_state()
 
         @callback

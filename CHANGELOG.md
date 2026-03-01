@@ -9,6 +9,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added occupancy design white paper at `docs/wasp-in-box-whitepaper.md`,
+  covering wasp-in-box principles, topology/inference boundaries, magic-area
+  alignment, and UI/UX guidance for occupancy management.
+- Persistence now supports optional topology `adjacency_edges` payloads when
+  the loaded `home-topology` runtime exposes adjacency APIs, enabling forward
+  compatibility for cross-area handoff graph storage.
+
+### Changed
+
+- Detection source pickers now allow external occupancy-class binary sensors
+  while still excluding Topomation-managed occupancy outputs
+  (`device_class: occupancy` with `location_id`).
+- Managed action service options for `media_player` entities now include
+  playback `Pause` alongside `Stop` and power `Turn off`.
+
+## [0.2.14] - 2026-03-01
+
+### Fixed
+
+- Frontend now listens for Home Assistant `entity_registry_updated`,
+  `device_registry_updated`, and `area_registry_updated` events and refreshes
+  location/entity assignment data automatically, so Detection/Assign Devices
+  views update without manual browser refresh.
+- Inspector now updates occupancy header timeout metadata (`Vacant at ...`) from
+  live occupancy `state_changed` events, preventing stale `Vacant at Unknown`
+  after test-triggering occupancy.
+- Detection source grouping now normalizes legacy light power rows (missing
+  explicit `signal_key`) so `Power` + `Level change` stay merged in a single
+  shared source card.
+
+## [0.2.13] - 2026-03-01
+
+### Fixed
+
+- Managed occupied/vacant rule creation now waits for the newly created
+  automation entity to appear before applying grouping metadata, so new rules
+  are reliably tagged and categorized.
+- Managed-action grouping now uses `TopoMation` naming for created automation
+  labels/category (`TopoMation`, `TopoMation - On Occupied`, `TopoMation - On
+  Vacant`).
+
 ## [0.2.12] - 2026-03-01
 
 ### Changed

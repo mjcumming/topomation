@@ -250,6 +250,29 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await actions_runtime.async_setup()
     managed_action_rules = TopomationManagedActions(hass)
 
+    @callback
+    def _cleanup_managed_entities_on_location_deleted(event: Event) -> None:
+        """Delete Topomation-owned automation entities for deleted locations."""
+        location_id = event.location_id
+        if not isinstance(location_id, str) or not location_id:
+            return
+
+        async def _async_cleanup() -> None:
+            deleted_ids = await managed_action_rules.async_delete_rules_for_location(location_id)
+            if deleted_ids:
+                _LOGGER.info(
+                    "Deleted %d Topomation managed automation(s) for location %s",
+                    len(deleted_ids),
+                    location_id,
+                )
+
+        hass.async_create_task(_async_cleanup())
+
+    bus.subscribe(
+        _cleanup_managed_entities_on_location_deleted,
+        EventFilter(event_type="location.deleted"),
+    )
+
     # 11. Debounced persistence scheduler for runtime/config edits.
     autosave_unsub = None
     autosave_running = False
@@ -460,6 +483,18 @@ def _normalize_root_only_structural_wrappers(loc_mgr: LocationManager) -> bool:
     return normalized
 
 
+def _supports_adjacency_restore(loc_mgr: LocationManager) -> bool:
+    """Return True when the location manager exposes adjacency restore APIs."""
+    create_method = getattr(loc_mgr.__class__, "create_adjacency_edge", None)
+    return callable(create_method)
+
+
+def _supports_adjacency_dump(loc_mgr: LocationManager) -> bool:
+    """Return True when the location manager exposes adjacency dump APIs."""
+    list_method = getattr(loc_mgr.__class__, "all_adjacency_edges", None)
+    return callable(list_method)
+
+
 async def _load_configuration(hass: HomeAssistant, loc_mgr: LocationManager) -> bool:
     """Load saved location configuration.
 
@@ -596,7 +631,51 @@ async def _load_configuration(hass: HomeAssistant, loc_mgr: LocationManager) -> 
                 if isinstance(module_id, str) and isinstance(config, Mapping):
                     loc_mgr.set_module_config(location_id, module_id, dict(config))
 
-    _LOGGER.info("Restored %d locations from saved configuration", len(created))
+    restored_edges = 0
+    adjacency_edges = data.get("adjacency_edges")
+    if _supports_adjacency_restore(loc_mgr) and isinstance(adjacency_edges, list):
+        for item in adjacency_edges:
+            if not isinstance(item, Mapping):
+                continue
+
+            edge_id = item.get("edge_id")
+            from_location_id = item.get("from_location_id")
+            to_location_id = item.get("to_location_id")
+            if (
+                not isinstance(edge_id, str)
+                or not edge_id
+                or not isinstance(from_location_id, str)
+                or not from_location_id
+                or not isinstance(to_location_id, str)
+                or not to_location_id
+            ):
+                continue
+
+            create_edge = getattr(loc_mgr, "create_adjacency_edge")
+            try:
+                create_edge(
+                    edge_id=edge_id,
+                    from_location_id=from_location_id,
+                    to_location_id=to_location_id,
+                    directionality=str(item.get("directionality", "bidirectional")),
+                    boundary_type=str(item.get("boundary_type", "virtual")),
+                    crossing_sources=(
+                        list(item.get("crossing_sources", []))
+                        if isinstance(item.get("crossing_sources"), list)
+                        else None
+                    ),
+                    handoff_window_sec=int(item.get("handoff_window_sec", 12)),
+                    priority=int(item.get("priority", 50)),
+                )
+                restored_edges += 1
+            except (TypeError, ValueError) as err:
+                _LOGGER.warning("Failed to restore adjacency edge %s: %s", edge_id, err)
+
+    _LOGGER.info(
+        "Restored %d locations and %d adjacency edge(s) from saved configuration",
+        len(created),
+        restored_edges,
+    )
     return True
 
 
@@ -892,7 +971,48 @@ async def _save_state(
             }
         )
 
+    config_payload: dict[str, Any] = {"locations": config_locations}
+
+    if _supports_adjacency_dump(loc_mgr):
+        serialized_edges: list[dict[str, Any]] = []
+        list_edges = getattr(loc_mgr, "all_adjacency_edges")
+        for edge in list_edges():
+            to_dict = getattr(edge, "to_dict", None)
+            if callable(to_dict):
+                payload = to_dict()
+                if isinstance(payload, dict):
+                    serialized_edges.append(dict(payload))
+                continue
+
+            if isinstance(edge, Mapping):
+                serialized_edges.append(dict(edge))
+                continue
+
+            edge_id = getattr(edge, "edge_id", None)
+            from_location_id = getattr(edge, "from_location_id", None)
+            to_location_id = getattr(edge, "to_location_id", None)
+            if (
+                not isinstance(edge_id, str)
+                or not isinstance(from_location_id, str)
+                or not isinstance(to_location_id, str)
+            ):
+                continue
+            serialized_edges.append(
+                {
+                    "edge_id": edge_id,
+                    "from_location_id": from_location_id,
+                    "to_location_id": to_location_id,
+                    "directionality": str(getattr(edge, "directionality", "bidirectional")),
+                    "boundary_type": str(getattr(edge, "boundary_type", "virtual")),
+                    "crossing_sources": list(getattr(edge, "crossing_sources", [])),
+                    "handoff_window_sec": int(getattr(edge, "handoff_window_sec", 12)),
+                    "priority": int(getattr(edge, "priority", 50)),
+                }
+            )
+
+        config_payload["adjacency_edges"] = serialized_edges
+
     config_store = Store(hass, STORAGE_VERSION, STORAGE_KEY_CONFIG)
-    await config_store.async_save({"locations": config_locations})
+    await config_store.async_save(config_payload)
 
     _LOGGER.info("Kernel state saved")

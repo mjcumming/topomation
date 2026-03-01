@@ -79,6 +79,7 @@ export class TopomationPanel extends LitElement {
     _rightPanelMode: { state: true },
     _assignmentFilter: { state: true },
     _deviceGroupExpanded: { state: true },
+    _haRegistryRevision: { state: true },
   };
 
   @state() private _locations: Location[] = [];
@@ -117,6 +118,7 @@ export class TopomationPanel extends LitElement {
   @state() private _rightPanelMode: RightPanelMode = "inspector";
   @state() private _assignmentFilter: AssignmentFilter = "all";
   @state() private _deviceGroupExpanded: Record<string, boolean> = {};
+  @state() private _haRegistryRevision = 0;
 
   private _hasLoaded = false;
   private _pendingLoadTimer?: number;
@@ -124,9 +126,13 @@ export class TopomationPanel extends LitElement {
   private _unsubStateChanged?: () => void;
   private _unsubOccupancyChanged?: () => void;
   private _unsubActionsSummary?: () => void;
+  private _unsubEntityRegistryUpdated?: () => void;
+  private _unsubDeviceRegistryUpdated?: () => void;
+  private _unsubAreaRegistryUpdated?: () => void;
   @state() private _newLocationDefaults?: { parentId?: string; type?: LocationType };
   private _loadSeq = 0;
   private _reloadTimer?: number;
+  private _registryRefreshTimer?: number;
   private _entityAreaIndexLoaded = false;
   private _entityAreaIndexPromise?: Promise<void>;
   private _entityAreaRevision = 0;
@@ -202,6 +208,10 @@ export class TopomationPanel extends LitElement {
       clearTimeout(this._reloadTimer);
       this._reloadTimer = undefined;
     }
+    if (this._registryRefreshTimer) {
+      clearTimeout(this._registryRefreshTimer);
+      this._registryRefreshTimer = undefined;
+    }
 
     // Clean up subscriptions
     if (this._unsubUpdates) {
@@ -219,6 +229,18 @@ export class TopomationPanel extends LitElement {
     if (this._unsubActionsSummary) {
       this._unsubActionsSummary();
       this._unsubActionsSummary = undefined;
+    }
+    if (this._unsubEntityRegistryUpdated) {
+      this._unsubEntityRegistryUpdated();
+      this._unsubEntityRegistryUpdated = undefined;
+    }
+    if (this._unsubDeviceRegistryUpdated) {
+      this._unsubDeviceRegistryUpdated();
+      this._unsubDeviceRegistryUpdated = undefined;
+    }
+    if (this._unsubAreaRegistryUpdated) {
+      this._unsubAreaRegistryUpdated();
+      this._unsubAreaRegistryUpdated = undefined;
     }
   }
 
@@ -887,6 +909,7 @@ export class TopomationPanel extends LitElement {
                   .hass=${this.hass}
                   .location=${selectedLocation}
                   .entryId=${this._activeEntryId()}
+                  .entityRegistryRevision=${this._haRegistryRevision}
                   .forcedTab=${forcedInspectorTab}
                   .occupancyStates=${this._occupancyStateByLocation}
                   @source-test=${this._handleSourceTest}
@@ -2076,6 +2099,18 @@ export class TopomationPanel extends LitElement {
       this._unsubActionsSummary();
       this._unsubActionsSummary = undefined;
     }
+    if (this._unsubEntityRegistryUpdated) {
+      this._unsubEntityRegistryUpdated();
+      this._unsubEntityRegistryUpdated = undefined;
+    }
+    if (this._unsubDeviceRegistryUpdated) {
+      this._unsubDeviceRegistryUpdated();
+      this._unsubDeviceRegistryUpdated = undefined;
+    }
+    if (this._unsubAreaRegistryUpdated) {
+      this._unsubAreaRegistryUpdated();
+      this._unsubAreaRegistryUpdated = undefined;
+    }
 
     try {
       this._unsubUpdates = await this.hass.connection.subscribeEvents(
@@ -2118,7 +2153,61 @@ export class TopomationPanel extends LitElement {
       this._logEvent("error", "subscribe failed: topomation_actions_summary", String(err));
     }
 
+    try {
+      this._unsubEntityRegistryUpdated = await this.hass.connection.subscribeEvents(
+        (event: any) => {
+          this._scheduleRegistryRefresh("entity_registry_updated", event?.data || {});
+        },
+        "entity_registry_updated"
+      );
+    } catch (err) {
+      console.warn("Failed to subscribe to entity_registry_updated events", err);
+      this._logEvent("error", "subscribe failed: entity_registry_updated", String(err));
+    }
+
+    try {
+      this._unsubDeviceRegistryUpdated = await this.hass.connection.subscribeEvents(
+        (event: any) => {
+          this._scheduleRegistryRefresh("device_registry_updated", event?.data || {});
+        },
+        "device_registry_updated"
+      );
+    } catch (err) {
+      console.warn("Failed to subscribe to device_registry_updated events", err);
+      this._logEvent("error", "subscribe failed: device_registry_updated", String(err));
+    }
+
+    try {
+      this._unsubAreaRegistryUpdated = await this.hass.connection.subscribeEvents(
+        (event: any) => {
+          this._scheduleRegistryRefresh("area_registry_updated", event?.data || {});
+        },
+        "area_registry_updated"
+      );
+    } catch (err) {
+      console.warn("Failed to subscribe to area_registry_updated events", err);
+      this._logEvent("error", "subscribe failed: area_registry_updated", String(err));
+    }
+
     await this._syncStateChangedSubscription();
+  }
+
+  private _scheduleRegistryRefresh(eventType: string, data: Record<string, unknown>): void {
+    this._logEvent("ha", eventType, data);
+    if (this._registryRefreshTimer) {
+      window.clearTimeout(this._registryRefreshTimer);
+      this._registryRefreshTimer = undefined;
+    }
+    this._registryRefreshTimer = window.setTimeout(() => {
+      this._registryRefreshTimer = undefined;
+      this._haRegistryRevision += 1;
+      this._entityAreaIndexLoaded = false;
+      this._entityAreaRevision += 1;
+      if (this._rightPanelMode === "assign") {
+        void this._ensureEntityAreaIndex(true);
+      }
+      this._scheduleReload(true);
+    }, 200);
   }
 
   private _setOccupancyState(locationId: string, occupied: boolean): void {

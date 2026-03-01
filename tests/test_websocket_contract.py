@@ -223,6 +223,50 @@ async def test_locations_create_allows_floor_and_area(hass: HomeAssistant) -> No
 
 
 @pytest.mark.asyncio
+async def test_locations_create_area_assigns_occupancy_entity_to_ha_area(
+    hass: HomeAssistant,
+) -> None:
+    """New occupancy binary sensors should inherit area assignment for area locations."""
+    entry = MockConfigEntry(domain=DOMAIN, data={}, entry_id="test_entry")
+    entry.add_to_hass(hass)
+
+    with patch("custom_components.topomation.async_register_panel", AsyncMock()):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    connection = _fake_connection()
+    handle_locations_create(
+        hass,
+        connection,
+        {
+            "id": 203,
+            "type": WS_TYPE_LOCATIONS_CREATE,
+            "name": "Library",
+            "parent_id": None,
+            "meta": {"type": "area"},
+        },
+    )
+    await hass.async_block_till_done()
+
+    assert connection.send_error.call_count == 0
+    connection.send_result.assert_called_once()
+    payload = connection.send_result.call_args[0][1]
+    location = payload["location"]
+    location_id = location["id"]
+    ha_area_id = location["ha_area_id"]
+    assert location_id.startswith("area_")
+    assert ha_area_id is not None
+
+    entity_registry = er.async_get(hass)
+    unique_id = f"occupancy_{location_id}"
+    entity_id = entity_registry.async_get_entity_id("binary_sensor", DOMAIN, unique_id)
+    assert entity_id is not None
+    occupancy_entry = entity_registry.async_get(entity_id)
+    assert occupancy_entry is not None
+    assert occupancy_entry.area_id == ha_area_id
+
+
+@pytest.mark.asyncio
 async def test_locations_create_rejects_unknown_explicit_ha_area_id(
     hass: HomeAssistant,
 ) -> None:
@@ -539,6 +583,88 @@ async def test_locations_delete_allows_topology_owned_leaf(hass: HomeAssistant) 
     assert payload["deleted_ids"] == ["zone_pantry"]
     assert payload["reparented_ids"] == []
     assert loc_mgr.get_location("zone_pantry") is None
+
+
+@pytest.mark.asyncio
+async def test_locations_delete_removes_occupancy_entity_for_deleted_location(
+    hass: HomeAssistant,
+) -> None:
+    """Deleting a location should remove its Topomation occupancy entity."""
+    store = Store(hass, STORAGE_VERSION, STORAGE_KEY_CONFIG)
+    await store.async_save({"locations": []})
+
+    entry = MockConfigEntry(domain=DOMAIN, data={}, entry_id="test_entry")
+    entry.add_to_hass(hass)
+
+    with patch("custom_components.topomation.async_register_panel", AsyncMock()):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    loc_mgr = hass.data[DOMAIN][entry.entry_id]["location_manager"]
+    loc_mgr.create_location(id="zone_storage", name="Storage Zone", parent_id=None)
+    loc_mgr.set_module_config("zone_storage", "_meta", {"type": "subarea", "sync_source": "topology"})
+    await hass.async_block_till_done()
+
+    entity_registry = er.async_get(hass)
+    unique_id = "occupancy_zone_storage"
+    entity_id = entity_registry.async_get_entity_id("binary_sensor", DOMAIN, unique_id)
+    assert entity_id is not None
+    assert entity_registry.async_get(entity_id) is not None
+
+    connection = _fake_connection()
+    handle_locations_delete(
+        hass,
+        connection,
+        {
+            "id": 1201,
+            "type": WS_TYPE_LOCATIONS_DELETE,
+            "location_id": "zone_storage",
+        },
+    )
+    await hass.async_block_till_done()
+
+    assert connection.send_error.call_count == 0
+    connection.send_result.assert_called_once()
+    assert entity_registry.async_get(entity_id) is None
+
+
+@pytest.mark.asyncio
+async def test_locations_delete_triggers_managed_action_cleanup_for_location(
+    hass: HomeAssistant,
+) -> None:
+    """Deleting a location should invoke managed-action cleanup for that location."""
+    store = Store(hass, STORAGE_VERSION, STORAGE_KEY_CONFIG)
+    await store.async_save({"locations": []})
+
+    entry = MockConfigEntry(domain=DOMAIN, data={}, entry_id="test_entry")
+    entry.add_to_hass(hass)
+
+    with patch("custom_components.topomation.async_register_panel", AsyncMock()):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    kernel = hass.data[DOMAIN][entry.entry_id]
+    loc_mgr = kernel["location_manager"]
+    loc_mgr.create_location(id="zone_tv_room", name="TV Room", parent_id=None)
+    loc_mgr.set_module_config("zone_tv_room", "_meta", {"type": "subarea", "sync_source": "topology"})
+
+    managed_action_rules = kernel["managed_action_rules"]
+    managed_action_rules.async_delete_rules_for_location = AsyncMock(return_value=[])  # type: ignore[method-assign]
+
+    connection = _fake_connection()
+    handle_locations_delete(
+        hass,
+        connection,
+        {
+            "id": 1202,
+            "type": WS_TYPE_LOCATIONS_DELETE,
+            "location_id": "zone_tv_room",
+        },
+    )
+    await hass.async_block_till_done()
+
+    assert connection.send_error.call_count == 0
+    managed_action_rules.async_delete_rules_for_location.assert_awaited_once_with("zone_tv_room")
 
 
 @pytest.mark.asyncio

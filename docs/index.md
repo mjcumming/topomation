@@ -1,6 +1,6 @@
 # Documentation Index
 
-**Last Reviewed**: 2026-02-26
+**Last Reviewed**: 2026-03-01
 
 This file is the source of truth for active documentation and lifecycle rules.
 If a file is not listed as active below, treat it as reference-only.
@@ -23,6 +23,7 @@ If a file is not listed as active below, treat it as reference-only.
 | `docs/live-ha-validation-checklist.md` | Manual validation procedure for live HA release candidates | Active |
 | `docs/installation.md` | Installation guide for v0.1.0 (HACS and manual) | Active |
 | `docs/occupancy-lock-workflows.md` | Automation-first lock policy workflows (`away`, `party`) | Active |
+| `docs/wasp-in-box-whitepaper.md` | Occupancy design white paper (wasp-in-box, magic-area alignment, UX guidance) | Active (Reference) |
 | `docs/integration-guide.md` | Broad integration reference (not policy source) | Active (Reference) |
 | `docs/work-tracking.md` | Current sprint execution status | Active (Operational) |
 | `docs/current-work.md` | Live parallel-work and handoff context | Active (Operational) |

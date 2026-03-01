@@ -1132,6 +1132,106 @@ describe('TopomationPanel integration (fake hass)', () => {
     expect(kitchen?.entity_ids || []).to.include("light.unassigned");
   });
 
+  it("refreshes locations and assignments when HA registry updates fire", async () => {
+    const callWsCalls: Array<Record<string, any>> = [];
+    let useUpdatedData = false;
+    const eventCallbacks = new Map<string, (event: any) => void>();
+
+    const initialLocations: Location[] = locations.map((loc) =>
+      loc.id === "kitchen" ? { ...loc, entity_ids: ["switch.master_toilet"] } : { ...loc }
+    );
+    const updatedLocations: Location[] = locations.map((loc) =>
+      loc.id === "kitchen" ? { ...loc, entity_ids: ["light.master_toilet"] } : { ...loc }
+    );
+
+    const hass: HomeAssistant = {
+      callWS: async <T>(req: Record<string, any>): Promise<T> => {
+        callWsCalls.push(req);
+        if (req.type === "topomation/locations/list") {
+          return { locations: useUpdatedData ? updatedLocations : initialLocations } as T;
+        }
+        if (req.type === "config/entity_registry/list") {
+          return [
+            {
+              entity_id: useUpdatedData ? "light.master_toilet" : "switch.master_toilet",
+              area_id: "kitchen",
+              device_id: null,
+            },
+          ] as T;
+        }
+        if (req.type === "config/device_registry/list") {
+          return [] as T;
+        }
+        throw new Error("Unexpected WS call");
+      },
+      connection: {
+        subscribeEvents: async (cb: (event: any) => void, eventType?: string) => {
+          if (eventType) eventCallbacks.set(eventType, cb);
+          return () => {
+            if (eventType) eventCallbacks.delete(eventType);
+          };
+        },
+      } as any,
+      states: {
+        "switch.master_toilet": {
+          entity_id: "switch.master_toilet",
+          state: "off",
+          attributes: { friendly_name: "Master Toilet Switch" },
+        },
+        "light.master_toilet": {
+          entity_id: "light.master_toilet",
+          state: "off",
+          attributes: { friendly_name: "Master Toilet Light" },
+        },
+      },
+      areas: {
+        kitchen: { area_id: "kitchen", name: "Kitchen" },
+      } as any,
+      floors: {},
+      config: { location_name: "Test Property" },
+      localize: (key: string) => key,
+    };
+
+    const element = await fixture<HTMLDivElement>(html`
+      <topomation-panel .hass=${hass}></topomation-panel>
+    `);
+
+    await waitUntil(() => (element as any)._loading === false, "panel did not finish loading");
+    const assignModeButton = element.shadowRoot!.querySelector(
+      '[data-testid="right-mode-assign"]'
+    ) as HTMLButtonElement | null;
+    expect(assignModeButton).to.exist;
+    assignModeButton!.click();
+    await (element as any).updateComplete;
+
+    expect(eventCallbacks.has("entity_registry_updated")).to.equal(true);
+    expect(eventCallbacks.has("device_registry_updated")).to.equal(true);
+    expect(eventCallbacks.has("area_registry_updated")).to.equal(true);
+
+    const initialLocationCalls = callWsCalls.filter((call) => call.type === "topomation/locations/list").length;
+    const initialEntityRegistryCalls = callWsCalls.filter(
+      (call) => call.type === "config/entity_registry/list"
+    ).length;
+
+    useUpdatedData = true;
+    eventCallbacks.get("entity_registry_updated")?.({
+      data: { action: "update", entity_id: "light.master_toilet" },
+    });
+
+    await waitUntil(
+      () =>
+        callWsCalls.filter((call) => call.type === "topomation/locations/list").length >
+        initialLocationCalls,
+      "locations/list was not reloaded after registry update"
+    );
+    await waitUntil(
+      () =>
+        callWsCalls.filter((call) => call.type === "config/entity_registry/list").length >
+        initialEntityRegistryCalls,
+      "entity_registry/list was not refreshed after registry update"
+    );
+  });
+
   it("resolves manager view from panel config and path", async () => {
     const element = document.createElement("topomation-panel") as any;
 

@@ -11,47 +11,131 @@
 [![License](https://img.shields.io/github/license/mjcumming/topomation.svg)](https://github.com/mjcumming/topomation/blob/main/LICENSE)
 [![Project Status](https://img.shields.io/badge/project%20status-alpha-orange.svg)](https://github.com/mjcumming/topomation)
 
-TopoMation is a Home Assistant custom integration for occupancy-first homes.
-It converts noisy device changes into stable location occupancy, then lets you
-build occupied/vacant behavior from one control surface instead of per-room
-automation sprawl.
+TopoMation is a Home Assistant custom integration that makes occupancy automation practical at whole-home scale.
 
-## Why TopoMation
+It gives you one place to model your home as a hierarchy, one occupancy signal per location, and one UI to build occupied/vacant behavior without writing brittle per-room automations.
 
-- **One occupancy signal per location** for dashboards, automations, and debugging.
-- **Fewer brittle automations** by normalizing many entity behaviors into one model.
-- **Native HA automations generated for you** from occupied/vacant rules in the panel.
-- **Policy-level control** with lock modes (`freeze`, `block_occupied`,
-  `block_vacant`) and scopes (`self`, `subtree`).
+## Why This Exists
 
-## What TopoMation Does
+Most occupancy setups break down the same way:
 
-- Builds a location workspace that combines Home Assistant-backed wrappers
-  (`floor`, `area`) with integration-owned structural nodes
-  (`building`, `grounds`, `subarea`).
-- Translates Home Assistant state changes into normalized occupancy signals
-  (`trigger`, `clear`, `vacate`) using source-aware IDs and optional signal keys.
-- Publishes one occupancy binary sensor per location (`binary_sensor.<location>_occupancy`).
-- Supports direct manual control services for occupancy and lock workflows.
-- Manages occupied/vacant action rules as native Home Assistant automations.
-- Supports optional `Only when dark` guard for occupied rules
-  (`sun.sun` must be `below_horizon`).
+- Per-room automations multiply until they are hard to reason about.
+- Different sensor types behave differently, so occupancy feels inconsistent.
+- You end up debugging entity transitions instead of home behavior.
+- There is no global map of how occupancy logic is connected across the house.
 
-## How It Works
+TopoMation solves this with a single location tree and a consistent occupancy contract across many sensor domains.
 
-TopoMation is a thin Home Assistant adapter around the `home_topology` kernel:
+## What TopoMation Delivers
 
-1. Home Assistant emits `state_changed`.
-2. `EventBridge` maps relevant transitions to occupancy signals.
-3. Kernel modules apply occupancy state, holds, locks, and timeout logic.
-4. Integration exposes state as HA entities and panel data.
-5. Managed actions create/update native HA automations.
+- A global tree view of the entire home, including custom structural nodes.
+- One occupancy binary sensor per location for dashboards, automations, and debugging.
+- UI-managed occupancy source behavior with consistent trigger/clear/vacate semantics.
+- Native Home Assistant automations generated from `On Occupied` and `On Vacant` rules.
+- Runtime policy controls (`trigger`, `clear`, `vacate`, `lock`, `unlock`) for advanced workflows.
 
-Deep design references:
+## The Location Model We Built
 
-- [Architecture](docs/architecture.md)
-- [Contracts](docs/contracts.md)
-- [ADR Log](docs/adr-log.md)
+TopoMation supports five location types:
+
+- `building`: root-level structural wrapper for indoor hierarchies.
+- `grounds`: root-level structural wrapper for outdoor hierarchies.
+- `floor`: Home Assistant floor wrapper (can sit at root or under `building`).
+- `area`: Home Assistant area wrapper or integration-owned area node.
+- `subarea`: nested micro-zone for finer control.
+
+### Why We Added New Location Types
+
+Home Assistant floors/areas are useful, but occupancy automation often needs more structure:
+
+- separate indoor and outdoor roots,
+- deeper nesting than `floor -> area`,
+- micro-zones like pantry, closet, landing, or nook,
+- occupancy behavior scoped to lived spaces instead of only registry objects.
+
+`building`, `grounds`, and `subarea` close that gap while keeping everything in one management surface.
+
+### Hierarchy Rules
+
+The hierarchy is flexible but constrained so drag-and-drop stays predictable:
+
+- `building` and `grounds` are root-only.
+- `floor` can be root-level or a child of `building`.
+- `area` can be root-level or nested under `building`, `grounds`, `floor`, or another `area`.
+- `subarea` can be nested under `building`, `grounds`, `floor`, `area`, or another `subarea`.
+
+This gives you real-world modeling freedom while preserving strict safety checks for reparent/reorder operations.
+
+## Occupancy Model: Built For Mixed Sensors
+
+Not all sensors represent true presence.
+
+A motion pulse, a door open event, a dimmer level change, and a person tracker should not behave the same way. TopoMation lets each source express the right behavior while still rolling up to one occupancy state per location.
+
+### Core Occupancy Semantics
+
+Each source maps into one of these intents:
+
+- `trigger`: contribute occupied intent.
+- `clear`: release one source contribution (optional trailing timeout).
+- `vacate`: authoritative vacant intent.
+
+### Source Configuration Model
+
+Each source is configured in the UI with:
+
+- mode: `any_change` or `specific_states`
+- `on_event`: typically `trigger`
+- `on_timeout`: finite duration or `null` (indefinite)
+- `off_event`: `none` or `clear`
+- `off_trailing`: delay before source release
+
+### Why Timeouts Matter
+
+This is a major practical win:
+
+- Activity-style sensors (motion, door activity, light/media interaction) are often best with finite hold time and no direct OFF clear.
+- True presence-style sensors (`presence`/`occupancy`, `person`, `device_tracker`) are often best with indefinite ON plus OFF clear with trailing grace.
+- OFF behavior can be either source release (`clear`) or authoritative vacant (`vacate`) based on your intent.
+
+The result is occupancy that is stable without being sticky.
+
+## UI-First Automation
+
+You can build occupancy behavior directly from the TopoMation panel:
+
+1. Select a location in the tree.
+2. Configure detection sources in `Detection`.
+3. Create actions in `On Occupied` and `On Vacant`.
+4. Optionally enable `Only when dark` for occupied actions.
+
+TopoMation writes these as native Home Assistant automations, so rules appear in the standard HA automation UI and remain fully interoperable.
+
+This means you can build powerful automations without manually stitching entity IDs into YAML.
+
+## Example: Closet Light Automation
+
+A concrete workflow:
+
+1. Create `Closet` as a `subarea` under the right parent.
+2. Assign closet motion or door-contact source in `Detection`.
+3. Use a short timeout for activity-based signals.
+4. Add `On Occupied`: turn closet light on.
+5. Add `On Vacant`: turn closet light off.
+
+That is exactly the kind of low-friction, high-value automation this integration is designed to make easy.
+
+## Global Operations From One Tree
+
+From one location tree, you can:
+
+- see occupancy state across the home,
+- shape hierarchy with drag-and-drop,
+- assign devices to the right location quickly,
+- apply policy locks with `self` or `subtree` scope,
+- manually mark locations occupied/unoccupied for testing and operations.
+
+This integration is built to remove user pain: one model, one UI, one occupancy language, and automation behavior that scales with your home.
 
 ## Installation
 
@@ -68,11 +152,12 @@ Quick path via HACS:
 ## Quick Start Workflow
 
 1. Open **Location Manager** from the sidebar.
-2. Confirm imported floors/areas and shape the hierarchy.
-3. Configure source behaviors in **Detection**.
-4. Configure **On Occupied** and **On Vacant** actions.
-5. Optionally enable `Only when dark` on occupied actions.
-6. Validate with occupancy entities and manual services.
+2. Confirm imported floors/areas, then shape hierarchy with building/grounds/subareas.
+3. Assign entities in **Assign Devices** where needed.
+4. Configure source behavior in **Detection**.
+5. Configure **On Occupied** and **On Vacant** actions.
+6. Optionally enable `Only when dark` for occupied rules.
+7. Validate with occupancy entities and manual controls.
 
 Automation example driven by location occupancy:
 
@@ -113,9 +198,10 @@ All services support optional `entry_id` when multiple TopoMation entries are lo
 
 ## Current Scope (Alpha)
 
-- Stable occupancy model, source normalization, and lock workflows.
+- Stable occupancy model, source normalization, timeout handling, and lock workflows.
 - Managed occupied/vacant actions persisted as native HA automations.
 - Registry sync for areas/floors/entities into topology wrappers.
+- Structural hierarchy model for `building` / `grounds` / `floor` / `area` / `subarea`.
 - Ambient module runtime/WebSocket support (ambient helper entities not yet exposed).
 
 ## Known Limits
@@ -129,6 +215,12 @@ All services support optional `entry_id` when multiple TopoMation entries are lo
 - [Release Validation Runbook](docs/release-validation-runbook.md)
 - [Live HA Validation Checklist](docs/live-ha-validation-checklist.md)
 - [Live Release Testing Paradigm](docs/live-release-testing-paradigm.md)
+
+## Architecture and Contracts
+
+- [Architecture](docs/architecture.md)
+- [Contracts](docs/contracts.md)
+- [ADR Log](docs/adr-log.md)
 
 ## Development
 

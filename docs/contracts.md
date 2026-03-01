@@ -169,11 +169,11 @@ Additional save points:
   - `fan.*`
   - `media_player.*` (playback/volume/mute signal variants)
   - `binary_sensor.*` where:
-    - `device_class` is one of `motion`, `presence`, `door`, `garage_door`, `opening`, `window`, `lock`, `vibration`, `sound`, or
+    - `device_class` is one of `motion`, `presence`, `occupancy`, `door`, `garage_door`, `opening`, `window`, `lock`, `vibration`, `sound`, or
     - `device_class` is absent (for integrations that emit semantic binary sensors such as camera person/motion variants)
   - `switch.*` only when explicitly light-classified (`device_class: light`)
-- The Detection tab must exclude occupancy-class sensors from source selection
-  (`device_class: occupancy`), including Topomation-managed occupancy outputs.
+- The Detection tab must exclude Topomation-managed occupancy outputs from source selection
+  (`device_class: occupancy` with `location_id`), while allowing external occupancy-class sensors.
 - The Detection tab must exclude non-core appliance/control domains from core auto-enumeration
   (for example `climate`, `vacuum`, `cover`).
 - The explicit **Add Source** picker remains broader for edge cases and may include generic `switch.*`

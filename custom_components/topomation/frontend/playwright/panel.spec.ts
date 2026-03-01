@@ -422,14 +422,14 @@ test("inline actions support all common device types", async ({ page }) => {
       name: "Kitchen Receiver",
       entityId: "media_player.kitchen_receiver",
       action: "media_player.media_stop",
-      options: ["media_stop", "turn_off"],
+      options: ["media_stop", "media_pause", "turn_off"],
       select: "media_stop",
     },
     {
       name: "Kitchen TV",
       entityId: "media_player.kitchen_tv",
       action: "media_player.media_stop",
-      options: ["media_stop", "turn_off"],
+      options: ["media_stop", "media_pause", "turn_off"],
       select: "media_stop",
     },
   ];

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from home_topology import LocationManager
 from homeassistant.core import HomeAssistant
@@ -235,3 +235,51 @@ async def test_policy_source_bindings_round_trip_in_persistence(
             },
         }
     ]
+
+
+async def test_adjacency_edges_round_trip_when_supported(
+    hass: HomeAssistant,
+) -> None:
+    """Adjacency edges should persist when manager exposes adjacency APIs."""
+    source_mgr = LocationManager()
+    source_mgr.create_location(id="living", name="Living")
+    source_mgr.create_location(id="hall", name="Hall")
+
+    class _Edge:
+        def to_dict(self) -> dict[str, object]:
+            return {
+                "edge_id": "edge_living_hall",
+                "from_location_id": "living",
+                "to_location_id": "hall",
+                "directionality": "bidirectional",
+                "boundary_type": "door",
+                "crossing_sources": ["binary_sensor.living_hall_door"],
+                "handoff_window_sec": 12,
+                "priority": 50,
+            }
+
+    source_mgr.all_adjacency_edges = lambda: [_Edge()]  # type: ignore[attr-defined]
+
+    occupancy = Mock()
+    occupancy.dump_state.return_value = {"dummy": "state"}
+    modules = {"occupancy": occupancy}
+
+    with patch("custom_components.topomation._supports_adjacency_dump", return_value=True):
+        await _save_state(hass, "test_entry", source_mgr, modules)
+
+    restored_mgr = LocationManager()
+    restored_mgr.create_adjacency_edge = Mock()  # type: ignore[attr-defined]
+
+    with patch("custom_components.topomation._supports_adjacency_restore", return_value=True):
+        await _load_configuration(hass, restored_mgr)
+
+    restored_mgr.create_adjacency_edge.assert_called_once_with(
+        edge_id="edge_living_hall",
+        from_location_id="living",
+        to_location_id="hall",
+        directionality="bidirectional",
+        boundary_type="door",
+        crossing_sources=["binary_sensor.living_hall_door"],
+        handoff_window_sec=12,
+        priority=50,
+    )

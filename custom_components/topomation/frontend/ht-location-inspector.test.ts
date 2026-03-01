@@ -645,7 +645,7 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(persisted!.config.occupancy_sources[0].entity_id).to.equal("binary_sensor.kitchen_motion");
   });
 
-  it("does not show occupancy-class entities in source candidates", async () => {
+  it("shows external occupancy-class entities but excludes Topomation occupancy outputs", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>): Promise<T> => {
         if (request.type === "config/entity_registry/list") return [] as T;
@@ -711,7 +711,7 @@ describe("HtLocationInspector occupancy source composer", () => {
     const estimatedCard = Array.from(element.shadowRoot!.querySelectorAll(".source-card")).find((row) =>
       (row.textContent || "").includes("Camera Estimated Occupancy")
     );
-    expect(estimatedCard).to.equal(undefined);
+    expect(estimatedCard).to.not.equal(undefined);
   });
 
   it("shows only core detection entities in area source candidates while keeping generic switches in Add Source", async () => {
@@ -957,6 +957,83 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(tabLabels).to.include("On Vacant");
   });
 
+  it("groups legacy light power source with level source in one card", async () => {
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>) => {
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        return [] as T;
+      },
+      connection: {},
+      states: {
+        "light.mike_closet_light": {
+          entity_id: "light.mike_closet_light",
+          state: "off",
+          attributes: {
+            friendly_name: "Mike Closet Light",
+            area_id: "mike_closet",
+            brightness: 120,
+            supported_color_modes: ["brightness"],
+          },
+        },
+      },
+      areas: {
+        mike_closet: { area_id: "mike_closet", name: "Mike Closet" },
+      },
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_mike_closet";
+    location.name = "Mike Closet";
+    location.ha_area_id = "mike_closet";
+    location.modules._meta = { type: "area" };
+    location.entity_ids = ["light.mike_closet_light"];
+    location.modules.occupancy = {
+      enabled: true,
+      default_timeout: 300,
+      default_trailing_timeout: 120,
+      occupancy_sources: [
+        // Legacy power source without explicit signal_key/source_id suffix.
+        {
+          entity_id: "light.mike_closet_light",
+          source_id: "light.mike_closet_light",
+          mode: "any_change",
+          on_event: "trigger",
+          on_timeout: 900,
+          off_event: "none",
+          off_trailing: 0,
+        },
+        {
+          entity_id: "light.mike_closet_light",
+          source_id: "light.mike_closet_light::level",
+          signal_key: "level",
+          mode: "any_change",
+          on_event: "trigger",
+          on_timeout: 900,
+          off_event: "none",
+          off_trailing: 0,
+        },
+      ],
+    };
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${location}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    const lightCards = Array.from(element.shadowRoot!.querySelectorAll(".source-card")).filter((card) =>
+      (card.textContent || "").includes("Mike Closet Light")
+    );
+    expect(lightCards).to.have.length(1);
+    expect((lightCards[0].textContent || "")).to.include("Mike Closet Light — Power");
+    expect((lightCards[0].textContent || "")).to.include("Mike Closet Light — Level change");
+  });
+
   it("renders header occupancy/lock status and lock diagnostics", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>) => {
@@ -1075,6 +1152,95 @@ describe("HtLocationInspector occupancy source composer", () => {
     ).trim();
 
     expect(vacantAtText).to.equal(`Vacant at ${expectedVacantAtLabel}`);
+  });
+
+  it("updates vacant-at header from live occupancy state_changed events", async () => {
+    let stateChangedHandler: ((event: any) => void) | undefined;
+    const expectedVacantAt = new Date(Date.now() + 90 * 60 * 1000).toISOString();
+    const expectedVacantAtLabel = new Intl.DateTimeFormat(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(new Date(expectedVacantAt));
+
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>) => {
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        return [] as T;
+      },
+      connection: {
+        subscribeEvents: async (handler: (event: any) => void, eventType: string) => {
+          if (eventType === "state_changed") {
+            stateChangedHandler = handler;
+          }
+          return () => {};
+        },
+      },
+      states: {
+        "binary_sensor.occupancy_area_kitchen": {
+          entity_id: "binary_sensor.occupancy_area_kitchen",
+          state: "off",
+          attributes: {
+            device_class: "occupancy",
+            location_id: "area_kitchen",
+          },
+        },
+      },
+      areas: {},
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_kitchen";
+    location.name = "Kitchen";
+    location.modules._meta = { type: "area" };
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${location}
+        .occupancyStates=${{ area_kitchen: true }}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
+    expect(stateChangedHandler).to.exist;
+
+    const beforeText = (
+      element.shadowRoot!.querySelector('[data-testid="header-vacant-at"]')?.textContent || ""
+    ).trim();
+    expect(beforeText).to.equal("Vacant at Unknown");
+
+    stateChangedHandler!({
+      data: {
+        entity_id: "binary_sensor.occupancy_area_kitchen",
+        old_state: {
+          state: "off",
+          attributes: {
+            device_class: "occupancy",
+            location_id: "area_kitchen",
+          },
+        },
+        new_state: {
+          state: "on",
+          attributes: {
+            device_class: "occupancy",
+            location_id: "area_kitchen",
+            effective_timeout_at: expectedVacantAt,
+            vacant_at: expectedVacantAt,
+            contributions: [{ source_id: "light.master_bath_toilet_light", expires_at: expectedVacantAt }],
+          },
+        },
+      },
+    });
+
+    await waitUntil(
+      () =>
+        (
+          element.shadowRoot!.querySelector('[data-testid="header-vacant-at"]')?.textContent || ""
+        ).includes(expectedVacantAtLabel),
+      "header vacant-at did not update from live occupancy state_changed event"
+    );
   });
 
   it("shows inline device action include toggles and no Add Rule button", async () => {
@@ -2481,7 +2647,7 @@ describe("HtLocationInspector occupancy source composer", () => {
       | null;
     expect(serviceSelect).to.exist;
     const optionValues = Array.from(serviceSelect!.options).map((option) => option.value);
-    expect(optionValues).to.deep.equal(["media_stop", "turn_off"]);
+    expect(optionValues).to.deep.equal(["media_stop", "media_pause", "turn_off"]);
   });
 
   it("updates action label text when service selection changes on occupied and vacant tabs", async () => {
