@@ -30,6 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added Home Assistant bus event forwarding (`topomation_handoff_trace`) and a
   new inspector "Handoff Trace" panel section to visualize recent inferred
   adjacency handoffs per location.
+- Added system health diagnostics reporting for Topomation and
+  `home-topology` versions, so the integration info window shows the currently
+  active topology runtime version.
 
 ### Changed
 
