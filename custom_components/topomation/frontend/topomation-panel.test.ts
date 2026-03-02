@@ -1192,6 +1192,16 @@ describe('TopomationPanel integration (fake hass)', () => {
     `);
 
     await waitUntil(() => (element as any)._loading === false, "panel did not finish loading");
+    (element as any)._selectedId = "kitchen";
+    element.requestUpdate();
+    await (element as any).updateComplete;
+
+    const assignModeButton = element.shadowRoot!.querySelector(
+      '[data-testid="right-mode-assign"]'
+    ) as HTMLButtonElement | null;
+    expect(assignModeButton).to.exist;
+    assignModeButton!.click();
+    await (element as any).updateComplete;
 
     const tree = element.shadowRoot!.querySelector("ht-location-tree") as HTMLElement;
     expect(tree).to.exist;
@@ -1217,6 +1227,14 @@ describe('TopomationPanel integration (fake hass)', () => {
 
     const kitchen = (element as any)._locations.find((loc: Location) => loc.id === "kitchen");
     expect(kitchen?.entity_ids || []).to.include("light.unassigned");
+
+    await waitUntil(() => {
+      const firstGroup = element.shadowRoot!.querySelector(".device-group");
+      return firstGroup?.getAttribute("data-testid") === "device-group-kitchen";
+    }, "kitchen group was not surfaced after assignment");
+
+    const kitchenGroup = element.shadowRoot!.querySelector('[data-testid="device-group-kitchen"]');
+    expect(kitchenGroup?.textContent || "").to.contain("Spare Lamp");
   });
 
   it("refreshes locations and assignments when HA registry updates fire", async () => {

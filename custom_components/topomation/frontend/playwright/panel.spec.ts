@@ -394,28 +394,28 @@ test("inline actions support all common device types", async ({ page }) => {
       name: "Kitchen Basic Light",
       entityId: "light.kitchen_basic",
       action: "light.turn_off",
-      options: ["turn_on", "turn_off", "toggle"],
+      options: ["turn_on", "turn_off"],
       select: "turn_off",
     },
     {
       name: "Kitchen Dimmer",
       entityId: "light.kitchen_dimmer",
       action: "light.turn_off",
-      options: ["turn_on", "turn_off", "toggle"],
+      options: ["turn_on", "turn_off"],
       select: "turn_off",
     },
     {
       name: "Kitchen Accent",
       entityId: "light.kitchen_accent",
       action: "light.turn_off",
-      options: ["turn_on", "turn_off", "toggle"],
+      options: ["turn_on", "turn_off"],
       select: "turn_off",
     },
     {
       name: "Kitchen Fan",
       entityId: "fan.kitchen_fan",
       action: "fan.turn_off",
-      options: ["turn_on", "turn_off", "toggle"],
+      options: ["turn_on", "turn_off"],
       select: "turn_off",
     },
     {
@@ -669,7 +669,7 @@ test("integration-owned building shows explicit source composer guidance", async
   const inspector = page.locator("ht-location-inspector");
   await expect(inspector).toBeVisible();
   await expect(inspector).toContainText("Main Building");
-  await expect(inspector).toContainText("integration-owned");
+  await expect(inspector).toContainText("Integration-owned location");
   await expect(inspector.locator('[data-testid="external-source-area-select"]')).toBeVisible();
   await expect(inspector.locator('[data-testid="add-external-source-inline"]')).toBeVisible();
 });

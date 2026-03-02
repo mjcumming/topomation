@@ -187,6 +187,100 @@ def _location_type(location: object) -> str:
     return _normalize_location_type(meta.get("type"))
 
 
+def _linked_room_parent_floor_id(location_manager: object, location: object) -> str | None:
+    """Return parent floor id when location is an area directly under a floor."""
+    if _location_type(location) != "area":
+        return None
+
+    parent_id = getattr(location, "parent_id", None)
+    if not isinstance(parent_id, str) or not parent_id:
+        return None
+
+    get_location = getattr(location_manager, "get_location", None)
+    if not callable(get_location):
+        return None
+
+    try:
+        parent = get_location(parent_id)
+    except Exception:  # pragma: no cover - defensive lookup
+        return None
+    if parent is None:
+        return None
+    if _location_type(parent) != "floor":
+        return None
+    return parent_id
+
+
+def _allowed_linked_room_neighbors(location_manager: object, location: object) -> set[str]:
+    """Return valid linked-room neighbor ids for one location."""
+    floor_parent_id = _linked_room_parent_floor_id(location_manager, location)
+    if not floor_parent_id:
+        return set()
+
+    all_locations = getattr(location_manager, "all_locations", None)
+    if not callable(all_locations):
+        return set()
+
+    location_id = getattr(location, "id", None)
+    allowed: set[str] = set()
+    for candidate in all_locations():
+        candidate_id = getattr(candidate, "id", None)
+        if not isinstance(candidate_id, str) or not candidate_id:
+            continue
+        if candidate_id == location_id:
+            continue
+        if getattr(candidate, "parent_id", None) != floor_parent_id:
+            continue
+        if _location_type(candidate) != "area":
+            continue
+        allowed.add(candidate_id)
+    return allowed
+
+
+def _normalize_linked_locations_config(
+    location_manager: object,
+    location: object,
+    config: dict[str, Any],
+) -> tuple[list[str] | None, str | None]:
+    """Validate and normalize occupancy linked_locations against product policy."""
+    raw_linked = config.get("linked_locations")
+    if raw_linked is None:
+        return None, None
+    if not isinstance(raw_linked, list):
+        return None, "linked_locations must be a list of location IDs."
+
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for item in raw_linked:
+        if not isinstance(item, str):
+            return None, "linked_locations must contain string location IDs."
+        location_id = item.strip()
+        if not location_id or location_id in seen:
+            continue
+        seen.add(location_id)
+        normalized.append(location_id)
+
+    allowed = _allowed_linked_room_neighbors(location_manager, location)
+    if not allowed:
+        if normalized:
+            return (
+                None,
+                "Linked rooms are only supported for area locations directly under a floor.",
+            )
+        return [], None
+
+    invalid = [location_id for location_id in normalized if location_id not in allowed]
+    if invalid:
+        preview = ", ".join(invalid[:3])
+        return (
+            None,
+            "Linked rooms must be sibling area locations under the same floor. "
+            f"Invalid: {preview}",
+        )
+
+    return normalized, None
+
+
 def _location_meta(location: object) -> dict[str, Any]:
     """Return normalized _meta dict from a location-like object."""
     modules = getattr(location, "modules", {}) or {}
@@ -1340,6 +1434,19 @@ def handle_locations_set_module_config(
                     "Floor locations cannot have occupancy sources. Configure sensors on areas.",
                 )
                 return
+
+        if module_id == "occupancy":
+            normalized_linked, linked_error = _normalize_linked_locations_config(
+                loc_mgr,
+                location,
+                config,
+            )
+            if linked_error:
+                connection.send_error(msg["id"], "invalid_config", linked_error)
+                return
+            if normalized_linked is not None:
+                config = dict(config)
+                config["linked_locations"] = normalized_linked
 
         # Set config in LocationManager
         loc_mgr.set_module_config(location_id, module_id, config)

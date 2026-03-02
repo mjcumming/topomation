@@ -1822,6 +1822,59 @@ inference behavior.
 
 ---
 
+### ADR-HA-045: Detection Prioritizes Directional Linked Rooms; Adjacency Moves Behind Advanced Disclosure (2026-03-02)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+
+The adjacency editor exposed movement-handoff concepts (`crossing_sources`,
+`handoff_window_sec`, `priority`) before most users had boundary sensors or a
+need for graph tuning. For common open-plan homes, users primarily need simple
+"these rooms should contribute to each other" behavior with minimal setup.
+
+**Decision**:
+
+1. Add directional linked-room contributors in occupancy config:
+   - `linked_locations: string[]`
+2. Implement runtime propagation on `occupancy.changed`:
+   - source occupied -> trigger each configured target using
+     `source_id="linked:<source_location_id>"`, `timeout=0`
+   - source vacant -> clear that source contribution on each target with
+     trailing timeout `0`
+3. Require explicit reciprocal setup:
+   - reverse direction is configured from the other location inspector.
+4. Add feedback guard for reciprocal links:
+   - do not propagate from source -> target when source is currently occupied
+     by target's linked contribution (`linked:<target_location_id>`).
+5. Keep adjacency/handoff implementation available, but move its UI behind an
+   explicit Detection-tab advanced disclosure.
+6. Constrain advanced adjacency neighbor selection to same-parent room-level
+   siblings (`area`/`subarea`) to avoid cross-structure graph mistakes.
+7. Constrain linked rooms to practical room topology:
+   - only `area` targets directly under a `floor`
+   - only immediate sibling `area` contributors under the same floor.
+
+**Rationale**:
+
+1. Matches real-world user constraints: use existing sensors, not lab-grade
+   crossing instrumentation.
+2. Preserves occupancy multi-source correctness by using source-scoped
+   contributions, not hard mirroring/vacate overrides.
+3. Prevents bidirectional self-latching loops while still supporting directional
+   composition.
+4. Reduces cognitive load in the primary Detection workflow.
+
+**Consequences**:
+
+- ✅ Users get a simple first-class model for shared/open-plan room behavior.
+- ✅ Linked-room behavior composes with existing occupancy sources and locks.
+- ✅ Advanced adjacency remains available for movement-inference workflows.
+- ⚠️ Adjacency graph tuning is now a secondary path and may be discovered less
+  often without explicit advanced expansion.
+
+---
+
 ## How to Use This Log
 
 ### When to Create an ADR

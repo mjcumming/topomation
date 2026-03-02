@@ -887,18 +887,27 @@ describe("HtLocationInspector occupancy source composer", () => {
     const mudroomLightCards = Array.from(element.shadowRoot!.querySelectorAll(".source-card")).filter((card) =>
       (card.textContent || "").includes("Mudroom Lights")
     );
+    const mudroomSpeakerCards = Array.from(element.shadowRoot!.querySelectorAll(".source-card")).filter((card) =>
+      (card.textContent || "").includes("Mudroom Speaker")
+    );
 
     expect(cardsText).to.include("Mudroom Lights");
     expect(mudroomLightCards).to.have.length(1);
+    expect(mudroomSpeakerCards).to.have.length(1);
     const mudroomLightCardText = mudroomLightCards[0]?.textContent || "";
-    expect(mudroomLightCardText).to.include("Signal inputs:");
-    expect(mudroomLightCardText).to.include("Power");
-    expect(mudroomLightCardText).to.include("Level change");
+    const mudroomSpeakerCardText = mudroomSpeakerCards[0]?.textContent || "";
+    expect(mudroomLightCardText).to.include("Activity triggers");
+    expect(mudroomLightCardText).to.include("Power changes");
+    expect(mudroomLightCardText).to.include("Brightness changes");
+    expect(mudroomSpeakerCardText).to.include("Activity triggers");
+    expect(mudroomSpeakerCardText).to.include("Playback");
+    expect(mudroomSpeakerCardText).to.include("Volume changes");
+    expect(mudroomSpeakerCardText).to.include("Mute changes");
     expect(cardsText).to.include("Mudroom Relay Light");
     expect(cardsText).to.include("Mudroom Exhaust");
-    expect(cardsText).to.include("Mudroom Speaker — Playback");
-    expect(cardsText).to.include("Mudroom Speaker — Volume");
-    expect(cardsText).to.include("Mudroom Speaker — Mute");
+    expect(cardsText).to.not.include("Mudroom Speaker — Playback");
+    expect(cardsText).to.not.include("Mudroom Speaker — Volume changes");
+    expect(cardsText).to.not.include("Mudroom Speaker — Mute changes");
     expect(cardsText).to.include("Mudroom Motion");
     expect(cardsText).to.include("Mudroom Glass Vibration");
     expect(cardsText).to.include("Mudroom Alarm Sound");
@@ -1033,9 +1042,9 @@ describe("HtLocationInspector occupancy source composer", () => {
       (card.textContent || "").includes("Mike Closet Light")
     );
     expect(lightCards).to.have.length(1);
-    expect((lightCards[0].textContent || "")).to.include("Signal inputs:");
-    expect((lightCards[0].textContent || "")).to.include("Power");
-    expect((lightCards[0].textContent || "")).to.include("Level change");
+    expect((lightCards[0].textContent || "")).to.include("Activity triggers");
+    expect((lightCards[0].textContent || "")).to.include("Power changes");
+    expect((lightCards[0].textContent || "")).to.include("Brightness changes");
   });
 
   it("renders header occupancy/lock status and lock diagnostics", async () => {
@@ -1248,6 +1257,13 @@ describe("HtLocationInspector occupancy source composer", () => {
     `);
     await element.updateComplete;
 
+    const advancedToggle = element.shadowRoot!.querySelector(
+      '[data-testid="adjacency-advanced-toggle"]'
+    ) as HTMLButtonElement;
+    expect(advancedToggle).to.exist;
+    advancedToggle.click();
+    await element.updateComplete;
+
     let adjacencyChanged = false;
     element.addEventListener("adjacency-changed", () => {
       adjacencyChanged = true;
@@ -1270,6 +1286,259 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(createCall?.to_location_id).to.equal("area_hallway");
     expect(createCall?.directionality).to.equal("bidirectional");
     expect(adjacencyChanged).to.equal(true);
+  });
+
+  it("limits adjacency neighbors to same-parent room-level siblings", async () => {
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>) => {
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        return {} as T;
+      },
+      connection: {},
+      states: {},
+      areas: {},
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_kitchen";
+    location.name = "Kitchen";
+    location.parent_id = "floor_main";
+    location.modules._meta = { type: "area" };
+
+    const allLocations: Location[] = [
+      location,
+      {
+        ...structuredClone(baseLocation),
+        id: "area_hallway",
+        name: "Hallway",
+        parent_id: "floor_main",
+        modules: { _meta: { type: "area" } },
+      },
+      {
+        ...structuredClone(baseLocation),
+        id: "subarea_pantry",
+        name: "Pantry",
+        parent_id: "area_kitchen",
+        modules: { _meta: { type: "subarea" } },
+      },
+      {
+        ...structuredClone(baseLocation),
+        id: "area_primary_bedroom",
+        name: "Primary Bedroom",
+        parent_id: "floor_second",
+        modules: { _meta: { type: "area" } },
+      },
+      {
+        ...structuredClone(baseLocation),
+        id: "floor_main",
+        name: "Main Floor",
+        parent_id: "building_main",
+        modules: { _meta: { type: "floor" } },
+      },
+      {
+        ...structuredClone(baseLocation),
+        id: "building_main",
+        name: "Main Building",
+        parent_id: null,
+        modules: { _meta: { type: "building" } },
+      },
+    ];
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${location}
+        .allLocations=${allLocations}
+        .adjacencyEdges=${[]}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    const advancedToggle = element.shadowRoot!.querySelector(
+      '[data-testid="adjacency-advanced-toggle"]'
+    ) as HTMLButtonElement;
+    expect(advancedToggle).to.exist;
+    advancedToggle.click();
+    await element.updateComplete;
+
+    const neighborSelect = element.shadowRoot!.querySelector(
+      "#adjacency-neighbor"
+    ) as HTMLSelectElement;
+    expect(neighborSelect).to.exist;
+
+    const optionLabels = [...neighborSelect.querySelectorAll("option")].map((option) =>
+      option.textContent?.trim()
+    );
+    expect(optionLabels).to.deep.equal(["Hallway"]);
+  });
+
+  it("updates directional linked room contributors", async () => {
+    const callWsRequests: Array<Record<string, any>> = [];
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>) => {
+        callWsRequests.push(request);
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        if (request.type === "topomation/locations/set_module_config") {
+          return { success: true } as T;
+        }
+        return {} as T;
+      },
+      connection: {},
+      states: {},
+      areas: {},
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_kitchen";
+    location.name = "Kitchen";
+    location.parent_id = "floor_main";
+    location.modules._meta = { type: "area" };
+    location.modules.occupancy = {
+      enabled: true,
+      default_timeout: 300,
+      default_trailing_timeout: 120,
+      occupancy_sources: [],
+      linked_locations: [],
+    };
+
+    const allLocations: Location[] = [
+      location,
+      {
+        ...structuredClone(baseLocation),
+        id: "area_family_room",
+        name: "Family Room",
+        parent_id: "floor_main",
+        modules: { _meta: { type: "area" } },
+      },
+      {
+        ...structuredClone(baseLocation),
+        id: "floor_main",
+        name: "Main Floor",
+        parent_id: "building_main",
+        modules: { _meta: { type: "floor" } },
+      },
+      {
+        ...structuredClone(baseLocation),
+        id: "building_main",
+        name: "Main Building",
+        parent_id: null,
+        modules: { _meta: { type: "building" } },
+      },
+    ];
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${location}
+        .allLocations=${allLocations}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    const linkedCheckbox = element.shadowRoot!.querySelector(
+      '[data-testid="linked-location-area_family_room"]'
+    ) as HTMLInputElement;
+    expect(linkedCheckbox).to.exist;
+    expect(linkedCheckbox.checked).to.equal(false);
+    linkedCheckbox.click();
+    await element.updateComplete;
+
+    await waitUntil(() => {
+      const request = callWsRequests.find(
+        (item) =>
+          item.type === "topomation/locations/set_module_config" &&
+          Array.isArray(item.config?.linked_locations) &&
+          item.config.linked_locations.includes("area_family_room")
+      );
+      return !!request;
+    }, "linked room add request not observed");
+
+    const addRequest = callWsRequests.find(
+      (item) =>
+        item.type === "topomation/locations/set_module_config" &&
+        Array.isArray(item.config?.linked_locations) &&
+        item.config.linked_locations.includes("area_family_room")
+    );
+    expect(addRequest?.location_id).to.equal("area_kitchen");
+    expect(addRequest?.module_id).to.equal("occupancy");
+
+    await waitUntil(() => !linkedCheckbox.disabled, "linked checkbox remained disabled after save");
+    linkedCheckbox.click();
+    await element.updateComplete;
+
+    await waitUntil(() => {
+      const removeRequest = callWsRequests
+        .filter((item) => item.type === "topomation/locations/set_module_config")
+        .find((item) => Array.isArray(item.config?.linked_locations) && item.config.linked_locations.length === 0);
+      return !!removeRequest;
+    }, "linked room remove request not observed");
+  });
+
+  it("does not offer linked room checkboxes for non-area floor-rooted locations", async () => {
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>) => {
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        return {} as T;
+      },
+      connection: {},
+      states: {},
+      areas: {},
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "building_main";
+    location.name = "Home";
+    location.parent_id = null;
+    location.modules._meta = { type: "building" };
+    location.modules.occupancy = {
+      enabled: true,
+      default_timeout: 300,
+      default_trailing_timeout: 120,
+      occupancy_sources: [],
+      linked_locations: ["area_kitchen"],
+    };
+
+    const allLocations: Location[] = [
+      location,
+      {
+        ...structuredClone(baseLocation),
+        id: "floor_main",
+        name: "Main Floor",
+        parent_id: "building_main",
+        modules: { _meta: { type: "floor" } },
+      },
+      {
+        ...structuredClone(baseLocation),
+        id: "area_kitchen",
+        name: "Kitchen",
+        parent_id: "floor_main",
+        modules: { _meta: { type: "area" } },
+      },
+    ];
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${location}
+        .allLocations=${allLocations}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    const linkedRows = element.shadowRoot!.querySelectorAll('[data-testid^="linked-location-"]');
+    expect(linkedRows.length).to.equal(0);
+    expect(element.shadowRoot!.textContent || "").to.include(
+      "Linked Rooms is available only for area locations directly under a floor."
+    );
   });
 
   it("removes adjacency edges from inspector controls", async () => {
@@ -1326,6 +1595,13 @@ describe("HtLocationInspector occupancy source composer", () => {
         ]}
       ></ht-location-inspector>
     `);
+    await element.updateComplete;
+
+    const advancedToggle = element.shadowRoot!.querySelector(
+      '[data-testid="adjacency-advanced-toggle"]'
+    ) as HTMLButtonElement;
+    expect(advancedToggle).to.exist;
+    advancedToggle.click();
     await element.updateComplete;
 
     let adjacencyChanged = false;
@@ -1399,6 +1675,13 @@ describe("HtLocationInspector occupancy source composer", () => {
         ]}
       ></ht-location-inspector>
     `);
+    await element.updateComplete;
+
+    const advancedToggle = element.shadowRoot!.querySelector(
+      '[data-testid="adjacency-advanced-toggle"]'
+    ) as HTMLButtonElement;
+    expect(advancedToggle).to.exist;
+    advancedToggle.click();
     await element.updateComplete;
 
     const traceRows = element.shadowRoot!.querySelectorAll(".handoff-trace-row");
@@ -1616,6 +1899,8 @@ describe("HtLocationInspector occupancy source composer", () => {
       (el.textContent || "").includes("Kitchen Ceiling")
     ) as HTMLElement | undefined;
     expect(row).to.exist;
+    const inlineEntity = row!.querySelector(".action-name-row .action-entity-inline");
+    expect((inlineEntity?.textContent || "").trim()).to.equal("light.kitchen_ceiling");
     expect(row!.querySelector("select.action-service-select")).to.exist;
     expect(row!.querySelector('input[type="checkbox"]')).to.exist;
   });
@@ -2900,11 +3185,15 @@ describe("HtLocationInspector occupancy source composer", () => {
       (el.textContent || "").includes("Kitchen Ceiling")
     ) as HTMLElement | undefined;
     expect(row).to.exist;
+    const inlineEntity = row!.querySelector(".action-name-row .action-entity-inline");
+    expect((inlineEntity?.textContent || "").trim()).to.equal("light.kitchen_ceiling");
 
     const serviceSelect = row!.querySelector("select.action-service-select") as
       | HTMLSelectElement
       | null;
     expect(serviceSelect).to.exist;
+    const optionValues = Array.from(serviceSelect!.options).map((option) => option.value);
+    expect(optionValues).to.not.include("toggle");
     serviceSelect!.value = "turn_off";
     serviceSelect!.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
     await element.updateComplete;
@@ -3027,7 +3316,8 @@ describe("HtLocationInspector occupancy source composer", () => {
     );
 
     const text = element.shadowRoot!.textContent || "";
-    expect(text).to.include("Current state:");
+    expect(text).to.include("State:");
+    expect(text).to.not.include("Entity:");
     expect(text).to.not.include("Type:");
     expect(text).to.not.include("Configured action:");
     expect(text).to.not.include("Exhaust Switch");
@@ -3155,6 +3445,95 @@ describe("HtLocationInspector occupancy source composer", () => {
 });
 
 describe("HtLocationInspector WIAB configuration", () => {
+  it("scopes WIAB candidates to location area by default and can show all entities", async () => {
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>): Promise<T> => {
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        if (request.type === "topomation/locations/set_module_config") return { success: true } as T;
+        return {} as T;
+      },
+      connection: {},
+      states: {
+        "binary_sensor.kitchen_motion": {
+          entity_id: "binary_sensor.kitchen_motion",
+          state: "off",
+          attributes: {
+            friendly_name: "Kitchen Motion",
+            device_class: "motion",
+            area_id: "kitchen",
+          },
+        },
+        "binary_sensor.kitchen_door": {
+          entity_id: "binary_sensor.kitchen_door",
+          state: "off",
+          attributes: {
+            friendly_name: "Kitchen Door",
+            device_class: "door",
+            area_id: "kitchen",
+          },
+        },
+        "binary_sensor.bedroom_motion": {
+          entity_id: "binary_sensor.bedroom_motion",
+          state: "off",
+          attributes: {
+            friendly_name: "Bedroom Motion",
+            device_class: "motion",
+            area_id: "bedroom",
+          },
+        },
+      },
+      areas: {
+        kitchen: { area_id: "kitchen", name: "Kitchen" },
+        bedroom: { area_id: "bedroom", name: "Bedroom" },
+      },
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_kitchen";
+    location.name = "Kitchen";
+    location.ha_area_id = "kitchen";
+    location.modules._meta = { type: "area" };
+    location.modules.occupancy = {
+      enabled: true,
+      default_timeout: 300,
+      default_trailing_timeout: 120,
+      occupancy_sources: [],
+      wiab: { preset: "enclosed_room" },
+    };
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector .hass=${hass} .location=${location}></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    const interiorSelect = element.shadowRoot!.querySelector(
+      '[data-testid="wiab-interior-select"]'
+    ) as HTMLSelectElement | null;
+    expect(interiorSelect).to.exist;
+
+    const optionValuesScoped = Array.from(interiorSelect!.options).map((option) => option.value);
+    expect(optionValuesScoped).to.include("binary_sensor.kitchen_motion");
+    expect(optionValuesScoped).to.not.include("binary_sensor.bedroom_motion");
+
+    const showAllToggle = element.shadowRoot!.querySelector(
+      '[data-testid="wiab-show-all-toggle"]'
+    ) as HTMLInputElement | null;
+    expect(showAllToggle).to.exist;
+    showAllToggle!.checked = true;
+    showAllToggle!.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+    await element.updateComplete;
+
+    const interiorSelectAfter = element.shadowRoot!.querySelector(
+      '[data-testid="wiab-interior-select"]'
+    ) as HTMLSelectElement | null;
+    expect(interiorSelectAfter).to.exist;
+    const optionValuesAll = Array.from(interiorSelectAfter!.options).map((option) => option.value);
+    expect(optionValuesAll).to.include("binary_sensor.bedroom_motion");
+  });
+
   it("renders WIAB preset and configured entities", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>): Promise<T> => {

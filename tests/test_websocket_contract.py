@@ -1602,6 +1602,98 @@ async def test_set_module_config_rejects_floor_occupancy_sources(hass: HomeAssis
 
 
 @pytest.mark.asyncio
+async def test_set_module_config_rejects_linked_rooms_for_non_area_floor_rooted_targets(
+    hass: HomeAssistant,
+) -> None:
+    """Linked rooms are not allowed on non-area or non-floor-rooted targets."""
+    entry = MockConfigEntry(domain=DOMAIN, data={}, entry_id="test_entry")
+    entry.add_to_hass(hass)
+
+    with patch("custom_components.topomation.async_register_panel", AsyncMock()):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    loc_mgr = hass.data[DOMAIN][entry.entry_id]["location_manager"]
+    loc_mgr.set_module_config("building_main", "_meta", {"type": "building"})
+    loc_mgr.create_location(id="floor_main", name="Main Floor", parent_id="building_main")
+    loc_mgr.set_module_config("floor_main", "_meta", {"type": "floor"})
+    loc_mgr.create_location(id="area_kitchen", name="Kitchen", parent_id="floor_main")
+    loc_mgr.set_module_config("area_kitchen", "_meta", {"type": "area"})
+
+    connection = _fake_connection()
+    handle_locations_set_module_config(
+        hass,
+        connection,
+        {
+            "id": 31,
+            "type": WS_TYPE_LOCATIONS_SET_MODULE_CONFIG,
+            "location_id": "building_main",
+            "module_id": "occupancy",
+            "config": {
+                "enabled": True,
+                "occupancy_sources": [],
+                "linked_locations": ["area_kitchen"],
+            },
+            "entry_id": entry.entry_id,
+        },
+    )
+
+    assert connection.send_result.call_count == 0
+    connection.send_error.assert_called_once()
+    err_args = connection.send_error.call_args[0]
+    assert err_args[1] == "invalid_config"
+
+
+@pytest.mark.asyncio
+async def test_set_module_config_rejects_linked_rooms_outside_same_floor_siblings(
+    hass: HomeAssistant,
+) -> None:
+    """Linked rooms must be immediate sibling areas under the same floor parent."""
+    entry = MockConfigEntry(domain=DOMAIN, data={}, entry_id="test_entry")
+    entry.add_to_hass(hass)
+
+    with patch("custom_components.topomation.async_register_panel", AsyncMock()):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    loc_mgr = hass.data[DOMAIN][entry.entry_id]["location_manager"]
+    loc_mgr.set_module_config("building_main", "_meta", {"type": "building"})
+    loc_mgr.create_location(id="floor_main", name="Main Floor", parent_id="building_main")
+    loc_mgr.set_module_config("floor_main", "_meta", {"type": "floor"})
+    loc_mgr.create_location(id="floor_second", name="Second Floor", parent_id="building_main")
+    loc_mgr.set_module_config("floor_second", "_meta", {"type": "floor"})
+    loc_mgr.create_location(id="area_kitchen", name="Kitchen", parent_id="floor_main")
+    loc_mgr.set_module_config("area_kitchen", "_meta", {"type": "area"})
+    loc_mgr.create_location(id="area_family_room", name="Family Room", parent_id="floor_main")
+    loc_mgr.set_module_config("area_family_room", "_meta", {"type": "area"})
+    loc_mgr.create_location(id="area_guest_bedroom", name="Guest Bedroom", parent_id="floor_second")
+    loc_mgr.set_module_config("area_guest_bedroom", "_meta", {"type": "area"})
+
+    connection = _fake_connection()
+    handle_locations_set_module_config(
+        hass,
+        connection,
+        {
+            "id": 32,
+            "type": WS_TYPE_LOCATIONS_SET_MODULE_CONFIG,
+            "location_id": "area_kitchen",
+            "module_id": "occupancy",
+            "config": {
+                "enabled": True,
+                "occupancy_sources": [],
+                "linked_locations": ["area_guest_bedroom"],
+            },
+            "entry_id": entry.entry_id,
+        },
+    )
+
+    assert connection.send_result.call_count == 0
+    connection.send_error.assert_called_once()
+    err_args = connection.send_error.call_args[0]
+    assert err_args[1] == "invalid_config"
+
+
+@pytest.mark.asyncio
 async def test_set_module_config_schedules_persist(hass: HomeAssistant) -> None:
     """Successful module config updates should schedule debounced persistence."""
     area_registry = ar.async_get(hass)

@@ -55,6 +55,10 @@ across neighboring locations while keeping occupancy state binary
 7. WIAB runtime now uses occupancy lock/trigger/clear primitives:
    - door-close latch and door-open release for enclosed spaces
    - interior-trigger latch and exterior-door release for home containment
+8. Detection now includes directional `Linked Rooms` contributors for practical
+   cross-room occupancy without boundary crossing sensors.
+9. Adjacency + handoff trace controls are now behind an explicit advanced
+   disclosure in Detection.
 
 ### 4.2 Next Iteration
 

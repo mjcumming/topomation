@@ -1069,7 +1069,10 @@ export class TopomationPanel extends LitElement {
   private _renderDeviceAssignmentPanel(selectedLocation?: Location) {
     const loadingAreaIndex = !this._entityAreaIndexLoaded && !!this._entityAreaIndexPromise;
     const groups = this._buildDeviceGroups();
-    const visibleGroups = this._visibleDeviceGroups(groups);
+    const visibleGroups = this._prioritizeDeviceGroupsForSelection(
+      this._visibleDeviceGroups(groups),
+      selectedLocation?.id
+    );
     const stats = this._assignmentFilterStats(groups);
     const targetLabel = selectedLocation ? selectedLocation.name : "Select a location";
 
@@ -1202,6 +1205,17 @@ export class TopomationPanel extends LitElement {
       return groups.filter((group) => group.type === "unassigned");
     }
     return groups.filter((group) => group.type !== "unassigned");
+  }
+
+  private _prioritizeDeviceGroupsForSelection(
+    groups: DeviceGroup[],
+    selectedLocationId?: string
+  ): DeviceGroup[] {
+    if (!selectedLocationId || groups.length <= 1) return groups;
+    const selectedIndex = groups.findIndex((group) => group.locationId === selectedLocationId);
+    if (selectedIndex <= 0) return groups;
+    const selected = groups[selectedIndex];
+    return [selected, ...groups.slice(0, selectedIndex), ...groups.slice(selectedIndex + 1)];
   }
 
   private _isGroupExpanded(groupKey: string): boolean {
@@ -1404,6 +1418,12 @@ export class TopomationPanel extends LitElement {
 
     this._locations = nextLocations;
     this._locationsVersion += 1;
+    if (target) {
+      this._deviceGroupExpanded = {
+        ...this._deviceGroupExpanded,
+        [target.id]: true,
+      };
+    }
     if (target?.ha_area_id) {
       this._entityAreaById = { ...this._entityAreaById, [entityId]: target.ha_area_id };
       this._entityAreaRevision += 1;

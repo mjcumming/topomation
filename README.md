@@ -100,6 +100,23 @@ This is a major practical win:
 
 The result is occupancy that is stable without being sticky.
 
+### Linked Rooms (Directional Contributors)
+
+For open-plan spaces and shared activity zones, you can now configure
+`Linked Rooms` in Detection without adding dedicated crossing sensors.
+
+- Links are directional per location.
+- If `Family Room` is linked on the `Kitchen` page, Family Room contributes to
+  Kitchen occupancy.
+- Reverse behavior is configured independently on the other location page.
+- Linked Rooms is intentionally scoped to room-level topology:
+  - only `area` locations directly under a `floor` can configure linked rooms
+  - only immediate sibling `area` locations under that same floor are valid contributors.
+
+At runtime, linked-room contributions are applied as source-scoped occupancy
+contributors (`linked:<location_id>`), so they compose cleanly with normal
+sensors and clear correctly when the contributor location goes vacant.
+
 ## UI-First Automation
 
 You can build occupancy behavior directly from the TopoMation panel:

@@ -9,6 +9,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_No unreleased changes yet._
+
+## [0.2.17] - 2026-03-02
+
+### Added
+
+- Added directional Detection-tab `linked_locations` configuration ("Linked
+  Rooms") so users can mark neighboring rooms as occupancy contributors without
+  boundary crossing sensors.
+- Runtime now listens to `occupancy.changed` and applies linked-room
+  propagation using synthetic contributor sources (`linked:<location_id>`),
+  including reciprocal-link feedback guards to prevent self-latching loops.
+
+### Changed
+
+- Moved adjacency + handoff controls behind an explicit Detection-tab advanced
+  section ("Advanced Movement Handoff"), reducing default UI complexity for
+  common room-level automations.
+- Adjacency neighbor selection in Detection now limits candidates to same-parent
+  room-level siblings (`area`/`subarea`) instead of listing unrelated topology
+  nodes (for example floors/buildings).
+- Linked Rooms now follows strict room-level scope:
+  - only configurable on `area` locations directly under a `floor`
+  - candidates are immediate sibling `area` locations only
+  - backend validation rejects invalid linked-room targets/candidates.
+- Frontend build now auto-syncs `dist/topomation-panel.js` to
+  `frontend/topomation-panel.js` so Home Assistant serves the latest inspector
+  bundle after rebuilds.
+
 ## [0.2.16] - 2026-03-01
 
 ### Added

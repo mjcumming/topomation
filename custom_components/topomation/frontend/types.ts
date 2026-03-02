@@ -87,6 +87,7 @@ export interface OccupancyConfig extends ModuleConfig {
   default_timeout: number;
   default_trailing_timeout?: number;
   occupancy_sources?: OccupancySource[];
+  linked_locations?: string[];
   wiab?: WaspInBoxConfig;
 }
 

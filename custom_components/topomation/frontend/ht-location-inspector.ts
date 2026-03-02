@@ -107,6 +107,8 @@ export class HtLocationInspector extends LitElement {
   @state() private _actionToggleBusy: Record<string, boolean> = {};
   @state() private _actionServiceSelections: Record<string, string> = {};
   @state() private _actionDarkSelections: Record<string, boolean> = {};
+  @state() private _savingLinkedLocations = false;
+  @state() private _showAdvancedAdjacency = false;
   @state() private _adjacencyNeighborId = "";
   @state() private _adjacencyBoundaryType = "door";
   @state() private _adjacencyDirection = "bidirectional";
@@ -117,6 +119,7 @@ export class HtLocationInspector extends LitElement {
   @state() private _wiabInteriorEntityId = "";
   @state() private _wiabDoorEntityId = "";
   @state() private _wiabExteriorDoorEntityId = "";
+  @state() private _wiabShowAllEntities = false;
   private _onTimeoutMemory: Record<string, number> = {};
   private _entityAreaLoadPromise?: Promise<void>;
   private _actionRulesLoadSeq = 0;
@@ -316,6 +319,24 @@ export class HtLocationInspector extends LitElement {
 
       .section-title ha-icon {
         --mdc-icon-size: 16px;
+      }
+
+      .sources-heading {
+        margin-bottom: var(--spacing-sm);
+        max-width: 820px;
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .sources-heading .section-title {
+        margin-bottom: 0;
+      }
+
+      .sources-inline-help {
+        color: var(--text-secondary-color);
+        font-size: 12px;
       }
 
       .tabs {
@@ -598,6 +619,20 @@ export class HtLocationInspector extends LitElement {
         font-weight: 500;
       }
 
+      .action-name-row {
+        display: flex;
+        align-items: baseline;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+
+      .action-entity-inline {
+        color: var(--text-secondary-color);
+        font-size: 11px;
+        font-weight: 500;
+        font-family: var(--code-font-family, monospace);
+      }
+
       .source-details {
         font-size: 12px;
         color: var(--text-secondary-color);
@@ -769,6 +804,42 @@ export class HtLocationInspector extends LitElement {
         max-width: 820px;
       }
 
+      .linked-location-list {
+        display: grid;
+        gap: 8px;
+        max-width: 820px;
+      }
+
+      .linked-location-row {
+        border: 1px solid var(--divider-color);
+        border-radius: 8px;
+        padding: 8px 10px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        background: rgba(var(--rgb-primary-color), 0.02);
+      }
+
+      .linked-location-row input[type="checkbox"] {
+        margin: 0;
+      }
+
+      .linked-location-name {
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      .linked-location-meta {
+        color: var(--text-secondary-color);
+        font-size: 12px;
+      }
+
+      .advanced-toggle-row {
+        display: flex;
+        justify-content: flex-end;
+        max-width: 820px;
+      }
+
       .adjacency-list {
         display: grid;
         gap: 8px;
@@ -892,7 +963,7 @@ export class HtLocationInspector extends LitElement {
         grid-template-columns: auto minmax(0, 1fr);
         gap: var(--spacing-md);
         align-items: center;
-        padding: 10px 12px;
+        padding: 8px 10px;
         border: none;
         border-radius: 0;
         background: transparent;
@@ -907,16 +978,26 @@ export class HtLocationInspector extends LitElement {
         font-weight: 600;
       }
 
+      .candidate-entity-inline {
+        margin-left: 4px;
+        color: var(--text-secondary-color);
+        font-size: 11px;
+        font-weight: 500;
+        font-family: var(--code-font-family, monospace);
+      }
+
       .candidate-meta {
-        margin-top: 2px;
+        margin-top: 4px;
         color: var(--text-secondary-color);
         font-size: 12px;
+        font-family: var(--code-font-family, monospace);
       }
 
       .candidate-submeta {
-        margin-top: 2px;
+        margin-top: 6px;
         color: var(--text-secondary-color);
         font-size: 11px;
+        font-weight: 600;
       }
 
       .light-signal-toggles {
@@ -942,9 +1023,29 @@ export class HtLocationInspector extends LitElement {
 
       .candidate-headline {
         display: flex;
-        align-items: center;
+        align-items: flex-start;
         justify-content: space-between;
         gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .candidate-controls {
+        display: inline-flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .source-state-pill {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        border: 1px solid var(--divider-color);
+        padding: 2px 8px;
+        font-size: 11px;
+        color: var(--text-secondary-color);
+        text-transform: lowercase;
       }
 
       .inline-mode-select {
@@ -1026,14 +1127,14 @@ export class HtLocationInspector extends LitElement {
         border: none;
         border-top: 1px solid rgba(var(--rgb-primary-color), 0.2);
         border-radius: 0;
-        padding: 10px 12px;
+        padding: 8px 10px;
         background: rgba(var(--rgb-primary-color), 0.07);
       }
 
       .editor-grid {
         display: grid;
         grid-template-columns: repeat(2, minmax(220px, 1fr));
-        gap: 10px 12px;
+        gap: 8px 10px;
       }
 
       .media-signals {
@@ -1273,6 +1374,12 @@ export class HtLocationInspector extends LitElement {
         .external-composer {
           grid-template-columns: 1fr;
         }
+
+        .sources-heading {
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 4px;
+        }
       }
     `,
   ];
@@ -1326,6 +1433,8 @@ export class HtLocationInspector extends LitElement {
         this._resetSourceDraftState();
         this._externalAreaId = "";
         this._externalEntityId = "";
+        this._wiabShowAllEntities = false;
+        this._showAdvancedAdjacency = false;
         this._onTimeoutMemory = {};
         this._actionToggleBusy = {};
         this._actionServiceSelections = {};
@@ -1726,13 +1835,13 @@ export class HtLocationInspector extends LitElement {
                 : html`<div class="runtime-note">Inherited from an ancestor subtree lock.</div>`}
             </div>
           ` : ""}
-          <div class="section-title">
-            Sources
-          </div>
-          <div class="subsection-help">
-            ${hasHaAreaLink
-              ? "Use the left control to include a source from this area. Included sources show editable behavior below."
-              : "This location is integration-owned (no direct HA area mapping). Add sources explicitly from Home Assistant entities below."}
+          <div class="sources-heading">
+            <div class="section-title">Sources</div>
+            <div class="sources-inline-help">
+              ${hasHaAreaLink
+                ? "Select sources from this area."
+                : "Integration-owned location: add sources from Home Assistant entities."}
+            </div>
           </div>
           ${hasHaAreaLink
             ? ""
@@ -1749,16 +1858,202 @@ export class HtLocationInspector extends LitElement {
           </div>
           ${this._renderExternalSourceComposer(config)}
         </div>
+        ${this._renderLinkedLocationsSection(config)}
         ${this._renderWiabSection(config)}
-        ${this._renderAdjacencySection()} ${this._renderHandoffTraceSection()}
+        ${this._renderAdjacencyAdvancedSection()}
       </div>
+    `;
+  }
+
+  private _linkedLocationFloorParentId(): string | null {
+    if (!this.location) return null;
+    if (getLocationType(this.location) !== "area") return null;
+    const parentId = this.location.parent_id ?? null;
+    if (!parentId) return null;
+    const parent = (this.allLocations || []).find((loc) => loc.id === parentId);
+    if (!parent || getLocationType(parent) !== "floor") {
+      return null;
+    }
+    return parentId;
+  }
+
+  private _linkedLocationCandidates(): Location[] {
+    if (!this.location) return [];
+    const floorParentId = this._linkedLocationFloorParentId();
+    if (!floorParentId) return [];
+
+    return (this.allLocations || [])
+      .filter((loc) => loc.id !== this.location!.id)
+      .filter((loc) => (loc.parent_id ?? null) === floorParentId)
+      .filter((loc) => getLocationType(loc) === "area")
+      .sort((left, right) => left.name.localeCompare(right.name));
+  }
+
+  private _linkedLocationIds(config: OccupancyConfig): string[] {
+    const raw = config.linked_locations;
+    if (!Array.isArray(raw) || !this.location) {
+      return [];
+    }
+
+    const allowedCandidates = new Set(this._linkedLocationCandidates().map((candidate) => candidate.id));
+    if (allowedCandidates.size === 0) {
+      return [];
+    }
+
+    const seen = new Set<string>();
+    const linked: string[] = [];
+    for (const item of raw) {
+      if (typeof item !== "string") continue;
+      const locationId = item.trim();
+      if (
+        !locationId ||
+        locationId === this.location.id ||
+        seen.has(locationId) ||
+        !allowedCandidates.has(locationId)
+      ) {
+        continue;
+      }
+      seen.add(locationId);
+      linked.push(locationId);
+    }
+    return linked;
+  }
+
+  private async _toggleLinkedLocation(
+    config: OccupancyConfig,
+    linkedLocationId: string,
+    enabled: boolean
+  ): Promise<void> {
+    if (this._savingLinkedLocations) return;
+
+    const next = new Set(this._linkedLocationIds(config));
+    if (enabled) {
+      next.add(linkedLocationId);
+    } else {
+      next.delete(linkedLocationId);
+    }
+
+    const nextLinked = [...next].sort((left, right) =>
+      this._locationName(left).localeCompare(this._locationName(right))
+    );
+
+    this._savingLinkedLocations = true;
+    try {
+      await this._updateConfig({
+        ...config,
+        linked_locations: nextLinked,
+      });
+      this._showToast("Linked rooms updated", "success");
+    } finally {
+      this._savingLinkedLocations = false;
+    }
+  }
+
+  private _renderLinkedLocationsSection(config: OccupancyConfig) {
+    if (!this.location) return "";
+    const eligible = !!this._linkedLocationFloorParentId();
+    if (!eligible) {
+      return html`
+        <div class="card-section">
+          <div class="section-title">
+            <ha-icon .icon=${"mdi:link-variant"}></ha-icon>
+            Linked Rooms
+          </div>
+          <div class="subsection-help">
+            Linked Rooms is available only for area locations directly under a floor.
+          </div>
+        </div>
+      `;
+    }
+
+    const candidates = this._linkedLocationCandidates();
+    const linked = this._linkedLocationIds(config);
+    const linkedSet = new Set(linked);
+    const linkedLabel = linked.length
+      ? linked.map((locationId) => this._locationName(locationId)).join(", ")
+      : "None";
+
+    return html`
+      <div class="card-section">
+        <div class="section-title">
+          <ha-icon .icon=${"mdi:link-variant"}></ha-icon>
+          Linked Rooms
+        </div>
+        <div class="subsection-help">
+          Select locations that can contribute occupancy to this location. Links are directional.
+          Configure the reverse direction from the other location if needed.
+        </div>
+        <div class="linked-location-meta">Contributors: ${linkedLabel}</div>
+        ${candidates.length === 0
+          ? html`<div class="adjacency-empty">No sibling area candidates available on this floor.</div>`
+          : html`
+              <div class="linked-location-list">
+                ${candidates.map((candidate) => {
+                  const checked = linkedSet.has(candidate.id);
+                  return html`
+                    <label class="linked-location-row">
+                      <input
+                        type="checkbox"
+                        data-testid=${`linked-location-${candidate.id}`}
+                        .checked=${checked}
+                        ?disabled=${this._savingLinkedLocations}
+                        @change=${(event: Event) => {
+                          const target = event.target as HTMLInputElement;
+                          void this._toggleLinkedLocation(config, candidate.id, target.checked);
+                        }}
+                      />
+                      <span class="linked-location-name">${candidate.name}</span>
+                    </label>
+                  `;
+                })}
+              </div>
+            `}
+      </div>
+    `;
+  }
+
+  private _renderAdjacencyAdvancedSection() {
+    const expanded = this._showAdvancedAdjacency;
+    return html`
+      <div class="card-section">
+        <div class="section-title">
+          <ha-icon .icon=${"mdi:beaker-outline"}></ha-icon>
+          Advanced Movement Handoff
+        </div>
+        <div class="subsection-help">
+          Adjacency edges and handoff traces are advanced tools for explicit movement inference.
+          Most setups can use sources + linked rooms without configuring handoff graphs.
+        </div>
+        <div class="advanced-toggle-row">
+          <button
+            class="button button-secondary"
+            data-testid="adjacency-advanced-toggle"
+            @click=${() => {
+              this._showAdvancedAdjacency = !this._showAdvancedAdjacency;
+            }}
+          >
+            ${expanded ? "Hide Advanced Handoff" : "Show Advanced Handoff"}
+          </button>
+        </div>
+      </div>
+      ${expanded ? html`${this._renderAdjacencySection()} ${this._renderHandoffTraceSection()}` : ""}
     `;
   }
 
   private _adjacencyCandidates(): Location[] {
     if (!this.location) return [];
+    const currentType = getLocationType(this.location);
+    if (currentType !== "area" && currentType !== "subarea") {
+      return [];
+    }
+    const parentId = this.location.parent_id ?? null;
     return (this.allLocations || [])
       .filter((loc) => loc.id !== this.location!.id)
+      .filter((loc) => (loc.parent_id ?? null) === parentId)
+      .filter((loc) => {
+        const type = getLocationType(loc);
+        return type === "area" || type === "subarea";
+      })
       .sort((left, right) => left.name.localeCompare(right.name));
   }
 
@@ -2160,11 +2455,11 @@ export class HtLocationInspector extends LitElement {
   }
 
   private _mediaSignalLabel(signalKey?: SourceSignalKey): string {
-    if (signalKey === "color") return "Color change";
-    if (signalKey === "power") return "Power";
-    if (signalKey === "level") return "Level change";
-    if (signalKey === "volume") return "Volume";
-    if (signalKey === "mute") return "Mute";
+    if (signalKey === "color") return "Color changes";
+    if (signalKey === "power") return "Power changes";
+    if (signalKey === "level") return "Brightness changes";
+    if (signalKey === "volume") return "Volume changes";
+    if (signalKey === "mute") return "Mute changes";
     return "Playback";
   }
 
@@ -2196,6 +2491,14 @@ export class HtLocationInspector extends LitElement {
     ) {
       return `${item.entityId}::power-level`;
     }
+    if (
+      item.entityId.startsWith("media_player.") &&
+      (normalizedSignalKey === "playback" ||
+        normalizedSignalKey === "volume" ||
+        normalizedSignalKey === "mute")
+    ) {
+      return `${item.entityId}::media-signals`;
+    }
     return item.key;
   }
 
@@ -2203,10 +2506,22 @@ export class HtLocationInspector extends LitElement {
     return signalKey === "power" || signalKey === "level" || signalKey === "color";
   }
 
+  private _isMediaSignalKey(signalKey?: SourceSignalKey): signalKey is "playback" | "volume" | "mute" {
+    return signalKey === "playback" || signalKey === "volume" || signalKey === "mute";
+  }
+
   private _isIntegratedLightGroup(group: CandidateItem[]): boolean {
     return (
       group.length > 1 &&
       group[0].entityId.startsWith("light.") &&
+      group.every((item) => item.entityId === group[0].entityId)
+    );
+  }
+
+  private _isIntegratedMediaGroup(group: CandidateItem[]): boolean {
+    return (
+      group.length > 1 &&
+      group[0].entityId.startsWith("media_player.") &&
       group.every((item) => item.entityId === group[0].entityId)
     );
   }
@@ -2442,6 +2757,9 @@ export class HtLocationInspector extends LitElement {
           if (this._isIntegratedLightGroup(group.items)) {
             return this._renderIntegratedLightCard(config, group.items, sources, sourceIndexByKey);
           }
+          if (this._isIntegratedMediaGroup(group.items)) {
+            return this._renderIntegratedMediaCard(config, group.items, sources, sourceIndexByKey);
+          }
 
           const groupConfigured = group.items.some((item) => sourceIndexByKey.has(item.key));
           return html`
@@ -2477,32 +2795,37 @@ export class HtLocationInspector extends LitElement {
                       </div>
                       <div>
                         <div class="candidate-headline">
-                          <div class="candidate-title">${this._candidateTitle(item.entityId, item.signalKey)}</div>
-                          ${configured && draft && modeOptions.length > 1
-                            ? html`
-                                <div class="inline-mode-group">
-                                  <span class="inline-mode-label">Mode</span>
-                                  <select
-                                    class="inline-mode-select"
-                                    .value=${modeOptions.some((opt) => opt.value === draft.mode)
-                                      ? draft.mode
-                                      : modeOptions[0].value}
-                                    @change=${(ev: Event) => {
-                                      const mode = (ev.target as HTMLSelectElement).value as "any_change" | "specific_states";
-                                      const entity = this.hass.states[item.entityId];
-                                      const next = applyModeDefaults(draft, mode, entity) as OccupancySource;
-                                      this._updateSourceDraft(config, sourceIndex, { ...next, entity_id: draft.entity_id });
-                                    }}
-                                  >
-                                    ${modeOptions.map((opt) => html`<option value=${opt.value}>${opt.label}</option>`)}
-                                  </select>
-                                </div>
-                              `
-                            : ""}
+                          <div class="candidate-title">
+                            ${this._candidateTitle(item.entityId, item.signalKey)}
+                            <span class="candidate-entity-inline">[${item.entityId}]</span>
+                          </div>
+                          <div class="candidate-controls">
+                            <span class="source-state-pill">${this._entityState(item.entityId)}</span>
+                            ${configured && draft && modeOptions.length > 1
+                              ? html`
+                                  <div class="inline-mode-group">
+                                    <span class="inline-mode-label">Mode</span>
+                                    <select
+                                      class="inline-mode-select"
+                                      .value=${modeOptions.some((opt) => opt.value === draft.mode)
+                                        ? draft.mode
+                                        : modeOptions[0].value}
+                                      @change=${(ev: Event) => {
+                                        const mode = (ev.target as HTMLSelectElement).value as "any_change" | "specific_states";
+                                        const entity = this.hass.states[item.entityId];
+                                        const next = applyModeDefaults(draft, mode, entity) as OccupancySource;
+                                        this._updateSourceDraft(config, sourceIndex, { ...next, entity_id: draft.entity_id });
+                                      }}
+                                    >
+                                      ${modeOptions.map((opt) => html`<option value=${opt.value}>${opt.label}</option>`)}
+                                    </select>
+                                  </div>
+                                `
+                              : ""}
+                          </div>
                         </div>
-                        <div class="candidate-meta">${item.entityId} • ${this._entityState(item.entityId)}</div>
                         ${(this._isMediaEntity(item.entityId) || item.entityId.startsWith("light.")) && item.signalKey
-                          ? html`<div class="candidate-submeta">Signal: ${this._mediaSignalLabel(item.signalKey)}</div>`
+                          ? html`<div class="candidate-submeta">Activity trigger: ${this._mediaSignalLabel(item.signalKey)}</div>`
                           : ""}
                       </div>
                     </div>
@@ -2574,34 +2897,165 @@ export class HtLocationInspector extends LitElement {
             </div>
             <div>
               <div class="candidate-headline">
-                <div class="candidate-title">${this._entityName(entityId)}</div>
-                ${primarySource && primarySourceIndex !== undefined && modeOptions.length > 1
-                  ? html`
-                      <div class="inline-mode-group">
-                        <span class="inline-mode-label">Mode</span>
-                        <select
-                          class="inline-mode-select"
-                          .value=${modeOptions.some((opt) => opt.value === primarySource.mode)
-                            ? primarySource.mode
-                            : modeOptions[0].value}
-                          @change=${(ev: Event) => {
-                            const mode = (ev.target as HTMLSelectElement).value as "any_change" | "specific_states";
-                            const entity = this.hass.states[entityId];
-                            const next = applyModeDefaults(primarySource, mode, entity) as OccupancySource;
-                            this._updateSourceDraft(config, primarySourceIndex, {
-                              ...next,
-                              entity_id: primarySource.entity_id,
-                            });
-                          }}
-                        >
-                          ${modeOptions.map((opt) => html`<option value=${opt.value}>${opt.label}</option>`)}
-                        </select>
-                      </div>
-                    `
-                  : ""}
+                <div class="candidate-title">
+                  ${this._entityName(entityId)}
+                  <span class="candidate-entity-inline">[${entityId}]</span>
+                </div>
+                <div class="candidate-controls">
+                  <span class="source-state-pill">${this._entityState(entityId)}</span>
+                  ${primarySource && primarySourceIndex !== undefined && modeOptions.length > 1
+                    ? html`
+                        <div class="inline-mode-group">
+                          <span class="inline-mode-label">Mode</span>
+                          <select
+                            class="inline-mode-select"
+                            .value=${modeOptions.some((opt) => opt.value === primarySource.mode)
+                              ? primarySource.mode
+                              : modeOptions[0].value}
+                            @change=${(ev: Event) => {
+                              const mode = (ev.target as HTMLSelectElement).value as "any_change" | "specific_states";
+                              const entity = this.hass.states[entityId];
+                              const next = applyModeDefaults(primarySource, mode, entity) as OccupancySource;
+                              this._updateSourceDraft(config, primarySourceIndex, {
+                                ...next,
+                                entity_id: primarySource.entity_id,
+                              });
+                            }}
+                          >
+                            ${modeOptions.map((opt) => html`<option value=${opt.value}>${opt.label}</option>`)}
+                          </select>
+                        </div>
+                      `
+                    : ""}
+                </div>
               </div>
-              <div class="candidate-meta">${entityId} • ${this._entityState(entityId)}</div>
-              <div class="candidate-submeta">Signal inputs:</div>
+              <div class="candidate-submeta">Activity triggers</div>
+              <div class="light-signal-toggles">
+                ${signalItems.map((signalItem) => {
+                  const signalConfigured = sourceIndexByKey.has(signalItem.key);
+                  return html`
+                    <label class="light-signal-toggle">
+                      <input
+                        type="checkbox"
+                        .checked=${signalConfigured}
+                        @change=${(ev: Event) => {
+                          const checked = (ev.target as HTMLInputElement).checked;
+                          if (checked && !signalConfigured) {
+                            const added = this._addSourceWithDefaults(entityId, config, {
+                              resetExternalPicker: false,
+                              signalKey: signalItem.signalKey,
+                            });
+                            if (!added) this.requestUpdate();
+                            return;
+                          }
+                          if (!checked && signalConfigured) {
+                            this._removeSourcesByKey([signalItem.key], config);
+                          }
+                        }}
+                      />
+                      <span>${this._mediaSignalLabel(signalItem.signalKey)}</span>
+                    </label>
+                  `;
+                })}
+              </div>
+            </div>
+          </div>
+          ${primarySource && primarySourceIndex !== undefined
+            ? this._renderSourceEditor(config, primarySource, primarySourceIndex)
+            : ""}
+        </div>
+      </div>
+    `;
+  }
+
+  private _renderIntegratedMediaCard(
+    config: OccupancyConfig,
+    group: CandidateItem[],
+    sources: OccupancySource[],
+    sourceIndexByKey: Map<string, number>
+  ) {
+    const entityId = group[0]?.entityId;
+    if (!entityId) return "";
+
+    const signalItems = [...group]
+      .filter((item) => this._isMediaSignalKey(item.signalKey))
+      .sort((a, b) => this._signalSortWeight(a.signalKey) - this._signalSortWeight(b.signalKey));
+    if (signalItems.length === 0) return "";
+
+    const configuredItems = signalItems.filter((item) => sourceIndexByKey.has(item.key));
+    const groupConfigured = configuredItems.length > 0;
+    const primaryItem =
+      configuredItems.find((item) => item.signalKey === "playback") || configuredItems[0] || signalItems[0];
+    const primarySourceIndex = sourceIndexByKey.get(primaryItem.key);
+    const primarySource = primarySourceIndex !== undefined ? sources[primarySourceIndex] : undefined;
+    const modeOptions = this._modeOptionsForEntity(entityId);
+
+    return html`
+      <div class="source-card ${groupConfigured ? "enabled" : ""}">
+        <div class="source-card-item">
+          <div class="candidate-item">
+            <div class="source-enable-control">
+              <input
+                type="checkbox"
+                class="source-enable-input"
+                aria-label="Include media source"
+                .checked=${groupConfigured}
+                @change=${(ev: Event) => {
+                  const checked = (ev.target as HTMLInputElement).checked;
+                  if (checked && !groupConfigured) {
+                    const addSignal =
+                      signalItems.find((item) => item.signalKey === "playback")?.signalKey || signalItems[0].signalKey;
+                    const added = this._addSourceWithDefaults(entityId, config, {
+                      resetExternalPicker: false,
+                      signalKey: addSignal,
+                    });
+                    if (!added) this.requestUpdate();
+                    return;
+                  }
+                  if (!checked && groupConfigured) {
+                    this._removeSourcesByKey(
+                      signalItems.map((item) => item.key),
+                      config
+                    );
+                  }
+                }}
+              />
+            </div>
+            <div>
+              <div class="candidate-headline">
+                <div class="candidate-title">
+                  ${this._entityName(entityId)}
+                  <span class="candidate-entity-inline">[${entityId}]</span>
+                </div>
+                <div class="candidate-controls">
+                  <span class="source-state-pill">${this._entityState(entityId)}</span>
+                  ${primarySource && primarySourceIndex !== undefined && modeOptions.length > 1
+                    ? html`
+                        <div class="inline-mode-group">
+                          <span class="inline-mode-label">Mode</span>
+                          <select
+                            class="inline-mode-select"
+                            .value=${modeOptions.some((opt) => opt.value === primarySource.mode)
+                              ? primarySource.mode
+                              : modeOptions[0].value}
+                            @change=${(ev: Event) => {
+                              const mode = (ev.target as HTMLSelectElement).value as "any_change" | "specific_states";
+                              const entity = this.hass.states[entityId];
+                              const next = applyModeDefaults(primarySource, mode, entity) as OccupancySource;
+                              this._updateSourceDraft(config, primarySourceIndex, {
+                                ...next,
+                                entity_id: primarySource.entity_id,
+                              });
+                            }}
+                          >
+                            ${modeOptions.map((opt) => html`<option value=${opt.value}>${opt.label}</option>`)}
+                          </select>
+                        </div>
+                      `
+                    : ""}
+                </div>
+              </div>
+              <div class="candidate-submeta">Activity triggers</div>
               <div class="light-signal-toggles">
                 ${signalItems.map((signalItem) => {
                   const signalConfigured = sourceIndexByKey.has(signalItem.key);
@@ -2718,6 +3172,11 @@ export class HtLocationInspector extends LitElement {
     const wiab = this._getWiabConfig(config);
     const interiorCandidates = this._wiabInteriorCandidates();
     const doorCandidates = this._wiabDoorCandidates();
+    const wiabAreaId = this.location?.ha_area_id || "";
+    const wiabAreaName = wiabAreaId
+      ? this.hass?.areas?.[wiabAreaId]?.name || wiabAreaId
+      : "";
+    const scopedToArea = Boolean(wiabAreaId) && !this._wiabShowAllEntities;
     const preset = wiab.preset || "off";
     const presetLabel =
       preset === "enclosed_room"
@@ -2776,6 +3235,27 @@ export class HtLocationInspector extends LitElement {
           ${preset === "off"
             ? ""
             : html`
+                ${wiabAreaId
+                  ? html`
+                      <label class="editor-toggle">
+                        <input
+                          type="checkbox"
+                          data-testid="wiab-show-all-toggle"
+                          .checked=${this._wiabShowAllEntities}
+                          @change=${(ev: Event) => {
+                            this._wiabShowAllEntities = (ev.target as HTMLInputElement).checked;
+                          }}
+                        />
+                        Show entities from all areas
+                      </label>
+                      <div class="policy-note">
+                        ${scopedToArea
+                          ? `Showing ${wiabAreaName} entities by default.`
+                          : "Showing entities from all areas."}
+                      </div>
+                    `
+                  : ""}
+
                 ${this._renderWiabEntityEditor({
                   label: "Interior entities",
                   listKey: "interior_entities",
@@ -3036,17 +3516,52 @@ export class HtLocationInspector extends LitElement {
   }
 
   private _wiabInteriorCandidates(): string[] {
-    const states = this.hass?.states || {};
-    return Object.keys(states)
-      .filter((entityId) => this._isCandidateEntity(entityId))
-      .sort((a, b) => this._entityName(a).localeCompare(this._entityName(b)));
+    return this._wiabCandidates((entityId) => this._isCandidateEntity(entityId));
   }
 
   private _wiabDoorCandidates(): string[] {
+    return this._wiabCandidates((entityId) => this._isDoorBoundaryEntity(entityId));
+  }
+
+  private _wiabCandidates(predicate: (entityId: string) => boolean): string[] {
     const states = this.hass?.states || {};
-    return Object.keys(states)
-      .filter((entityId) => this._isDoorBoundaryEntity(entityId))
+    const areaId = this.location?.ha_area_id;
+    const candidatePool =
+      areaId && !this._wiabShowAllEntities
+        ? this._wiabEntityIdsForArea(areaId)
+        : Object.keys(states);
+    return candidatePool
+      .filter((entityId) => this._isCandidateEntity(entityId))
+      .filter(predicate)
       .sort((a, b) => this._entityName(a).localeCompare(this._entityName(b)));
+  }
+
+  private _wiabEntityIdsForArea(areaId: string): string[] {
+    const states = this.hass?.states || {};
+    const ids = new Set<string>();
+
+    for (const entityId of this.location?.entity_ids || []) {
+      if (states[entityId]) {
+        ids.add(entityId);
+      }
+    }
+
+    for (const entityId of Object.keys(states)) {
+      if (this._entityIsInArea(entityId, areaId)) {
+        ids.add(entityId);
+      }
+    }
+
+    return [...ids];
+  }
+
+  private _entityIsInArea(entityId: string, areaId: string): boolean {
+    const states = this.hass?.states || {};
+    const registryAreaId = this._entityAreaById[entityId];
+    if (registryAreaId !== undefined) {
+      return registryAreaId === areaId;
+    }
+    return states[entityId]?.attributes?.area_id === areaId;
   }
 
   private _isDoorBoundaryEntity(entityId: string): boolean {
@@ -3080,7 +3595,7 @@ export class HtLocationInspector extends LitElement {
     return html`
       <div class="source-editor">
         ${(this._isMediaEntity(source.entity_id) || source.entity_id.startsWith("light.")) && source.signal_key
-          ? html`<div class="media-signals">Signal: ${this._mediaSignalLabel(source.signal_key)} (${this._signalDescription(source.signal_key)}).</div>`
+          ? html`<div class="media-signals">Trigger signal: ${this._mediaSignalLabel(source.signal_key)} (${this._signalDescription(source.signal_key)}).</div>`
           : ""}
         <div class="editor-grid">
           <div class="editor-field">
@@ -3317,12 +3832,12 @@ export class HtLocationInspector extends LitElement {
                         <ha-icon .icon=${this._deviceIcon(entityId)}></ha-icon>
                       </div>
                       <div class="source-info">
-                        <div class="source-name">${this._entityName(entityId)}</div>
-                        <div class="source-details">
-                          Entity: ${entityId}
+                        <div class="action-name-row">
+                          <div class="source-name">${this._entityName(entityId)}</div>
+                          <div class="action-entity-inline">${entityId}</div>
                         </div>
                         <div class="source-details">
-                          Current state: ${this._entityState(entityId)}
+                          State: ${this._entityState(entityId)}
                         </div>
                       </div>
                       <div class="action-controls">
@@ -3531,7 +4046,6 @@ export class HtLocationInspector extends LitElement {
     return [
       { value: "turn_on", label: "Turn on" },
       { value: "turn_off", label: "Turn off" },
-      { value: "toggle", label: "Toggle" },
     ].sort((a, b) => (a.value === defaultService ? -1 : b.value === defaultService ? 1 : 0));
   }
 
@@ -3548,6 +4062,7 @@ export class HtLocationInspector extends LitElement {
 
   private _selectedManagedActionService(entityId: string, triggerType: "occupied" | "vacant"): string {
     const key = this._actionToggleKey(entityId, triggerType);
+    const defaultService = this._defaultManagedActionService(entityId, triggerType);
     const selected = this._actionServiceSelections[key];
     if (selected) return selected;
 
@@ -3561,11 +4076,13 @@ export class HtLocationInspector extends LitElement {
     if (enabledRule?.action_service) return enabledRule.action_service;
 
     const fallbackRule = matchingRules.find(
-      (rule) => typeof rule.action_service === "string" && rule.action_service.length > 0
+      (rule) =>
+        typeof rule.action_service === "string" &&
+        rule.action_service.length > 0
     );
     if (fallbackRule?.action_service) return fallbackRule.action_service;
 
-    return this._defaultManagedActionService(entityId, triggerType);
+    return defaultService;
   }
 
   private _selectedManagedActionRequireDark(
@@ -4591,51 +5108,21 @@ export class HtLocationInspector extends LitElement {
       offState = "Away";
     } else if (domain === "media_player") {
       if (source.signal_key === "volume") {
-        return {
-          onState: "Volume change",
-          offState: "No volume change",
-          onBehavior: "Volume change behavior",
-          onTimeout: "Volume timeout",
-          offBehavior: "No-volume behavior",
-          offDelay: "No-volume delay",
-        };
+        onState = "Volume change";
+        offState = "No volume change";
+      } else if (source.signal_key === "mute") {
+        onState = "Mute change";
+        offState = "No mute change";
+      } else {
+        onState = "Playing";
+        offState = "Paused/idle";
       }
-      if (source.signal_key === "mute") {
-        return {
-          onState: "Mute change",
-          offState: "No mute change",
-          onBehavior: "Mute change behavior",
-          onTimeout: "Mute timeout",
-          offBehavior: "No-mute behavior",
-          offDelay: "No-mute delay",
-        };
-      }
-      return {
-        onState: "Playing",
-        offState: "Paused/idle",
-        onBehavior: "Playing behavior",
-        onTimeout: "Playing timeout",
-        offBehavior: "Paused/idle behavior",
-        offDelay: "Paused/idle delay",
-      };
     } else if (domain === "light" && source.signal_key === "level") {
-      return {
-        onState: "Level change",
-        offState: "No level change",
-        onBehavior: "Level change behavior",
-        onTimeout: "Level timeout",
-        offBehavior: "No-level behavior",
-        offDelay: "No-level delay",
-      };
+      onState = "Brightness change";
+      offState = "No brightness change";
     } else if (domain === "light" && source.signal_key === "color") {
-      return {
-        onState: "Color change",
-        offState: "No color change",
-        onBehavior: "Color change behavior",
-        onTimeout: "Color timeout",
-        offBehavior: "No-color behavior",
-        offDelay: "No-color delay",
-      };
+      onState = "Color change";
+      offState = "No color change";
     } else if (domain === "light" && source.signal_key === "power") {
       onState = "On";
       offState = "Off";
@@ -4647,10 +5134,10 @@ export class HtLocationInspector extends LitElement {
     return {
       onState,
       offState,
-      onBehavior: `${onState} behavior`,
-      onTimeout: `${onState} timeout`,
-      offBehavior: `${offState} behavior`,
-      offDelay: `${offState} delay`,
+      onBehavior: "When activity is detected",
+      onTimeout: "Occupied hold time",
+      offBehavior: "When activity stops",
+      offDelay: "Vacant delay",
     };
   }
 

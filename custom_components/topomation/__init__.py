@@ -45,6 +45,8 @@ if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
+_LINKED_LOCATION_SOURCE_PREFIX = "linked:"
+_OCCUPANCY_LINKED_LOCATIONS_KEY = "linked_locations"
 
 PLATFORMS: list[Platform] = [
     Platform.BINARY_SENSOR,  # Occupancy binary sensors
@@ -216,6 +218,71 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.bus.async_fire(EVENT_TOPOMATION_OCCUPANCY_CHANGED, ha_payload)
 
     bus.subscribe(_forward_occupancy_changed, EventFilter(event_type="occupancy.changed"))
+
+    @callback
+    def _apply_linked_location_contributors(event: Event) -> None:
+        """Propagate directional linked-location occupancy contributors."""
+        if occupancy_module is None:
+            return
+
+        payload = event.payload if isinstance(event.payload, Mapping) else {}
+        source_location_id = event.location_id
+        occupied = payload.get("occupied")
+        if not isinstance(source_location_id, str) or not source_location_id:
+            return
+        if not isinstance(occupied, bool):
+            return
+
+        linked_targets = _linked_target_location_ids(loc_mgr, source_location_id)
+        if not linked_targets:
+            return
+
+        source_contributions = _contribution_source_ids(payload)
+        source_link_id = _linked_location_source_id(source_location_id)
+
+        for target_location_id in linked_targets:
+            target_state = _occupancy_state_for_location(occupancy_module, target_location_id)
+            if target_state is None:
+                continue
+
+            target_contributions = _contribution_source_ids(target_state)
+            reverse_link_id = _linked_location_source_id(target_location_id)
+
+            if occupied:
+                # Feedback guard for reciprocal links: if source currently depends on
+                # target's linked contribution, do not back-propagate.
+                if reverse_link_id in source_contributions:
+                    continue
+                if source_link_id in target_contributions:
+                    continue
+                try:
+                    occupancy_module.trigger(target_location_id, source_link_id, 0)
+                except Exception as err:  # noqa: BLE001
+                    _LOGGER.error(
+                        "Failed linked-room trigger %s -> %s: %s",
+                        source_location_id,
+                        target_location_id,
+                        err,
+                        exc_info=True,
+                    )
+            else:
+                if source_link_id not in target_contributions:
+                    continue
+                try:
+                    occupancy_module.clear(target_location_id, source_link_id, 0)
+                except Exception as err:  # noqa: BLE001
+                    _LOGGER.error(
+                        "Failed linked-room clear %s -> %s: %s",
+                        source_location_id,
+                        target_location_id,
+                        err,
+                        exc_info=True,
+                    )
+
+    bus.subscribe(
+        _apply_linked_location_contributors,
+        EventFilter(event_type="occupancy.changed"),
+    )
 
     @callback
     def _forward_handoff_trace(event: Event) -> None:
@@ -467,6 +534,8 @@ def _setup_default_configs(loc_mgr: LocationManager, modules: dict[str, Any]) ->
             default_config["version"] = module.CURRENT_CONFIG_VERSION
             if module_id == "automation":
                 default_config.setdefault(AUTOMATION_REAPPLY_CONFIG_KEY, False)
+            if module_id == "occupancy":
+                default_config.setdefault(_OCCUPANCY_LINKED_LOCATIONS_KEY, [])
 
             # Store in LocationManager
             loc_mgr.set_module_config(
@@ -872,7 +941,148 @@ def _allowed_occupancy_source_ids_for_location(loc_mgr: LocationManager, locatio
         else:
             allowed.add(entity_id)
 
+    for linked_location_id in _effective_linked_locations_for_target(loc_mgr, location_id, config):
+        allowed.add(_linked_location_source_id(linked_location_id))
+
     return allowed
+
+
+def _linked_location_source_id(location_id: str) -> str:
+    """Return synthetic occupancy source ID used for linked room contributions."""
+    return f"{_LINKED_LOCATION_SOURCE_PREFIX}{location_id}"
+
+
+def _linked_locations_from_config(config: object) -> list[str]:
+    """Return normalized directional linked-location contributor IDs."""
+    if not isinstance(config, dict):
+        return []
+
+    raw_linked = config.get(_OCCUPANCY_LINKED_LOCATIONS_KEY)
+    if not isinstance(raw_linked, list):
+        return []
+
+    linked: list[str] = []
+    seen: set[str] = set()
+    for item in raw_linked:
+        if not isinstance(item, str):
+            continue
+        location_id = item.strip()
+        if not location_id or location_id in seen:
+            continue
+        seen.add(location_id)
+        linked.append(location_id)
+    return linked
+
+
+def _allowed_linked_room_neighbors_for_target(
+    loc_mgr: LocationManager,
+    target_location_id: str,
+) -> set[str]:
+    """Return valid linked-room neighbor IDs for one target location."""
+    target = loc_mgr.get_location(target_location_id)
+    if target is None or _location_type(target) != "area":
+        return set()
+
+    parent_id = getattr(target, "parent_id", None)
+    if not isinstance(parent_id, str) or not parent_id:
+        return set()
+
+    parent = loc_mgr.get_location(parent_id)
+    if parent is None or _location_type(parent) != "floor":
+        return set()
+
+    allowed: set[str] = set()
+    for candidate in loc_mgr.all_locations():
+        candidate_id = getattr(candidate, "id", None)
+        if not isinstance(candidate_id, str) or not candidate_id:
+            continue
+        if candidate_id == target_location_id:
+            continue
+        if getattr(candidate, "parent_id", None) != parent_id:
+            continue
+        if _location_type(candidate) != "area":
+            continue
+        allowed.add(candidate_id)
+    return allowed
+
+
+def _effective_linked_locations_for_target(
+    loc_mgr: LocationManager,
+    target_location_id: str,
+    config: object,
+) -> list[str]:
+    """Return linked locations filtered by current linked-room topology policy."""
+    linked = _linked_locations_from_config(config)
+    if not linked:
+        return []
+
+    allowed = _allowed_linked_room_neighbors_for_target(loc_mgr, target_location_id)
+    if not allowed:
+        return []
+
+    return [location_id for location_id in linked if location_id in allowed]
+
+
+def _linked_target_location_ids(loc_mgr: LocationManager, source_location_id: str) -> list[str]:
+    """Return locations configured to consume source occupancy via linked rooms."""
+    targets: list[str] = []
+    seen: set[str] = set()
+
+    for location in loc_mgr.all_locations():
+        target_location_id = getattr(location, "id", None)
+        if not isinstance(target_location_id, str) or not target_location_id:
+            continue
+        if target_location_id == source_location_id:
+            continue
+        if target_location_id in seen:
+            continue
+
+        config = loc_mgr.get_module_config(target_location_id, "occupancy")
+        linked = _effective_linked_locations_for_target(loc_mgr, target_location_id, config)
+        if source_location_id not in linked:
+            continue
+
+        seen.add(target_location_id)
+        targets.append(target_location_id)
+
+    return targets
+
+
+def _occupancy_state_for_location(
+    occupancy_module: object,
+    location_id: str,
+) -> Mapping[str, Any] | None:
+    """Read occupancy state payload for one location when available."""
+    get_state = getattr(occupancy_module, "get_location_state", None)
+    if not callable(get_state):
+        return None
+    try:
+        state = get_state(location_id)
+    except Exception:  # noqa: BLE001
+        return None
+    if isinstance(state, Mapping):
+        return state
+    return None
+
+
+def _contribution_source_ids(payload: Mapping[str, Any]) -> set[str]:
+    """Extract normalized contribution source IDs from an occupancy payload."""
+    contributions = payload.get("contributions")
+    if not isinstance(contributions, list):
+        return set()
+
+    source_ids: set[str] = set()
+    for contribution in contributions:
+        if not isinstance(contribution, Mapping):
+            continue
+        source_id = contribution.get("source_id")
+        if not isinstance(source_id, str):
+            continue
+        normalized = source_id.strip()
+        if not normalized:
+            continue
+        source_ids.add(normalized)
+    return source_ids
 
 
 def _sanitize_occupancy_state_for_restore(
@@ -906,6 +1116,12 @@ def _sanitize_occupancy_state_for_restore(
                     filtered.append(item)
                     continue
                 if source_id.startswith("__child__:") or source_id.startswith("__follow__:"):
+                    filtered.append(item)
+                    continue
+                if source_id.startswith(_LINKED_LOCATION_SOURCE_PREFIX):
+                    if source_id not in allowed_source_ids:
+                        dropped += 1
+                        continue
                     filtered.append(item)
                     continue
 

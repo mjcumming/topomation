@@ -215,6 +215,405 @@ async def test_setup_entry_forwards_occupancy_changed_to_ha_bus(
     } in forwarded_events
 
 
+async def test_setup_entry_propagates_linked_location_trigger(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    mock_location_manager: Mock,
+    mock_event_bus: Mock,
+    mock_occupancy_module: Mock,
+) -> None:
+    """occupied=True on source location should trigger configured linked targets."""
+    config_entry.add_to_hass(hass)
+
+    family_room = Mock()
+    family_room.id = "area_family_room"
+    family_room.name = "Family Room"
+    family_room.parent_id = "floor_main"
+    family_room.is_explicit_root = False
+    family_room.entity_ids = []
+    family_room.order = 0
+    family_room.aliases = []
+    family_room.ha_area_id = None
+    family_room.ha_floor_id = None
+    family_room.modules = {"_meta": {"type": "area"}}
+    kitchen = Mock()
+    kitchen.id = "area_kitchen"
+    kitchen.name = "Kitchen"
+    kitchen.parent_id = "floor_main"
+    kitchen.is_explicit_root = False
+    kitchen.entity_ids = []
+    kitchen.order = 1
+    kitchen.aliases = []
+    kitchen.ha_area_id = None
+    kitchen.ha_floor_id = None
+    kitchen.modules = {"_meta": {"type": "area"}}
+    floor = Mock()
+    floor.id = "floor_main"
+    floor.name = "Main Floor"
+    floor.parent_id = None
+    floor.is_explicit_root = False
+    floor.entity_ids = []
+    floor.order = 0
+    floor.aliases = []
+    floor.ha_area_id = None
+    floor.ha_floor_id = None
+    floor.modules = {"_meta": {"type": "floor"}}
+    mock_location_manager.all_locations.return_value = [floor, family_room, kitchen]
+    locations_by_id = {location.id: location for location in [floor, family_room, kitchen]}
+    mock_location_manager.get_location.side_effect = lambda location_id: locations_by_id.get(location_id)
+
+    def _module_config(location_id: str, module_id: str):
+        if module_id == "occupancy":
+            if location_id == "area_kitchen":
+                return {
+                    "enabled": True,
+                    "occupancy_sources": [],
+                    "linked_locations": ["area_family_room"],
+                }
+            return {
+                "enabled": True,
+                "occupancy_sources": [],
+                "linked_locations": [],
+            }
+        if module_id == "automation":
+            return {"enabled": False, "reapply_last_state_on_startup": False}
+        if module_id == "ambient":
+            return {"enabled": False}
+        return None
+
+    mock_location_manager.get_module_config.side_effect = _module_config
+    mock_occupancy_module.get_location_state.side_effect = lambda location_id: {
+        "contributions": [],
+    }
+
+    with (
+        patch("custom_components.topomation.async_register_panel"),
+        patch("custom_components.topomation.async_register_websocket_api"),
+        patch("custom_components.topomation.async_register_services"),
+        patch.object(hass.config_entries, "async_forward_entry_setups", return_value=True),
+    ):
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    event = Mock()
+    event.location_id = "area_family_room"
+    event.payload = {
+        "occupied": True,
+        "previous_occupied": False,
+        "reason": "event:trigger",
+        "contributions": [{"source_id": "binary_sensor.family_room_motion", "expires_at": None}],
+    }
+
+    for call in mock_event_bus.subscribe.call_args_list:
+        if len(call.args) < 2:
+            continue
+        callback = call.args[0]
+        event_filter = call.args[1]
+        if getattr(event_filter, "event_type", None) == "occupancy.changed":
+            callback(event)
+
+    mock_occupancy_module.trigger.assert_called_once_with(
+        "area_kitchen",
+        "linked:area_family_room",
+        0,
+    )
+
+
+async def test_setup_entry_propagates_linked_location_clear(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    mock_location_manager: Mock,
+    mock_event_bus: Mock,
+    mock_occupancy_module: Mock,
+) -> None:
+    """occupied=False on source location should clear linked contribution on targets."""
+    config_entry.add_to_hass(hass)
+
+    family_room = Mock()
+    family_room.id = "area_family_room"
+    family_room.name = "Family Room"
+    family_room.parent_id = "floor_main"
+    family_room.is_explicit_root = False
+    family_room.entity_ids = []
+    family_room.order = 0
+    family_room.aliases = []
+    family_room.ha_area_id = None
+    family_room.ha_floor_id = None
+    family_room.modules = {"_meta": {"type": "area"}}
+    kitchen = Mock()
+    kitchen.id = "area_kitchen"
+    kitchen.name = "Kitchen"
+    kitchen.parent_id = "floor_main"
+    kitchen.is_explicit_root = False
+    kitchen.entity_ids = []
+    kitchen.order = 1
+    kitchen.aliases = []
+    kitchen.ha_area_id = None
+    kitchen.ha_floor_id = None
+    kitchen.modules = {"_meta": {"type": "area"}}
+    floor = Mock()
+    floor.id = "floor_main"
+    floor.name = "Main Floor"
+    floor.parent_id = None
+    floor.is_explicit_root = False
+    floor.entity_ids = []
+    floor.order = 0
+    floor.aliases = []
+    floor.ha_area_id = None
+    floor.ha_floor_id = None
+    floor.modules = {"_meta": {"type": "floor"}}
+    mock_location_manager.all_locations.return_value = [floor, family_room, kitchen]
+    locations_by_id = {location.id: location for location in [floor, family_room, kitchen]}
+    mock_location_manager.get_location.side_effect = lambda location_id: locations_by_id.get(location_id)
+
+    def _module_config(location_id: str, module_id: str):
+        if module_id == "occupancy":
+            if location_id == "area_kitchen":
+                return {
+                    "enabled": True,
+                    "occupancy_sources": [],
+                    "linked_locations": ["area_family_room"],
+                }
+            return {
+                "enabled": True,
+                "occupancy_sources": [],
+                "linked_locations": [],
+            }
+        if module_id == "automation":
+            return {"enabled": False, "reapply_last_state_on_startup": False}
+        if module_id == "ambient":
+            return {"enabled": False}
+        return None
+
+    mock_location_manager.get_module_config.side_effect = _module_config
+    mock_occupancy_module.get_location_state.side_effect = lambda location_id: {
+        "contributions": (
+            [{"source_id": "linked:area_family_room", "expires_at": None}]
+            if location_id == "area_kitchen"
+            else []
+        ),
+    }
+
+    with (
+        patch("custom_components.topomation.async_register_panel"),
+        patch("custom_components.topomation.async_register_websocket_api"),
+        patch("custom_components.topomation.async_register_services"),
+        patch.object(hass.config_entries, "async_forward_entry_setups", return_value=True),
+    ):
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    event = Mock()
+    event.location_id = "area_family_room"
+    event.payload = {
+        "occupied": False,
+        "previous_occupied": True,
+        "reason": "event:vacate",
+        "contributions": [],
+    }
+
+    for call in mock_event_bus.subscribe.call_args_list:
+        if len(call.args) < 2:
+            continue
+        callback = call.args[0]
+        event_filter = call.args[1]
+        if getattr(event_filter, "event_type", None) == "occupancy.changed":
+            callback(event)
+
+    mock_occupancy_module.clear.assert_called_once_with(
+        "area_kitchen",
+        "linked:area_family_room",
+        0,
+    )
+
+
+async def test_setup_entry_skips_linked_feedback_loops(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    mock_location_manager: Mock,
+    mock_event_bus: Mock,
+    mock_occupancy_module: Mock,
+) -> None:
+    """Linked propagation should not echo back when source already depends on target."""
+    config_entry.add_to_hass(hass)
+
+    family_room = Mock()
+    family_room.id = "area_family_room"
+    family_room.name = "Family Room"
+    family_room.parent_id = "floor_main"
+    family_room.is_explicit_root = False
+    family_room.entity_ids = []
+    family_room.order = 0
+    family_room.aliases = []
+    family_room.ha_area_id = None
+    family_room.ha_floor_id = None
+    family_room.modules = {"_meta": {"type": "area"}}
+    kitchen = Mock()
+    kitchen.id = "area_kitchen"
+    kitchen.name = "Kitchen"
+    kitchen.parent_id = "floor_main"
+    kitchen.is_explicit_root = False
+    kitchen.entity_ids = []
+    kitchen.order = 1
+    kitchen.aliases = []
+    kitchen.ha_area_id = None
+    kitchen.ha_floor_id = None
+    kitchen.modules = {"_meta": {"type": "area"}}
+    floor = Mock()
+    floor.id = "floor_main"
+    floor.name = "Main Floor"
+    floor.parent_id = None
+    floor.is_explicit_root = False
+    floor.entity_ids = []
+    floor.order = 0
+    floor.aliases = []
+    floor.ha_area_id = None
+    floor.ha_floor_id = None
+    floor.modules = {"_meta": {"type": "floor"}}
+    mock_location_manager.all_locations.return_value = [floor, family_room, kitchen]
+    locations_by_id = {location.id: location for location in [floor, family_room, kitchen]}
+    mock_location_manager.get_location.side_effect = lambda location_id: locations_by_id.get(location_id)
+
+    def _module_config(location_id: str, module_id: str):
+        if module_id == "occupancy":
+            if location_id == "area_kitchen":
+                return {
+                    "enabled": True,
+                    "occupancy_sources": [],
+                    "linked_locations": ["area_family_room"],
+                }
+            return {
+                "enabled": True,
+                "occupancy_sources": [],
+                "linked_locations": [],
+            }
+        if module_id == "automation":
+            return {"enabled": False, "reapply_last_state_on_startup": False}
+        if module_id == "ambient":
+            return {"enabled": False}
+        return None
+
+    mock_location_manager.get_module_config.side_effect = _module_config
+    mock_occupancy_module.get_location_state.side_effect = lambda location_id: {
+        "contributions": [],
+    }
+
+    with (
+        patch("custom_components.topomation.async_register_panel"),
+        patch("custom_components.topomation.async_register_websocket_api"),
+        patch("custom_components.topomation.async_register_services"),
+        patch.object(hass.config_entries, "async_forward_entry_setups", return_value=True),
+    ):
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    event = Mock()
+    event.location_id = "area_family_room"
+    event.payload = {
+        "occupied": True,
+        "previous_occupied": False,
+        "reason": "event:trigger",
+        "contributions": [{"source_id": "linked:area_kitchen", "expires_at": None}],
+    }
+
+    for call in mock_event_bus.subscribe.call_args_list:
+        if len(call.args) < 2:
+            continue
+        callback = call.args[0]
+        event_filter = call.args[1]
+        if getattr(event_filter, "event_type", None) == "occupancy.changed":
+            callback(event)
+
+    mock_occupancy_module.trigger.assert_not_called()
+
+
+async def test_setup_entry_ignores_linked_locations_when_target_not_area_under_floor(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    mock_location_manager: Mock,
+    mock_event_bus: Mock,
+    mock_occupancy_module: Mock,
+) -> None:
+    """Linked propagation should be ignored when target is not an area directly under floor."""
+    config_entry.add_to_hass(hass)
+
+    family_room = Mock()
+    family_room.id = "area_family_room"
+    family_room.name = "Family Room"
+    family_room.parent_id = None
+    family_room.is_explicit_root = False
+    family_room.entity_ids = []
+    family_room.order = 0
+    family_room.aliases = []
+    family_room.ha_area_id = None
+    family_room.ha_floor_id = None
+    family_room.modules = {"_meta": {"type": "area"}}
+    kitchen = Mock()
+    kitchen.id = "area_kitchen"
+    kitchen.name = "Kitchen"
+    kitchen.parent_id = None
+    kitchen.is_explicit_root = False
+    kitchen.entity_ids = []
+    kitchen.order = 1
+    kitchen.aliases = []
+    kitchen.ha_area_id = None
+    kitchen.ha_floor_id = None
+    kitchen.modules = {"_meta": {"type": "area"}}
+    mock_location_manager.all_locations.return_value = [family_room, kitchen]
+    locations_by_id = {location.id: location for location in [family_room, kitchen]}
+    mock_location_manager.get_location.side_effect = lambda location_id: locations_by_id.get(location_id)
+
+    def _module_config(location_id: str, module_id: str):
+        if module_id == "occupancy":
+            if location_id == "area_kitchen":
+                return {
+                    "enabled": True,
+                    "occupancy_sources": [],
+                    "linked_locations": ["area_family_room"],
+                }
+            return {
+                "enabled": True,
+                "occupancy_sources": [],
+                "linked_locations": [],
+            }
+        if module_id == "automation":
+            return {"enabled": False, "reapply_last_state_on_startup": False}
+        if module_id == "ambient":
+            return {"enabled": False}
+        return None
+
+    mock_location_manager.get_module_config.side_effect = _module_config
+    mock_occupancy_module.get_location_state.side_effect = lambda location_id: {"contributions": []}
+
+    with (
+        patch("custom_components.topomation.async_register_panel"),
+        patch("custom_components.topomation.async_register_websocket_api"),
+        patch("custom_components.topomation.async_register_services"),
+        patch.object(hass.config_entries, "async_forward_entry_setups", return_value=True),
+    ):
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    event = Mock()
+    event.location_id = "area_family_room"
+    event.payload = {
+        "occupied": True,
+        "previous_occupied": False,
+        "reason": "event:trigger",
+        "contributions": [{"source_id": "binary_sensor.family_room_motion", "expires_at": None}],
+    }
+
+    for call in mock_event_bus.subscribe.call_args_list:
+        if len(call.args) < 2:
+            continue
+        callback = call.args[0]
+        event_filter = call.args[1]
+        if getattr(event_filter, "event_type", None) == "occupancy.changed":
+            callback(event)
+
+    mock_occupancy_module.trigger.assert_not_called()
+
+
 async def test_setup_entry_bootstraps_building_and_grounds_on_first_install(
     hass: HomeAssistant,
     config_entry: MockConfigEntry,

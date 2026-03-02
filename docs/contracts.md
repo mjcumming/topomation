@@ -178,3 +178,31 @@ Additional save points:
   (for example `climate`, `vacuum`, `cover`).
 - The explicit **Add Source** picker remains broader for edge cases and may include generic `switch.*`
   entities so users can opt into uncommon/manual workflows without cluttering core discovery.
+
+## C-013 Linked Rooms + Advanced Adjacency Contract
+
+- Detection supports directional linked-room contributors via occupancy config key
+  `linked_locations: string[]`.
+- Semantics are directional:
+  - If location `A` config includes `linked_locations: ["B"]`, occupancy of `B`
+    contributes to `A`.
+  - Reverse behavior requires separate config on `B`.
+- Linked-room scope is strict:
+  - target location must be an `area` directly under a `floor`
+  - contributors must be immediate sibling `area` locations under that same floor
+  - `building`, `grounds`, `floor`, and `subarea` nodes are excluded from linked-room
+    target/candidate roles.
+- Runtime propagation uses source-scoped occupancy contributions:
+  - occupied on source -> `occupancy.trigger(target, source_id="linked:<source>", timeout=0)`
+  - vacant on source -> `occupancy.clear(target, source_id="linked:<source>", trailing_timeout=0)`
+- Reciprocal links must not self-latch:
+  - runtime must suppress feedback when a source location is currently occupied
+    by the target's linked contribution (`linked:<target>`).
+- Adjacency handoff controls are non-primary UX:
+  - Detection renders `Adjacent Locations` and `Handoff Trace` behind an explicit
+    advanced disclosure toggle.
+- Advanced adjacency neighbor picker scope is intentionally narrow:
+  - candidates must be room-level (`area`/`subarea`) locations
+  - candidates must share the same `parent_id` as the selected location
+  - non-room topology nodes (for example `floor`, `building`, `grounds`) are
+    excluded from the picker.
