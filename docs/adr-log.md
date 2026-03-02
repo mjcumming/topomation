@@ -1875,6 +1875,94 @@ need for graph tuning. For common open-plan homes, users primarily need simple
 
 ---
 
+### ADR-HA-046: Dev-Container HA Commands Must Target Local Runtime Explicitly (2026-03-02)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+
+`tests/ha-config.env` supports multiple environments (dev/prod/local). In
+dev-container workflows, Topomation policy requires process-managed local HA
+validation only. Using generic `HA_URL`/`HA_TOKEN` without explicit local
+binding can accidentally target a remote node for restart or release-gate
+operations.
+
+**Decision**:
+
+1. In dev-container runbooks, commands that restart HA, probe API health, or run
+   live contract tests must bind explicitly to local aliases:
+   - `HA_URL_LOCAL`
+   - `HA_TOKEN_LOCAL`
+2. For release gate commands in dev-container workflows, pass explicit local dev
+   overrides:
+   - `HA_URL_DEV="$HA_URL_LOCAL" HA_TOKEN_DEV="$HA_TOKEN_LOCAL" make test-release-live`
+3. Keep production validation opt-in and explicit:
+   - `HA_TARGET=prod ...`
+4. Update operational docs in the same change when this prerequisite is
+   discovered or corrected.
+
+**Rationale**:
+
+1. Prevents accidental remote environment mutation from local development loops.
+2. Keeps runbook behavior deterministic and reproducible across contributors and
+   agents.
+3. Aligns with existing policy: no remote probing/control in dev-container
+   workflows unless explicitly requested.
+
+**Consequences**:
+
+- ✅ Local restart/release commands are safer and unambiguous.
+- ✅ Release-gate runs match the intended in-container HA runtime.
+- ⚠️ Commands become slightly more verbose due to explicit env binding.
+- ℹ️ Production checks remain available through explicit `HA_TARGET=prod` flows.
+
+---
+
+### ADR-HA-047: Linked Rooms Adds Batch Editing + Optional Reciprocal Toggle (2026-03-02)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+
+ADR-HA-045 introduced directional linked rooms and required reverse setup from
+the other location page. In real use, operators frequently tune multiple room
+contributors in one pass and need fast reciprocal setup for paired rooms
+(kitchen <-> family room) without repeated page switching. The first linked-room
+UI iteration also temporarily locked editing during each save, creating avoidable
+friction. This ADR refines ADR-HA-045 item 3 without changing the directional
+runtime model.
+
+**Decision**:
+
+1. Keep directional linked-room semantics as the default behavior.
+2. Allow queued batch editing in the linked-room checklist:
+   - contributor checkboxes remain interactive while saves persist.
+3. Add an optional per-row `2-way` checkbox:
+   - enabled only when the forward contributor link is checked
+   - when enabled, also write reverse `linked_locations` on the contributor.
+4. Disabling `2-way` only removes the reverse direction, preserving forward
+   direction unless user also unchecks the contributor row.
+5. Clarify timeout metadata fallback copy:
+   - when no vacancy timeout is scheduled, render `Vacant at No timeout scheduled`
+     (not `Unknown`).
+
+**Rationale**:
+
+1. Preserves explicit directional intent while reducing setup steps for common
+   reciprocal pairs.
+2. Eliminates one-at-a-time interaction bottlenecks for practical tuning flows.
+3. Keeps reciprocal behavior opt-in, avoiding accidental global mirroring.
+4. Improves operator trust by replacing ambiguous status wording.
+
+**Consequences**:
+
+- ✅ Linked-room configuration is faster and less error-prone for open-plan homes.
+- ✅ Reciprocal links are available from a single page when desired.
+- ✅ Directional model and source-scoped runtime propagation remain unchanged.
+- ⚠️ Enabling `2-way` triggers additional config writes (both locations).
+
+---
+
 ## How to Use This Log
 
 ### When to Create an ADR

@@ -57,6 +57,10 @@ gate now fails fast when it is missing.
 `HA_URL_DEV` / `HA_TOKEN_DEV` (localhost). Production testing is optional and
 can be done separately by setting `HA_TARGET=prod` before running.
 
+If your `tests/ha-config.env` keeps a remote default in `HA_URL`, explicitly
+override `HA_URL_DEV` / `HA_TOKEN_DEV` to local values for dev-container release
+work.
+
 ```bash
 cp tests/ha-config.env.template tests/ha-config.env
 # Edit tests/ha-config.env:
@@ -64,7 +68,10 @@ cp tests/ha-config.env.template tests/ha-config.env
 #   HA_URL_PROD, HA_TOKEN_PROD (production - optional)
 chmod 600 tests/ha-config.env
 
-# Release gate always uses dev
+# Release gate always uses dev (pin to local aliases in dev-container workflows)
+source tests/ha-config.env
+HA_URL_DEV="${HA_URL_LOCAL:-http://localhost:8123}" \
+HA_TOKEN_DEV="${HA_TOKEN_LOCAL:-$HA_TOKEN_DEV}" \
 make test-release-live
 
 # Optional: test against production

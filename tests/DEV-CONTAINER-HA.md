@@ -55,6 +55,8 @@ hass -c /workspaces/core/config --debug
 
 ```bash
 source /workspaces/topomation/tests/ha-config.env
+HA_URL="${HA_URL_LOCAL:-http://localhost:8123}"
+HA_TOKEN="${HA_TOKEN_LOCAL:-$HA_TOKEN}"
 curl -X POST -H "Authorization: Bearer $HA_TOKEN" \
   "$HA_URL/api/services/homeassistant/restart"
 ```
@@ -67,6 +69,8 @@ curl -I http://localhost:8123/
 
 # Authenticated API health (requires HA_TOKEN)
 source /workspaces/topomation/tests/ha-config.env
+HA_URL="${HA_URL_LOCAL:-http://localhost:8123}"
+HA_TOKEN="${HA_TOKEN_LOCAL:-$HA_TOKEN}"
 curl -H "Authorization: Bearer $HA_TOKEN" "$HA_URL/api/"
 ```
 
@@ -93,8 +97,11 @@ cp tests/ha-config.env.template tests/ha-config.env
 Set values in `tests/ha-config.env`:
 
 ```bash
-HA_URL="http://localhost:8123"
-HA_TOKEN="your_long_lived_access_token_here"
+HA_URL_LOCAL="http://localhost:8123"
+HA_TOKEN_LOCAL="your_long_lived_access_token_here"
+HA_URL_DEV="${HA_URL_LOCAL}"
+HA_TOKEN_DEV="${HA_TOKEN_LOCAL}"
+HA_TARGET="dev"
 TEST_MODE="live"
 TEST_TIMEOUT=10
 ```
@@ -103,6 +110,9 @@ Then run live tests:
 
 ```bash
 make test-live
+
+# Release gate against local in-container HA
+HA_URL_DEV="$HA_URL_LOCAL" HA_TOKEN_DEV="$HA_TOKEN_LOCAL" make test-release-live
 ```
 
 For direct `pytest` runs, export env vars from `tests/ha-config.env` first
@@ -112,6 +122,8 @@ or live tests will skip as `TEST_MODE=mock`:
 set -a
 source /workspaces/topomation/tests/ha-config.env
 set +a
+export HA_URL="${HA_URL_LOCAL:-http://localhost:8123}"
+export HA_TOKEN="${HA_TOKEN_LOCAL:-$HA_TOKEN}"
 pytest /workspaces/topomation/tests/test-live-managed-actions-contract.py -v --live-ha --no-cov
 ```
 
@@ -120,6 +132,9 @@ pytest /workspaces/topomation/tests/test-live-managed-actions-contract.py -v --l
 - This runbook assumes a containerized workspace with process-managed HA (`hass`), not Docker lifecycle control.
 - Runtime files under `/workspaces/core/config/` are your normal dev state.
 - Runtime files under `tests/test-ha-config/` are isolated test state.
+- If `tests/ha-config.env` contains remote defaults, always set `HA_URL`/`HA_TOKEN`
+  from `HA_URL_LOCAL`/`HA_TOKEN_LOCAL` (or pass `HA_URL_DEV`/`HA_TOKEN_DEV` inline)
+  when running this dev-container workflow.
 
 ## Daily Change Workflow (Backend + Frontend + Live HA)
 

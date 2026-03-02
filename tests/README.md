@@ -110,13 +110,17 @@ make test-live
 
 # Managed action contract only (real HA automation API path)
 source tests/ha-config.env
+HA_URL="${HA_URL_LOCAL:-http://localhost:8123}" \
+HA_TOKEN="${HA_TOKEN_LOCAL:-$HA_TOKEN}" \
 pytest tests/test-live-managed-actions-contract.py -v --live-ha --no-cov
 
 # Release gate (local matrix + real HA contract)
-make test-release-live
+HA_URL_DEV="$HA_URL_LOCAL" HA_TOKEN_DEV="$HA_TOKEN_LOCAL" make test-release-live
 
 # Or pytest directly
 source tests/ha-config.env
+HA_URL="${HA_URL_LOCAL:-http://localhost:8123}" \
+HA_TOKEN="${HA_TOKEN_LOCAL:-$HA_TOKEN}" \
 pytest tests/test-realworld.py -v --live-ha
 ```
 

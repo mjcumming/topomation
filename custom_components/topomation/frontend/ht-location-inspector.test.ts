@@ -1375,7 +1375,141 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(optionLabels).to.deep.equal(["Hallway"]);
   });
 
-  it("updates directional linked room contributors", async () => {
+  it("supports multi-select linked room contributors without locking editing", async () => {
+    const callWsRequests: Array<Record<string, any>> = [];
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>) => {
+        callWsRequests.push(request);
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        if (request.type === "topomation/locations/set_module_config") {
+          await new Promise((resolve) => setTimeout(resolve, 40));
+          return { success: true } as T;
+        }
+        return {} as T;
+      },
+      connection: {},
+      states: {},
+      areas: {},
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_kitchen";
+    location.name = "Kitchen";
+    location.parent_id = "floor_main";
+    location.modules._meta = { type: "area" };
+    location.modules.occupancy = {
+      enabled: true,
+      default_timeout: 300,
+      default_trailing_timeout: 120,
+      occupancy_sources: [],
+      linked_locations: [],
+    };
+
+    const allLocations: Location[] = [
+      location,
+      {
+        ...structuredClone(baseLocation),
+        id: "area_family_room",
+        name: "Family Room",
+        parent_id: "floor_main",
+        modules: {
+          _meta: { type: "area" },
+          occupancy: {
+            enabled: true,
+            default_timeout: 300,
+            default_trailing_timeout: 120,
+            occupancy_sources: [],
+            linked_locations: [],
+          },
+        },
+      },
+      {
+        ...structuredClone(baseLocation),
+        id: "area_dining_room",
+        name: "Dining Room",
+        parent_id: "floor_main",
+        modules: { _meta: { type: "area" } },
+      },
+      {
+        ...structuredClone(baseLocation),
+        id: "floor_main",
+        name: "Main Floor",
+        parent_id: "building_main",
+        modules: { _meta: { type: "floor" } },
+      },
+      {
+        ...structuredClone(baseLocation),
+        id: "building_main",
+        name: "Main Building",
+        parent_id: null,
+        modules: { _meta: { type: "building" } },
+      },
+    ];
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${location}
+        .allLocations=${allLocations}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    const familyCheckbox = element.shadowRoot!.querySelector(
+      '[data-testid="linked-location-area_family_room"]'
+    ) as HTMLInputElement;
+    const diningCheckbox = element.shadowRoot!.querySelector(
+      '[data-testid="linked-location-area_dining_room"]'
+    ) as HTMLInputElement;
+    expect(familyCheckbox).to.exist;
+    expect(diningCheckbox).to.exist;
+    expect(familyCheckbox.checked).to.equal(false);
+    expect(diningCheckbox.checked).to.equal(false);
+
+    familyCheckbox.click();
+    await element.updateComplete;
+    expect(familyCheckbox.disabled).to.equal(false);
+    expect(diningCheckbox.disabled).to.equal(false);
+
+    diningCheckbox.click();
+    await element.updateComplete;
+    familyCheckbox.click();
+    await element.updateComplete;
+
+    await waitUntil(() => {
+      const requests = callWsRequests.filter(
+        (item) => item.type === "topomation/locations/set_module_config" && item.location_id === "area_kitchen"
+      );
+      return requests.length >= 3;
+    }, "linked room update requests not observed");
+
+    const requests = callWsRequests.filter(
+      (item) => item.type === "topomation/locations/set_module_config" && item.location_id === "area_kitchen"
+    );
+    expect(requests.some((item) => item.config?.linked_locations?.includes("area_family_room"))).to.equal(true);
+    expect(
+      requests.some(
+        (item) =>
+          Array.isArray(item.config?.linked_locations) &&
+          item.config.linked_locations.includes("area_family_room") &&
+          item.config.linked_locations.includes("area_dining_room") &&
+          item.config.linked_locations.length === 2
+      )
+    ).to.equal(true);
+    expect(
+      requests.some(
+        (item) =>
+          Array.isArray(item.config?.linked_locations) &&
+          item.config.linked_locations.length === 1 &&
+          item.config.linked_locations[0] === "area_dining_room"
+      )
+    ).to.equal(true);
+  });
+
+  it("supports optional two-way linked room toggles", async () => {
     const callWsRequests: Array<Record<string, any>> = [];
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>) => {
@@ -1414,7 +1548,16 @@ describe("HtLocationInspector occupancy source composer", () => {
         id: "area_family_room",
         name: "Family Room",
         parent_id: "floor_main",
-        modules: { _meta: { type: "area" } },
+        modules: {
+          _meta: { type: "area" },
+          occupancy: {
+            enabled: true,
+            default_timeout: 300,
+            default_trailing_timeout: 120,
+            occupancy_sources: [],
+            linked_locations: [],
+          },
+        },
       },
       {
         ...structuredClone(baseLocation),
@@ -1444,40 +1587,52 @@ describe("HtLocationInspector occupancy source composer", () => {
     const linkedCheckbox = element.shadowRoot!.querySelector(
       '[data-testid="linked-location-area_family_room"]'
     ) as HTMLInputElement;
+    const twoWayCheckbox = element.shadowRoot!.querySelector(
+      '[data-testid="linked-location-two-way-area_family_room"]'
+    ) as HTMLInputElement;
     expect(linkedCheckbox).to.exist;
-    expect(linkedCheckbox.checked).to.equal(false);
+    expect(twoWayCheckbox).to.exist;
+    expect(twoWayCheckbox.disabled).to.equal(true);
+
     linkedCheckbox.click();
     await element.updateComplete;
 
     await waitUntil(() => {
-      const request = callWsRequests.find(
+      return callWsRequests.some(
         (item) =>
           item.type === "topomation/locations/set_module_config" &&
+          item.location_id === "area_kitchen" &&
           Array.isArray(item.config?.linked_locations) &&
           item.config.linked_locations.includes("area_family_room")
       );
-      return !!request;
-    }, "linked room add request not observed");
+    }, "forward linked room add request not observed");
 
-    const addRequest = callWsRequests.find(
-      (item) =>
-        item.type === "topomation/locations/set_module_config" &&
-        Array.isArray(item.config?.linked_locations) &&
-        item.config.linked_locations.includes("area_family_room")
-    );
-    expect(addRequest?.location_id).to.equal("area_kitchen");
-    expect(addRequest?.module_id).to.equal("occupancy");
-
-    await waitUntil(() => !linkedCheckbox.disabled, "linked checkbox remained disabled after save");
-    linkedCheckbox.click();
+    expect(twoWayCheckbox.disabled).to.equal(false);
+    twoWayCheckbox.click();
     await element.updateComplete;
 
     await waitUntil(() => {
-      const removeRequest = callWsRequests
-        .filter((item) => item.type === "topomation/locations/set_module_config")
-        .find((item) => Array.isArray(item.config?.linked_locations) && item.config.linked_locations.length === 0);
-      return !!removeRequest;
-    }, "linked room remove request not observed");
+      return callWsRequests.some(
+        (item) =>
+          item.type === "topomation/locations/set_module_config" &&
+          item.location_id === "area_family_room" &&
+          Array.isArray(item.config?.linked_locations) &&
+          item.config.linked_locations.includes("area_kitchen")
+      );
+    }, "reverse linked room add request not observed");
+
+    twoWayCheckbox.click();
+    await element.updateComplete;
+
+    await waitUntil(() => {
+      return callWsRequests.some(
+        (item) =>
+          item.type === "topomation/locations/set_module_config" &&
+          item.location_id === "area_family_room" &&
+          Array.isArray(item.config?.linked_locations) &&
+          !item.config.linked_locations.includes("area_kitchen")
+      );
+    }, "reverse linked room remove request not observed");
   });
 
   it("does not offer linked room checkboxes for non-area floor-rooted locations", async () => {
@@ -1804,7 +1959,7 @@ describe("HtLocationInspector occupancy source composer", () => {
     const beforeText = (
       element.shadowRoot!.querySelector('[data-testid="header-vacant-at"]')?.textContent || ""
     ).trim();
-    expect(beforeText).to.equal("Vacant at Unknown");
+    expect(beforeText).to.equal("Vacant at No timeout scheduled");
 
     stateChangedHandler!({
       data: {

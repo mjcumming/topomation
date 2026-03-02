@@ -11,6 +11,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _No unreleased changes yet._
 
+## [0.2.18] - 2026-03-02
+
+### Added
+
+- Linked Rooms now includes an optional per-contributor `2-way` toggle so users
+  can enable/disable reciprocal links from one page when needed.
+- Added ADR-HA-047 documenting linked-room batch editing, optional reciprocal
+  toggle behavior, and explicit `Vacant at` timeout fallback copy.
+
+### Changed
+
+- Linked Rooms contributor selection now supports queued batch edits without
+  locking all checkboxes between saves, so users can select/update multiple
+  rooms in one pass.
+- Dev-container operational runbooks now explicitly bind restart/live-gate
+  commands to local `HA_URL_LOCAL`/`HA_TOKEN_LOCAL` aliases (ADR-HA-046).
+
+### Fixed
+
+- Occupancy header/runtime timeout copy now renders `Vacant at No timeout
+  scheduled` when timeout metadata is absent, avoiding ambiguous `Unknown`
+  status text.
+
 ## [0.2.17] - 2026-03-02
 
 ### Added

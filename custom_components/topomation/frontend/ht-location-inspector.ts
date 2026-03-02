@@ -108,6 +108,7 @@ export class HtLocationInspector extends LitElement {
   @state() private _actionServiceSelections: Record<string, string> = {};
   @state() private _actionDarkSelections: Record<string, boolean> = {};
   @state() private _savingLinkedLocations = false;
+  @state() private _stagedLinkedLocations?: string[];
   @state() private _showAdvancedAdjacency = false;
   @state() private _adjacencyNeighborId = "";
   @state() private _adjacencyBoundaryType = "door";
@@ -129,6 +130,8 @@ export class HtLocationInspector extends LitElement {
   private _sourcePersistTimer?: number;
   private _sourcePersistInFlight = false;
   private _sourcePersistQueued = false;
+  private _linkedPersistChain: Promise<void> = Promise.resolve();
+  private _linkedPersistQueueDepth = 0;
 
   static styles = [
     sharedStyles,
@@ -816,8 +819,20 @@ export class HtLocationInspector extends LitElement {
         padding: 8px 10px;
         display: flex;
         align-items: center;
-        gap: 10px;
+        justify-content: space-between;
+        gap: 12px;
         background: rgba(var(--rgb-primary-color), 0.02);
+      }
+
+      .linked-location-left,
+      .linked-location-right {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .linked-location-left {
+        min-width: 0;
       }
 
       .linked-location-row input[type="checkbox"] {
@@ -827,6 +842,13 @@ export class HtLocationInspector extends LitElement {
       .linked-location-name {
         font-size: 13px;
         font-weight: 600;
+      }
+
+      .linked-location-two-way-label {
+        font-size: 12px;
+        color: var(--text-secondary-color);
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
       }
 
       .linked-location-meta {
@@ -1431,6 +1453,7 @@ export class HtLocationInspector extends LitElement {
       const nextId = this.location?.id || "";
       if (prevId !== nextId) {
         this._resetSourceDraftState();
+        this._stagedLinkedLocations = undefined;
         this._externalAreaId = "";
         this._externalEntityId = "";
         this._wiabShowAllEntities = false;
@@ -1563,13 +1586,7 @@ export class HtLocationInspector extends LitElement {
       occupiedState === true ? "Occupied" : occupiedState === false ? "Vacant" : "Unknown";
     const vacancyReason = this._resolveVacancyReason(occupancyState, occupiedState);
     const vacantAt = occupancyState ? this._resolveVacantAt(occupancyState.attributes || {}, occupied) : undefined;
-    const vacantAtLabel = occupied
-      ? vacantAt instanceof Date
-        ? this._formatDateTime(vacantAt)
-        : vacantAt === null
-          ? "No timeout scheduled"
-          : "Unknown"
-      : undefined;
+    const vacantAtLabel = occupied ? this._formatVacantAtLabel(vacantAt) : undefined;
 
     return html`
       <div class="header">
@@ -1889,14 +1906,12 @@ export class HtLocationInspector extends LitElement {
       .sort((left, right) => left.name.localeCompare(right.name));
   }
 
-  private _linkedLocationIds(config: OccupancyConfig): string[] {
-    const raw = config.linked_locations;
-    if (!Array.isArray(raw) || !this.location) {
-      return [];
-    }
-
-    const allowedCandidates = new Set(this._linkedLocationCandidates().map((candidate) => candidate.id));
-    if (allowedCandidates.size === 0) {
+  private _normalizeLinkedLocationIds(
+    raw: unknown,
+    allowedCandidates?: Set<string>,
+    excludedLocationId?: string
+  ): string[] {
+    if (!Array.isArray(raw)) {
       return [];
     }
 
@@ -1905,26 +1920,91 @@ export class HtLocationInspector extends LitElement {
     for (const item of raw) {
       if (typeof item !== "string") continue;
       const locationId = item.trim();
-      if (
-        !locationId ||
-        locationId === this.location.id ||
-        seen.has(locationId) ||
-        !allowedCandidates.has(locationId)
-      ) {
-        continue;
-      }
+      if (!locationId || seen.has(locationId)) continue;
+      if (excludedLocationId && locationId === excludedLocationId) continue;
+      if (allowedCandidates && !allowedCandidates.has(locationId)) continue;
       seen.add(locationId);
       linked.push(locationId);
     }
     return linked;
   }
 
-  private async _toggleLinkedLocation(
-    config: OccupancyConfig,
-    linkedLocationId: string,
-    enabled: boolean
-  ): Promise<void> {
-    if (this._savingLinkedLocations) return;
+  private _linkedLocationIds(config: OccupancyConfig): string[] {
+    if (!this.location) {
+      return [];
+    }
+
+    const allowedCandidates = new Set(this._linkedLocationCandidates().map((candidate) => candidate.id));
+    if (allowedCandidates.size === 0) {
+      return [];
+    }
+
+    const raw = this._stagedLinkedLocations ?? config.linked_locations;
+    return this._normalizeLinkedLocationIds(raw, allowedCandidates, this.location.id);
+  }
+
+  private _linkedLocationArraysEqual(left: string[] | undefined, right: string[]): boolean {
+    if (!left || left.length !== right.length) return false;
+    return left.every((locationId, index) => locationId === right[index]);
+  }
+
+  private _candidateLinkedLocationIds(candidate: Location): string[] {
+    const raw = ((candidate.modules?.occupancy || {}) as OccupancyConfig).linked_locations;
+    return this._normalizeLinkedLocationIds(raw, undefined, candidate.id);
+  }
+
+  private _isTwoWayLinked(candidate: Location, linkedSet: Set<string>): boolean {
+    if (!this.location) return false;
+    if (!linkedSet.has(candidate.id)) return false;
+    return this._candidateLinkedLocationIds(candidate).includes(this.location.id);
+  }
+
+  private _persistLinkedLocationsFor(location: Location, linkedLocationIds: string[]): Promise<void> {
+    const occupancy = ((location.modules?.occupancy || {}) as OccupancyConfig) || {};
+    const nextConfig: OccupancyConfig = {
+      ...occupancy,
+      linked_locations: linkedLocationIds,
+    };
+
+    return this.hass
+      .callWS(
+        this._withEntryId({
+          type: "topomation/locations/set_module_config",
+          location_id: location.id,
+          module_id: "occupancy",
+          config: nextConfig,
+        })
+      )
+      .then(() => {
+        location.modules = location.modules || {};
+        location.modules.occupancy = nextConfig;
+        this.requestUpdate();
+      });
+  }
+
+  private _enqueueLinkedPersist(operation: () => Promise<void>): void {
+    this._linkedPersistQueueDepth += 1;
+    this._savingLinkedLocations = true;
+    this._linkedPersistChain = this._linkedPersistChain
+      .then(operation)
+      .catch((err: any) => {
+        const message = err?.message || "Failed to save linked rooms";
+        console.error("Failed to persist linked room update", err);
+        this._showToast(message, "error");
+      })
+      .finally(() => {
+        this._linkedPersistQueueDepth = Math.max(0, this._linkedPersistQueueDepth - 1);
+        if (this._linkedPersistQueueDepth === 0) {
+          this._savingLinkedLocations = false;
+        }
+      });
+  }
+
+  private _toggleLinkedLocation(linkedLocationId: string, enabled: boolean): void {
+    if (!this.location) return;
+    const sourceLocation = this.location;
+    const sourceLocationId = sourceLocation.id;
+    const config = this._getOccupancyConfig();
 
     const next = new Set(this._linkedLocationIds(config));
     if (enabled) {
@@ -1937,16 +2017,63 @@ export class HtLocationInspector extends LitElement {
       this._locationName(left).localeCompare(this._locationName(right))
     );
 
-    this._savingLinkedLocations = true;
-    try {
-      await this._updateConfig({
-        ...config,
-        linked_locations: nextLinked,
-      });
+    this._stagedLinkedLocations = nextLinked;
+    this._enqueueLinkedPersist(async () => {
+      await this._persistLinkedLocationsFor(sourceLocation, nextLinked);
+      if (
+        this.location?.id === sourceLocationId &&
+        this._linkedLocationArraysEqual(this._stagedLinkedLocations, nextLinked)
+      ) {
+        this._stagedLinkedLocations = undefined;
+      }
       this._showToast("Linked rooms updated", "success");
-    } finally {
-      this._savingLinkedLocations = false;
+    });
+  }
+
+  private _toggleTwoWayLinkedLocation(candidate: Location, enabled: boolean): void {
+    if (!this.location) return;
+    const sourceLocation = this.location;
+    const sourceLocationId = sourceLocation.id;
+    const sourceConfig = this._getOccupancyConfig();
+    const sourceLinkedSet = new Set(this._linkedLocationIds(sourceConfig));
+
+    let nextSourceLinked: string[] | undefined;
+    if (enabled && !sourceLinkedSet.has(candidate.id)) {
+      sourceLinkedSet.add(candidate.id);
+      nextSourceLinked = [...sourceLinkedSet].sort((left, right) =>
+        this._locationName(left).localeCompare(this._locationName(right))
+      );
+      this._stagedLinkedLocations = nextSourceLinked;
     }
+
+    const candidateLinked = new Set(this._candidateLinkedLocationIds(candidate));
+    if (enabled) {
+      candidateLinked.add(sourceLocationId);
+    } else {
+      candidateLinked.delete(sourceLocationId);
+    }
+    const nextCandidateLinked = [...candidateLinked].sort((left, right) =>
+      this._locationName(left).localeCompare(this._locationName(right))
+    );
+
+    this._enqueueLinkedPersist(async () => {
+      if (nextSourceLinked) {
+        await this._persistLinkedLocationsFor(sourceLocation, nextSourceLinked);
+        if (
+          this.location?.id === sourceLocationId &&
+          this._linkedLocationArraysEqual(this._stagedLinkedLocations, nextSourceLinked)
+        ) {
+          this._stagedLinkedLocations = undefined;
+        }
+      }
+      await this._persistLinkedLocationsFor(candidate, nextCandidateLinked);
+      this._showToast(
+        enabled
+          ? `Enabled two-way link with ${candidate.name}`
+          : `Disabled two-way link with ${candidate.name}`,
+        "success"
+      );
+    });
   }
 
   private _renderLinkedLocationsSection(config: OccupancyConfig) {
@@ -1990,20 +2117,35 @@ export class HtLocationInspector extends LitElement {
               <div class="linked-location-list">
                 ${candidates.map((candidate) => {
                   const checked = linkedSet.has(candidate.id);
+                  const twoWayChecked = this._isTwoWayLinked(candidate, linkedSet);
                   return html`
-                    <label class="linked-location-row">
-                      <input
-                        type="checkbox"
-                        data-testid=${`linked-location-${candidate.id}`}
-                        .checked=${checked}
-                        ?disabled=${this._savingLinkedLocations}
-                        @change=${(event: Event) => {
-                          const target = event.target as HTMLInputElement;
-                          void this._toggleLinkedLocation(config, candidate.id, target.checked);
-                        }}
-                      />
-                      <span class="linked-location-name">${candidate.name}</span>
-                    </label>
+                    <div class="linked-location-row">
+                      <label class="linked-location-left">
+                        <input
+                          type="checkbox"
+                          data-testid=${`linked-location-${candidate.id}`}
+                          .checked=${checked}
+                          @change=${(event: Event) => {
+                            const target = event.target as HTMLInputElement;
+                            this._toggleLinkedLocation(candidate.id, target.checked);
+                          }}
+                        />
+                        <span class="linked-location-name">${candidate.name}</span>
+                      </label>
+                      <label class="linked-location-right">
+                        <input
+                          type="checkbox"
+                          data-testid=${`linked-location-two-way-${candidate.id}`}
+                          .checked=${twoWayChecked}
+                          ?disabled=${!checked}
+                          @change=${(event: Event) => {
+                            const target = event.target as HTMLInputElement;
+                            this._toggleTwoWayLinkedLocation(candidate, target.checked);
+                          }}
+                        />
+                        <span class="linked-location-two-way-label">2-way</span>
+                      </label>
+                    </div>
                   `;
                 })}
               </div>
@@ -2424,13 +2566,7 @@ export class HtLocationInspector extends LitElement {
     const vacantAt = this._resolveVacantAt(attrs, occupied);
     const occupancyLabel =
       occupiedState === true ? "Occupied" : occupiedState === false ? "Vacant" : "Unknown";
-    const vacantAtLabel = occupied
-      ? vacantAt instanceof Date
-        ? this._formatDateTime(vacantAt)
-        : vacantAt === null
-          ? "No timeout scheduled"
-          : "Unknown"
-      : "-";
+    const vacantAtLabel = occupied ? this._formatVacantAtLabel(vacantAt) : "-";
 
     return html`
       <div class="runtime-summary">
@@ -4890,6 +5026,14 @@ export class HtLocationInspector extends LitElement {
       return null;
     }
     return latestExpiry;
+  }
+
+  private _formatVacantAtLabel(vacantAt: Date | null | undefined): string {
+    if (vacantAt instanceof Date) {
+      return this._formatDateTime(vacantAt);
+    }
+    // Treat missing/unparseable timeout metadata as unscheduled, never "Unknown".
+    return "No timeout scheduled";
   }
 
   private _resolveVacancyReason(

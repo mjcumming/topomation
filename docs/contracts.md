@@ -186,7 +186,16 @@ Additional save points:
 - Semantics are directional:
   - If location `A` config includes `linked_locations: ["B"]`, occupancy of `B`
     contributes to `A`.
-  - Reverse behavior requires separate config on `B`.
+  - Checking a contributor row updates only that forward direction by default.
+- Linked-room editing must support multi-select sequencing:
+  - contributor checkboxes remain interactive while persistence is in flight
+  - persistence can queue sequential updates without forcing a full control lock.
+- Detection provides an optional reciprocal assist:
+  - each checked contributor row exposes a `2-way` toggle
+  - enabling `2-way` also writes reverse config on contributor location `B` to
+    include `A` in `B.linked_locations`
+  - disabling `2-way` removes only the reverse direction from `B` and keeps
+    the forward direction from `A` unless user unchecks the contributor row.
 - Linked-room scope is strict:
   - target location must be an `area` directly under a `floor`
   - contributors must be immediate sibling `area` locations under that same floor

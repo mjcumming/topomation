@@ -108,7 +108,10 @@ For open-plan spaces and shared activity zones, you can now configure
 - Links are directional per location.
 - If `Family Room` is linked on the `Kitchen` page, Family Room contributes to
   Kitchen occupancy.
-- Reverse behavior is configured independently on the other location page.
+- You can select multiple contributors in one pass; selections remain editable
+  while saves are queued.
+- Reverse behavior stays explicit. A per-row optional `2-way` checkbox can
+  also write the reverse link for convenience.
 - Linked Rooms is intentionally scoped to room-level topology:
   - only `area` locations directly under a `floor` can configure linked rooms
   - only immediate sibling `area` locations under that same floor are valid contributors.

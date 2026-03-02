@@ -55,7 +55,12 @@ cd /workspaces/topomation
 set -a
 source tests/ha-config.env
 set +a
+HA_URL="${HA_URL_LOCAL:-http://localhost:8123}" \
+HA_TOKEN="${HA_TOKEN_LOCAL:-$HA_TOKEN}" \
 pytest tests/test-live-managed-actions-contract.py -v --live-ha
+
+# Release gate (comprehensive + real HA contract) pinned to local HA runtime
+HA_URL_DEV="$HA_URL_LOCAL" HA_TOKEN_DEV="$HA_TOKEN_LOCAL" make test-release-live
 ```
 
 - Dependency release workflow (version pin + smoke validation):
@@ -79,7 +84,17 @@ pytest tests/test-live-managed-actions-contract.py -v --live-ha
 hass -c /workspaces/core/config --debug
 ```
 
-- Restart HA: stop the running `hass` process and run the same command again, or use the HA API restart endpoint with `tests/ha-config.env`.
+- Restart HA: stop the running `hass` process and run the same command again, or
+  use the HA API restart endpoint with explicit local aliases from
+  `tests/ha-config.env`:
+
+```bash
+source /workspaces/topomation/tests/ha-config.env
+HA_URL="${HA_URL_LOCAL:-http://localhost:8123}"
+HA_TOKEN="${HA_TOKEN_LOCAL:-$HA_TOKEN}"
+curl -X POST -H "Authorization: Bearer $HA_TOKEN" \
+  "$HA_URL/api/services/homeassistant/restart"
+```
 
 ## 6) Change-routing rules
 
