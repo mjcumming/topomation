@@ -1572,7 +1572,7 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(optionValues).to.not.include("__all__");
 
     const panelText = element.shadowRoot?.textContent || "";
-    expect(panelText).to.include("Only sibling areas on this floor can be selected.");
+    expect(panelText).to.include("Only sibling areas on this floor are available.");
   });
 
   it("supports multi-select linked room contributors without locking editing", async () => {

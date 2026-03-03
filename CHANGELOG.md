@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.20] - 2026-03-03
+
+### Fixed
+
+- Improved location inspector source controls with clearer section separation and updated copy.
+- Expanded tree drag-and-drop child drop target to reduce accidental sibling drops.
+
 ## [0.2.19] - 2026-03-03
 
 ### Added

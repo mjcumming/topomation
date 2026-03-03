@@ -892,11 +892,17 @@ describe('HtLocationTree - shouldUpdate Performance', () => {
     expect(result.parentId).to.equal('building');
   });
 
-  it('zoneFromPointerInRow returns before/inside/after by Y third', () => {
+  it('zoneFromPointerInRow returns before/inside/after by edge and middle bands', () => {
     const row = new DOMRect(0, 0, 100, 30);
     expect(__TEST__.zoneFromPointerInRow(row, 50, 5, false)).to.equal('before');
     expect(__TEST__.zoneFromPointerInRow(row, 50, 15, false)).to.equal('inside');
     expect(__TEST__.zoneFromPointerInRow(row, 50, 25, false)).to.equal('after');
+  });
+
+  it('zoneFromPointerInRow keeps a wider inside zone for easier child drops', () => {
+    const row = new DOMRect(0, 0, 100, 30);
+    expect(__TEST__.zoneFromPointerInRow(row, 50, 7, false)).to.equal('inside');
+    expect(__TEST__.zoneFromPointerInRow(row, 50, 23, false)).to.equal('inside');
   });
 
   it('zoneFromPointerInRow returns outdent when over current parent left strip', () => {

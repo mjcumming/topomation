@@ -14,6 +14,8 @@ export interface FlatTreeNode {
 }
 
 const OUTDENT_STRIP_WIDTH_PX = 24;
+const TOP_BOTTOM_DROP_BAND_RATIO = 0.18;
+const MIN_TOP_BOTTOM_DROP_BAND_PX = 6;
 
 function collectSubtreeIds(flatNodes: FlatTreeNode[], rootId: string): Set<string> {
   const ids = new Set<string>([rootId]);
@@ -108,10 +110,14 @@ export function zoneFromPointerInRow(
     if (clientX >= leftEdge && clientX < leftEdge + OUTDENT_STRIP_WIDTH_PX) return "outdent";
   }
   const relY = clientY - rowRect.top;
-  const h = rowRect.height;
-  if (relY < h * 0.25) return "before";
-  if (relY < h * 0.75) return "inside";
-  return "after";
+  const h = Math.max(rowRect.height, 1);
+  const edgeBand = Math.min(
+    h / 3,
+    Math.max(MIN_TOP_BOTTOM_DROP_BAND_PX, h * TOP_BOTTOM_DROP_BAND_RATIO)
+  );
+  if (relY < edgeBand) return "before";
+  if (relY >= h - edgeBand) return "after";
+  return "inside";
 }
 
 export function resolveDropTargetFromZone(

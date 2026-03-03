@@ -1224,6 +1224,21 @@ export class HtLocationInspector extends LitElement {
         max-width: 820px;
       }
 
+      .external-source-section {
+        margin-top: var(--spacing-md);
+        padding-top: var(--spacing-md);
+        border-top: 1px solid var(--divider-color);
+        max-width: 820px;
+      }
+
+      .external-source-section .subsection-title {
+        margin-bottom: 4px;
+      }
+
+      .external-source-section .subsection-help {
+        margin-bottom: 10px;
+      }
+
       .external-composer {
         display: grid;
         grid-template-columns: minmax(180px, 240px) minmax(220px, 1fr) auto;
@@ -1861,8 +1876,8 @@ export class HtLocationInspector extends LitElement {
             <div class="section-title">Sources</div>
             <div class="sources-inline-help">
               ${hasHaAreaLink
-                ? "Select sources from this area."
-                : "Integration-owned location: add sources from Home Assistant entities."}
+                ? "Select sensors in this area."
+                : "Integration-owned location: choose sources from Home Assistant entities."}
             </div>
           </div>
           ${hasHaAreaLink
@@ -1873,14 +1888,17 @@ export class HtLocationInspector extends LitElement {
                 </div>
               `}
           ${this._renderAreaSensorList(config)}
-          <div class="subsection-help">
-            ${hasHaAreaLink
-              ? siblingAreaSourceScope
-                ? "Need cross-area behavior? Add a source from a sibling area on this floor."
-                : "Need cross-area behavior? Add a source from another area."
-              : "Add sources from any HA area (or unassigned entities)."}
+          <div class="external-source-section">
+            <div class="subsection-title">Add Source</div>
+            <div class="subsection-help">
+              ${hasHaAreaLink
+                ? siblingAreaSourceScope
+                  ? "Need cross-area coverage? Add a source from a sibling area on this floor."
+                  : "Need cross-area coverage? Add a source from another area."
+                : "Add a source from any HA area (including unassigned entities)."}
+            </div>
+            ${this._renderExternalSourceComposer(config)}
           </div>
-          ${this._renderExternalSourceComposer(config)}
         </div>
         ${this._renderSyncLocationsSection(config)}
         ${this._renderWiabSection(config)}
@@ -3492,7 +3510,7 @@ export class HtLocationInspector extends LitElement {
     return html`
       <div class="external-composer">
         ${siblingAreaSourceScope
-          ? html`<div class="runtime-note">Only sibling areas on this floor can be selected.</div>`
+          ? html`<div class="runtime-note">Only sibling areas on this floor are available.</div>`
           : ""}
         ${siblingAreaSourceScope && areas.length === 0
           ? html`
