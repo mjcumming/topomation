@@ -1052,7 +1052,7 @@ describe('TopomationPanel integration (fake hass)', () => {
     expect(updatedStatus).to.equal("Occupied");
   });
 
-  it("shows vacancy reason in inspector header from topomation_occupancy_changed events", async () => {
+  it("exposes vacancy reason as status detail from topomation_occupancy_changed events", async () => {
     let occupancyChangedHandler: ((event: any) => void) | undefined;
 
     const hass: HomeAssistant = {
@@ -1121,22 +1121,21 @@ describe('TopomationPanel integration (fake hass)', () => {
 
     await waitUntil(() => {
       const inspector = element.shadowRoot!.querySelector("ht-location-inspector") as any;
-      const reason = (
-        inspector?.shadowRoot?.querySelector('[data-testid="header-vacancy-reason"]')?.textContent || ""
-      ).trim();
-      return reason === "Vacated by timeout";
-    }, "vacancy reason did not render");
+      const statusChip = inspector?.shadowRoot?.querySelector(
+        '[data-testid="header-occupancy-status"]'
+      ) as HTMLElement | null;
+      return (statusChip?.getAttribute("title") || "").trim() === "Vacated by timeout";
+    }, "vacancy reason detail did not update");
 
     const inspector = element.shadowRoot!.querySelector("ht-location-inspector") as any;
-    const occupancyStatus = (
-      inspector.shadowRoot?.querySelector('[data-testid="header-occupancy-status"]')?.textContent || ""
-    ).trim();
-    const vacancyReason = (
-      inspector.shadowRoot?.querySelector('[data-testid="header-vacancy-reason"]')?.textContent || ""
-    ).trim();
+    const occupancyStatusChip = inspector.shadowRoot?.querySelector(
+      '[data-testid="header-occupancy-status"]'
+    ) as HTMLElement | null;
+    const occupancyStatus = (occupancyStatusChip?.textContent || "").trim();
+    const vacancyReasonDetail = (occupancyStatusChip?.getAttribute("title") || "").trim();
 
     expect(occupancyStatus).to.equal("Vacant");
-    expect(vacancyReason).to.equal("Vacated by timeout");
+    expect(vacancyReasonDetail).to.equal("Vacated by timeout");
   });
 
   it("renders grouped device assignment list with unassigned and location buckets", async () => {

@@ -4,6 +4,8 @@ import { live } from "lit/directives/live.js";
 import { repeat } from "lit/directives/repeat.js";
 import type {
   AdjacencyEdge,
+  AmbientConfig,
+  AmbientLightReading,
   AutomationConfig,
   HandoffTrace,
   HomeAssistant,
@@ -33,7 +35,7 @@ type SourceSignalKey = OccupancySource["signal_key"];
 type CandidateItem = { key: string; entityId: string; signalKey?: SourceSignalKey };
 type WiabEntityListKey = "interior_entities" | "door_entities" | "exterior_door_entities";
 type ActionDeviceType = "light" | "dimmer" | "color_light" | "fan" | "stereo" | "tv";
-type InspectorTab = "detection" | "occupied_actions" | "vacant_actions";
+type InspectorTab = "detection" | "ambient" | "occupied_actions" | "vacant_actions";
 type InspectorTabRequest = InspectorTab | "occupancy" | "actions";
 type OccupancyLockDirective = {
   sourceId: string;
@@ -128,9 +130,15 @@ export class HtLocationInspector extends LitElement {
   @state() private _wiabDoorEntityId = "";
   @state() private _wiabExteriorDoorEntityId = "";
   @state() private _wiabShowAllEntities = false;
+  @state() private _ambientReading?: AmbientLightReading;
+  @state() private _loadingAmbientReading = false;
+  @state() private _ambientReadingError?: string;
+  @state() private _savingAmbientConfig = false;
   private _onTimeoutMemory: Record<string, number> = {};
   private _entityAreaLoadPromise?: Promise<void>;
   private _actionRulesLoadSeq = 0;
+  private _ambientReadingLoadSeq = 0;
+  private _ambientReadingReloadTimer?: number;
   private _clockTimer?: number;
   private _unsubAutomationStateChanged?: () => void;
   private _actionRulesReloadTimer?: number;
@@ -208,14 +216,30 @@ export class HtLocationInspector extends LitElement {
         color: var(--text-secondary-color);
       }
 
-      .header-vacancy-reason {
+      .header-ambient {
         font-size: 12px;
         color: var(--text-secondary-color);
+        font-family: var(--code-font-family, monospace);
       }
 
-      .header-occupied-reason {
-        font-size: 12px;
-        color: var(--success-color);
+      .ambient-grid {
+        display: grid;
+        grid-template-columns: minmax(150px, 220px) 1fr;
+        gap: 8px 12px;
+        margin-bottom: var(--spacing-md);
+      }
+
+      .ambient-key {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--text-secondary-color);
+        font-weight: 700;
+      }
+
+      .ambient-value {
+        font-size: 13px;
+        color: var(--primary-text-color);
       }
 
       .occupancy-events {
@@ -1512,18 +1536,26 @@ export class HtLocationInspector extends LitElement {
       const prevId = prev?.id || "";
       const nextId = this.location?.id || "";
       if (prevId !== nextId) {
+        if (this._ambientReadingReloadTimer) {
+          window.clearTimeout(this._ambientReadingReloadTimer);
+          this._ambientReadingReloadTimer = undefined;
+        }
         this._resetSourceDraftState();
         this._stagedLinkedLocations = undefined;
         this._externalAreaId = "";
         this._externalEntityId = "";
         this._wiabShowAllEntities = false;
         this._showAdvancedAdjacency = false;
+        this._showRecentOccupancyEvents = false;
         this._onTimeoutMemory = {};
         this._actionToggleBusy = {};
         this._actionServiceSelections = {};
+        this._ambientReading = undefined;
+        this._ambientReadingError = undefined;
         if (this.hass) {
           void this._loadEntityAreaAssignments();
         }
+        void this._loadAmbientReading();
       }
       void this._loadActionRules();
     }
@@ -1533,6 +1565,7 @@ export class HtLocationInspector extends LitElement {
       const nextEntryId = this.entryId || "";
       if (prevEntryId !== nextEntryId) {
         void this._loadActionRules();
+        void this._loadAmbientReading();
       }
     }
 
@@ -1572,6 +1605,171 @@ export class HtLocationInspector extends LitElement {
         this.requestUpdate();
       }
     }
+  }
+
+  private _ambientDefaults(): AmbientConfig {
+    return {
+      version: 1,
+      lux_sensor: null,
+      auto_discover: false,
+      inherit_from_parent: true,
+      dark_threshold: 50,
+      bright_threshold: 500,
+      fallback_to_sun: true,
+      assume_dark_on_error: true,
+    };
+  }
+
+  private _getAmbientConfig(): AmbientConfig {
+    const raw = ((this.location?.modules?.ambient || {}) as AmbientConfig) || {};
+    const defaults = this._ambientDefaults();
+    return {
+      ...defaults,
+      ...raw,
+      auto_discover: false,
+      dark_threshold: Number.isFinite(Number(raw.dark_threshold))
+        ? Number(raw.dark_threshold)
+        : defaults.dark_threshold,
+      bright_threshold: Number.isFinite(Number(raw.bright_threshold))
+        ? Number(raw.bright_threshold)
+        : defaults.bright_threshold,
+    };
+  }
+
+  private async _updateAmbientConfig(config: AmbientConfig): Promise<void> {
+    this._savingAmbientConfig = true;
+    try {
+      const sanitized: AmbientConfig = {
+        ...this._ambientDefaults(),
+        ...config,
+        auto_discover: false,
+        dark_threshold: Math.max(0, Number(config.dark_threshold) || 0),
+        bright_threshold: Math.max(
+          Math.max(1, Number(config.dark_threshold) || 0) + 1,
+          Number(config.bright_threshold) || 0
+        ),
+      };
+      await this._updateModuleConfig("ambient", sanitized);
+      await this._loadAmbientReading();
+      this._showToast("Ambient settings updated", "success");
+    } catch (err: any) {
+      console.error("Failed to update ambient settings", err);
+      this._showToast(err?.message || "Failed to update ambient settings", "error");
+    } finally {
+      this._savingAmbientConfig = false;
+    }
+  }
+
+  private async _loadAmbientReading(): Promise<void> {
+    const loadSeq = ++this._ambientReadingLoadSeq;
+    if (!this.location || !this.hass) {
+      this._ambientReading = undefined;
+      this._ambientReadingError = undefined;
+      this._loadingAmbientReading = false;
+      return;
+    }
+
+    this._loadingAmbientReading = true;
+    this._ambientReadingError = undefined;
+    this.requestUpdate();
+
+    try {
+      const config = this._getAmbientConfig();
+      const reading = await this.hass.callWS<AmbientLightReading>(
+        this._withEntryId({
+          type: "topomation/ambient/get_reading",
+          location_id: this.location.id,
+          dark_threshold: config.dark_threshold,
+          bright_threshold: config.bright_threshold,
+        })
+      );
+      if (loadSeq !== this._ambientReadingLoadSeq) return;
+      this._ambientReading = reading;
+      this._ambientReadingError = undefined;
+    } catch (err: any) {
+      if (loadSeq !== this._ambientReadingLoadSeq) return;
+      this._ambientReading = undefined;
+      this._ambientReadingError = err?.message || "Failed to load ambient reading";
+    } finally {
+      if (loadSeq === this._ambientReadingLoadSeq) {
+        this._loadingAmbientReading = false;
+        this.requestUpdate();
+      }
+    }
+  }
+
+  private _ambientSourceMethod(reading?: AmbientLightReading): string {
+    if (!reading) return "unknown";
+    if (reading.source_sensor) return reading.is_inherited ? "inherited_sensor" : "sensor";
+    const fallback = String(reading.fallback_method || "").trim().toLowerCase();
+    if (!fallback) return "unknown";
+    if (fallback.includes("sun")) return "sun_fallback";
+    if (fallback === "assume_dark") return "assume_dark";
+    if (fallback === "assume_bright") return "assume_bright";
+    return fallback;
+  }
+
+  private _ambientSourceMethodLabel(sourceMethod: string): string {
+    if (sourceMethod === "sensor") return "Sensor";
+    if (sourceMethod === "inherited_sensor") return "Inherited sensor";
+    if (sourceMethod === "sun_fallback") return "Sun fallback";
+    if (sourceMethod === "assume_dark") return "Assume dark";
+    if (sourceMethod === "assume_bright") return "Assume bright";
+    return "Unknown";
+  }
+
+  private _formatAmbientLux(reading?: AmbientLightReading): string {
+    const rawLux = reading?.lux;
+    if (typeof rawLux !== "number" || Number.isNaN(rawLux)) return "n/a";
+    return `${rawLux.toFixed(1)} lx`;
+  }
+
+  private _ambientSensorCandidates(): string[] {
+    if (!this.location) return [];
+    const candidateIds = new Set<string>();
+    const config = this._getAmbientConfig();
+    if (typeof config.lux_sensor === "string" && config.lux_sensor.trim()) {
+      candidateIds.add(config.lux_sensor.trim());
+    }
+
+    for (const entityId of this.location.entity_ids || []) {
+      if (this._isLuxSensorEntity(entityId)) {
+        candidateIds.add(entityId);
+      }
+    }
+
+    if (this.location.ha_area_id) {
+      const states = this.hass?.states || {};
+      for (const entityId of Object.keys(states)) {
+        const registryAreaId = this._entityAreaById[entityId];
+        const areaId = registryAreaId !== undefined ? registryAreaId : states[entityId]?.attributes?.area_id;
+        if (areaId !== this.location.ha_area_id) continue;
+        if (!this._isLuxSensorEntity(entityId)) continue;
+        candidateIds.add(entityId);
+      }
+    }
+
+    return [...candidateIds].sort((left, right) => this._entityName(left).localeCompare(this._entityName(right)));
+  }
+
+  private _isLuxSensorEntity(entityId: string): boolean {
+    const stateObj = this.hass?.states?.[entityId];
+    return this._isLuxSensorEntityForState(entityId, stateObj);
+  }
+
+  private _isLuxSensorEntityForState(entityId: string, stateObj: any): boolean {
+    if (!stateObj) return false;
+    if (!entityId.startsWith("sensor.")) return false;
+
+    const attrs = stateObj.attributes || {};
+    const deviceClass = String(attrs.device_class || "").toLowerCase();
+    if (deviceClass === "illuminance") return true;
+
+    const unit = String(attrs.unit_of_measurement || "").toLowerCase();
+    if (unit === "lx" || unit === "lux") return true;
+
+    const normalized = entityId.toLowerCase();
+    return normalized.includes("lux") || normalized.includes("illuminance") || normalized.includes("light_level");
   }
 
   private async _loadEntityAreaAssignments(): Promise<void> {
@@ -1646,8 +1844,16 @@ export class HtLocationInspector extends LitElement {
       occupiedState === true ? "Occupied" : occupiedState === false ? "Vacant" : "Unknown";
     const vacancyReason = this._resolveVacancyReason(occupancyState, occupiedState);
     const occupiedReason = this._resolveOccupiedReason(occupancyState, occupiedState);
+    const occupancyStatusDetail = occupied ? occupiedReason : vacancyReason;
     const vacantAt = occupancyState ? this._resolveVacantAt(occupancyState.attributes || {}, occupied) : undefined;
     const vacantAtLabel = occupied ? this._formatVacantAtLabel(vacantAt) : undefined;
+    const ambientSourceMethod = this._ambientSourceMethod(this._ambientReading);
+    const ambientSourceHint = ambientSourceMethod === "inherited_sensor" ? " (inherited)" : "";
+    const ambientLuxHeader = this._loadingAmbientReading
+      ? "Ambient: loading..."
+      : this._ambientReadingError
+        ? "Ambient: unavailable"
+        : `Ambient: ${this._formatAmbientLux(this._ambientReading)}${ambientSourceHint}`;
 
     return html`
       <div class="header">
@@ -1661,6 +1867,7 @@ export class HtLocationInspector extends LitElement {
               <span
                 class="status-chip ${occupied ? "occupied" : "vacant"}"
                 data-testid="header-occupancy-status"
+                .title=${occupancyStatusDetail || ""}
               >
                 ${occupancyLabel}
               </span>
@@ -1670,24 +1877,13 @@ export class HtLocationInspector extends LitElement {
               >
                 ${lockState.isLocked ? "Locked" : "Unlocked"}
               </span>
+              <span class="header-ambient" data-testid="header-ambient-lux">
+                ${ambientLuxHeader}
+              </span>
               ${occupied
                 ? html`
                     <span class="header-vacant-at" data-testid="header-vacant-at">
                       Vacant at ${vacantAtLabel}
-                    </span>
-                  `
-                : ""}
-              ${occupied && occupiedReason
-                ? html`
-                    <span class="header-occupied-reason" data-testid="header-occupied-reason">
-                      Occupied: ${occupiedReason}
-                    </span>
-                  `
-                : ""}
-              ${!occupied && vacancyReason
-                ? html`
-                    <span class="header-vacancy-reason" data-testid="header-vacancy-reason">
-                      ${vacancyReason}
                     </span>
                   `
                 : ""}
@@ -1725,6 +1921,15 @@ export class HtLocationInspector extends LitElement {
           Detection
         </button>
         <button
+          class="tab ${this._activeTab === "ambient" ? "active" : ""}"
+          @click=${() => {
+            this._activeTab = "ambient";
+            this.requestUpdate();
+          }}
+        >
+          Ambient
+        </button>
+        <button
           class="tab ${this._activeTab === "occupied_actions" ? "active" : ""}"
           @click=${() => {
             this._activeTab = "occupied_actions";
@@ -1752,7 +1957,9 @@ export class HtLocationInspector extends LitElement {
       <div class="tab-content">
         ${activeTab === "detection"
           ? this._renderOccupancyTab()
-          : this._renderActionsTab(activeTab === "occupied_actions" ? "occupied" : "vacant")}
+          : activeTab === "ambient"
+            ? this._renderAmbientTab()
+            : this._renderActionsTab(activeTab === "occupied_actions" ? "occupied" : "vacant")}
       </div>
     `;
   }
@@ -1763,6 +1970,7 @@ export class HtLocationInspector extends LitElement {
 
   private _mapRequestedTab(requested?: InspectorTabRequest): InspectorTab | undefined {
     if (requested === "detection") return "detection";
+    if (requested === "ambient") return "ambient";
     if (requested === "occupied_actions") return "occupied_actions";
     if (requested === "vacant_actions") return "vacant_actions";
     if (requested === "occupancy") return "detection";
@@ -1780,6 +1988,10 @@ export class HtLocationInspector extends LitElement {
     super.disconnectedCallback();
     this._stopClockTicker();
     this._resetSourceDraftState();
+    if (this._ambientReadingReloadTimer) {
+      window.clearTimeout(this._ambientReadingReloadTimer);
+      this._ambientReadingReloadTimer = undefined;
+    }
     if (this._actionRulesReloadTimer) {
       window.clearTimeout(this._actionRulesReloadTimer);
       this._actionRulesReloadTimer = undefined;
@@ -1798,6 +2010,18 @@ export class HtLocationInspector extends LitElement {
     this._actionRulesReloadTimer = window.setTimeout(() => {
       this._actionRulesReloadTimer = undefined;
       void this._loadActionRules();
+    }, delayMs);
+  }
+
+  private _scheduleAmbientReadingReload(delayMs = 300): void {
+    if (!this.location || !this.hass) return;
+    if (this._ambientReadingReloadTimer) {
+      window.clearTimeout(this._ambientReadingReloadTimer);
+      this._ambientReadingReloadTimer = undefined;
+    }
+    this._ambientReadingReloadTimer = window.setTimeout(() => {
+      this._ambientReadingReloadTimer = undefined;
+      void this._loadAmbientReading();
     }, delayMs);
   }
 
@@ -1841,6 +2065,13 @@ export class HtLocationInspector extends LitElement {
             }
           }
 
+          if (
+            typeof entityId === "string" &&
+            this._isAmbientStateChangeRelevant(entityId, newStateObj, oldStateObj)
+          ) {
+            this._scheduleAmbientReadingReload();
+          }
+
           if (typeof entityId !== "string" || !entityId.startsWith("automation.")) {
             return;
           }
@@ -1865,6 +2096,9 @@ export class HtLocationInspector extends LitElement {
     const floorSourceCount = (config.occupancy_sources || []).length;
     const lockState = this._getLockState();
     const occupancyActivity = this._occupancyContributions(config);
+    const occupancyEventsToRender = this._showRecentOccupancyEvents
+      ? occupancyActivity
+      : occupancyActivity.slice(0, 1);
 
     if (isFloor) {
       return html`
@@ -1948,8 +2182,10 @@ export class HtLocationInspector extends LitElement {
                             class="button button-secondary"
                             type="button"
                             style="padding: 2px 8px; font-size: 11px;"
+                            data-testid="recent-events-toggle"
                             @click=${() => {
                               this._showRecentOccupancyEvents = !this._showRecentOccupancyEvents;
+                              this.requestUpdate();
                             }}
                           >
                             ${this._showRecentOccupancyEvents ? "Show less" : "Show all"}
@@ -1958,9 +2194,7 @@ export class HtLocationInspector extends LitElement {
                       : ""}
                   </div>
                   <div class="occupancy-events">
-                    ${occupancyActivity
-                      .slice(0, this._showRecentOccupancyEvents ? occupancyActivity.length : 1)
-                      .map(
+                    ${occupancyEventsToRender.map(
                       (item) => html`
                         <div class="occupancy-event">
                           <span class="occupancy-event-source">${item.sourceLabel}</span>
@@ -1997,6 +2231,240 @@ export class HtLocationInspector extends LitElement {
         ${this._renderWiabSection(config)}
         ${this._renderAdjacencyAdvancedSection(config)}
         ${this._isManagedShadowHost() ? this._renderManagedShadowAreaSection() : ""}
+      </div>
+    `;
+  }
+
+  private _renderAmbientTab() {
+    if (!this.location) return "";
+    return html`
+      <div>${this._renderAmbientSection()}</div>
+    `;
+  }
+
+  private _isAmbientStateChangeRelevant(entityId: string, newStateObj: any, oldStateObj: any): boolean {
+    if (!this.location) return false;
+
+    const config = this._getAmbientConfig();
+    const activeSourceSensor = String(this._ambientReading?.source_sensor || "").trim();
+    const configuredLuxSensor = String(config.lux_sensor || "").trim();
+    const fallbackMethod = String(this._ambientReading?.fallback_method || "").toLowerCase();
+    const tracksSun = Boolean(config.fallback_to_sun) || fallbackMethod.includes("sun");
+
+    if (entityId === "sun.sun" && tracksSun) return true;
+    if (!entityId.startsWith("sensor.")) return false;
+
+    const candidateState = newStateObj || oldStateObj || this.hass?.states?.[entityId];
+    if (!this._isLuxSensorEntityForState(entityId, candidateState)) return false;
+
+    if (entityId === activeSourceSensor || entityId === configuredLuxSensor) return true;
+    if ((this.location.entity_ids || []).includes(entityId)) return true;
+
+    if (this.location.ha_area_id) {
+      const registryAreaId = this._entityAreaById[entityId];
+      const stateAreaId = candidateState?.attributes?.area_id;
+      const resolvedAreaId =
+        registryAreaId !== undefined ? registryAreaId : typeof stateAreaId === "string" ? stateAreaId : null;
+      if (resolvedAreaId === this.location.ha_area_id) return true;
+    }
+
+    return false;
+  }
+
+  private _renderAmbientSection() {
+    if (!this.location) return "";
+    const config = this._getAmbientConfig();
+    const reading = this._ambientReading;
+    const candidates = this._ambientSensorCandidates();
+    const sourceMethod = this._ambientSourceMethod(reading);
+    const sourceMethodLabel = this._ambientSourceMethodLabel(sourceMethod);
+    const sourceSensor = reading?.source_sensor || "-";
+    const sourceLocation =
+      typeof reading?.source_location === "string" && reading.source_location
+        ? this._locationName(reading.source_location)
+        : "-";
+    const isDarkLabel =
+      typeof reading?.is_dark === "boolean" ? (reading.is_dark ? "Yes" : "No") : "-";
+    const isBrightLabel =
+      typeof reading?.is_bright === "boolean" ? (reading.is_bright ? "Yes" : "No") : "-";
+    const darkThreshold = Math.max(0, Number(config.dark_threshold) || 0);
+    const brightThreshold = Math.max(darkThreshold + 1, Number(config.bright_threshold) || darkThreshold + 1);
+    const selectedLuxSensor =
+      typeof config.lux_sensor === "string" && config.lux_sensor.trim() ? config.lux_sensor.trim() : "";
+    const busy = this._savingAmbientConfig;
+
+    return html`
+      <div class="card-section" data-testid="ambient-section">
+        <div class="section-title">
+          <ha-icon .icon=${"mdi:weather-sunny"}></ha-icon>
+          Ambient
+        </div>
+
+        ${this._ambientReadingError
+          ? html`
+              <div class="policy-warning" data-testid="ambient-error">${this._ambientReadingError}</div>
+            `
+          : ""}
+
+        <div class="ambient-grid">
+          <div class="ambient-key">Lux level</div>
+          <div class="ambient-value" data-testid="ambient-lux-level">${this._formatAmbientLux(reading)}</div>
+          <div class="ambient-key">Is dark</div>
+          <div class="ambient-value" data-testid="ambient-is-dark">${isDarkLabel}</div>
+          <div class="ambient-key">Is bright</div>
+          <div class="ambient-value" data-testid="ambient-is-bright">${isBrightLabel}</div>
+          <div class="ambient-key">Source method</div>
+          <div class="ambient-value" data-testid="ambient-source-method">${sourceMethodLabel}</div>
+          <div class="ambient-key">Source sensor</div>
+          <div class="ambient-value" data-testid="ambient-source-sensor">${sourceSensor}</div>
+          <div class="ambient-key">Source location</div>
+          <div class="ambient-value" data-testid="ambient-source-location">${sourceLocation}</div>
+        </div>
+
+        <div class="policy-note" style="margin-bottom: 8px;">
+          Lux sensor assignment is explicit. Set a location sensor or inherit from parent.
+        </div>
+
+        <div class="config-row">
+          <div>
+            <div class="config-label">Lux sensor</div>
+            <div class="config-help">Choose a mapped illuminance sensor for this location.</div>
+          </div>
+          <div class="config-value">
+            <select
+              .value=${selectedLuxSensor}
+              ?disabled=${busy}
+              data-testid="ambient-lux-sensor-select"
+              @change=${(ev: Event) => {
+                const value = (ev.target as HTMLSelectElement).value.trim();
+                void this._updateAmbientConfig({
+                  ...config,
+                  lux_sensor: value || null,
+                });
+              }}
+            >
+              <option value="">Use inherited/default sensor</option>
+              ${candidates.map((entityId) => html`<option value=${entityId}>${this._entityName(entityId)}</option>`)}
+            </select>
+          </div>
+        </div>
+
+        <div class="config-row">
+          <div>
+            <div class="config-label">Inherit from parent</div>
+            <div class="config-help">Use ancestor ambient sensor if this location has no direct sensor.</div>
+          </div>
+          <div class="config-value">
+            <input
+              type="checkbox"
+              class="switch-input"
+              .checked=${Boolean(config.inherit_from_parent)}
+              ?disabled=${busy}
+              data-testid="ambient-inherit-toggle"
+              @change=${(ev: Event) =>
+                void this._updateAmbientConfig({
+                  ...config,
+                  inherit_from_parent: (ev.target as HTMLInputElement).checked,
+                })}
+            />
+          </div>
+        </div>
+
+        <div class="config-row">
+          <div>
+            <div class="config-label">Dark threshold (lux)</div>
+            <div class="config-help">Dark when lux is below this value.</div>
+          </div>
+          <div class="config-value">
+            <input
+              type="number"
+              min="0"
+              step="1"
+              class="input"
+              .value=${String(darkThreshold)}
+              ?disabled=${busy}
+              data-testid="ambient-dark-threshold"
+              @change=${(ev: Event) => {
+                const nextDark = Math.max(0, Number((ev.target as HTMLInputElement).value) || 0);
+                void this._updateAmbientConfig({
+                  ...config,
+                  dark_threshold: nextDark,
+                  bright_threshold: Math.max(nextDark + 1, Number(config.bright_threshold) || nextDark + 1),
+                });
+              }}
+            />
+          </div>
+        </div>
+
+        <div class="config-row">
+          <div>
+            <div class="config-label">Bright threshold (lux)</div>
+            <div class="config-help">Bright when lux is above this value.</div>
+          </div>
+          <div class="config-value">
+            <input
+              type="number"
+              min=${String(darkThreshold + 1)}
+              step="1"
+              class="input"
+              .value=${String(brightThreshold)}
+              ?disabled=${busy}
+              data-testid="ambient-bright-threshold"
+              @change=${(ev: Event) => {
+                const nextBright = Math.max(
+                  darkThreshold + 1,
+                  Number((ev.target as HTMLInputElement).value) || darkThreshold + 1
+                );
+                void this._updateAmbientConfig({
+                  ...config,
+                  bright_threshold: nextBright,
+                });
+              }}
+            />
+          </div>
+        </div>
+
+        <div class="config-row">
+          <div>
+            <div class="config-label">Fallback to sun</div>
+            <div class="config-help">Use sunrise/sunset state when no lux sensor reading is available.</div>
+          </div>
+          <div class="config-value">
+            <input
+              type="checkbox"
+              class="switch-input"
+              .checked=${Boolean(config.fallback_to_sun)}
+              ?disabled=${busy}
+              data-testid="ambient-fallback-to-sun-toggle"
+              @change=${(ev: Event) =>
+                void this._updateAmbientConfig({
+                  ...config,
+                  fallback_to_sun: (ev.target as HTMLInputElement).checked,
+                })}
+            />
+          </div>
+        </div>
+
+        <div class="config-row">
+          <div>
+            <div class="config-label">Assume dark on error</div>
+            <div class="config-help">When fallback to sun is disabled, treat unavailable readings as dark.</div>
+          </div>
+          <div class="config-value">
+            <input
+              type="checkbox"
+              class="switch-input"
+              .checked=${Boolean(config.assume_dark_on_error)}
+              ?disabled=${busy}
+              data-testid="ambient-assume-dark-on-error-toggle"
+              @change=${(ev: Event) =>
+                void this._updateAmbientConfig({
+                  ...config,
+                  assume_dark_on_error: (ev.target as HTMLInputElement).checked,
+                })}
+            />
+          </div>
+        </div>
       </div>
     `;
   }

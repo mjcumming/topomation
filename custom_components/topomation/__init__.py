@@ -624,8 +624,18 @@ def _setup_default_configs(loc_mgr: LocationManager, modules: dict[str, Any]) ->
     """Set up default module configurations for all locations."""
     for location in loc_mgr.all_locations():
         for module_id, module in modules.items():
-            # Skip if config already exists
             existing = loc_mgr.get_module_config(location.id, module_id)
+            if isinstance(existing, dict):
+                if module_id == "ambient" and existing.get("auto_discover") is not False:
+                    loc_mgr.set_module_config(
+                        location_id=location.id,
+                        module_id=module_id,
+                        config={
+                            **existing,
+                            "auto_discover": False,
+                        },
+                    )
+                continue
             if existing:
                 continue
 
@@ -636,6 +646,8 @@ def _setup_default_configs(loc_mgr: LocationManager, modules: dict[str, Any]) ->
                 default_config.setdefault(AUTOMATION_REAPPLY_CONFIG_KEY, False)
             if module_id == "occupancy":
                 default_config.setdefault(_OCCUPANCY_LINKED_LOCATIONS_KEY, [])
+            if module_id == "ambient":
+                default_config["auto_discover"] = False
 
             # Store in LocationManager
             loc_mgr.set_module_config(

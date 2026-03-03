@@ -107,6 +107,29 @@ export interface AutomationConfig extends ModuleConfig {
   reapply_last_state_on_startup?: boolean;
 }
 
+export interface AmbientConfig extends ModuleConfig {
+  lux_sensor?: string | null;
+  auto_discover?: boolean;
+  inherit_from_parent?: boolean;
+  dark_threshold?: number;
+  bright_threshold?: number;
+  fallback_to_sun?: boolean;
+  assume_dark_on_error?: boolean;
+}
+
+export interface AmbientLightReading {
+  lux?: number | null;
+  source_sensor?: string | null;
+  source_location?: string | null;
+  is_inherited?: boolean;
+  is_dark?: boolean;
+  is_bright?: boolean;
+  dark_threshold?: number;
+  bright_threshold?: number;
+  fallback_method?: string | null;
+  timestamp?: string;
+}
+
 export interface OccupancySource {
   entity_id: string;
   source_id?: string;

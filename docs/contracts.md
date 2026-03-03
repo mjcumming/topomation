@@ -269,3 +269,23 @@ Additional save points:
   - managed shadow nodes are explicit/tagged (`System Area`)
   - tree-level hiding/filtering is optional presentation behavior only; it must
     not change assignment semantics.
+
+## C-015 Ambient Read + Assignment Contract
+
+- Ambient lux sensor assignment is explicit in Topomation v1:
+  - users map/select a lux sensor per location when needed
+  - no ambient auto-discovery workflow is used in v1 panel behavior.
+- Ambient module configs must persist with `auto_discover: false` in integration defaults.
+- Ambient source priority:
+  1. assigned location lux sensor
+  2. inherited ancestor lux sensor (when enabled)
+  3. sun fallback (`sun.sun`) when lux input is unavailable and fallback is enabled
+- Inspector header must expose ambient status at-a-glance:
+  - show effective lux level on the top card
+  - indicate inherited source state when applicable.
+- Inspector Detection view must expose ambient diagnostics/config:
+  - current lux, `is_dark`, `is_bright`, source sensor/location, source method
+  - explicit lux sensor selector
+  - inherit toggle
+  - dark/bright threshold controls
+  - fallback-to-sun and assume-dark-on-error toggles.

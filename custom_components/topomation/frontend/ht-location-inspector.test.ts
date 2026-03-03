@@ -1009,7 +1009,7 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(optionValues).to.not.include("binary_sensor.mudroom_occupancy");
   });
 
-  it("renders Detection/On Occupied/On Vacant tabs", async () => {
+  it("renders Detection/Ambient/On Occupied/On Vacant tabs", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>() => [] as T,
       connection: {},
@@ -1033,6 +1033,7 @@ describe("HtLocationInspector occupancy source composer", () => {
       .filter(Boolean);
 
     expect(tabLabels).to.include("Detection");
+    expect(tabLabels).to.include("Ambient");
     expect(tabLabels).to.include("On Occupied");
     expect(tabLabels).to.include("On Vacant");
   });
@@ -1179,7 +1180,7 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(lockDirectiveText).to.include("Subtree");
   });
 
-  it("renders vacancy reason in header when vacancy reason is available", async () => {
+  it("keeps vacancy reason out of the header status row", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>) => {
         if (request.type === "config/entity_registry/list") return [] as T;
@@ -1216,14 +1217,10 @@ describe("HtLocationInspector occupancy source composer", () => {
     `);
     await element.updateComplete;
 
-    const vacancyReasonText = (
-      element.shadowRoot!.querySelector('[data-testid="header-vacancy-reason"]')?.textContent || ""
-    ).trim();
-
-    expect(vacancyReasonText).to.equal("Vacated by timeout");
+    expect(element.shadowRoot!.querySelector('[data-testid="header-vacancy-reason"]')).to.not.exist;
   });
 
-  it("uses event-driven vacancy reason when occupancy state has not refreshed yet", async () => {
+  it("shows vacant status while suppressing event-driven reason text in the header", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>) => {
         if (request.type === "config/entity_registry/list") return [] as T;
@@ -1272,12 +1269,8 @@ describe("HtLocationInspector occupancy source composer", () => {
     const occupancyStatusText = (
       element.shadowRoot!.querySelector('[data-testid="header-occupancy-status"]')?.textContent || ""
     ).trim();
-    const vacancyReasonText = (
-      element.shadowRoot!.querySelector('[data-testid="header-vacancy-reason"]')?.textContent || ""
-    ).trim();
-
     expect(occupancyStatusText).to.equal("Vacant");
-    expect(vacancyReasonText).to.equal("Vacated by clear event");
+    expect(element.shadowRoot!.querySelector('[data-testid="header-vacancy-reason"]')).to.not.exist;
   });
 
   it("creates adjacency edges from inspector controls", async () => {
@@ -4293,6 +4286,319 @@ describe("HtLocationInspector WIAB configuration", () => {
             request.config.wiab.door_entities.includes("binary_sensor.front_door")
         ),
       "WIAB door entity change was not persisted"
+    );
+  });
+
+  it("shows ambient lux in the header card and ambient section", async () => {
+    const callWsRequests: Array<Record<string, any>> = [];
+    let ambientReadingCalls = 0;
+    let stateChangedHandler: ((event: any) => void) | undefined;
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>): Promise<T> => {
+        callWsRequests.push(request);
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        if (request.type === "topomation/ambient/get_reading") {
+          ambientReadingCalls += 1;
+          return {
+            lux: ambientReadingCalls >= 2 ? 18 : 22.5,
+            source_sensor: "sensor.roof_lux",
+            source_location: "building_home",
+            is_inherited: true,
+            is_dark: true,
+            is_bright: false,
+            dark_threshold: 50,
+            bright_threshold: 500,
+            fallback_method: null,
+            timestamp: new Date().toISOString(),
+          } as T;
+        }
+        return {} as T;
+      },
+      connection: {
+        subscribeEvents: async (callback: (event: any) => void, eventType: string) => {
+          if (eventType === "state_changed") {
+            stateChangedHandler = callback;
+          }
+          return () => {
+            stateChangedHandler = undefined;
+          };
+        },
+      },
+      states: {
+        "sensor.roof_lux": {
+          entity_id: "sensor.roof_lux",
+          state: "22.5",
+          attributes: {
+            friendly_name: "Roof Lux",
+            device_class: "illuminance",
+            unit_of_measurement: "lx",
+          },
+        },
+      },
+      areas: {
+        kitchen: { area_id: "kitchen", name: "Kitchen" },
+      },
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_kitchen";
+    location.name = "Kitchen";
+    location.ha_area_id = "kitchen";
+    location.modules._meta = { type: "area" };
+    location.modules.ambient = {
+      lux_sensor: null,
+      auto_discover: false,
+      inherit_from_parent: true,
+      dark_threshold: 50,
+      bright_threshold: 500,
+      fallback_to_sun: true,
+      assume_dark_on_error: true,
+    };
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector .hass=${hass} .location=${location}></ht-location-inspector>
+    `);
+
+    await waitUntil(
+      () =>
+        (element.shadowRoot?.querySelector('[data-testid="header-ambient-lux"]')?.textContent || "").includes(
+          "22.5 lx"
+        ),
+      "ambient header lux did not render"
+    );
+
+    const headerAmbientText =
+      element.shadowRoot?.querySelector('[data-testid="header-ambient-lux"]')?.textContent || "";
+    expect(headerAmbientText).to.include("Ambient: 22.5 lx");
+    expect(headerAmbientText).to.include("(inherited)");
+
+    const ambientTab = Array.from(element.shadowRoot?.querySelectorAll(".tab") || []).find((tab) =>
+      (tab.textContent || "").includes("Ambient")
+    ) as HTMLButtonElement | undefined;
+    ambientTab?.click();
+    await element.updateComplete;
+
+    const sectionLuxText =
+      element.shadowRoot?.querySelector('[data-testid="ambient-lux-level"]')?.textContent || "";
+    const sourceMethodText =
+      element.shadowRoot?.querySelector('[data-testid="ambient-source-method"]')?.textContent || "";
+    expect(sectionLuxText).to.equal("22.5 lx");
+    expect(sourceMethodText).to.equal("Inherited sensor");
+    expect(element.shadowRoot?.querySelector('[data-testid="ambient-refresh-button"]')).to.not.exist;
+
+    await waitUntil(() => Boolean(stateChangedHandler), "state_changed subscription not established");
+    stateChangedHandler?.({
+      data: {
+        entity_id: "sensor.roof_lux",
+        new_state: {
+          entity_id: "sensor.roof_lux",
+          state: "18",
+          attributes: {
+            device_class: "illuminance",
+            unit_of_measurement: "lx",
+          },
+        },
+        old_state: {
+          entity_id: "sensor.roof_lux",
+          state: "22.5",
+          attributes: {
+            device_class: "illuminance",
+            unit_of_measurement: "lx",
+          },
+        },
+      },
+    });
+
+    await waitUntil(
+      () =>
+        callWsRequests.filter((request) => request.type === "topomation/ambient/get_reading").length >= 2,
+      "ambient state change did not trigger a second ambient/get_reading call",
+      { timeout: 3000 }
+    );
+
+    await waitUntil(
+      () =>
+        (element.shadowRoot?.querySelector('[data-testid="ambient-lux-level"]')?.textContent || "").includes(
+          "18.0 lx"
+        ),
+      "ambient section did not update after state change",
+      { timeout: 3000 }
+    );
+  });
+
+  it("expands recent occupancy events when Show all is toggled", async () => {
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>) => {
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        return {} as T;
+      },
+      connection: {},
+      states: {
+        "binary_sensor.occupancy_area_kitchen": {
+          entity_id: "binary_sensor.occupancy_area_kitchen",
+          state: "on",
+          attributes: {
+            device_class: "occupancy",
+            location_id: "area_kitchen",
+            contributions: [
+              {
+                source_id: "binary_sensor.kitchen_motion",
+                state: "active",
+                updated_at: new Date().toISOString(),
+              },
+              {
+                source_id: "sensor.kitchen_presence",
+                state: "active",
+                updated_at: new Date(Date.now() - 1000).toISOString(),
+              },
+            ],
+          },
+        },
+      },
+      areas: {},
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_kitchen";
+    location.name = "Kitchen";
+    location.modules._meta = { type: "area" };
+    location.modules.occupancy = {
+      enabled: true,
+      default_timeout: 300,
+      default_trailing_timeout: 120,
+      occupancy_sources: [],
+    };
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector .hass=${hass} .location=${location}></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    const initialRows = element.shadowRoot?.querySelectorAll(".occupancy-event") || [];
+    expect(initialRows.length).to.equal(1);
+
+    const toggle = element.shadowRoot?.querySelector(
+      '[data-testid="recent-events-toggle"]'
+    ) as HTMLButtonElement | null;
+    expect(toggle).to.exist;
+    toggle?.click();
+    await element.updateComplete;
+
+    const expandedRows = element.shadowRoot?.querySelectorAll(".occupancy-event") || [];
+    expect(expandedRows.length).to.equal(2);
+  });
+
+  it("persists ambient config updates with explicit sensor assignment and auto-discover disabled", async () => {
+    const setConfigCalls: Array<Record<string, any>> = [];
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>): Promise<T> => {
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        if (request.type === "topomation/ambient/get_reading") {
+          return {
+            lux: 145,
+            source_sensor: "sensor.patio_lux",
+            source_location: "area_kitchen",
+            is_inherited: false,
+            is_dark: false,
+            is_bright: false,
+            dark_threshold: 50,
+            bright_threshold: 500,
+            fallback_method: null,
+            timestamp: new Date().toISOString(),
+          } as T;
+        }
+        if (request.type === "topomation/locations/set_module_config") {
+          setConfigCalls.push(request);
+          return { success: true } as T;
+        }
+        return {} as T;
+      },
+      connection: {},
+      states: {
+        "sensor.patio_lux": {
+          entity_id: "sensor.patio_lux",
+          state: "145",
+          attributes: {
+            friendly_name: "Patio Lux",
+            device_class: "illuminance",
+            unit_of_measurement: "lx",
+          },
+        },
+      },
+      areas: {
+        kitchen: { area_id: "kitchen", name: "Kitchen" },
+      },
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_kitchen";
+    location.name = "Kitchen";
+    location.ha_area_id = "kitchen";
+    location.entity_ids = ["sensor.patio_lux"];
+    location.modules._meta = { type: "area" };
+    location.modules.ambient = {
+      lux_sensor: null,
+      auto_discover: true,
+      inherit_from_parent: true,
+      dark_threshold: 50,
+      bright_threshold: 500,
+      fallback_to_sun: true,
+      assume_dark_on_error: true,
+    };
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector .hass=${hass} .location=${location}></ht-location-inspector>
+    `);
+    const ambientTab = Array.from(element.shadowRoot?.querySelectorAll(".tab") || []).find((tab) =>
+      (tab.textContent || "").includes("Ambient")
+    ) as HTMLButtonElement | undefined;
+    ambientTab?.click();
+    await element.updateComplete;
+
+    const darkInput = element.shadowRoot?.querySelector(
+      '[data-testid="ambient-dark-threshold"]'
+    ) as HTMLInputElement | null;
+    expect(darkInput).to.exist;
+    darkInput!.value = "120";
+    darkInput!.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+
+    await waitUntil(
+      () =>
+        setConfigCalls.some(
+          (request) =>
+            request.module_id === "ambient" &&
+            request.config?.dark_threshold === 120 &&
+            request.config?.bright_threshold >= 121 &&
+            request.config?.auto_discover === false
+        ),
+      "ambient threshold update was not persisted with guarded bright threshold and auto_discover=false"
+    );
+
+    const sensorSelect = element.shadowRoot?.querySelector(
+      '[data-testid="ambient-lux-sensor-select"]'
+    ) as HTMLSelectElement | null;
+    expect(sensorSelect).to.exist;
+    sensorSelect!.value = "sensor.patio_lux";
+    sensorSelect!.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+
+    await waitUntil(
+      () =>
+        setConfigCalls.some(
+          (request) =>
+            request.module_id === "ambient" &&
+            request.config?.lux_sensor === "sensor.patio_lux" &&
+            request.config?.auto_discover === false
+        ),
+      "ambient explicit sensor assignment was not persisted"
     );
   });
 });

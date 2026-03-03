@@ -20,6 +20,7 @@ Ambient support already exists in backend module wiring and WebSocket APIs, but 
 2. No per-room ML/adaptive circadian modeling.
 3. No large new rule engine for time blocks.
 4. No requirement to create many ambient entities in HA.
+5. No ambient sensor auto-discovery workflow in v1; sensor assignment is explicit.
 
 ## 4. Baseline in current code
 
@@ -27,7 +28,6 @@ Ambient support already exists in backend module wiring and WebSocket APIs, but 
 2. Ambient APIs already exist:
    - `topomation/ambient/get_reading`
    - `topomation/ambient/set_sensor`
-   - `topomation/ambient/auto_discover`
 3. Sensor platform currently publishes no entities; binary sensor platform is occupancy-only.
 4. Managed action contract currently treats lux/ambient guards as future enhancement.
 
@@ -38,6 +38,8 @@ Ambient support already exists in backend module wiring and WebSocket APIs, but 
 1. Default recommendation: configure one primary ambient sensor at `building` (or `grounds`).
 2. Child locations inherit by default.
 3. Optional per-location override is supported but not required.
+4. Backup input is sun position (`sun.sun`) when lux input is unavailable.
+5. When a lux sensor becomes available later, lux is authoritative and sun fallback is only used on error/unavailable states.
 
 ### 5.2 Dark/bright classification
 
@@ -62,12 +64,35 @@ Ambient support already exists in backend module wiring and WebSocket APIs, but 
 
 Ambient UI should show:
 
-1. Effective lux value
+1. Effective lux value (`lux_level`, number or null)
 2. Effective `is_dark` and `is_bright` results
 3. Source sensor entity ID
 4. Source location (local vs inherited)
-5. Fallback method (none/sun/assume-dark/assume-bright)
+5. Source method classification:
+   - `sensor`
+   - `inherited_sensor`
+   - `sun_fallback`
+   - `assume_dark`
+   - `assume_bright`
 6. Thresholds in effect
+
+### 5.5 Output contract (v1)
+
+Ambient read-path payload must support:
+
+1. `lux_level: number | null`
+2. `is_dark: boolean`
+3. `is_bright: boolean`
+4. `source_method: "sensor" | "inherited_sensor" | "sun_fallback" | "assume_dark" | "assume_bright"`
+5. `source_sensor: string | null`
+6. `source_location: string | null`
+7. `dark_threshold: number`
+8. `bright_threshold: number`
+
+Notes:
+
+1. The middle band (`dark_threshold <= lux_level <= bright_threshold`) is intentionally represented by `is_dark=false` and `is_bright=false`.
+2. v1 does not introduce additional qualitative states such as "kind of dark" or "a little bright."
 
 ## 6. UX scope for v1
 
@@ -76,25 +101,19 @@ Add an `Ambient` section in the location inspector (no dusk/dawn action tab yet)
 1. Read-only status card:
    - current lux/state/source/fallback
 2. Config card:
-   - selected sensor (or Auto)
+   - selected sensor (explicit) or unset to inherit from parent
    - inherit from parent toggle
    - dark threshold / bright threshold
    - fallback to sun toggle
    - assume dark on error toggle
 3. Utility actions:
-   - run auto-discover
    - refresh reading
-
-Auto-discover intent (v1):
-
-1. This is a helper to find likely lux sensors from mapped entities so users do not have to type entity IDs.
-2. It should be explicit/manual (button-driven), not a hidden background mutation loop.
-3. Prefer one-time assignment of a primary sensor (usually at `building`/`grounds`) over per-room auto-binding.
 
 Design intent:
 
 1. Make debugability first-class before automation coupling.
 2. Let users validate ambient quality before relying on it for action triggering.
+3. Keep state model simple: binary flags + raw level, no qualitative labels.
 
 ## 7. Technical implementation plan
 
@@ -145,12 +164,13 @@ Design intent:
 
 1. Debounce/dwell model: per-location in architecture, inheritable defaults; not required in v1 UI.
 2. State visibility: show both `is_dark` and `is_bright`.
-3. Auto-discover: keep as explicit/manual helper action, not default background behavior across all locations.
+3. Sensor assignment: explicit only. User places/maps the lux sensor to a location, then TopoMation uses it.
+4. Source priority: property-level lux sensor first, `sun.sun` as fallback when lux is unavailable.
+5. State model: expose `lux_level` + `is_dark` + `is_bright`; do not add "kinda dark/bright" labels in v1.
 
 ## 11. Remaining open decisions
 
-1. Should manual auto-discover be available on all locations or only on `building`/`grounds` in v1 UI?
-2. If auto-discover finds multiple candidates, should v1 pick first deterministically or require explicit user selection?
+1. None for ambient v1 foundation scope.
 
 ## 12. Working agreement for implementation
 

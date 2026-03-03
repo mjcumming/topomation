@@ -1,4 +1,4 @@
-.PHONY: help install dev-install test test-cov lint format typecheck check clean
+.PHONY: help install dev-install test test-cov lint format typecheck check clean test-ha-up test-ha-down test-ha-logs test-ha-status test-ha-check test-ha-restart
 
 HA_DEV_BIN ?= /home/vscode/.local/ha-venv/bin/hass
 HA_DEV_CONFIG ?= /workspaces/core/config
@@ -15,9 +15,12 @@ help:
 	@echo "  make test-comprehensive  Run backend + frontend unit/component/e2e suites"
 	@echo "  make test-release-live   Run release gate (comprehensive + real HA contract)"
 	@echo "  make frontend-test-smoke Run production-like frontend smoke profile"
-	@echo "  make test-ha-up            Start local HA via hass -c /workspaces/core/config --debug"
-	@echo "  make test-ha-down          Stop local HA started by test-ha-up"
-	@echo "  make test-ha-logs          Tail local HA dev logs from /tmp/topomation-ha.log"
+	@echo "  make test-ha-up       Start local HA via hass -c /workspaces/core/config --debug"
+	@echo "  make test-ha-status   Show HA process + HTTP reachability status"
+	@echo "  make test-ha-check    Verify local HA API responds (uses ha_long_lived_token if present)"
+	@echo "  make test-ha-restart  Restart local HA using test-ha-down + test-ha-up"
+	@echo "  make test-ha-down     Stop local HA started by test-ha-up"
+	@echo "  make test-ha-logs     Tail local HA dev logs from /tmp/topomation-ha.log"
 	@echo "  make test-cov     Run tests with coverage report"
 	@echo "  make lint         Run ruff linter"
 	@echo "  make format       Format code with black"
@@ -66,20 +69,36 @@ test-all: test test-realworld
 	@echo "✅ All automated tests completed"
 
 test-ha-up:
-	@if [ -f "$(HA_DEV_PID)" ] && kill -0 "$$(cat "$(HA_DEV_PID)")" 2>/dev/null; then \
-		echo "⚠️  HA already running (pid $$(cat "$(HA_DEV_PID)"))."; \
-		exit 0; \
+	@HA_URL="http://127.0.0.1:8123"; \
+	LISTEN_PID=$$(ss -ltnp '( sport = :8123 )' 2>/dev/null | sed -n 's/.*pid=\([0-9]\+\).*/\1/p' | head -n 1); \
+	if [ -f "$(HA_DEV_PID)" ]; then \
+		RECORDED_PID=$$(cat "$(HA_DEV_PID)"); \
+		if [ -n "$$RECORDED_PID" ] && kill -0 "$$RECORDED_PID" 2>/dev/null; then \
+			if curl -sS --max-time 2 "$$HA_URL/" >/dev/null 2>&1; then \
+				echo "⚠️  HA already running (pid $$RECORDED_PID)."; \
+				echo "✅ HA already running. Log: $(HA_DEV_LOG), pid: $$RECORDED_PID"; \
+				echo "🌐 Open http://localhost:8123"; \
+				exit 0; \
+			fi; \
+			echo "⚠️  HA pid $$RECORDED_PID exists but HTTP is down; stopping stale process."; \
+			kill "$$RECORDED_PID" 2>/dev/null || true; \
+			for _ in $$(seq 1 10); do \
+				kill -0 "$$RECORDED_PID" 2>/dev/null || break; \
+				sleep 1; \
+			done; \
+			if kill -0 "$$RECORDED_PID" 2>/dev/null; then \
+				kill -9 "$$RECORDED_PID" 2>/dev/null || true; \
+			fi; \
+		fi; \
 	fi; \
-	CONFIG_PID=$$(pgrep -f "hass -c $(HA_DEV_CONFIG)" | head -n 1); \
-	if [ -z "$$CONFIG_PID" ]; then \
-		CONFIG_PID=$$(pgrep -f "$(HA_DEV_BIN) -c $(HA_DEV_CONFIG)" | head -n 1); \
-	fi; \
-	if [ -n "$$CONFIG_PID" ] && kill -0 "$$CONFIG_PID" 2>/dev/null; then \
-		echo "⚠️  HA already running for $(HA_DEV_CONFIG) (pid $$CONFIG_PID)."; \
-		echo "$$CONFIG_PID" > "$(HA_DEV_PID)"; \
-		echo "✅ HA already running. Log: $(HA_DEV_LOG), pid: $$CONFIG_PID"; \
-		echo "🌐 Open http://localhost:8123"; \
-		exit 0; \
+	if [ -n "$$LISTEN_PID" ] && kill -0 "$$LISTEN_PID" 2>/dev/null; then \
+		if curl -sS --max-time 2 "$$HA_URL/" >/dev/null 2>&1; then \
+			echo "⚠️  HA already listening on 8123 (pid $$LISTEN_PID)."; \
+			echo "$$LISTEN_PID" > "$(HA_DEV_PID)"; \
+			echo "✅ HA already running. Log: $(HA_DEV_LOG), pid: $$LISTEN_PID"; \
+			echo "🌐 Open http://localhost:8123"; \
+			exit 0; \
+		fi; \
 	fi; \
 	HA_BIN="$(HA_DEV_BIN)"; \
 	if ! command -v "$$HA_BIN" >/dev/null 2>&1; then \
@@ -99,35 +118,91 @@ test-ha-up:
 		rm -f "$(HA_DEV_PID)"; \
 		exit 1; \
 	fi; \
-	echo "✅ HA started. Log: $(HA_DEV_LOG), pid: $$NEW_PID"; \
+	READY=0; \
+	for _ in $$(seq 1 30); do \
+		if curl -sS --max-time 2 "$$HA_URL/" >/dev/null 2>&1; then \
+			READY=1; \
+			break; \
+		fi; \
+		sleep 1; \
+	done; \
+	if [ "$$READY" -ne 1 ]; then \
+		echo "❌ HA process started but HTTP is not reachable after 30s."; \
+		tail -n 30 "$(HA_DEV_LOG)"; \
+		exit 1; \
+	fi; \
+	echo "✅ HA started and reachable. Log: $(HA_DEV_LOG), pid: $$NEW_PID"; \
 	echo "🌐 Open http://localhost:8123"
 
 test-ha-down:
-	@if [ -f "$(HA_DEV_PID)" ]; then \
+	@PID=""; \
+	if [ -f "$(HA_DEV_PID)" ]; then \
 		PID="$$(cat "$(HA_DEV_PID)")"; \
-		if kill -0 "$$PID" 2>/dev/null; then \
-			echo "🛑 Stopping HA (pid $$PID)"; \
-			kill "$$PID" 2>/dev/null || true; \
+	fi; \
+	if [ -z "$$PID" ]; then \
+		PID=$$(ss -ltnp '( sport = :8123 )' 2>/dev/null | sed -n 's/.*pid=\([0-9]\+\).*/\1/p' | head -n 1); \
+	fi; \
+	if [ -n "$$PID" ] && kill -0 "$$PID" 2>/dev/null; then \
+		echo "🛑 Stopping HA (pid $$PID)"; \
+		kill "$$PID" 2>/dev/null || true; \
+		for _ in $$(seq 1 15); do \
+			kill -0 "$$PID" 2>/dev/null || break; \
 			sleep 1; \
-		else \
-			echo "ℹ️  Recorded HA process is not running."; \
+		done; \
+		if kill -0 "$$PID" 2>/dev/null; then \
+			echo "⚠️  HA did not exit in time; forcing kill on pid $$PID"; \
+			kill -9 "$$PID" 2>/dev/null || true; \
 		fi; \
-		rm -f "$(HA_DEV_PID)"; \
 	else \
-		CONFIG_PID=$$(pgrep -f "hass -c $(HA_DEV_CONFIG)" | head -n 1); \
-		if [ -z "$$CONFIG_PID" ]; then \
-			CONFIG_PID=$$(pgrep -f "$(HA_DEV_BIN) -c $(HA_DEV_CONFIG)" | head -n 1); \
-		fi; \
-		if [ -n "$$CONFIG_PID" ] && kill -0 "$$CONFIG_PID" 2>/dev/null; then \
-			echo "🛑 Stopping HA discovered running pid $$CONFIG_PID"; \
-			kill "$$CONFIG_PID" 2>/dev/null || true; \
-		else \
-			echo "ℹ️  No matching HA process found."; \
-		fi; \
-	fi
+		echo "ℹ️  No matching HA process found."; \
+	fi; \
+	rm -f "$(HA_DEV_PID)"
 
 test-ha-logs:
 	tail -f "$(HA_DEV_LOG)"
+
+test-ha-status:
+	@CONFIG_PID=$$(ss -ltnp '( sport = :8123 )' 2>/dev/null | sed -n 's/.*pid=\([0-9]\+\).*/\1/p' | head -n 1); \
+	PID_FILE="(none)"; \
+	if [ -f "$(HA_DEV_PID)" ]; then \
+		PID_FILE=$$(cat "$(HA_DEV_PID)"); \
+	fi; \
+	echo "Config: $(HA_DEV_CONFIG)"; \
+	echo "PID file: $$PID_FILE"; \
+	if [ -n "$$CONFIG_PID" ] && kill -0 "$$CONFIG_PID" 2>/dev/null; then \
+		echo "HA process: running (pid $$CONFIG_PID)"; \
+	else \
+		echo "HA process: stopped"; \
+	fi; \
+	if curl -sS --max-time 3 http://127.0.0.1:8123/ >/dev/null 2>&1; then \
+		echo "HTTP: reachable (http://localhost:8123)"; \
+	else \
+		echo "HTTP: unreachable (http://localhost:8123)"; \
+	fi
+
+test-ha-check:
+	@TOKEN_FILE="$(PWD)/ha_long_lived_token"; \
+	if [ -f "$$TOKEN_FILE" ] && [ -n "$$(cat "$$TOKEN_FILE")" ]; then \
+		API_RESPONSE=$$(curl -sS --max-time 5 -H "Authorization: Bearer $$(cat "$$TOKEN_FILE")" http://127.0.0.1:8123/api/ || true); \
+		if echo "$$API_RESPONSE" | grep -q '"message":"API running\."'; then \
+			echo "✅ HA API check passed: $$API_RESPONSE"; \
+			exit 0; \
+		fi; \
+		echo "❌ HA API check failed (token auth). Response: $$API_RESPONSE"; \
+		exit 1; \
+	fi; \
+	if curl -sS -I --max-time 5 http://127.0.0.1:8123/ >/dev/null 2>&1; then \
+		echo "✅ HA HTTP check passed (no token file available)"; \
+		exit 0; \
+	fi; \
+	echo "❌ HA HTTP check failed (http://localhost:8123 not reachable)"; \
+	exit 1
+
+test-ha-restart:
+	@$(MAKE) test-ha-down
+	@sleep 1
+	@$(MAKE) test-ha-up
+	@$(MAKE) test-ha-status
 
 lint:
 	ruff check custom_components/ tests/

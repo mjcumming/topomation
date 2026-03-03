@@ -258,6 +258,24 @@ make dev-install
 make test
 ```
 
+### Dev Container HA Workflow (Standard)
+
+For day-to-day development in this repository's dev container, use this exact loop:
+
+```bash
+cd /workspaces/topomation
+make test-ha-up
+make test-ha-status
+make test-ha-check
+```
+
+- Open `http://localhost:8123` and validate changes in the Topomation panel.
+- Restart after backend/Python edits: `make test-ha-restart`
+- Tail logs while testing: `make test-ha-logs`
+- Shut down when done: `make test-ha-down`
+
+Canonical runbook: [tests/DEV-CONTAINER-HA.md](tests/DEV-CONTAINER-HA.md)
+
 - [Docs Index](docs/index.md)
 - [Frontend Workflow](docs/frontend-dev-workflow.md)
 

@@ -20,6 +20,25 @@ Use this as the canonical workflow for running and restarting Home Assistant whi
 - Optional isolated test HA config directory: `/workspaces/topomation/tests/test-ha-config`
 - Mounted integration source: `/workspaces/topomation/custom_components/topomation`
 
+## Standard Daily Workflow (TL;DR)
+
+Use this exact sequence as the default startup/test loop in the dev container:
+
+```bash
+cd /workspaces/topomation
+make test-ha-up
+make test-ha-status
+make test-ha-check
+```
+
+- Open: `http://localhost:8123`
+- Test your UI/behavior changes.
+- After Python/backend changes: `make test-ha-restart`
+- If you need logs while testing: `make test-ha-logs`
+- End of session: `make test-ha-down`
+
+This workflow is the canonical path for local dev validation in this repo.
+
 ## One-Time Setup
 
 From repo root, ensure the integration is linked into the default dev HA config:
@@ -39,6 +58,12 @@ hass -c /workspaces/core/config --debug
 ```
 
 Keep this running in a dedicated terminal while testing.
+
+Equivalent Make target:
+
+```bash
+make test-ha-up
+```
 
 ## Restart HA
 
@@ -75,6 +100,13 @@ curl -H "Authorization: Bearer $HA_TOKEN" "$HA_URL/api/"
 ```
 
 Expected API response includes: `{"message":"API running."}`
+
+Equivalent Make targets:
+
+```bash
+make test-ha-status
+make test-ha-check
+```
 
 ## Optional: Isolated Test Config Runtime
 
