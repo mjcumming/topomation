@@ -775,6 +775,7 @@ class EventBridge:
                     continue
                 timeout_set = "on_timeout" in source
                 timeout = source.get("on_timeout") if timeout_set else None
+                event_type = "trigger"
             elif signal_type == "clear":
                 if source.get("off_event", "none") != "clear":
                     continue
@@ -783,14 +784,9 @@ class EventBridge:
                     off_trailing = int(off_trailing)
                 except (TypeError, ValueError):
                     off_trailing = 0
-                if off_trailing <= 0:
-                    timeout_set = False
-                    timeout = None
-                    signal_event_type = "vacate"
-                else:
-                    timeout_set = True
-                    timeout = off_trailing
-                    signal_event_type = "clear"
+                timeout_set = True
+                timeout = max(0, off_trailing)
+                event_type = "clear"
             else:
                 continue
 
@@ -800,7 +796,7 @@ class EventBridge:
 
             resolved.append(
                 {
-                    "event_type": signal_event_type if signal_type == "clear" else signal_type,
+                    "event_type": event_type,
                     "source_id": source_id,
                     "timeout_set": timeout_set,
                     "timeout": timeout,

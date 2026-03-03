@@ -10,6 +10,7 @@ import type {
 } from "./types";
 import { sharedStyles } from "./styles";
 import { getLocationType } from "./hierarchy-rules";
+import { isSystemShadowLocation, managedShadowLocationIdSet } from "./shadow-location-utils";
 
 import "./ht-location-tree";
 import "./ht-location-inspector";
@@ -2780,8 +2781,11 @@ export class TopomationPanel extends LitElement {
 
   private _isManagedShadowLocation(location: Location | undefined): boolean {
     if (!location) return false;
-    const meta = (location.modules?._meta || {}) as Record<string, any>;
-    return String(meta.role || "").trim().toLowerCase() === "managed_shadow";
+    return isSystemShadowLocation(location, this._managedShadowLocationIds());
+  }
+
+  private _managedShadowLocationIds(): Set<string> {
+    return managedShadowLocationIdSet(this._locations);
   }
 
   private _parentSelectableLocations(): Location[] {

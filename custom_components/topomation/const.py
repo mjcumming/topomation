@@ -2,7 +2,7 @@
 
 DOMAIN = "topomation"
 NAME = "Topomation"
-VERSION = "0.2.20"
+VERSION = "0.2.21"
 
 # Storage
 STORAGE_VERSION = 1

@@ -39,7 +39,7 @@ TopoMation solves this in two moves:
 ## Key Capabilities
 
 ### One Occupancy Signal Per Location
-Multiple sensor types — motion, door contacts, mmWave presence, device trackers, media players — are fused into a single `binary_sensor` per location. Each source has configurable semantics: does it *trigger* occupancy, *clear* its contribution, or authoritatively *vacate* the space? You decide. The result is stable, predictable occupancy that reflects how the room actually works.
+Multiple sensor types — motion, door contacts, mmWave presence, device trackers, media players — are fused into a single `binary_sensor` per location. Each source has configurable semantics: does it *trigger* occupancy or *clear* its own contribution (immediate or trailing)? You decide. The result is stable, predictable occupancy that reflects how the room actually works.
 
 ### Configurable Timeouts
 Set per-location timeouts ("turn off 5 minutes after last activity") right in the UI. Motion sensors can use finite hold times; true presence sensors can stay indefinite with trailing grace periods. Occupancy that's stable without being sticky.
@@ -150,7 +150,7 @@ The key insight: **a switch state change is proof that a human is in the room**.
 | **Party mode** | Lock the main floor with `subtree` scope. Every room underneath freezes — no lights turning off on guests. Unlock when the party's over. |
 | **"Is anyone home?"** | Check the building node. Occupancy propagates up — if any room is occupied, the floor is occupied, and the building is occupied. One glance. |
 | **Reorganize without breaking anything** | Drag the guest room from the second floor to the first floor. Detection, actions, and occupancy state move with it. Nothing breaks. |
-| **Multi-source bathroom** | Light switch + exhaust fan + motion sensor all as sources. Any activity resets the timeout. Maximum coverage, zero missed signals. |
+| **Multi-source bathroom** | Light switch + exhaust fan + motion sensor all as sources. Each source maintains its own timeout, and occupancy stays on until the last active source expires. Maximum coverage, zero missed signals. |
 
 ---
 

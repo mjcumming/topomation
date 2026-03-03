@@ -1,6 +1,6 @@
 # Contracts
 
-**Last reviewed**: 2026-02-27
+**Last reviewed**: 2026-03-03
 **Purpose**: canonical behavior contracts for Topomation runtime and panel actions.
 
 Use this file as the quick contract surface. Keep it synchronized with:
@@ -32,14 +32,16 @@ Use this file as the quick contract surface. Keep it synchronized with:
   - `include_locked: false`
 - This is intentional subtree vacate semantics, not source-level clear semantics.
 
-## C-003A Authoritative source-off contract
+## C-003A Source-off clear contract
 
 - For detection sources configured with `off_event=clear`:
-  - `off_trailing = 0` maps to authoritative vacant intent (`event_type=vacate`)
-  - `off_trailing > 0` maps to source-level release (`event_type=clear` with timeout)
+  - `off_trailing <= 0` maps to immediate source release (`event_type=clear`, `timeout=0`)
+  - `off_trailing > 0` maps to trailing source release (`event_type=clear`, `timeout=off_trailing`)
 - Inspector "Test Off" mirrors this:
-  - `off_trailing = 0` -> `service: topomation.vacate`
-  - `off_trailing > 0` -> `service: topomation.clear`
+  - always `service: topomation.clear(location_id, source_id, trailing_timeout)`
+- Detection source state changes must not emit location-level authoritative vacate.
+- Authoritative vacate remains explicit-only (`topomation.vacate`, `topomation.vacate_area`,
+  or policy actions that intentionally call vacate).
 - Lock directives remain authoritative (`block_vacant` may prevent transition to vacant).
 
 ## C-004 Service surface contract
@@ -215,7 +217,7 @@ Additional save points:
   - `building`, `grounds`, `floor`, and `subarea` nodes are excluded from linked-room
     target/candidate roles.
 - Runtime propagation uses source-scoped occupancy contributions:
-  - occupied on source -> `occupancy.trigger(target, source_id="linked:<source>", timeout=0)`
+  - occupied on source -> `occupancy.trigger(target, source_id="linked:<source>", timeout=None)`
   - vacant on source -> `occupancy.clear(target, source_id="linked:<source>", trailing_timeout=0)`
 - Reciprocal links must not self-latch:
   - runtime must suppress feedback when a source location is currently occupied
@@ -252,7 +254,7 @@ Additional save points:
   - on startup/reconciliation, missing or invalid managed shadows must be
     created/recreated automatically (no name-matching inference)
   - area names are deterministic and collision-safe (host name, then
-    host name with ` (System)` suffix variants as needed)
+    host name with ` [Topomation]` suffix variants as needed)
 - `topomation/locations/assign_entity` contract:
   - when target is a managed shadow host, backend remaps assignment target to
     that host's managed shadow area before persistence and HA writeback

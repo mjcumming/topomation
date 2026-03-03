@@ -699,8 +699,57 @@ class TestHAToTopologySync:
         assert shadow_area_loc is not None
         area_meta = shadow_area_loc.modules.get("_meta", {})
 
+        assert shadow_area_loc.name == "Main Floor [Topomation]"
         assert area_meta.get("role") == "managed_shadow"
         assert area_meta.get("shadow_for_location_id") == floor_loc_id
+
+    async def test_reconcile_renames_legacy_system_shadow_suffix(
+        self,
+        hass: HomeAssistant,
+        sync_manager: SyncManager,
+        loc_mgr: LocationManager,
+        clean_registries,
+    ):
+        """Legacy '(System)' managed-shadow names should reconcile to Topomation suffixing."""
+        area_reg = ar.async_get(hass)
+        floor_reg = fr.async_get(hass)
+        main_floor = floor_reg.async_create("Main Floor")
+        area_reg.async_create("Main Floor", floor_id=main_floor.floor_id)
+        legacy_shadow = area_reg.async_create("Main Floor (System)", floor_id=main_floor.floor_id)
+
+        await sync_manager.import_all_areas_and_floors()
+
+        floor_loc_id = f"floor_{main_floor.floor_id}"
+        legacy_shadow_loc_id = f"area_{legacy_shadow.id}"
+
+        floor_loc = loc_mgr.get_location(floor_loc_id)
+        legacy_shadow_loc = loc_mgr.get_location(legacy_shadow_loc_id)
+        assert floor_loc is not None
+        assert legacy_shadow_loc is not None
+
+        legacy_shadow_meta = dict(legacy_shadow_loc.modules.get("_meta", {}))
+        legacy_shadow_meta.update(
+            {
+                "type": "area",
+                "role": "managed_shadow",
+                "shadow_for_location_id": floor_loc_id,
+            }
+        )
+        loc_mgr.set_module_config(legacy_shadow_loc_id, "_meta", legacy_shadow_meta)
+
+        floor_meta = dict(floor_loc.modules.get("_meta", {}))
+        floor_meta["shadow_area_id"] = legacy_shadow_loc_id
+        loc_mgr.set_module_config(floor_loc_id, "_meta", floor_meta)
+
+        sync_manager.reconcile_managed_shadow_areas()
+
+        updated_shadow_area = area_reg.async_get_area(legacy_shadow.id)
+        updated_shadow_loc = loc_mgr.get_location(legacy_shadow_loc_id)
+        assert updated_shadow_area is not None
+        assert updated_shadow_loc is not None
+        assert updated_shadow_area.name.startswith("Main Floor [Topomation")
+        assert "System" not in updated_shadow_area.name
+        assert updated_shadow_loc.name == updated_shadow_area.name
 
     async def test_building_auto_creates_managed_shadow_area(
         self,

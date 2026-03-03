@@ -172,6 +172,41 @@ const floorWithManagedShadow: Location[] = [
   }
 ];
 
+const floorWithHostMappedShadowWithoutAreaTags: Location[] = [
+  {
+    id: 'main-floor',
+    name: 'Main Floor',
+    parent_id: null,
+    is_explicit_root: false,
+    ha_area_id: null,
+    entity_ids: [],
+    modules: { _meta: { type: 'floor', shadow_area_id: 'area_shadow_main_floor' } }
+  },
+  {
+    id: 'area_shadow_main_floor',
+    name: 'Main Floor',
+    parent_id: 'main-floor',
+    is_explicit_root: false,
+    ha_area_id: 'area_main_floor_shadow',
+    entity_ids: [],
+    modules: {
+      _meta: {
+        type: 'area'
+      }
+    }
+  },
+  {
+    id: 'kitchen',
+    name: 'Kitchen',
+    parent_id: 'main-floor',
+    is_explicit_root: false,
+    ha_area_id: null,
+    entity_ids: [],
+    modules: { _meta: { type: 'area' } }
+  }
+];
+
+
 describe('HtLocationTree - shouldUpdate Performance', () => {
   it('does NOT re-render on unrelated hass state changes', async () => {
     const element = await fixture<HtLocationTree>(html`
@@ -334,6 +369,25 @@ describe('HtLocationTree - shouldUpdate Performance', () => {
     ).map((el) => el.textContent?.trim());
     expect(locationNames).to.include('Main Floor');
     expect(locationNames).to.include('Kitchen');
+  });
+
+  it('hides host-mapped shadow areas even when area tags are missing', async () => {
+    const element = await fixture<HtLocationTree>(html`
+      <ht-location-tree
+        .hass=${mockHass as HomeAssistant}
+        .locations=${floorWithHostMappedShadowWithoutAreaTags}
+      ></ht-location-tree>
+    `);
+
+    await element.updateComplete;
+
+    (element as any)._expandedIds = new Set(['main-floor']);
+    element.requestUpdate();
+    await element.updateComplete;
+
+    expect(element.shadowRoot!.querySelector('[data-id="main-floor"]')).to.exist;
+    expect(element.shadowRoot!.querySelector('[data-id="kitchen"]')).to.exist;
+    expect(element.shadowRoot!.querySelector('[data-id="area_shadow_main_floor"]')).to.equal(null);
   });
 
   it('emits location-selected event on click', async () => {

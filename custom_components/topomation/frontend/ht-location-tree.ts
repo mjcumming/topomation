@@ -7,6 +7,7 @@ import { sharedStyles } from "./styles";
 import Sortable from "sortablejs";
 import { getLocationType, isDescendant, canMoveLocation } from "./hierarchy-rules";
 import { getLocationIcon } from "./icon-utils";
+import { isSystemShadowLocation, managedShadowLocationIdSet } from "./shadow-location-utils";
 import {
   buildFlatTree,
   zoneFromPointerInRow,
@@ -932,12 +933,17 @@ export class HtLocationTree extends LitElement {
   }
 
   private _visibleTreeLocations(): Location[] {
-    return this.locations.filter((location) => !this._isManagedShadowLocation(location));
+    const managedShadowIds = managedShadowLocationIdSet(this.locations);
+    return this.locations.filter(
+      (location) => !this._isManagedShadowLocation(location, managedShadowIds)
+    );
   }
 
-  private _isManagedShadowLocation(location: Location): boolean {
-    const meta = (location.modules?._meta || {}) as Record<string, any>;
-    return String(meta.role || "").trim().toLowerCase() === "managed_shadow";
+  private _isManagedShadowLocation(
+    location: Location,
+    managedShadowIds?: Set<string>
+  ): boolean {
+    return isSystemShadowLocation(location, managedShadowIds);
   }
 
   private _getIcon(location: Location): string {

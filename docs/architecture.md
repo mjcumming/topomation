@@ -263,9 +263,10 @@ def handle_locations_list(hass, connection, msg):
 - Manual occupancy controls in the panel map to services using a stable source:
   - `set occupied` -> `topomation.trigger(location_id, source_id="manual_ui", timeout=default_timeout)`
   - `set unoccupied` -> `topomation.vacate_area(location_id, source_id="manual_ui", include_locked=false)`
-- Source-off test control with authoritative semantics maps to:
-  - `test off` with `off_event=clear` and `off_trailing=0` -> `topomation.vacate(location_id)`
-  - `test off` with `off_event=clear` and `off_trailing>0` -> `topomation.clear(location_id, source_id, trailing_timeout)`
+- Source-off test control is source-scoped:
+  - `test off` with `off_event=clear` -> `topomation.clear(location_id, source_id, trailing_timeout=max(0, off_trailing))`
+- Source activity contributes independently per `source_id`; effective vacancy follows
+  the latest remaining contribution timeout (longest active hold wins).
 - Locked locations are immutable for manual occupancy actions. The UI must reject the request and show a warning toast.
 
 ### 3.7 Frontend Panel (`frontend/`)

@@ -6,6 +6,7 @@
 ## Snapshot
 
 - Active focus: managed shadow area contract + implementation checklist (ADR-HA-049 / ISSUE-057).
+- New planning track: ambient light v1 design baseline captured in `docs/ambient-light-v1-design.md` before dusk/dawn coupling work.
 - Recently completed: Tree DnD now uses explicit drop targets (before/inside/after/outdent) from pointer Y and optional outdent strip; zone-only resolver; heuristic x-offset logic removed. User order preserved by existing backend (`manual_order` + A-Z until first reorder).
 - Contract source set: `docs/contracts.md`, `docs/architecture.md`, `docs/adr-log.md`.
 
@@ -14,6 +15,7 @@
 | Item | Owner | Status | Notes |
 | --- | --- | --- | --- |
 | Managed shadow areas + assignment remap | active | In progress | ADR-HA-049 approved; ISSUE-057 tracks backend/UI/test checklist. |
+| Ambient light v1 design + implementation sequencing | active | In progress | Design guide added; next step is phase-A inspector read path and config UX. |
 | Parallel branch updates | multiple | In progress | Verify `git status` before editing overlapping files. |
 | Managed action rule resilience | active | Completed | Added fallback/reconciliation contracts + production smoke coverage. |
 | Panel auth alignment | active | Completed | Panel routes are admin-only to match HA write APIs. |

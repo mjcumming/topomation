@@ -1,6 +1,6 @@
 # Documentation Index
 
-**Last Reviewed**: 2026-03-01
+**Last Reviewed**: 2026-03-03
 
 This file is the source of truth for active documentation and lifecycle rules.
 If a file is not listed as active below, treat it as reference-only.
@@ -29,6 +29,7 @@ If a file is not listed as active below, treat it as reference-only.
 | `docs/current-work.md` | Live parallel-work and handoff context | Active (Operational) |
 | `docs/cursor-guide.md` | Agent reference and repository operating notes | Active (Reference) |
 | `docs/tree-dnd-stabilization-plan.md` | Tree DnD explicit drop targets — implementation plan (C-011, ADR-HA-039) | Active (Operational) |
+| `docs/ambient-light-v1-design.md` | Ambient light v1 design scope, UX, and phased implementation plan | Active (Operational) |
 
 ## Project Docs Scope (`/project`)
 

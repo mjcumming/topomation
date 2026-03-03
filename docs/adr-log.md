@@ -2036,7 +2036,7 @@ operator wiring to reduce assignment ambiguity and lifecycle drift.
    - `grounds`
 3. Topomation creates/recreates managed shadow HA areas automatically during
    startup and reconciliation; no name-match adoption heuristics are used.
-   Name generation is deterministic with collision-safe ` (System)` suffixing.
+   Name generation is deterministic with collision-safe ` [Topomation]` suffixing.
 4. Assignment to managed-shadow hosts remaps to the host's shadow area before
    persistence and HA `entity_registry.area_id` writeback.
 5. Managed-shadow metadata and wrappers are integration-owned:
@@ -2063,6 +2063,55 @@ operator wiring to reduce assignment ambiguity and lifecycle drift.
 
 - Optional/manual shadow binding: rejected for operational drift.
 - Name-match adoption (`area.name == host.name`): rejected as ambiguous and non-deterministic.
+
+---
+
+### ADR-HA-050: Source-Off Signals Must Stay Source-Scoped; Vacate Is Explicit-Only (2026-03-03)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+
+Detection source OFF behavior was mapped as:
+- `off_event=clear` + `off_trailing=0` -> `event_type=vacate` (location-wide)
+- `off_trailing>0` -> `event_type=clear` (source-scoped)
+
+This created correctness issues for multi-source occupancy. A single source OFF
+event could vacate a location even when other active contributors still indicated
+occupancy. That contradicts the intended model where each source contributes
+independently and occupancy clears only when no active contributions remain.
+
+**Decision**:
+
+1. Keep detection source OFF semantics strictly source-scoped:
+   - `off_event=clear` + `off_trailing<=0` -> `event_type=clear`, `timeout=0`
+   - `off_event=clear` + `off_trailing>0` -> `event_type=clear`, `timeout=off_trailing`
+2. Remove source-off mapping to `vacate` from event bridge and inspector `Test Off`.
+3. Reserve authoritative vacant transitions for explicit operator/policy paths:
+   - `topomation.vacate`
+   - `topomation.vacate_area`
+   - explicit policy actions that intentionally call vacate.
+4. Codify multi-source timeout semantics: location vacancy is determined by the
+   latest remaining active contribution (longest active hold wins).
+
+**Rationale**:
+
+1. Preserves OR-style multi-source occupancy correctness.
+2. Prevents one source from clearing unrelated contributors.
+3. Matches operator expectations for mixed signals (motion, lights, media, etc.).
+4. Keeps vacate behavior explicit and auditable.
+
+**Consequences**:
+
+- ✅ Multi-source locations remain occupied while any contributor is active.
+- ✅ Mixed timeout sources behave predictably (`5m` motion + `30m` light -> `30m` hold).
+- ✅ `Test Off` now validates source release semantics without location-wide side effects.
+- ⚠️ Users relying on legacy source-off vacate behavior must switch to explicit vacate actions.
+
+**Alternatives Considered**:
+
+- Keep `off_trailing=0` as vacate: rejected due to multi-source correctness violations.
+- Add per-source opt-in vacate mode: rejected for now to keep source behavior simple and deterministic.
 
 ---
 

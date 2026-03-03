@@ -4,6 +4,7 @@ import { customElement, property, state } from "lit/decorators.js";
 import type { HomeAssistant, Location, LocationType } from "./types";
 import { sharedStyles } from "./styles";
 import { getAllowedParentTypes, getLocationType } from "./hierarchy-rules";
+import { isSystemShadowLocation, managedShadowLocationIdSet } from "./shadow-location-utils";
 
 console.log("[ht-location-dialog] module loaded");
 
@@ -294,10 +295,11 @@ export class HtLocationDialog extends LitElement {
 
     if (allowedTypes.length === 0) return [];
 
+    const managedShadowIds = this._managedShadowLocationIds();
     const validParents = this.locations
       .filter(loc => {
         if (loc.is_explicit_root) return false;
-        if (this._isManagedShadowLocation(loc)) return false;
+        if (this._isManagedShadowLocation(loc, managedShadowIds)) return false;
         const locType = getLocationType(loc);
         return allowedTypes.includes(locType);
       })
@@ -310,9 +312,12 @@ export class HtLocationDialog extends LitElement {
     return validParents;
   }
 
-  private _isManagedShadowLocation(location: Location): boolean {
-    const meta = (location.modules?._meta || {}) as Record<string, any>;
-    return String(meta.role || "").trim().toLowerCase() === "managed_shadow";
+  private _isManagedShadowLocation(location: Location, managedShadowIds?: Set<string>): boolean {
+    return isSystemShadowLocation(location, managedShadowIds);
+  }
+
+  private _managedShadowLocationIds(): Set<string> {
+    return managedShadowLocationIdSet(this.locations);
   }
 
   private _includeRootOption(): boolean {

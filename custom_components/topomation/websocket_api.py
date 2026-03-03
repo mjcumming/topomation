@@ -423,16 +423,11 @@ def _normalize_meta_config(
     if (
         _META_SHADOW_AREA_ID_KEY in config
         or _META_SHADOW_FOR_LOCATION_ID_KEY in config
-        or "proxy_area_id" in config
-        or "proxy_for_floor_id" in config
     ):
         return None, "Managed shadow metadata is integration-owned and cannot be set manually."
 
     requested_role = config.get(_META_ROLE_KEY)
-    if isinstance(requested_role, str) and requested_role.strip().lower() in {
-        _MANAGED_SHADOW_ROLE,
-        "floor_proxy",
-    }:
+    if isinstance(requested_role, str) and requested_role.strip().lower() == _MANAGED_SHADOW_ROLE:
         return None, "Managed shadow metadata is integration-owned and cannot be set manually."
 
     merged = {**existing, **config}
@@ -446,12 +441,6 @@ def _normalize_meta_config(
         normalized_role = str(merged.get(_META_ROLE_KEY, "")).strip().lower()
         if normalized_role == _MANAGED_SHADOW_ROLE:
             merged.pop(_META_ROLE_KEY, None)
-
-    # Legacy proxy keys are removed as part of managed-shadow migration.
-    merged.pop("proxy_area_id", None)
-    merged.pop("proxy_for_floor_id", None)
-    if str(merged.get(_META_ROLE_KEY, "")).strip().lower() == "floor_proxy":
-        merged.pop(_META_ROLE_KEY, None)
 
     return merged, None
 
@@ -1185,9 +1174,7 @@ def handle_locations_create(
     if (
         _META_SHADOW_AREA_ID_KEY in meta
         or _META_SHADOW_FOR_LOCATION_ID_KEY in meta
-        or "proxy_area_id" in meta
-        or "proxy_for_floor_id" in meta
-        or requested_role in {_MANAGED_SHADOW_ROLE, "floor_proxy"}
+        or requested_role == _MANAGED_SHADOW_ROLE
     ):
         connection.send_error(
             msg["id"],

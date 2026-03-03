@@ -521,7 +521,7 @@ async def test_media_paused_state_publishes_clear(
     event_bridge: EventBridge,
     event_bus: Mock,
 ) -> None:
-    """Test media pause transitions emit vacate when off_trailing is immediate."""
+    """Test media pause transitions emit source clear when off_trailing is immediate."""
     old_state = State("media_player.living_room_tv", STATE_PLAYING)
     new_state = State("media_player.living_room_tv", STATE_PAUSED)
 
@@ -536,7 +536,8 @@ async def test_media_paused_state_publishes_clear(
 
     event_bus.publish.assert_called_once()
     published_event: Event = event_bus.publish.call_args[0][0]
-    assert published_event.payload["event_type"] == "vacate"
+    assert published_event.payload["event_type"] == "clear"
+    assert published_event.payload["timeout"] == 0
     assert published_event.payload["signal_key"] == "playback"
     assert published_event.payload["source_id"] == "media_player.living_room_tv::playback"
 
@@ -623,7 +624,8 @@ async def test_dimmer_state_normalized_in_event(
     # THEN
     published_event: Event = event_bus.publish.call_args[0][0]
     assert published_event.type == "occupancy.signal"
-    assert published_event.payload["event_type"] == "vacate"
+    assert published_event.payload["event_type"] == "clear"
+    assert published_event.payload["timeout"] == 0
     assert published_event.payload["signal_key"] == "power"
     assert published_event.payload["source_id"] == "light.kitchen::power"
     assert published_event.payload["new_state"] == STATE_OFF

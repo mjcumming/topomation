@@ -111,22 +111,23 @@ describe("HtLocationInspector occupancy source composer", () => {
         request.domain === "topomation" &&
         request.service === "trigger"
     );
-    const vacateCall = callWsRequests.find(
+    const clearCall = callWsRequests.find(
       (request) =>
         request.type === "call_service" &&
         request.domain === "topomation" &&
-        request.service === "vacate"
+        request.service === "clear"
     );
 
     expect(triggerCall).to.exist;
     expect(triggerCall?.service_data?.location_id).to.equal("area_kitchen");
     expect(triggerCall?.service_data?.source_id).to.equal("light.kitchen_ceiling");
 
-    expect(vacateCall).to.exist;
-    expect(vacateCall?.service_data?.location_id).to.equal("area_kitchen");
-    expect(vacateCall?.service_data?.source_id).to.equal(undefined);
+    expect(clearCall).to.exist;
+    expect(clearCall?.service_data?.location_id).to.equal("area_kitchen");
+    expect(clearCall?.service_data?.source_id).to.equal("light.kitchen_ceiling");
+    expect(clearCall?.service_data?.trailing_timeout).to.equal(0);
 
-    expect(emitted.map((detail) => detail.action)).to.deep.equal(["trigger", "vacate"]);
+    expect(emitted.map((detail) => detail.action)).to.deep.equal(["trigger", "clear"]);
   });
 
   it("disables source test buttons when behaviors are set to no change", async () => {

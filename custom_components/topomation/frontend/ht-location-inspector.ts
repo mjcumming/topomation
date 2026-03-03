@@ -17,6 +17,11 @@ import type {
 import { sharedStyles } from "./styles";
 import { getLocationIcon } from "./icon-utils";
 import { getLocationType } from "./hierarchy-rules";
+import {
+  isSystemShadowLocation,
+  managedShadowAreaIdForHost,
+  managedShadowLocationIdSet,
+} from "./shadow-location-utils";
 import { applyModeDefaults, getSourceDefaultsForEntity } from "./source-profile-utils";
 import {
   createTopomationActionRule,
@@ -111,6 +116,7 @@ export class HtLocationInspector extends LitElement {
   @state() private _stagedLinkedLocations?: string[];
   @state() private _stagedSyncLocations?: string[];
   @state() private _showAdvancedAdjacency = false;
+  @state() private _showRecentOccupancyEvents = false;
   @state() private _adjacencyNeighborId = "";
   @state() private _adjacencyBoundaryType = "door";
   @state() private _adjacencyDirection = "bidirectional";
@@ -205,6 +211,44 @@ export class HtLocationInspector extends LitElement {
       .header-vacancy-reason {
         font-size: 12px;
         color: var(--text-secondary-color);
+      }
+
+      .header-occupied-reason {
+        font-size: 12px;
+        color: var(--success-color);
+      }
+
+      .occupancy-events {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin-top: 10px;
+        max-width: 820px;
+      }
+
+      .occupancy-event {
+        display: inline-flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        font-size: 12px;
+        color: var(--primary-text-color);
+        border: 1px solid var(--divider-color);
+        border-radius: 8px;
+        padding: 6px 8px;
+        background: rgba(var(--rgb-primary-color), 0.03);
+      }
+
+      .occupancy-event-source {
+        font-weight: 600;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .occupancy-event-meta {
+        color: var(--text-secondary-color);
+        white-space: nowrap;
       }
 
       .header-meta {
@@ -1601,6 +1645,7 @@ export class HtLocationInspector extends LitElement {
     const occupancyLabel =
       occupiedState === true ? "Occupied" : occupiedState === false ? "Vacant" : "Unknown";
     const vacancyReason = this._resolveVacancyReason(occupancyState, occupiedState);
+    const occupiedReason = this._resolveOccupiedReason(occupancyState, occupiedState);
     const vacantAt = occupancyState ? this._resolveVacantAt(occupancyState.attributes || {}, occupied) : undefined;
     const vacantAtLabel = occupied ? this._formatVacantAtLabel(vacantAt) : undefined;
 
@@ -1629,6 +1674,13 @@ export class HtLocationInspector extends LitElement {
                 ? html`
                     <span class="header-vacant-at" data-testid="header-vacant-at">
                       Vacant at ${vacantAtLabel}
+                    </span>
+                  `
+                : ""}
+              ${occupied && occupiedReason
+                ? html`
+                    <span class="header-occupied-reason" data-testid="header-occupied-reason">
+                      Occupied: ${occupiedReason}
                     </span>
                   `
                 : ""}
@@ -1812,6 +1864,7 @@ export class HtLocationInspector extends LitElement {
     const siblingAreaSourceScope = this._isSiblingAreaSourceScope();
     const floorSourceCount = (config.occupancy_sources || []).length;
     const lockState = this._getLockState();
+    const occupancyActivity = this._occupancyContributions(config);
 
     if (isFloor) {
       return html`
@@ -1880,6 +1933,46 @@ export class HtLocationInspector extends LitElement {
                 : "Integration-owned location: choose sources from Home Assistant entities."}
             </div>
           </div>
+          ${occupancyActivity.length > 0
+            ? html`
+                <div class="card-section">
+                  <div class="section-title">
+                    <ha-icon .icon=${"mdi:clock-outline"}></ha-icon>
+                    Recent Occupancy Events
+                  </div>
+                  <div class="sources-inline-help" style="margin-bottom: 8px; display: flex; justify-content: space-between; align-items: baseline; gap: 8px;">
+                    Sources currently contributing to occupancy.
+                    ${occupancyActivity.length > 1
+                      ? html`
+                          <button
+                            class="button button-secondary"
+                            type="button"
+                            style="padding: 2px 8px; font-size: 11px;"
+                            @click=${() => {
+                              this._showRecentOccupancyEvents = !this._showRecentOccupancyEvents;
+                            }}
+                          >
+                            ${this._showRecentOccupancyEvents ? "Show less" : "Show all"}
+                          </button>
+                        `
+                      : ""}
+                  </div>
+                  <div class="occupancy-events">
+                    ${occupancyActivity
+                      .slice(0, this._showRecentOccupancyEvents ? occupancyActivity.length : 1)
+                      .map(
+                      (item) => html`
+                        <div class="occupancy-event">
+                          <span class="occupancy-event-source">${item.sourceLabel}</span>
+                          <span class="occupancy-event-meta">${item.stateLabel}</span>
+                          ${item.relativeTime ? html`<span class="occupancy-event-meta">${item.relativeTime}</span>` : ""}
+                        </div>
+                      `
+                      )}
+                  </div>
+                </div>
+              `
+            : ""}
           ${hasHaAreaLink
             ? ""
             : html`
@@ -1916,9 +2009,7 @@ export class HtLocationInspector extends LitElement {
 
   private _currentManagedShadowAreaId(): string {
     if (!this._isManagedShadowHost() || !this.location) return "";
-    const meta = (this.location.modules?._meta || {}) as Record<string, any>;
-    const shadowAreaId = meta.shadow_area_id;
-    return typeof shadowAreaId === "string" ? shadowAreaId.trim() : "";
+    return managedShadowAreaIdForHost(this.location);
   }
 
   private _managedShadowAreaById(locationId: string): Location | undefined {
@@ -1997,18 +2088,25 @@ export class HtLocationInspector extends LitElement {
     if (!this.location) return [];
     const floorParentId = this._linkedLocationFloorParentId();
     if (!floorParentId) return [];
+    const managedShadowIds = this._managedShadowLocationIds();
 
     return (this.allLocations || [])
       .filter((loc) => loc.id !== this.location!.id)
       .filter((loc) => (loc.parent_id ?? null) === floorParentId)
       .filter((loc) => getLocationType(loc) === "area")
-      .filter((loc) => !this._isManagedShadowLocation(loc))
+      .filter((loc) => !this._isManagedShadowLocation(loc, managedShadowIds))
       .sort((left, right) => left.name.localeCompare(right.name));
   }
 
-  private _isManagedShadowLocation(location: Location): boolean {
-    const meta = (location.modules?._meta || {}) as Record<string, any>;
-    return String(meta.role || "").trim().toLowerCase() === "managed_shadow";
+  private _isManagedShadowLocation(
+    location: Location,
+    managedShadowIds?: Set<string>
+  ): boolean {
+    return isSystemShadowLocation(location, managedShadowIds);
+  }
+
+  private _managedShadowLocationIds(): Set<string> {
+    return managedShadowLocationIdSet(this.allLocations || []);
   }
 
   private _normalizeLinkedLocationIds(
@@ -2447,10 +2545,11 @@ export class HtLocationInspector extends LitElement {
       return [];
     }
     const parentId = this.location.parent_id ?? null;
+    const managedShadowIds = this._managedShadowLocationIds();
     return (this.allLocations || [])
       .filter((loc) => loc.id !== this.location!.id)
       .filter((loc) => (loc.parent_id ?? null) === parentId)
-      .filter((loc) => !this._isManagedShadowLocation(loc))
+      .filter((loc) => !this._isManagedShadowLocation(loc, managedShadowIds))
       .filter((loc) => {
         const type = getLocationType(loc);
         return type === "area" || type === "subarea";
@@ -5112,12 +5211,13 @@ export class HtLocationInspector extends LitElement {
     if (!parentId) return [];
     const currentLocationId = this.location.id;
     const seen = new Set<string>();
+    const managedShadowIds = this._managedShadowLocationIds();
 
     return (this.allLocations || [])
       .filter((candidate) => candidate.id !== currentLocationId)
       .filter((candidate) => (candidate.parent_id ?? null) === parentId)
       .filter((candidate) => getLocationType(candidate) === "area")
-      .filter((candidate) => !this._isManagedShadowLocation(candidate))
+      .filter((candidate) => !this._isManagedShadowLocation(candidate, managedShadowIds))
       .filter((candidate) => !!candidate.ha_area_id)
       .filter((candidate) => {
         const areaId = candidate.ha_area_id!;
@@ -5134,8 +5234,9 @@ export class HtLocationInspector extends LitElement {
 
   private _managedShadowAreaIdSet(): Set<string> {
     const ids = new Set<string>();
+    const managedShadowIds = this._managedShadowLocationIds();
     for (const location of this.allLocations || []) {
-      if (!this._isManagedShadowLocation(location)) continue;
+      if (!this._isManagedShadowLocation(location, managedShadowIds)) continue;
       if (!location.ha_area_id) continue;
       ids.add(location.ha_area_id);
     }
@@ -5376,14 +5477,38 @@ export class HtLocationInspector extends LitElement {
     const transitionReason = this.occupancyTransitions?.[locationId]?.reason;
     const transitionOccupied = this.occupancyTransitions?.[locationId]?.occupied;
     if (transitionOccupied === false) {
-      const formattedTransitionReason = this._formatVacancyReason(transitionReason);
+      const formattedTransitionReason = this._formatOccupancyReason(transitionReason);
       if (formattedTransitionReason) return formattedTransitionReason;
     }
 
-    return this._formatVacancyReason(occupancyState?.attributes?.reason);
+    return this._formatOccupancyReason(occupancyState?.attributes?.reason);
   }
 
-  private _formatVacancyReason(reason: unknown): string | undefined {
+  private _resolveOccupiedReason(
+    occupancyState: Record<string, any> | undefined,
+    occupiedState: boolean | undefined
+  ): string | undefined {
+    if (occupiedState !== true) return undefined;
+    const locationId = this.location?.id;
+    if (!locationId) return undefined;
+
+    const transitionReason = this.occupancyTransitions?.[locationId]?.reason;
+    const transitionOccupied = this.occupancyTransitions?.[locationId]?.occupied;
+    if (transitionOccupied === true) {
+      const formattedTransitionReason = this._formatOccupancyReason(transitionReason);
+      if (formattedTransitionReason) return formattedTransitionReason;
+    }
+
+    const occupancyReason = this._formatOccupancyReason(occupancyState?.attributes?.reason);
+    if (occupancyReason) return occupancyReason;
+
+    const contributions = this._occupancyContributions(this._getOccupancyConfig(), true);
+    if (!contributions.length) return "Active source events detected";
+    const topContributor = contributions[0];
+    return `Contributed by ${topContributor.sourceLabel}`;
+  }
+
+  private _formatOccupancyReason(reason: unknown): string | undefined {
     if (typeof reason !== "string") return undefined;
     const rawReason = reason.trim();
     if (!rawReason) return undefined;
@@ -5402,12 +5527,144 @@ export class HtLocationInspector extends LitElement {
       const eventType = normalizedReason.split(":", 2)[1];
       if (eventType === "clear") return "Vacated by clear event";
       if (eventType === "vacate") return "Vacated explicitly";
-      if (eventType) return `Vacated by ${eventType} event`;
+      if (eventType) return this._formatOccupancyEventReason(eventType, "vacancy");
     }
-    return `Vacancy reason: ${rawReason}`;
+    if (normalizedReason.startsWith("occupancy:")) {
+      const eventType = normalizedReason.split(":", 2)[1];
+      if (eventType) return this._formatOccupancyEventReason(eventType, "occupied");
+    }
+    return `Reason: ${rawReason}`;
+  }
+
+  private _formatOccupancyEventReason(eventType: string, mode: "occupied" | "vacancy"): string {
+    const prefixes = {
+      occupied: "Occupied by",
+      vacancy: "Vacated by",
+    };
+    const prefix = prefixes[mode];
+
+    if (eventType === "handoff") {
+      return `${prefix} room handoff`;
+    }
+    if (eventType === "trigger") {
+      return `${prefix} trigger`;
+    }
+    if (eventType === "inherit") {
+      return `${prefix} inherited state`;
+    }
+    return `${prefix} ${eventType} event`;
+  }
+
+  private _occupancyContributions(
+    config: OccupancyConfig,
+    onlyActive = false
+  ): Array<{ sourceLabel: string; sourceId: string; stateLabel: string; relativeTime: string }>{
+    const occupancyState = this._getOccupancyState();
+    if (!occupancyState) return [];
+    const attrs = occupancyState.attributes || {};
+    const rawContributions = Array.isArray(attrs.contributions)
+      ? attrs.contributions
+      : [];
+
+    const nowMs = this._nowEpochMs;
+    const rows = rawContributions
+      .map((contribution: any) => {
+        const rawSourceId =
+          typeof contribution?.source_id === "string" && contribution.source_id
+            ? contribution.source_id
+            : typeof contribution?.source === "string" && contribution.source
+              ? contribution.source
+              : "";
+        if (!rawSourceId) return undefined;
+
+        const sourceLabel = this._sourceLabelForSourceId(config, rawSourceId);
+        const state = String(contribution?.state || contribution?.state_value || "").trim() || "active";
+        const timestamp =
+          this._parseDateValue(contribution?.updated_at) ||
+          this._parseDateValue(contribution?.changed_at) ||
+          this._parseDateValue(contribution?.last_changed) ||
+          this._parseDateValue(contribution?.timestamp);
+
+        const relativeTime = timestamp
+          ? `${this._formatRelativeDuration(timestamp)} ago`
+          : this._isContributionActive(contribution)
+            ? "active"
+            : "inactive";
+
+        return {
+          sourceLabel,
+          sourceId: rawSourceId,
+          stateLabel: state,
+          relativeTime,
+          _timestampMs: timestamp ? timestamp.getTime() : nowMs + (state === "active" ? 0 : -1),
+          _active: this._isContributionActive(contribution),
+        };
+      })
+      .filter((item): item is { sourceLabel: string; sourceId: string; stateLabel: string; relativeTime: string; _timestampMs: number; _active: boolean } =>
+        Boolean(item)
+      );
+
+    const ordered = [...rows].sort((left, right) => {
+      if (left._active !== right._active) return left._active ? -1 : 1;
+      return right._timestampMs - left._timestampMs;
+    });
+
+    const filtered = onlyActive ? ordered.filter((item) => item._active) : ordered;
+    return filtered.map(({ sourceLabel, stateLabel, relativeTime, sourceId }) => ({
+      sourceLabel: `${sourceLabel}${sourceLabel === sourceId ? "" : ` (${sourceId})`}`,
+      sourceId,
+      stateLabel,
+      relativeTime,
+    }));
+  }
+
+  private _isContributionActive(contribution: any): boolean {
+    if (!contribution) return false;
+    const state = String(contribution.state || contribution.value || "").toLowerCase();
+    if (state === "on" || state === "active" || state === "occupied" || state === "trigger") {
+      return true;
+    }
+
+    const expiresAt = this._parseDateValue(contribution.expires_at);
+    if (!expiresAt) return false;
+    return expiresAt.getTime() > this._nowEpochMs;
+  }
+
+  private _sourceLabelForSourceId(config: OccupancyConfig, sourceId: string): string {
+    const exact = (config.occupancy_sources || []).find(
+      (source) => source.source_id === sourceId || source.entity_id === sourceId
+    );
+    if (exact) {
+      return this._candidateTitle(
+        exact.entity_id,
+        exact.signal_key || this._normalizedSignalKey(exact.entity_id, undefined)
+      );
+    }
+
+    if (sourceId.includes("::")) {
+      const [entityId, rawSignal] = sourceId.split("::");
+      const normalizedSignal = this._normalizedSignalKey(entityId, rawSignal as SourceSignalKey);
+      const fallback = (config.occupancy_sources || []).find(
+        (source) => source.entity_id === entityId
+      );
+      if (fallback) {
+        return this._candidateTitle(fallback.entity_id, fallback.signal_key || normalizedSignal);
+      }
+      return this._candidateTitle(entityId, normalizedSignal);
+    }
+
+    return this._entityName(sourceId);
   }
 
   private _parseDateValue(value: unknown): Date | undefined {
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+      return value;
+    }
+    if (typeof value === "number" && Number.isFinite(value)) {
+      const milli = value > 1e12 ? value : value * 1000;
+      const dateValue = new Date(milli);
+      return Number.isNaN(dateValue.getTime()) ? undefined : dateValue;
+    }
     if (typeof value !== "string" || !value) return undefined;
     const dateValue = new Date(value);
     return Number.isNaN(dateValue.getTime()) ? undefined : dateValue;
@@ -5666,25 +5923,20 @@ export class HtLocationInspector extends LitElement {
 
       const trailing_timeout = source.off_trailing ?? 0;
       const sourceId = source.source_id || source.entity_id;
-      const vacate = trailing_timeout <= 0;
       await this.hass.callWS({
         type: "call_service",
         domain: "topomation",
-        service: vacate ? "vacate" : "clear",
-        service_data: this._serviceDataWithEntryId(vacate
-          ? {
-              location_id: this.location.id,
-            }
-          : {
-              location_id: this.location.id,
-              source_id: sourceId,
-              trailing_timeout,
-            }),
+        service: "clear",
+        service_data: this._serviceDataWithEntryId({
+          location_id: this.location.id,
+          source_id: sourceId,
+          trailing_timeout: Math.max(0, trailing_timeout),
+        }),
       });
       this.dispatchEvent(
         new CustomEvent("source-test", {
           detail: {
-            action: vacate ? "vacate" : "clear",
+            action: "clear",
             locationId: this.location.id,
             sourceId,
             trailing_timeout,
@@ -5693,17 +5945,20 @@ export class HtLocationInspector extends LitElement {
           composed: true,
         })
       );
-      if (vacate) {
-        this._showToast(`Vacated ${sourceId}`, "success");
+      const normalizedTrailingTimeout = Math.max(0, trailing_timeout);
+      if (normalizedTrailingTimeout > 0) {
+        this._showToast(
+          `Cleared ${sourceId} with ${this._formatDuration(normalizedTrailingTimeout)} trailing`,
+          "success"
+        );
       } else {
-        const blockers = this._activeContributorsExcluding(sourceId);
-        if (blockers.length > 0) {
-          const preview = blockers.slice(0, 2).join(", ");
-          const suffix = blockers.length > 2 ? ` +${blockers.length - 2} more` : "";
-          this._showToast(`Cleared ${sourceId}; still occupied by ${preview}${suffix}`, "error");
-        } else {
-          this._showToast(`Cleared ${sourceId}`, "success");
-        }
+        this._showToast(`Cleared ${sourceId}`, "success");
+      }
+      const blockers = this._activeContributorsExcluding(sourceId);
+      if (blockers.length > 0) {
+        const preview = blockers.slice(0, 2).join(", ");
+        const suffix = blockers.length > 2 ? ` +${blockers.length - 2} more` : "";
+        this._showToast(`Still occupied by ${preview}${suffix}`, "error");
       }
     } catch (err: any) {
       console.error("Failed to test source event:", err);

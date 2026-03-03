@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.21] - 2026-03-03
+
+### Fixed
+
+- Managed shadow fallback naming now uses Topomation-branded suffixes
+  (`[Topomation]`) instead of `(System)`, and reconciliation now repairs
+  legacy `(System)` shadow names to the new deterministic naming scheme.
+- Managed shadow UI filtering now also honors host
+  `_meta.shadow_area_id` mappings, so integration-owned shadow areas stay
+  hidden in tree/selector surfaces even when area-side shadow tags are stale
+  or incomplete.
+- Detection source OFF behavior is now strictly source-scoped:
+  `off_trailing=0` emits immediate `clear` (`timeout=0`) instead of
+  location-wide `vacate`, so one source cannot clear unrelated active
+  contributors.
+- Inspector `Test Off` now always calls `topomation.clear` with the source ID
+  and trailing timeout, matching runtime source-scoped semantics.
+- Added coverage for mixed-source timeout semantics: each source maintains its
+  own timer and occupancy remains active until the longest active contribution
+  expires.
+- Removed legacy managed-shadow compatibility paths
+  (`floor_proxy`, `proxy_area_id`, `proxy_for_floor_id`) so runtime/UI/WebSocket
+  logic now follows only the explicit managed-shadow contract
+  (`shadow_area_id`, `managed_shadow`, `shadow_for_location_id`).
+
 ## [0.2.20] - 2026-03-03
 
 ### Fixed

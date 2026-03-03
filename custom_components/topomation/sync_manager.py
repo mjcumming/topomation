@@ -35,6 +35,8 @@ _META_SHADOW_AREA_ID_KEY = "shadow_area_id"
 _META_SHADOW_FOR_LOCATION_ID_KEY = "shadow_for_location_id"
 _MANAGED_SHADOW_ROLE = "managed_shadow"
 _SHADOW_HOST_TYPES = frozenset({"floor", "building", "grounds"})
+_MANAGED_SHADOW_NAME_TAG = "Topomation"
+_MANAGED_SHADOW_NAME_MAX_ATTEMPTS = 100
 
 
 def _location_type(location: object) -> str:
@@ -58,6 +60,15 @@ def _is_shadow_host(location: object) -> bool:
     if bool(getattr(location, "is_explicit_root", False)):
         return False
     return _location_type(location) in _SHADOW_HOST_TYPES
+
+
+def _managed_shadow_name_candidate(base_name: str, attempt: int) -> str:
+    """Build deterministic managed-shadow area name candidates."""
+    if attempt <= 0:
+        return base_name
+    if attempt == 1:
+        return f"{base_name} [{_MANAGED_SHADOW_NAME_TAG}]"
+    return f"{base_name} [{_MANAGED_SHADOW_NAME_TAG} {attempt}]"
 
 class SyncManager:
     """Sync Home Assistant registries into topology locations."""
@@ -575,10 +586,10 @@ class SyncManager:
             return None
 
         floor_id = self._shadow_floor_id_for_host(host_location)
-        base_name = host_location.name
-        name_candidates = [base_name, f"{base_name} (System)"]
+        base_name = str(host_location.name).strip() or "Area"
         created_area = None
-        for candidate_name in name_candidates:
+        for attempt in range(_MANAGED_SHADOW_NAME_MAX_ATTEMPTS):
+            candidate_name = _managed_shadow_name_candidate(base_name, attempt)
             try:
                 created_area = self.area_registry.async_create(name=candidate_name, floor_id=floor_id)
                 break
@@ -586,18 +597,12 @@ class SyncManager:
                 if "already in use" not in str(err):
                     raise
         if created_area is None:
-            suffix = 2
-            while True:
-                try:
-                    created_area = self.area_registry.async_create(
-                        name=f"{base_name} (System {suffix})",
-                        floor_id=floor_id,
-                    )
-                    break
-                except ValueError as err:
-                    if "already in use" not in str(err):
-                        raise
-                    suffix += 1
+            _LOGGER.warning(
+                "Unable to allocate managed shadow area name for host '%s' after %d attempts",
+                host_id,
+                _MANAGED_SHADOW_NAME_MAX_ATTEMPTS,
+            )
+            return None
 
         location_id = f"area_{created_area.id}"
 
@@ -648,8 +653,6 @@ class SyncManager:
         else:
             next_area_meta.pop("ha_floor_id", None)
 
-        # Legacy proxy keys are removed as part of managed-shadow migration.
-        next_area_meta.pop("proxy_for_floor_id", None)
         self.loc_mgr.set_module_config(location_id, "_meta", next_area_meta)
 
         host_meta = host_location.modules.get("_meta", {})
@@ -657,11 +660,57 @@ class SyncManager:
             host_meta = {}
         next_host_meta = dict(host_meta)
         next_host_meta[_META_SHADOW_AREA_ID_KEY] = location_id
-        next_host_meta.pop("proxy_area_id", None)
         self.loc_mgr.set_module_config(host_id, "_meta", next_host_meta)
 
         _LOGGER.info("Created managed shadow area '%s' for %s", location_id, host_id)
         return location_id
+
+    def _reconcile_managed_shadow_area_name(
+        self,
+        host_location: Location,
+        shadow_location: Location,
+    ) -> None:
+        """Ensure managed shadow area names follow deterministic Topomation naming."""
+        host_name = str(getattr(host_location, "name", "") or "").strip()
+        if not host_name:
+            return
+
+        shadow_area_id = str(shadow_location.ha_area_id or "").strip()
+        if not shadow_area_id:
+            shadow_meta = shadow_location.modules.get("_meta", {})
+            if isinstance(shadow_meta, dict):
+                shadow_area_id = str(shadow_meta.get("ha_area_id", "")).strip()
+        if not shadow_area_id:
+            return
+
+        shadow_area = self.area_registry.async_get_area(shadow_area_id)
+        if shadow_area is None:
+            return
+
+        resolved_name = shadow_area.name
+        for attempt in range(_MANAGED_SHADOW_NAME_MAX_ATTEMPTS):
+            candidate_name = _managed_shadow_name_candidate(host_name, attempt)
+            if shadow_area.name == candidate_name:
+                resolved_name = candidate_name
+                break
+            try:
+                shadow_area = self.area_registry.async_update(shadow_area.id, name=candidate_name)
+                resolved_name = shadow_area.name
+                break
+            except ValueError as err:
+                if "already in use" not in str(err):
+                    raise
+        else:
+            _LOGGER.warning(
+                "Unable to reconcile managed shadow area name for host '%s' after %d attempts",
+                host_location.id,
+                _MANAGED_SHADOW_NAME_MAX_ATTEMPTS,
+            )
+            return
+
+        shadow_location_id = str(getattr(shadow_location, "id", "") or "")
+        if shadow_location_id and shadow_location.name != resolved_name:
+            self.loc_mgr.update_location(shadow_location_id, name=resolved_name)
 
     def _reconcile_managed_shadow_areas(self) -> None:
         """Enforce managed shadow-area policy for floor/building/grounds hosts."""
@@ -686,6 +735,13 @@ class SyncManager:
         }
         shadow_ids_by_host: dict[str, list[str]] = {}
 
+        def _candidate_host_id(meta: dict[str, Any]) -> str:
+            """Resolve host id declared by managed-shadow metadata."""
+            managed_host_id = str(meta.get(_META_SHADOW_FOR_LOCATION_ID_KEY, "")).strip()
+            if managed_host_id in host_ids:
+                return managed_host_id
+            return ""
+
         # Pass 1: normalize area-side managed shadow tags.
         for location_id, location in by_id.items():
             if _location_type(location) != "area":
@@ -696,29 +752,39 @@ class SyncManager:
                 continue
 
             role = str(meta.get(_META_ROLE_KEY, "")).strip().lower()
-            shadow_for_location_id = str(
-                meta.get(_META_SHADOW_FOR_LOCATION_ID_KEY, "")
-            ).strip()
+            shadow_for_location_id = str(meta.get(_META_SHADOW_FOR_LOCATION_ID_KEY, "")).strip()
             has_ha_area_link = bool(location.ha_area_id or meta.get("ha_area_id"))
+            candidate_host_id = _candidate_host_id(meta)
 
             is_valid_shadow = (
                 role == _MANAGED_SHADOW_ROLE
-                and shadow_for_location_id in host_ids
-                and getattr(location, "parent_id", None) == shadow_for_location_id
+                and
+                bool(candidate_host_id)
+                and getattr(location, "parent_id", None) == candidate_host_id
                 and has_ha_area_link
             )
             if is_valid_shadow:
-                shadow_ids_by_host.setdefault(shadow_for_location_id, []).append(location_id)
+                next_meta = dict(meta)
+                changed = False
+                if role != _MANAGED_SHADOW_ROLE:
+                    next_meta[_META_ROLE_KEY] = _MANAGED_SHADOW_ROLE
+                    changed = True
+                if shadow_for_location_id != candidate_host_id:
+                    next_meta[_META_SHADOW_FOR_LOCATION_ID_KEY] = candidate_host_id
+                    changed = True
+
+                if changed:
+                    self.loc_mgr.set_module_config(location_id, "_meta", next_meta)
+
+                shadow_ids_by_host.setdefault(candidate_host_id, []).append(location_id)
                 continue
 
             next_meta = dict(meta)
             changed = False
-            if role in {_MANAGED_SHADOW_ROLE, "floor_proxy"}:
+            if role == _MANAGED_SHADOW_ROLE:
                 if next_meta.pop(_META_ROLE_KEY, None) is not None:
                     changed = True
             if next_meta.pop(_META_SHADOW_FOR_LOCATION_ID_KEY, None) is not None:
-                changed = True
-            if next_meta.pop("proxy_for_floor_id", None) is not None:
                 changed = True
 
             if changed:
@@ -737,10 +803,6 @@ class SyncManager:
                     candidate = str(host_meta.get(_META_SHADOW_AREA_ID_KEY, "")).strip()
                     if candidate in shadow_ids:
                         preferred_shadow_id = candidate
-                    if not preferred_shadow_id:
-                        legacy_candidate = str(host_meta.get("proxy_area_id", "")).strip()
-                        if legacy_candidate in shadow_ids:
-                            preferred_shadow_id = legacy_candidate
 
             if not preferred_shadow_id:
                 preferred_shadow_id = sorted(shadow_ids)[0]
@@ -759,8 +821,6 @@ class SyncManager:
                 if next_shadow_meta.pop(_META_ROLE_KEY, None) is not None:
                     changed = True
                 if next_shadow_meta.pop(_META_SHADOW_FOR_LOCATION_ID_KEY, None) is not None:
-                    changed = True
-                if next_shadow_meta.pop("proxy_for_floor_id", None) is not None:
                     changed = True
                 if changed:
                     self.loc_mgr.set_module_config(shadow_id, "_meta", next_shadow_meta)
@@ -788,13 +848,20 @@ class SyncManager:
             elif next_meta.pop(_META_SHADOW_AREA_ID_KEY, None) is not None:
                 changed = True
 
-            if next_meta.pop("proxy_area_id", None) is not None:
-                changed = True
-
             if changed:
                 self.loc_mgr.set_module_config(location_id, "_meta", next_meta)
 
-        # Pass 4: create missing managed shadow areas.
+        # Pass 4: normalize managed shadow display names.
+        for host_id, shadow_ids in shadow_ids_by_host.items():
+            if len(shadow_ids) != 1:
+                continue
+            host_location = by_id.get(host_id)
+            shadow_location = by_id.get(shadow_ids[0])
+            if host_location is None or shadow_location is None:
+                continue
+            self._reconcile_managed_shadow_area_name(host_location, shadow_location)
+
+        # Pass 5: create missing managed shadow areas.
         for host_id in sorted(host_ids):
             if shadow_ids_by_host.get(host_id):
                 continue

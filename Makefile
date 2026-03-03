@@ -1,5 +1,10 @@
 .PHONY: help install dev-install test test-cov lint format typecheck check clean
 
+HA_DEV_BIN ?= /home/vscode/.local/ha-venv/bin/hass
+HA_DEV_CONFIG ?= /workspaces/core/config
+HA_DEV_LOG ?= /tmp/topomation-ha.log
+HA_DEV_PID ?= /tmp/topomation-ha.pid
+
 help:
 	@echo "topomation - Home Assistant Integration"
 	@echo ""
@@ -10,6 +15,9 @@ help:
 	@echo "  make test-comprehensive  Run backend + frontend unit/component/e2e suites"
 	@echo "  make test-release-live   Run release gate (comprehensive + real HA contract)"
 	@echo "  make frontend-test-smoke Run production-like frontend smoke profile"
+	@echo "  make test-ha-up            Start local HA via hass -c /workspaces/core/config --debug"
+	@echo "  make test-ha-down          Stop local HA started by test-ha-up"
+	@echo "  make test-ha-logs          Tail local HA dev logs from /tmp/topomation-ha.log"
 	@echo "  make test-cov     Run tests with coverage report"
 	@echo "  make lint         Run ruff linter"
 	@echo "  make format       Format code with black"
@@ -58,15 +66,68 @@ test-all: test test-realworld
 	@echo "✅ All automated tests completed"
 
 test-ha-up:
-	cd tests && docker-compose -f docker-compose.test-ha.yml up -d
-	@echo "⏳ Waiting for Home Assistant to start..."
-	@echo "Visit http://localhost:8124 to complete setup"
+	@if [ -f "$(HA_DEV_PID)" ] && kill -0 "$$(cat "$(HA_DEV_PID)")" 2>/dev/null; then \
+		echo "⚠️  HA already running (pid $$(cat "$(HA_DEV_PID)"))."; \
+		exit 0; \
+	fi; \
+	CONFIG_PID=$$(pgrep -f "hass -c $(HA_DEV_CONFIG)" | head -n 1); \
+	if [ -z "$$CONFIG_PID" ]; then \
+		CONFIG_PID=$$(pgrep -f "$(HA_DEV_BIN) -c $(HA_DEV_CONFIG)" | head -n 1); \
+	fi; \
+	if [ -n "$$CONFIG_PID" ] && kill -0 "$$CONFIG_PID" 2>/dev/null; then \
+		echo "⚠️  HA already running for $(HA_DEV_CONFIG) (pid $$CONFIG_PID)."; \
+		echo "$$CONFIG_PID" > "$(HA_DEV_PID)"; \
+		echo "✅ HA already running. Log: $(HA_DEV_LOG), pid: $$CONFIG_PID"; \
+		echo "🌐 Open http://localhost:8123"; \
+		exit 0; \
+	fi; \
+	HA_BIN="$(HA_DEV_BIN)"; \
+	if ! command -v "$$HA_BIN" >/dev/null 2>&1; then \
+		HA_BIN="hass"; \
+	fi; \
+	if ! command -v "$$HA_BIN" >/dev/null 2>&1; then \
+		echo "❌ hass executable not found. Install Home Assistant dev runtime before running."; \
+		exit 1; \
+	fi; \
+	echo "🚀 Starting Home Assistant in process mode: hass -c $(HA_DEV_CONFIG) --debug"; \
+	( nohup "$$HA_BIN" -c "$(HA_DEV_CONFIG)" --debug >"$(HA_DEV_LOG)" 2>&1 & echo $$! >"$(HA_DEV_PID)" ) >/dev/null; \
+	sleep 2; \
+	NEW_PID=$$(cat "$(HA_DEV_PID)"); \
+	if ! kill -0 "$$NEW_PID" 2>/dev/null; then \
+		echo "❌ Failed to start HA. Last log lines:"; \
+		tail -n 30 "$(HA_DEV_LOG)"; \
+		rm -f "$(HA_DEV_PID)"; \
+		exit 1; \
+	fi; \
+	echo "✅ HA started. Log: $(HA_DEV_LOG), pid: $$NEW_PID"; \
+	echo "🌐 Open http://localhost:8123"
 
 test-ha-down:
-	cd tests && docker-compose -f docker-compose.test-ha.yml down
+	@if [ -f "$(HA_DEV_PID)" ]; then \
+		PID="$$(cat "$(HA_DEV_PID)")"; \
+		if kill -0 "$$PID" 2>/dev/null; then \
+			echo "🛑 Stopping HA (pid $$PID)"; \
+			kill "$$PID" 2>/dev/null || true; \
+			sleep 1; \
+		else \
+			echo "ℹ️  Recorded HA process is not running."; \
+		fi; \
+		rm -f "$(HA_DEV_PID)"; \
+	else \
+		CONFIG_PID=$$(pgrep -f "hass -c $(HA_DEV_CONFIG)" | head -n 1); \
+		if [ -z "$$CONFIG_PID" ]; then \
+			CONFIG_PID=$$(pgrep -f "$(HA_DEV_BIN) -c $(HA_DEV_CONFIG)" | head -n 1); \
+		fi; \
+		if [ -n "$$CONFIG_PID" ] && kill -0 "$$CONFIG_PID" 2>/dev/null; then \
+			echo "🛑 Stopping HA discovered running pid $$CONFIG_PID"; \
+			kill "$$CONFIG_PID" 2>/dev/null || true; \
+		else \
+			echo "ℹ️  No matching HA process found."; \
+		fi; \
+	fi
 
 test-ha-logs:
-	cd tests && docker-compose -f docker-compose.test-ha.yml logs -f
+	tail -f "$(HA_DEV_LOG)"
 
 lint:
 	ruff check custom_components/ tests/
