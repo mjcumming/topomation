@@ -943,6 +943,7 @@ export class TopomationPanel extends LitElement {
                     : []}
                   @source-test=${this._handleSourceTest}
                   @adjacency-changed=${this._handleAdjacencyChanged}
+                  @location-meta-changed=${this._handleLocationMetaChanged}
                 ></ht-location-inspector>
               `}
           ${this._eventLogOpen ? this._renderEventLog() : ""}
@@ -988,7 +989,7 @@ export class TopomationPanel extends LitElement {
         .hass=${this.hass}
         .open=${this._locationDialogOpen}
         .location=${this._editingLocation}
-        .locations=${this._locations}
+        .locations=${this._parentSelectableLocations()}
         .entryId=${this._activeEntryId()}
         .defaultParentId=${this._newLocationDefaults?.parentId}
         .defaultType=${this._newLocationDefaults?.type}
@@ -1517,9 +1518,10 @@ export class TopomationPanel extends LitElement {
       // Keep selection valid against the visible/non-root subset.
       if (
         !this._selectedId ||
-        !this._locations.some((loc) => loc.id === this._selectedId)
+        !this._locations.some((loc) => loc.id === this._selectedId) ||
+        this._isManagedShadowLocation(this._locations.find((loc) => loc.id === this._selectedId))
       ) {
-        this._selectedId = this._locations[0]?.id;
+        this._selectedId = this._preferredSelectedLocationId();
       }
       if (this._rightPanelMode === "assign") {
         void this._ensureEntityAreaIndex();
@@ -1549,6 +1551,10 @@ export class TopomationPanel extends LitElement {
   }
 
   private _handleAdjacencyChanged(): void {
+    void this._loadLocations(true);
+  }
+
+  private _handleLocationMetaChanged(): void {
     void this._loadLocations(true);
   }
 
@@ -2770,6 +2776,20 @@ export class TopomationPanel extends LitElement {
       "Demo seeding is disabled in this environment.",
       "warning"
     );
+  }
+
+  private _isManagedShadowLocation(location: Location | undefined): boolean {
+    if (!location) return false;
+    const meta = (location.modules?._meta || {}) as Record<string, any>;
+    return String(meta.role || "").trim().toLowerCase() === "managed_shadow";
+  }
+
+  private _parentSelectableLocations(): Location[] {
+    return this._locations.filter((location) => !this._isManagedShadowLocation(location));
+  }
+
+  private _preferredSelectedLocationId(): string | undefined {
+    return this._locations.find((location) => !this._isManagedShadowLocation(location))?.id;
   }
 }
 

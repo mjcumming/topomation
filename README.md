@@ -1,231 +1,219 @@
 # TopoMation
 
-<p align="center">
-  <img src="custom_components/topomation/brand/logo.png" alt="TopoMation logo" width="180" />
-</p>
+![TopoMation logo](custom_components/topomation/brand/logo.png)
 
-[![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
+[![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
 [![Installations](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fanalytics.home-assistant.io%2Fcustom_integrations.json&query=%24.topomation.total&label=installs&color=41BDF5&logo=home-assistant&cacheSeconds=3600)](https://analytics.home-assistant.io/custom_integrations.json)
 [![GitHub Release](https://img.shields.io/github/release/mjcumming/topomation.svg)](https://github.com/mjcumming/topomation/releases)
 [![CI](https://img.shields.io/github/actions/workflow/status/mjcumming/topomation/frontend-tests.yml?branch=main&label=CI)](https://github.com/mjcumming/topomation/actions/workflows/frontend-tests.yml)
 [![License](https://img.shields.io/github/license/mjcumming/topomation.svg)](https://github.com/mjcumming/topomation/blob/main/LICENSE)
-[![Project Status](https://img.shields.io/badge/project%20status-alpha-orange.svg)](https://github.com/mjcumming/topomation)
+[![Status](https://img.shields.io/badge/status-alpha-orange.svg)](https://github.com/mjcumming/topomation)
 
-TopoMation is a Home Assistant custom integration that makes occupancy automation practical at whole-home scale.
+**Whole-home occupancy automation for Home Assistant — without the spaghetti.**
 
-Control lights and devices by room—turn on when someone’s there, turn off after they leave—without writing per-room automations or hunting for entity IDs. You get the same power (and more) as other presence-based solutions, in an easier-to-use interface with one crucial difference: **every rule you create lives in the Home Assistant Rules Engine**. What’s happening is visible, logged, and easy to follow—no black box.
+TopoMation replaces dozens of per-room automations with a single, visual approach: model your home as a tree, assign sensors and devices, and define "when occupied / when vacant" rules — all from a point-and-click UI. Every rule becomes a native Home Assistant automation, fully visible in traces and logs. No black box. No YAML. No hunting for entity IDs.
 
-### The Two Things TopoMation Does
+---
 
-1. **You create a topology of your home.** One tree: building, grounds, floors, areas, subareas (closets, pantries, nooks). Drag and drop. Assign devices to locations. The tree is your map of the house and your dashboard for what’s going on.
-2. **You automate using that topology.** One occupancy signal per location, one UI to define *On Occupied* and *On Vacant* actions. Pick devices from a list—no entity IDs to type. Set timeouts (e.g. “turn off 5 minutes after last motion”) in the UI. TopoMation creates native Home Assistant automations, so every rule appears in HA’s automation list, shows up in traces and logs, and stays fully editable and debuggable.
+## The Problem
 
-## The Tree: Your Home at a Glance
+Anyone who's tried to wire up occupancy-driven lighting across an entire home knows how it goes:
 
-Everything in TopoMation starts from **one tree**. We designed it that way on purpose.
+- **Automation sprawl.** One automation per room, per condition, per time of day. Multiply by every room in the house. Good luck maintaining that.
+- **Sensor chaos.** Motion detectors, door sensors, mmWave presence, device trackers — they all behave differently and nothing synthesizes them into a single "is someone here?" answer.
+- **Invisible logic.** Other presence solutions can work, but often hide their decision-making. When something misfires at 2 AM, you're reverse-engineering someone else's state machine.
+- **No spatial model.** Home Assistant gives you areas and floors, but no real hierarchy. There's no concept of "the pantry is *inside* the kitchen" or "indoor vs. outdoor."
 
-**What we’ve done.** Home Assistant gives you a flat list of areas and floors. That’s fine for assigning devices, but it doesn’t reflect how you actually think about your home—indoor vs outdoor, main floor vs basement, or that the closet and the pantry are *inside* the room, not next to it. We added a real hierarchy: **building**, **grounds**, **floors**, **areas**, and **subareas**. You get one shared model of the house that TopoMation (and you) use for structure, occupancy, and automation.
+## What TopoMation Does About It
 
-**Why we designed it this way.** The tree is not just a list of labels. It’s the place you go to see and control your home. You can:
+TopoMation solves this in two moves:
 
-- **Understand the layout** — See the whole house in one view. Which rooms are under which floor, which zones are indoors vs outdoors, where the micro-zones (closet, pantry, landing) live. No more mental map in your head; the tree is the map.
-- **Organize the way you live** — Drag and drop to match reality. Put floors under a *building* root, add a *grounds* root for outside. Create *subareas* for closets, nooks, or landings so they have their own occupancy and their own “turn off in 5 minutes” without touching the parent room.
-- **Assign devices to the right place** — Lights and sensors live on the tree. When you add an “On Occupied” or “On Vacant” action, you pick from what’s assigned to that location. The tree defines what’s in scope.
-- **See what’s happening** — Occupancy state, lock state, and structure are all in the same view. You can tell at a glance which locations are occupied, which are locked for a scene, and how the house is wired.
+**1. You model your home as a tree.** A real hierarchy: buildings, grounds, floors, areas, and subareas (closets, nooks, pantries). The tree is fully drag-and-drop — grab a room and move it under a different floor, nest a closet inside a bedroom, reorganize your entire layout without breaking a single automation. Assign sensors and devices to their locations. The tree becomes your single source of truth for what's where.
 
-**What it offers.** One place to build your topology, assign devices, configure detection (motion, doors, presence, etc.), and define occupied/vacant actions. No jumping between unrelated lists. The tree is your single source of truth for “where things are” and “what runs where.” When you add a closet as a subarea and give it a 5‑minute timeout, that behavior is scoped to the closet—the rest of the house doesn’t change. When you link rooms for open-plan spaces, the tree makes the relationship explicit. Better structure means clearer automation and easier debugging.
+**2. You automate from that tree.** For each location, you configure detection sources and define *On Occupied* / *On Vacant* actions. Pick devices from a dropdown — no entity IDs. Set timeouts in the UI — no YAML. TopoMation generates native HA automations that show up in **Settings → Automations & Scenes**, appear in traces and logs, and remain fully editable. You always know what's running and why.
 
-So: **start at the top of the tree.** Shape it, assign to it, automate from it. The rest of TopoMation is built on that foundation.
+**And the tree shows you what's happening right now.** Every node in the tree displays its live occupancy state — occupied, vacant, or locked. Occupancy propagates up the hierarchy, so a single glance at a floor node tells you whether anyone is on that floor. Expand to see exactly which rooms. It's your whole-home occupancy dashboard and your automation management surface in one view.
 
-## Why This Exists
+---
 
-Most occupancy setups break down the same way:
+## Key Capabilities
 
-- **Too many automations** — Per-room automations multiply until they’re hard to reason about.
-- **Inconsistent sensors** — Motion, doors, presence, and device trackers all behave differently; occupancy feels unpredictable.
-- **Debugging the wrong thing** — You end up chasing entity transitions instead of understanding home behavior.
-- **No map** — There’s no single view of how occupancy and automation are wired across the house.
+### One Occupancy Signal Per Location
+Multiple sensor types — motion, door contacts, mmWave presence, device trackers, media players — are fused into a single `binary_sensor` per location. Each source has configurable semantics: does it *trigger* occupancy, *clear* its contribution, or authoritatively *vacate* the space? You decide. The result is stable, predictable occupancy that reflects how the room actually works.
 
-Other solutions can add presence-aware behavior, but often do it with internal logic that’s hard to see or debug. TopoMation gives you the same (and more) with a clear model: one tree, one occupancy language, and **every rule in Home Assistant**. If something happens, you can see why.
+### Configurable Timeouts
+Set per-location timeouts ("turn off 5 minutes after last activity") right in the UI. Motion sensors can use finite hold times; true presence sensors can stay indefinite with trailing grace periods. Occupancy that's stable without being sticky.
 
-## What TopoMation Delivers
+### Daylight-Aware Actions
+Enable "Only when dark" on any occupied action. Lights come on when someone enters the room *and* the sun is below the horizon. No extra automations, no lux sensors required.
 
-- **A global tree view of the entire home** — Floors, areas, subareas, indoor/outdoor roots. One place to see and manage structure.
-- **One occupancy binary sensor per location** — For dashboards, automations, and debugging. No guessing which entity drives which room.
-- **UI-managed detection** — Consistent trigger/clear/vacate semantics and timeouts (e.g. “5 min after last activity”) configured in the panel, not YAML.
-- **Rules that live in Home Assistant** — Every *On Occupied* and *On Vacant* rule is a native Home Assistant automation (Rules Engine). Visible in **Settings → Automations & Scenes**, logged in the system, easy to trace and edit. You always know what’s running and why.
-- **Point-and-click actions** — Pick the target device from a list; choose Turn On / Turn Off / Toggle. No entity IDs to look up.
-- **Linked rooms for occupancy** — In open-plan spaces, one area’s occupancy can contribute to another (e.g. Family Room → Kitchen) without extra sensors. Configure directional links in Detection; contributions clear when the linked room goes vacant.
-- **Runtime controls** — `trigger`, `clear`, `vacate`, `lock`, `unlock` for manual override and advanced workflows.
+### Subareas for Micro-Zones
+Give the closet, pantry, or reading nook its own occupancy and its own timeout — scoped independently from the parent room. A 5-minute closet timer doesn't affect the kitchen it's inside.
 
-## From Simple to Powerful
+### Sync Rooms for Open Plans
+In open-concept spaces, you can sync rooms so they share the same occupancy state and timeout. Activity in either room keeps both occupied, and vacancy clears together. Directional contributors are still available under advanced controls for niche one-way influence patterns.
 
-**The simple case.** Turn on a closet light and want it to turn off in 5 minutes if nothing else happens? You don’t need to do anything else. Add the closet to the tree, add the motion (or door) sensor, set the timeout to 5 minutes, and add *On Occupied* → turn on light, *On Vacant* → turn off light. Done. No extra automations, no entity ID lookups.
+### Occupancy Propagation
+Occupancy flows up the tree automatically. When the kitchen is occupied, the first floor knows. When the first floor has activity, the building knows. You get a live, hierarchical picture of where people are — not just per-room, but per-floor and per-structure. A single glance at the top of the tree tells you whether anyone is home. Drill down to see exactly where.
 
-**When it gets richer.** TopoMation combines events from **all sorts of sensors**—motion, door contacts, presence sensors, device trackers, even light or media activity—into **one occupancy state per location**, with a **configurable timeout** (or “indefinite until something clears it”). You choose how each source contributes (trigger, clear, vacate) and how long the location stays occupied after the last activity. So a room can be “occupied” because of motion *or* an open door *or* a device tracker, and it goes vacant only after your chosen timeout (or when a source says “I’m gone”). That single, consistent occupancy signal then drives everything.
+### Party Mode: Suspend Everything
+Having people over? Lock an entire subtree and all occupancy automations in those areas stop. Lights stay on, fans stay on, nothing turns off because someone stepped out of the motion sensor's view for five minutes.
 
-On top of that we add **built-in occupied and vacant actions** with **time of day**. For example: “turn the lights on when this room is occupied—**but only when it’s dark**.” That’s daylight-aware: we use the sun (e.g. *sun.sun* below horizon), not a per-room brightness sensor. So you get “lights on when someone’s there and it’s nighttime” without wiring your own sun condition. Occupied and vacant actions are still plain Home Assistant automations, so you can see and edit them; we just create them for you from the tree.
+Lock the main floor with `subtree` scope and every room underneath freezes in its current state. No lights flickering off mid-conversation. No bathroom going dark on your guests. When the party's over, unlock and normal occupancy behavior resumes instantly.
 
-So: simple things stay simple (closet, 5 min, done). Complex things—many sensors, one occupancy, timeouts, and daylight-aware actions—stay manageable because they all flow from the same tree and the same UI.
+You can also lock a single room with `self` scope — useful for movie night (lock the living room so the lights don't turn on when someone gets up for popcorn) or for debugging a tricky automation without the room changing state under you.
 
-## Point-and-Click Automation (No YAML, No Entity IDs)
+Locks are stackable and source-tagged, so multiple locks can coexist and each one unlocks independently. Lock from the UI, from a service call, or from your own automations — it's just `topomation.lock` and `topomation.unlock`.
 
-You build occupancy behavior entirely from the TopoMation panel:
+### Full Transparency — No Black Box
+Every rule TopoMation creates is a native Home Assistant automation. You'll find them in **Settings → Automations & Scenes**. They appear in traces. They show up in logs. If something unexpected happens, you trace it the same way you'd trace any other HA automation.
 
-1. **Select a location** in the tree (e.g. Closet, Kitchen).
-2. **Detection**: Add motion, door, or other sources; set **timeout** in minutes (e.g. “5 min after last activity”) or “Indefinite” — all in the UI.
-3. **On Occupied** / **On Vacant**: Add actions by picking the **target device from a list** and choosing Turn On, Turn Off, or Toggle. No `entity_id` typing.
-4. Optionally enable **Only when dark** for occupied actions (daylight-aware: sun below horizon, not per-room brightness).
+### Runtime Controls
+Manually trigger, clear, or vacate any location. Lock or unlock from the tree UI or via service calls. Everything is accessible for manual overrides, testing, and advanced workflows.
 
-TopoMation creates **native Home Assistant automations** for each rule. They show up under **Settings → Automations & Scenes**, in traces and logs—so you can see exactly what fired and why.
+---
 
-## Example: Closet Light (The Classic Win)
+## Five-Minute Example: The Closet Light
 
-A concrete workflow that takes a couple of minutes:
+This is the automation everyone wants and nobody wants to maintain by hand.
 
-1. Create **Closet** as a `subarea` under the right room in the tree.
-2. In **Detection**, add the closet motion or door sensor. Set **timeout to 5 minutes** so occupancy clears 5 minutes after the last activity.
-3. **On Occupied**: add an action — choose **Turn on** and **pick the closet light from the list**.
-4. **On Vacant**: add an action — **Turn off**, same light.
+1. **Add a subarea** called "Closet" under the parent room in the tree.
+2. **Detection:** add the closet's motion or door sensor. Set timeout to **5 minutes**.
+3. **On Occupied:** Turn on → pick the closet light from the dropdown.
+4. **On Vacant:** Turn off → same light.
 
-That’s it. You don’t need to do anything else. No entity IDs to look up, no YAML. The integration creates the automations; you get “light on when I’m there, off 5 minutes after I leave” with a point-and-click flow.
+Done. Light turns on when you walk in, turns off 5 minutes after you leave. No YAML, no entity IDs, no separate automation to create and name and debug.
 
-## More Example Flows
+Now scale that to every room in the house. That's the point.
 
-- **Kitchen lights** — On when occupied (optionally “only when dark,” i.e. daylight-aware), off when vacant.
-- **Manual “I’m here for a bit”** — From the tree, mark a room occupied with a timeout; vacate when done.
-- **Lock a location** — Freeze occupancy state for testing or a scene; unlock when ready.
-- **Linked rooms** — Open-plan spaces: e.g. Family Room can contribute to Kitchen occupancy without extra sensors.
+---
 
-## Why a Real Topology (Not Just Areas)?
+## You Already Have Sensors — You Just Don't Know It
 
-Home Assistant’s areas and floors are a flat list. For occupancy you often need **micro-zones** (closet, pantry, landing), **indoor vs outdoor** roots, and **nesting** that matches how you use the house. TopoMation’s location tree gives you that structure in **one place**—so one panel shows the whole home, device assignment, detection, and automation, all tied to the same topology.
+Most people think occupancy automation requires dedicated motion or presence sensors in every room. TopoMation changes that equation because **any state change on any entity can be a detection source**. The light switch someone just flipped? That's a sensor. The fan they turned on? Sensor. The exhaust fan in the bathroom? Sensor. A camera with person detection? Sensor. You're already generating occupancy signals every time you interact with a room — TopoMation lets you use them.
 
-## The Location Model We Built
+### Got a Camera? You've Got a Presence Sensor
 
-TopoMation supports five location types:
+This is the one that clicks instantly. You buy a camera with person detection — Frigate, a Reolink, an Amcrest, whatever runs local. It already creates a binary sensor in Home Assistant when it sees a person. With TopoMation:
 
-- `building`: root-level structural wrapper for indoor hierarchies.
-- `grounds`: root-level structural wrapper for outdoor hierarchies.
-- `floor`: Home Assistant floor wrapper (can sit at root or under `building`).
-- `area`: Home Assistant area wrapper or integration-owned area node.
-- `subarea`: nested micro-zone for finer control (e.g. closet, pantry, nook).
+1. **Assign the camera's person detection entity** to the area in the tree.
+2. That's it. There is no step 2.
 
-**Important: areas and subareas in the tree are still Home Assistant areas.** We don’t create a new entity type in HA. We’ve just allowed a **parent–child relationship** in the topology—so you can put one area under another, or nest a subarea under a room, and TopoMation uses that structure for occupancy and automation. HA still has areas and floors; we add the hierarchy and the single place to manage it.
+One click. The camera's person occupancy binary sensor is now a detection source for that room. When it sees someone, the room is occupied. When it stops seeing someone, the timeout starts. All your existing On Occupied and On Vacant actions — lights, fans, whatever you've already configured — just work with the new source. No YAML to rewrite. No automations to edit. No rules to untangle and reassemble. You added a sensor to a location, and the location got smarter.
 
-### Why We Added New Location Types
+This is what topology-driven automation actually means in practice. The *location* has behavior. Sources feed into it. When you add a new source, the behavior doesn't change — it just gets more inputs. Swap out a motion sensor for a mmWave presence sensor? Same thing. Add a door contact alongside an existing motion detector? Same thing. The location doesn't care *what* told it someone is there, only *that* something did.
 
-Home Assistant floors/areas are useful, but occupancy automation often needs more structure:
+### The Bathroom: Zero New Hardware
 
-- separate indoor and outdoor roots,
-- deeper nesting than `floor -> area`,
-- micro-zones like pantry, closet, landing, or nook,
-- occupancy behavior scoped to lived spaces instead of only registry objects.
+This is the one that makes people stop and think. You have a bathroom with a dumb light switch (or a smart one) and maybe an exhaust fan. No motion sensor, no presence sensor, and you don't want to install one. Here's the trick:
 
-`building`, `grounds`, and `subarea` close that gap while keeping everything in one management surface.
+1. **Add the bathroom** as an area in the tree.
+2. **Detection:** add the bathroom light switch as a source. Any state change (on or off) triggers occupancy. Set timeout to **20 minutes**.
+3. **On Vacant:** Turn off the bathroom light. Turn off the exhaust fan.
 
-### Hierarchy Rules
+That's it. Someone flips the light on to use the bathroom — TopoMation sees the state change and marks the room occupied. The 20-minute timer starts from that last interaction. If they flip the fan on, that's another state change — the timer resets. When they leave (and nothing changes state for 20 minutes), the room goes vacant and everything turns off.
 
-The hierarchy is flexible but constrained so drag-and-drop stays predictable:
+No motion sensor needed. No presence sensor. The switch activity *is* the presence signal. You never forget to turn off the bathroom light again.
 
-- `building` and `grounds` are root-only.
-- `floor` can be root-level or a child of `building`.
-- `area` can be root-level or nested under `building`, `grounds`, `floor`, or another `area`.
-- `subarea` can be nested under `building`, `grounds`, `floor`, `area`, or another `subarea`.
+### The Fan That Follows Occupancy
 
-This gives you real-world modeling freedom while preserving strict safety checks for reparent/reorder operations.
+Ceiling fans, exhaust fans, space heaters — anything that should run while someone's in the room and stop when they leave:
 
-## Occupancy Model: Built For Mixed Sensors
+1. **Detection:** use whatever sources make sense (motion, a light switch, a door sensor).
+2. **On Occupied:** Turn on the fan.
+3. **On Vacant:** Turn off the fan.
 
-Not all sensors represent true presence.
+Pair it with a timeout and the fan shuts off automatically after the room empties. Combine it with "Only when dark" and a light in the same action list, and you get lights + fan on arrival, everything off on departure.
 
-A motion pulse, a door open event, a dimmer level change, and a person tracker should not behave the same way. TopoMation lets each source express the right behavior while still rolling up to one occupancy state per location.
+### Light Switches as Occupancy Sensors
 
-### Core Occupancy Semantics
+This pattern works anywhere you have smart switches but no dedicated sensors:
 
-Each source maps into one of these intents:
+- **Home office:** The desk lamp switch is your detection source. Flip it on to work, and the room stays occupied until 30 minutes after your last interaction. On Vacant turns off the desk lamp, the monitor backlight, whatever else you've assigned.
+- **Laundry room:** The overhead light switch triggers occupancy. Set a 15-minute timeout. On Vacant turns off the light. You walked in, turned on the light, started laundry, walked out — 15 minutes later the light turns off by itself.
+- **Garage:** The garage light switch triggers occupancy with a 10-minute timeout. On Vacant kills the lights. No motion sensor fighting with car exhaust or temperature swings.
 
-- `trigger`: contribute occupied intent.
-- `clear`: release one source contribution (optional trailing timeout).
-- `vacate`: authoritative vacant intent.
+The key insight: **a switch state change is proof that a human is in the room**. It's not as continuous as a motion sensor, but for rooms where you interact with a switch on entry, it's often all you need. And when you do add a dedicated sensor later — a camera, a mmWave unit, anything — you just assign it to the same location. One click. The location gets smarter; nothing else changes.
 
-### Source Configuration Model
+## More Patterns at a Glance
 
-Each source is configured in the UI with:
+| Scenario | How It Works |
+|---|---|
+| **Kitchen lights, daylight-aware** | On Occupied → turn on lights, enable "Only when dark." Lights only come on after sunset. |
+| **Open-plan living/kitchen** | Sync living room + kitchen so occupancy and vacancy happen together with shared timing. |
+| **Guest bathroom, no sensors** | Light switch as detection source, 20-min timeout. On Vacant turns off lights and exhaust fan. Never forget the bathroom light again. |
+| **Bedroom fan + lights** | Motion sensor for detection. On Occupied → fan on, lights on (only when dark). On Vacant → everything off. |
+| **Outdoor path lights** | Add a `grounds` root, create areas for pathways. Use motion sensors with short timeouts. |
+| **Garage with no motion sensor** | Overhead light switch as detection, 10-min timeout. On Vacant turns off lights. No sensor fighting with heat or exhaust. |
+| **Camera with person detection** | Assign the camera's person binary sensor to the area. One click. All existing actions work with the new source — no YAML, no rule edits. |
+| **Scene lock** | Lock a room's occupancy state while watching a movie. Unlock when done. Lights stay put. |
+| **Party mode** | Lock the main floor with `subtree` scope. Every room underneath freezes — no lights turning off on guests. Unlock when the party's over. |
+| **"Is anyone home?"** | Check the building node. Occupancy propagates up — if any room is occupied, the floor is occupied, and the building is occupied. One glance. |
+| **Reorganize without breaking anything** | Drag the guest room from the second floor to the first floor. Detection, actions, and occupancy state move with it. Nothing breaks. |
+| **Multi-source bathroom** | Light switch + exhaust fan + motion sensor all as sources. Any activity resets the timeout. Maximum coverage, zero missed signals. |
 
-- mode: `any_change` or `specific_states`
-- `on_event`: typically `trigger`
-- `on_timeout`: finite duration or `null` (indefinite)
-- `off_event`: `none` or `clear`
-- `off_trailing`: delay before source release
+---
 
-### Why Timeouts Matter
+## The Tree: Your Live Dashboard
 
-This is a major practical win:
+The location tree isn't just configuration — it's a real-time view of your home. Every node shows its current occupancy state: occupied, vacant, or locked. Occupancy propagates upward automatically, so a floor node lights up if *any* room on that floor is occupied. Collapse the tree and you see the whole house at a glance. Expand a floor and you see exactly which rooms have people in them.
 
-- Activity-style sensors (motion, door activity, light/media interaction) are often best with finite hold time and no direct OFF clear.
-- True presence-style sensors (`presence`/`occupancy`, `person`, `device_tracker`) are often best with indefinite ON plus OFF clear with trailing grace.
-- OFF behavior can be either source release (`clear`) or authoritative vacant (`vacate`) based on your intent.
+The tree is fully **drag-and-drop**. Restructuring your home — moving a room to a different floor, nesting a closet inside a bedroom, reordering areas — is a grab-and-release operation. Detection sources, assigned devices, and automation rules travel with the node. You reorganize the topology; nothing breaks.
 
-The result is occupancy that is stable without being sticky.
+## The Location Model
 
-**Bounded spaces and “wasp in a box”.** For zones where you can observe both boundary (e.g. door) and interior (e.g. motion) activity, TopoMation supports a bounded-space pattern: entry/exit and interior signals combine into one occupancy state, with optional handoff to adjacent or linked areas. You get deterministic, explainable occupancy instead of motion-only guesswork. Linked rooms (below) are the topology side of this—one area’s occupancy can contribute to a neighbor so open-plan or connected spaces behave correctly without extra sensors.
+TopoMation extends Home Assistant's flat area/floor model with real hierarchy:
 
-### Linked Rooms (Directional Contributors)
+| Type | Role | Can Be Placed Under |
+|---|---|---|
+| `building` | Indoor root | Root only |
+| `grounds` | Outdoor root | Root only |
+| `floor` | Floor grouping | Root, or under `building` |
+| `area` | Room / zone | Root, or under `building`, `grounds`, `floor`, or another `area` |
+| `subarea` | Micro-zone (closet, nook) | Under `building`, `grounds`, `floor`, `area`, or another `subarea` |
 
-For open-plan spaces and shared activity zones, you can now configure
-`Linked Rooms` in Detection without adding dedicated crossing sensors.
+Areas and subareas in the tree are still Home Assistant areas under the hood — TopoMation adds the parent-child relationship on top. You get real-world modeling freedom without leaving the HA ecosystem.
 
-- Links are directional per location.
-- If `Family Room` is linked on the `Kitchen` page, Family Room contributes to
-  Kitchen occupancy.
-- You can select multiple contributors in one pass; selections remain editable
-  while saves are queued.
-- Reverse behavior stays explicit. A per-row optional `2-way` checkbox can
-  also write the reverse link for convenience.
-- Linked Rooms is intentionally scoped to room-level topology:
-  - only `area` locations directly under a `floor` can configure linked rooms
-  - only immediate sibling `area` locations under that same floor are valid contributors.
-
-At runtime, linked-room contributions are applied as source-scoped occupancy
-contributors (`linked:<location_id>`), so they compose cleanly with normal
-sensors and clear correctly when the contributor location goes vacant.
-
-## Global Operations From One Tree
-
-From one location tree, you can:
-
-- see occupancy state across the home,
-- shape hierarchy with drag-and-drop,
-- assign devices to the right location quickly,
-- apply policy locks with `self` or `subtree` scope,
-- manually mark locations occupied/unoccupied for testing and operations.
-
-One tree: your topology and your dashboard. One occupancy language. Every rule in Home Assistant so you can see and debug what’s happening. Automation that scales with your home.
+---
 
 ## Installation
 
-Use the full guide: [Installation Guide](docs/installation.md)
+### Via HACS (Recommended)
 
-Quick path via HACS:
-
-1. Open HACS in Home Assistant.
+1. Open **HACS** in Home Assistant.
 2. Add `https://github.com/mjcumming/topomation` as a custom integration repository.
-3. Install TopoMation.
+3. Search for and install **TopoMation**.
 4. Restart Home Assistant.
-5. Add TopoMation in **Settings -> Devices & Services**.
+5. Add the integration in **Settings → Devices & Services**.
 
-## Quick Start Workflow
+Full guide: [Installation Guide](docs/installation.md)
+
+### Quick Start
 
 1. Open **Location Manager** from the sidebar.
-2. Confirm imported floors/areas, then shape hierarchy with building/grounds/subareas.
-3. Assign entities in **Assign Devices** where needed.
-4. Configure source behavior in **Detection**.
-5. Configure **On Occupied** and **On Vacant** actions.
-6. Optionally enable `Only when dark` for occupied rules.
-7. Validate with occupancy entities and manual controls.
+2. Review imported floors and areas, then shape your hierarchy with buildings, grounds, and subareas.
+3. Assign sensors and devices to locations.
+4. Configure detection sources and timeouts.
+5. Define On Occupied and On Vacant actions.
+6. Validate with the occupancy entities and manual controls.
 
-Automation example driven by location occupancy:
+---
+
+## Services Reference
+
+| Service | Description |
+|---|---|
+| `topomation.trigger` | Mark a location as occupied (with optional timeout) |
+| `topomation.clear` | Release one source's occupancy contribution |
+| `topomation.vacate` | Force a location vacant |
+| `topomation.vacate_area` | Vacate a location and all its descendants |
+| `topomation.lock` | Freeze occupancy state (self or subtree scope) |
+| `topomation.unlock` | Release a specific lock source |
+| `topomation.unlock_all` | Remove all locks from a location |
+
+All services support optional `entry_id` for multi-instance setups.
+
+**Example — external automation using the occupancy sensor:**
 
 ```yaml
 automation:
@@ -240,53 +228,26 @@ automation:
           entity_id: light.kitchen
 ```
 
-Manual occupancy control example:
+---
 
-```yaml
-service: topomation.trigger
-data:
-  location_id: kitchen
-  source_id: manual_override
-  timeout: 300
-```
+## Current Status
 
-## Manual Services
+TopoMation is in **alpha**. The core occupancy model, source normalization, timeout handling, lock workflows, and managed automation generation are stable and tested. UX polish and additional presets are in active development.
 
-- `topomation.trigger`: trigger occupied for a location.
-- `topomation.clear`: clear one source (optional trailing timeout).
-- `topomation.vacate`: force one location vacant.
-- `topomation.vacate_area`: vacate a location and descendants.
-- `topomation.lock`: apply lock policy and scope.
-- `topomation.unlock`: release one lock source.
-- `topomation.unlock_all`: remove all lock sources from a location.
+### Known Limitations
 
-All services support optional `entry_id` when multiple TopoMation entries are loaded.
+- "Only when dark" uses sun position (`sun.sun`), not per-room lux sensors.
+- Admin privileges are required for panel routes and managed automation writes.
 
-## Current Scope (Alpha)
+---
 
-- Stable occupancy model, source normalization, timeout handling, and lock workflows.
-- Managed occupied/vacant actions persisted as native HA automations.
-- Registry sync for areas/floors/entities into topology wrappers.
-- Structural hierarchy model for `building` / `grounds` / `floor` / `area` / `subarea`.
-- Ambient module runtime/WebSocket support (ambient helper entities not yet exposed).
-
-## Known Limits
-
-- `Only when dark` is sun-position based (`sun.sun`), not per-room lux.
-- Admin privileges are required for panel routes and managed action writes.
-- UX polish and additional presets/templates are in progress.
-
-## Validation and Release Discipline
-
-- [Release Validation Runbook](docs/release-validation-runbook.md)
-- [Live HA Validation Checklist](docs/live-ha-validation-checklist.md)
-- [Live Release Testing Paradigm](docs/live-release-testing-paradigm.md)
-
-## Architecture and Contracts
+## Documentation
 
 - [Architecture](docs/architecture.md)
 - [Contracts](docs/contracts.md)
 - [ADR Log](docs/adr-log.md)
+- [Release Validation Runbook](docs/release-validation-runbook.md)
+- [Live HA Validation Checklist](docs/live-ha-validation-checklist.md)
 
 ## Development
 
@@ -297,23 +258,18 @@ make dev-install
 make test
 ```
 
-Start here for contributor docs:
-
 - [Docs Index](docs/index.md)
 - [Frontend Workflow](docs/frontend-dev-workflow.md)
-- [Architecture](docs/architecture.md)
 
 ## Support
 
-- Issues: <https://github.com/mjcumming/topomation/issues>
-- Discussions: <https://github.com/mjcumming/topomation/discussions>
+- [Issues](https://github.com/mjcumming/topomation/issues)
+- [Discussions](https://github.com/mjcumming/topomation/discussions)
 
 ## License
 
-MIT License. See [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).
 
 ---
 
-**Status**: Alpha  
-**Maintainer**: Mike Cumming  
-**Last Updated**: 2026-03-01
+**Maintainer:** Mike Cumming · **Status:** Alpha · **Last Updated:** 2026-03-01

@@ -88,6 +88,7 @@ export interface OccupancyConfig extends ModuleConfig {
   default_trailing_timeout?: number;
   occupancy_sources?: OccupancySource[];
   linked_locations?: string[];
+  sync_locations?: string[];
   wiab?: WaspInBoxConfig;
 }
 
@@ -146,6 +147,9 @@ export interface LocationMeta {
   type: LocationType;
   category?: string;
   icon?: string;
+  role?: "managed_shadow" | string;
+  shadow_area_id?: string;
+  shadow_for_location_id?: string;
 }
 
 export type LocationType =

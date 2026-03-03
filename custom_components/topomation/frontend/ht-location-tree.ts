@@ -6,7 +6,7 @@ import type { HomeAssistant, Location, LocationType } from "./types";
 import { sharedStyles } from "./styles";
 import Sortable from "sortablejs";
 import { getLocationType, isDescendant, canMoveLocation } from "./hierarchy-rules";
-import { getTypeFallbackIcon } from "./icon-utils";
+import { getLocationIcon } from "./icon-utils";
 import {
   buildFlatTree,
   zoneFromPointerInRow,
@@ -342,6 +342,11 @@ export class HtLocationTree extends LitElement {
         color: var(--info-color);
       }
 
+      .type-badge.proxy {
+        background: rgba(var(--rgb-secondary-text-color, 120, 120, 120), 0.2);
+        color: var(--text-secondary-color);
+      }
+
       .tree-item.selected .type-badge.floor {
         background: var(--primary-color);
         color: white;
@@ -360,6 +365,11 @@ export class HtLocationTree extends LitElement {
       .tree-item.selected .type-badge.grounds {
         background: var(--info-color);
         color: white;
+      }
+
+      .tree-item.selected .type-badge.proxy {
+        background: var(--text-secondary-color);
+        color: var(--card-background-color);
       }
 
       .type-badge.root {
@@ -724,7 +734,7 @@ export class HtLocationTree extends LitElement {
         </div>
       `;
     }
-    const flatNodes = buildFlatTree(this.locations, this._expandedIds);
+    const flatNodes = buildFlatTree(this._visibleTreeLocations(), this._expandedIds);
     const occupancyStatusByLocation = this._computeOccupancyStatusByLocation();
     const lockStateByLocation = this._computeLockStateByLocation();
     return html`
@@ -921,12 +931,20 @@ export class HtLocationTree extends LitElement {
     return lockByLocation;
   }
 
+  private _visibleTreeLocations(): Location[] {
+    return this.locations.filter((location) => !this._isManagedShadowLocation(location));
+  }
+
+  private _isManagedShadowLocation(location: Location): boolean {
+    const meta = (location.modules?._meta || {}) as Record<string, any>;
+    return String(meta.role || "").trim().toLowerCase() === "managed_shadow";
+  }
+
   private _getIcon(location: Location): string {
     if (location.ha_area_id && this.hass?.areas?.[location.ha_area_id]?.icon) {
       return this.hass.areas[location.ha_area_id].icon;
     }
-    const type = getLocationType(location);
-    return getTypeFallbackIcon(type);
+    return getLocationIcon(location);
   }
 
   private _hasEntityDragPayload(event: DragEvent): boolean {

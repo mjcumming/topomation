@@ -9,7 +9,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_No unreleased changes yet._
+## [0.2.19] - 2026-03-03
+
+### Added
+
+- Detection now includes a primary `Sync Rooms` workflow (recommended) for
+  room-level occupancy sync, with reciprocal config writes (`sync_locations`)
+  so paired rooms stay aligned without manual reverse setup.
+- Backend/runtime support for occupancy `sync_locations` with room-scope
+  validation and contributor mirroring across sync peers.
+
+### Changed
+
+- Detection UX now prioritizes `Sync Rooms`; directional contributors moved
+  under advanced occupancy relationship controls.
+
+### Fixed
+
+- Linked-room trigger propagation now uses indefinite linked contributions
+  (`timeout=None`) until explicit clear, instead of immediate-expiry `0`.
+- `Sync Rooms` and directional/adjacency neighbor pickers now exclude
+  integration-managed shadow areas (`_meta.role=managed_shadow`), so hidden
+  floor/building/grounds proxy areas no longer appear as link/sync candidates.
+- Managed shadow areas are now consistently excluded from additional selection
+  surfaces (location parent selector, generic external area source selector,
+  and default panel selection), preventing hidden system nodes from appearing
+  in user-facing menus.
+- Backend sync/link validation now rejects managed shadow area targets and
+  runtime sync propagation ignores them if stale config is present.
+- Location tree row icons now follow the same icon resolution as the inspector
+  header (HA area icon -> explicit `_meta.icon` -> name/category inference ->
+  type fallback), so left-tree and right-panel location icons stay consistent.
 
 ## [0.2.18] - 2026-03-02
 

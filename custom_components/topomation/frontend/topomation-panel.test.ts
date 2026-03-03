@@ -198,6 +198,89 @@ describe('TopomationPanel integration (fake hass)', () => {
     ).to.be.true;
   });
 
+  it("skips managed shadow locations for default selection and dialog parent candidates", async () => {
+    const locationsWithShadowFirst: Location[] = [
+      {
+        id: "main-floor-shadow",
+        name: "Main Floor",
+        parent_id: "main_floor",
+        is_explicit_root: false,
+        ha_area_id: "main_floor_shadow",
+        entity_ids: [],
+        modules: {
+          _meta: {
+            type: "area",
+            role: "managed_shadow",
+            shadow_for_location_id: "main_floor",
+          },
+        },
+      },
+      {
+        id: "main_floor",
+        name: "Main Floor",
+        parent_id: null,
+        is_explicit_root: false,
+        ha_area_id: "main_floor",
+        entity_ids: [],
+        modules: { _meta: { type: "floor" } },
+      },
+      {
+        id: "area_kitchen",
+        name: "Kitchen",
+        parent_id: "main_floor",
+        is_explicit_root: false,
+        ha_area_id: "kitchen",
+        entity_ids: [],
+        modules: { _meta: { type: "area" } },
+      },
+    ];
+
+    const hass: HomeAssistant = {
+      callWS: async <T>(req: Record<string, any>): Promise<T> => {
+        if (req.type === "topomation/locations/list") {
+          return { locations: locationsWithShadowFirst } as T;
+        }
+        if (req.type === "config/entity_registry/list") return [] as T;
+        if (req.type === "config/device_registry/list") return [] as T;
+        throw new Error("Unexpected WS call");
+      },
+      connection: {},
+      states: {},
+      areas: {},
+      floors: {},
+      config: {
+        location_name: "Test Property",
+        latitude: 37.7749,
+        longitude: -122.4194,
+        time_zone: "America/Los_Angeles",
+        country: "US",
+      },
+      localize: (key: string) => key,
+    };
+
+    const element = await fixture<HTMLDivElement>(html`
+      <topomation-panel
+        .hass=${hass}
+        .panel=${{ config: { topomation_view: "location", entry_id: "entry_123" } }}
+      ></topomation-panel>
+    `);
+
+    await waitUntil(() => (element as any)._loading === false, "panel did not finish loading");
+
+    expect((element as any)._selectedId).to.equal("main_floor");
+
+    (element as any)._locationDialogOpen = true;
+    element.requestUpdate();
+    await (element as any).updateComplete;
+
+    const dialog = element.shadowRoot!.querySelector("ht-location-dialog") as any;
+    expect(dialog).to.exist;
+    const dialogLocationIds = (dialog.locations || []).map((loc: Location) => loc.id);
+    expect(dialogLocationIds).to.include("main_floor");
+    expect(dialogLocationIds).to.include("area_kitchen");
+    expect(dialogLocationIds).to.not.include("main-floor-shadow");
+  });
+
   it("reuses last known entry_id when panel config is temporarily unavailable", async () => {
     const callWsCalls: Array<Record<string, any>> = [];
     const hass: HomeAssistant = {

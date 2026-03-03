@@ -138,8 +138,9 @@ async def test_locations_list_imports_floors_areas_and_entities(
     payload = connection.send_result.call_args[0][1]
     locations = payload["locations"]
 
-    # 2 floors + 8 areas, plus first-install Home root + building + grounds wrappers
-    assert len(locations) == 13
+    # 2 floors + 8 imported areas, plus first-install Home root/building/grounds
+    # wrappers and one managed shadow area per imported floor.
+    assert len(locations) == 13 + len(floors)
 
     # Floors exist and are grouped under default Home building.
     floor_names = {loc["name"] for loc in locations if loc["id"].startswith("floor_")}
@@ -149,6 +150,14 @@ async def test_locations_list_imports_floors_areas_and_entities(
     assert any(loc["id"] == "grounds" for loc in locations)
     for floor_loc in (loc for loc in locations if loc["id"].startswith("floor_")):
         assert floor_loc["parent_id"] == "building_main"
+
+    managed_shadows = [
+        loc
+        for loc in locations
+        if str(((loc.get("modules", {}) or {}).get("_meta", {}) or {}).get("role", "")).strip().lower()
+        == "managed_shadow"
+    ]
+    assert len(managed_shadows) == len(floors)
 
     # Rooms are parented to the right floor and carry entities
     def find_by_name(name: str) -> dict:
@@ -864,6 +873,52 @@ async def test_locations_delete_rejects_explicit_root(hass: HomeAssistant) -> No
 
 
 @pytest.mark.asyncio
+async def test_locations_delete_rejects_managed_shadow_area(hass: HomeAssistant) -> None:
+    """Managed shadow areas are integration-owned and cannot be manually deleted."""
+    entry = MockConfigEntry(domain=DOMAIN, data={}, entry_id="test_entry")
+    entry.add_to_hass(hass)
+
+    with patch("custom_components.topomation.async_register_panel", AsyncMock()):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    loc_mgr = hass.data[DOMAIN][entry.entry_id]["location_manager"]
+    if loc_mgr.get_location("building_main") is None:
+        loc_mgr.create_location(id="building_main", name="Home", parent_id=None)
+        loc_mgr.set_module_config("building_main", "_meta", {"type": "building", "sync_source": "topology"})
+
+    loc_mgr.create_location(id="area_shadow", name="Home", parent_id="building_main", ha_area_id="shadow")
+    loc_mgr.set_module_config(
+        "area_shadow",
+        "_meta",
+        {
+            "type": "area",
+            "ha_area_id": "shadow",
+            "sync_source": "homeassistant",
+            "role": "managed_shadow",
+            "shadow_for_location_id": "building_main",
+        },
+    )
+
+    connection = _fake_connection()
+    handle_locations_delete(
+        hass,
+        connection,
+        {
+            "id": 14,
+            "type": WS_TYPE_LOCATIONS_DELETE,
+            "location_id": "area_shadow",
+            "entry_id": entry.entry_id,
+        },
+    )
+
+    assert connection.send_result.call_count == 0
+    connection.send_error.assert_called_once()
+    err_args = connection.send_error.call_args[0]
+    assert err_args[1] == "operation_not_supported"
+
+
+@pytest.mark.asyncio
 async def test_locations_delete_reparents_direct_children(hass: HomeAssistant) -> None:
     """Deleting a topology node reparents direct children one level up."""
     store = Store(hass, STORAGE_VERSION, STORAGE_KEY_CONFIG)
@@ -1090,7 +1145,13 @@ async def test_locations_reorder_marks_manual_order_and_preserves_user_sequence(
     )
     payload = list_conn.send_result.call_args[0][1]
     children = [loc for loc in payload["locations"] if loc["parent_id"] == "building_main"]
-    assert [loc["name"] for loc in children] == ["Zulu", "Alpha", "Middle"]
+    visible_children = [
+        loc
+        for loc in children
+        if str(((loc.get("modules", {}) or {}).get("_meta", {}) or {}).get("role", "")).strip().lower()
+        != "managed_shadow"
+    ]
+    assert [loc["name"] for loc in visible_children] == ["Zulu", "Alpha", "Middle"]
 
     # New children append at end when a sibling set is manual-ordered.
     loc_mgr.create_location(id="child_d", name="Delta", parent_id="building_main")
@@ -1104,7 +1165,13 @@ async def test_locations_reorder_marks_manual_order_and_preserves_user_sequence(
     )
     payload = list_after_create.send_result.call_args[0][1]
     children = [loc for loc in payload["locations"] if loc["parent_id"] == "building_main"]
-    assert [loc["name"] for loc in children] == ["Zulu", "Alpha", "Middle", "Delta"]
+    visible_children = [
+        loc
+        for loc in children
+        if str(((loc.get("modules", {}) or {}).get("_meta", {}) or {}).get("role", "")).strip().lower()
+        != "managed_shadow"
+    ]
+    assert [loc["name"] for loc in visible_children] == ["Zulu", "Alpha", "Middle", "Delta"]
 
 
 @pytest.mark.asyncio
@@ -1492,19 +1559,195 @@ async def test_locations_assign_entity_updates_ha_area_for_ha_backed_target(
 
 
 @pytest.mark.asyncio
-async def test_locations_assign_entity_to_non_area_survives_ha_reconcile(
+async def test_locations_assign_entity_to_floor_remaps_to_managed_shadow_area(
     hass: HomeAssistant,
 ) -> None:
-    """Non-area topology assignment should override HA-area entity mapping."""
+    """Assigning to a floor remaps to its configured managed shadow area."""
     area_registry = ar.async_get(hass)
     entity_registry = er.async_get(hass)
 
     kitchen = area_registry.async_create("Kitchen")
+    floor_shadow_area = area_registry.async_create("Main Floor")
     light_entry = entity_registry.async_get_or_create(
         domain="light",
         platform="test",
-        unique_id="light_assignment_non_area",
-        suggested_object_id="assignment_non_area",
+        unique_id="light_assignment_floor_shadow",
+        suggested_object_id="assignment_floor_shadow",
+    )
+    entity_registry.async_update_entity(light_entry.entity_id, area_id=kitchen.id)
+
+    entry = MockConfigEntry(domain=DOMAIN, data={}, entry_id="test_entry")
+    entry.add_to_hass(hass)
+
+    with patch("custom_components.topomation.async_register_panel", AsyncMock()):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    loc_mgr = hass.data[DOMAIN][entry.entry_id]["location_manager"]
+    if loc_mgr.get_location("building_main") is None:
+        loc_mgr.create_location(id="building_main", name="Home", parent_id=None)
+        loc_mgr.set_module_config("building_main", "_meta", {"type": "building", "sync_source": "topology"})
+    loc_mgr.create_location(id="floor_custom", name="Custom Floor", parent_id="building_main")
+    loc_mgr.set_module_config("floor_custom", "_meta", {"type": "floor", "sync_source": "topology"})
+    shadow_location_id = f"area_{floor_shadow_area.id}"
+    shadow_location = loc_mgr.get_location(shadow_location_id)
+    assert shadow_location is not None
+    loc_mgr.update_location(shadow_location_id, parent_id="floor_custom")
+    loc_mgr.set_module_config(
+        shadow_location_id,
+        "_meta",
+        {
+            **shadow_location.modules.get("_meta", {}),
+            "type": "area",
+            "role": "managed_shadow",
+            "shadow_for_location_id": "floor_custom",
+        },
+    )
+    floor_custom = loc_mgr.get_location("floor_custom")
+    assert floor_custom is not None
+    loc_mgr.set_module_config(
+        "floor_custom",
+        "_meta",
+        {
+            **floor_custom.modules.get("_meta", {}),
+            "type": "floor",
+            "shadow_area_id": shadow_location_id,
+        },
+    )
+
+    connection = _fake_connection()
+    handle_locations_assign_entity(
+        hass,
+        connection,
+        {
+            "id": 302,
+            "type": WS_TYPE_LOCATIONS_ASSIGN_ENTITY,
+            "entity_id": light_entry.entity_id,
+            "target_location_id": "floor_custom",
+        },
+    )
+
+    assert connection.send_error.call_count == 0
+    connection.send_result.assert_called_once()
+    payload = connection.send_result.call_args[0][1]
+    assert payload["requested_target_location_id"] == "floor_custom"
+    assert payload["target_location_id"] == shadow_location_id
+    assert payload["ha_area_id"] == floor_shadow_area.id
+
+    kitchen_loc = loc_mgr.get_location(f"area_{kitchen.id}")
+    floor_loc = loc_mgr.get_location("floor_custom")
+    shadow_loc = loc_mgr.get_location(shadow_location_id)
+    assert kitchen_loc is not None
+    assert floor_loc is not None
+    assert shadow_loc is not None
+    assert light_entry.entity_id not in kitchen_loc.entity_ids
+    assert light_entry.entity_id not in floor_loc.entity_ids
+    assert light_entry.entity_id in shadow_loc.entity_ids
+
+    sync_manager = hass.data[DOMAIN][entry.entry_id]["sync_manager"]
+    await sync_manager._map_entities()
+
+    kitchen_loc = loc_mgr.get_location(f"area_{kitchen.id}")
+    floor_loc = loc_mgr.get_location("floor_custom")
+    shadow_loc = loc_mgr.get_location(shadow_location_id)
+    entity_entry = entity_registry.async_get(light_entry.entity_id)
+    assert kitchen_loc is not None
+    assert floor_loc is not None
+    assert shadow_loc is not None
+    assert light_entry.entity_id not in kitchen_loc.entity_ids
+    assert light_entry.entity_id not in floor_loc.entity_ids
+    assert light_entry.entity_id in shadow_loc.entity_ids
+    assert entity_entry is not None
+    assert entity_entry.area_id == floor_shadow_area.id
+
+
+@pytest.mark.asyncio
+async def test_locations_assign_entity_to_building_remaps_to_managed_shadow_area(
+    hass: HomeAssistant,
+) -> None:
+    """Assigning to a building remaps to its configured managed shadow area."""
+    area_registry = ar.async_get(hass)
+    entity_registry = er.async_get(hass)
+
+    kitchen = area_registry.async_create("Kitchen")
+    building_shadow_area = area_registry.async_create("Home")
+    light_entry = entity_registry.async_get_or_create(
+        domain="light",
+        platform="test",
+        unique_id="light_assignment_building_shadow",
+        suggested_object_id="assignment_building_shadow",
+    )
+    entity_registry.async_update_entity(light_entry.entity_id, area_id=kitchen.id)
+
+    entry = MockConfigEntry(domain=DOMAIN, data={}, entry_id="test_entry")
+    entry.add_to_hass(hass)
+
+    with patch("custom_components.topomation.async_register_panel", AsyncMock()):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    loc_mgr = hass.data[DOMAIN][entry.entry_id]["location_manager"]
+    loc_mgr.create_location(id="building_custom", name="Home", parent_id=None)
+    loc_mgr.set_module_config("building_custom", "_meta", {"type": "building", "sync_source": "topology"})
+    shadow_location_id = f"area_{building_shadow_area.id}"
+    shadow_location = loc_mgr.get_location(shadow_location_id)
+    assert shadow_location is not None
+    loc_mgr.update_location(shadow_location_id, parent_id="building_custom")
+    loc_mgr.set_module_config(
+        shadow_location_id,
+        "_meta",
+        {
+            **shadow_location.modules.get("_meta", {}),
+            "type": "area",
+            "role": "managed_shadow",
+            "shadow_for_location_id": "building_custom",
+        },
+    )
+    building_custom = loc_mgr.get_location("building_custom")
+    assert building_custom is not None
+    loc_mgr.set_module_config(
+        "building_custom",
+        "_meta",
+        {
+            **building_custom.modules.get("_meta", {}),
+            "type": "building",
+            "shadow_area_id": shadow_location_id,
+        },
+    )
+
+    connection = _fake_connection()
+    handle_locations_assign_entity(
+        hass,
+        connection,
+        {
+            "id": 304,
+            "type": WS_TYPE_LOCATIONS_ASSIGN_ENTITY,
+            "entity_id": light_entry.entity_id,
+            "target_location_id": "building_custom",
+        },
+    )
+
+    assert connection.send_error.call_count == 0
+    connection.send_result.assert_called_once()
+    payload = connection.send_result.call_args[0][1]
+    assert payload["requested_target_location_id"] == "building_custom"
+    assert payload["target_location_id"] == shadow_location_id
+    assert payload["ha_area_id"] == building_shadow_area.id
+
+
+@pytest.mark.asyncio
+async def test_locations_assign_entity_to_floor_without_shadow_is_rejected(
+    hass: HomeAssistant,
+) -> None:
+    """Assigning to floor fails when no managed shadow area is configured."""
+    area_registry = ar.async_get(hass)
+    kitchen = area_registry.async_create("Kitchen")
+    entity_registry = er.async_get(hass)
+    light_entry = entity_registry.async_get_or_create(
+        domain="light",
+        platform="test",
+        unique_id="light_assignment_missing_floor_shadow",
+        suggested_object_id="assignment_missing_floor_shadow",
     )
     entity_registry.async_update_entity(light_entry.entity_id, area_id=kitchen.id)
 
@@ -1527,32 +1770,17 @@ async def test_locations_assign_entity_to_non_area_survives_ha_reconcile(
         hass,
         connection,
         {
-            "id": 302,
+            "id": 303,
             "type": WS_TYPE_LOCATIONS_ASSIGN_ENTITY,
             "entity_id": light_entry.entity_id,
             "target_location_id": "floor_custom",
         },
     )
 
-    assert connection.send_error.call_count == 0
-    connection.send_result.assert_called_once()
-
-    kitchen_loc = loc_mgr.get_location(f"area_{kitchen.id}")
-    floor_loc = loc_mgr.get_location("floor_custom")
-    assert kitchen_loc is not None
-    assert floor_loc is not None
-    assert light_entry.entity_id not in kitchen_loc.entity_ids
-    assert light_entry.entity_id in floor_loc.entity_ids
-
-    sync_manager = hass.data[DOMAIN][entry.entry_id]["sync_manager"]
-    await sync_manager._map_entities()
-
-    kitchen_loc = loc_mgr.get_location(f"area_{kitchen.id}")
-    floor_loc = loc_mgr.get_location("floor_custom")
-    assert kitchen_loc is not None
-    assert floor_loc is not None
-    assert light_entry.entity_id not in kitchen_loc.entity_ids
-    assert light_entry.entity_id in floor_loc.entity_ids
+    assert connection.send_result.call_count == 0
+    connection.send_error.assert_called_once()
+    error_args = connection.send_error.call_args[0]
+    assert error_args[1] == "invalid_target"
 
 
 @pytest.mark.asyncio
@@ -1590,6 +1818,46 @@ async def test_set_module_config_rejects_floor_occupancy_sources(hass: HomeAssis
                         "off_trailing": 0,
                     }
                 ],
+            },
+            "entry_id": entry.entry_id,
+        },
+    )
+
+    assert connection.send_result.call_count == 0
+    connection.send_error.assert_called_once()
+    err_args = connection.send_error.call_args[0]
+    assert err_args[1] == "invalid_config"
+
+
+@pytest.mark.asyncio
+async def test_set_module_config_rejects_manual_shadow_metadata_writes(hass: HomeAssistant) -> None:
+    """Managed shadow metadata is integration-owned and cannot be set via WS."""
+    entry = MockConfigEntry(domain=DOMAIN, data={}, entry_id="test_entry")
+    entry.add_to_hass(hass)
+
+    with patch("custom_components.topomation.async_register_panel", AsyncMock()):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    loc_mgr = hass.data[DOMAIN][entry.entry_id]["location_manager"]
+    if loc_mgr.get_location("building_main") is None:
+        loc_mgr.create_location(id="building_main", name="Home", parent_id=None)
+        loc_mgr.set_module_config("building_main", "_meta", {"type": "building", "sync_source": "topology"})
+    loc_mgr.create_location(id="floor_main", name="Main Floor", parent_id="building_main")
+    loc_mgr.set_module_config("floor_main", "_meta", {"type": "floor", "sync_source": "topology"})
+
+    connection = _fake_connection()
+    handle_locations_set_module_config(
+        hass,
+        connection,
+        {
+            "id": 33,
+            "type": WS_TYPE_LOCATIONS_SET_MODULE_CONFIG,
+            "location_id": "floor_main",
+            "module_id": "_meta",
+            "config": {
+                "type": "floor",
+                "shadow_area_id": "area_system",
             },
             "entry_id": entry.entry_id,
         },
@@ -1682,6 +1950,147 @@ async def test_set_module_config_rejects_linked_rooms_outside_same_floor_sibling
                 "enabled": True,
                 "occupancy_sources": [],
                 "linked_locations": ["area_guest_bedroom"],
+            },
+            "entry_id": entry.entry_id,
+        },
+    )
+
+    assert connection.send_result.call_count == 0
+    connection.send_error.assert_called_once()
+    err_args = connection.send_error.call_args[0]
+    assert err_args[1] == "invalid_config"
+
+
+@pytest.mark.asyncio
+async def test_set_module_config_rejects_sync_rooms_for_non_area_floor_rooted_targets(
+    hass: HomeAssistant,
+) -> None:
+    """Sync rooms are not allowed on non-area or non-floor-rooted targets."""
+    entry = MockConfigEntry(domain=DOMAIN, data={}, entry_id="test_entry")
+    entry.add_to_hass(hass)
+
+    with patch("custom_components.topomation.async_register_panel", AsyncMock()):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    loc_mgr = hass.data[DOMAIN][entry.entry_id]["location_manager"]
+    loc_mgr.set_module_config("building_main", "_meta", {"type": "building"})
+    loc_mgr.create_location(id="floor_main", name="Main Floor", parent_id="building_main")
+    loc_mgr.set_module_config("floor_main", "_meta", {"type": "floor"})
+    loc_mgr.create_location(id="area_kitchen", name="Kitchen", parent_id="floor_main")
+    loc_mgr.set_module_config("area_kitchen", "_meta", {"type": "area"})
+
+    connection = _fake_connection()
+    handle_locations_set_module_config(
+        hass,
+        connection,
+        {
+            "id": 37,
+            "type": WS_TYPE_LOCATIONS_SET_MODULE_CONFIG,
+            "location_id": "building_main",
+            "module_id": "occupancy",
+            "config": {
+                "enabled": True,
+                "occupancy_sources": [],
+                "sync_locations": ["area_kitchen"],
+            },
+            "entry_id": entry.entry_id,
+        },
+    )
+
+    assert connection.send_result.call_count == 0
+    connection.send_error.assert_called_once()
+    err_args = connection.send_error.call_args[0]
+    assert err_args[1] == "invalid_config"
+
+
+@pytest.mark.asyncio
+async def test_set_module_config_rejects_sync_rooms_outside_same_floor_siblings(
+    hass: HomeAssistant,
+) -> None:
+    """Sync rooms must be immediate sibling areas under the same floor parent."""
+    entry = MockConfigEntry(domain=DOMAIN, data={}, entry_id="test_entry")
+    entry.add_to_hass(hass)
+
+    with patch("custom_components.topomation.async_register_panel", AsyncMock()):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    loc_mgr = hass.data[DOMAIN][entry.entry_id]["location_manager"]
+    loc_mgr.set_module_config("building_main", "_meta", {"type": "building"})
+    loc_mgr.create_location(id="floor_main", name="Main Floor", parent_id="building_main")
+    loc_mgr.set_module_config("floor_main", "_meta", {"type": "floor"})
+    loc_mgr.create_location(id="floor_second", name="Second Floor", parent_id="building_main")
+    loc_mgr.set_module_config("floor_second", "_meta", {"type": "floor"})
+    loc_mgr.create_location(id="area_kitchen", name="Kitchen", parent_id="floor_main")
+    loc_mgr.set_module_config("area_kitchen", "_meta", {"type": "area"})
+    loc_mgr.create_location(id="area_family_room", name="Family Room", parent_id="floor_main")
+    loc_mgr.set_module_config("area_family_room", "_meta", {"type": "area"})
+    loc_mgr.create_location(id="area_guest_bedroom", name="Guest Bedroom", parent_id="floor_second")
+    loc_mgr.set_module_config("area_guest_bedroom", "_meta", {"type": "area"})
+
+    connection = _fake_connection()
+    handle_locations_set_module_config(
+        hass,
+        connection,
+        {
+            "id": 38,
+            "type": WS_TYPE_LOCATIONS_SET_MODULE_CONFIG,
+            "location_id": "area_kitchen",
+            "module_id": "occupancy",
+            "config": {
+                "enabled": True,
+                "occupancy_sources": [],
+                "sync_locations": ["area_guest_bedroom"],
+            },
+            "entry_id": entry.entry_id,
+        },
+    )
+
+    assert connection.send_result.call_count == 0
+    connection.send_error.assert_called_once()
+    err_args = connection.send_error.call_args[0]
+    assert err_args[1] == "invalid_config"
+
+
+@pytest.mark.asyncio
+async def test_set_module_config_rejects_sync_rooms_with_managed_shadow_area_targets(
+    hass: HomeAssistant,
+) -> None:
+    """Sync rooms must not reference integration-managed shadow areas."""
+    entry = MockConfigEntry(domain=DOMAIN, data={}, entry_id="test_entry")
+    entry.add_to_hass(hass)
+
+    with patch("custom_components.topomation.async_register_panel", AsyncMock()):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    loc_mgr = hass.data[DOMAIN][entry.entry_id]["location_manager"]
+    loc_mgr.set_module_config("building_main", "_meta", {"type": "building"})
+    loc_mgr.create_location(id="floor_main", name="Main Floor", parent_id="building_main")
+    loc_mgr.set_module_config("floor_main", "_meta", {"type": "floor"})
+    loc_mgr.create_location(id="area_kitchen", name="Kitchen", parent_id="floor_main")
+    loc_mgr.set_module_config("area_kitchen", "_meta", {"type": "area"})
+    loc_mgr.create_location(id="area_main_floor_shadow", name="Main Floor", parent_id="floor_main")
+    loc_mgr.set_module_config(
+        "area_main_floor_shadow",
+        "_meta",
+        {"type": "area", "role": "managed_shadow", "shadow_for_location_id": "floor_main"},
+    )
+
+    connection = _fake_connection()
+    handle_locations_set_module_config(
+        hass,
+        connection,
+        {
+            "id": 39,
+            "type": WS_TYPE_LOCATIONS_SET_MODULE_CONFIG,
+            "location_id": "area_kitchen",
+            "module_id": "occupancy",
+            "config": {
+                "enabled": True,
+                "occupancy_sources": [],
+                "sync_locations": ["area_main_floor_shadow"],
             },
             "entry_id": entry.entry_id,
         },

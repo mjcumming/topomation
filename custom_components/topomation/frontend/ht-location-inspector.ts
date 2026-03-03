@@ -109,6 +109,7 @@ export class HtLocationInspector extends LitElement {
   @state() private _actionDarkSelections: Record<string, boolean> = {};
   @state() private _savingLinkedLocations = false;
   @state() private _stagedLinkedLocations?: string[];
+  @state() private _stagedSyncLocations?: string[];
   @state() private _showAdvancedAdjacency = false;
   @state() private _adjacencyNeighborId = "";
   @state() private _adjacencyBoundaryType = "door";
@@ -1793,28 +1794,32 @@ export class HtLocationInspector extends LitElement {
     const config = (this.location.modules.occupancy || {}) as OccupancyConfig;
     const isFloor = this._isFloorLocation();
     const hasHaAreaLink = !!this.location.ha_area_id;
+    const siblingAreaSourceScope = this._isSiblingAreaSourceScope();
     const floorSourceCount = (config.occupancy_sources || []).length;
     const lockState = this._getLockState();
 
     if (isFloor) {
       return html`
-        <div class="card-section">
-          <div class="section-title">
-            <ha-icon .icon=${"mdi:layers"}></ha-icon>
-            Floor Occupancy Policy
-          </div>
-          <div class="policy-note">
-            Occupancy sources are disabled for floor locations. Assign sensors to area locations, then
-            use floor-level automation by aggregating those child areas.
-          </div>
+        <div>
+          <div class="card-section">
+            <div class="section-title">
+              <ha-icon .icon=${"mdi:layers"}></ha-icon>
+              Floor Occupancy Behavior
+            </div>
+            <div class="policy-note">
+              Floors do not use direct occupancy sources. Floor occupancy is derived from child areas, so
+              add sensors to those areas and use this floor for aggregated automation.
+            </div>
           ${floorSourceCount > 0
-            ? html`
-                <div class="policy-warning">
-                  This floor still has ${floorSourceCount} unsupported source${floorSourceCount === 1 ? "" : "s"} in
-                  config. Floor sources are unsupported and should be moved to areas.
-                </div>
-              `
-            : ""}
+              ? html`
+                  <div class="policy-warning">
+                    This floor still has ${floorSourceCount} unsupported source${floorSourceCount === 1 ? "" : "s"} in
+                    config. Floor sources are unsupported and should be moved to areas.
+                  </div>
+                `
+              : ""}
+          </div>
+          ${this._renderManagedShadowAreaSection()}
         </div>
       `;
     }
@@ -1870,14 +1875,90 @@ export class HtLocationInspector extends LitElement {
           ${this._renderAreaSensorList(config)}
           <div class="subsection-help">
             ${hasHaAreaLink
-              ? "Need cross-area behavior? Add a source from another area."
+              ? siblingAreaSourceScope
+                ? "Need cross-area behavior? Add a source from a sibling area on this floor."
+                : "Need cross-area behavior? Add a source from another area."
               : "Add sources from any HA area (or unassigned entities)."}
           </div>
           ${this._renderExternalSourceComposer(config)}
         </div>
-        ${this._renderLinkedLocationsSection(config)}
+        ${this._renderSyncLocationsSection(config)}
         ${this._renderWiabSection(config)}
-        ${this._renderAdjacencyAdvancedSection()}
+        ${this._renderAdjacencyAdvancedSection(config)}
+        ${this._isManagedShadowHost() ? this._renderManagedShadowAreaSection() : ""}
+      </div>
+    `;
+  }
+
+  private _isManagedShadowHost(): boolean {
+    if (!this.location || this.location.is_explicit_root) return false;
+    const type = getLocationType(this.location);
+    return type === "floor" || type === "building" || type === "grounds";
+  }
+
+  private _currentManagedShadowAreaId(): string {
+    if (!this._isManagedShadowHost() || !this.location) return "";
+    const meta = (this.location.modules?._meta || {}) as Record<string, any>;
+    const shadowAreaId = meta.shadow_area_id;
+    return typeof shadowAreaId === "string" ? shadowAreaId.trim() : "";
+  }
+
+  private _managedShadowAreaById(locationId: string): Location | undefined {
+    return (this.allLocations || []).find((candidate) => candidate.id === locationId);
+  }
+
+  private _managedShadowAreaLabel(areaId: string): string {
+    const area = this._managedShadowAreaById(areaId);
+    if (!area) return areaId;
+    const areaRegistryName = area.ha_area_id ? this.hass?.areas?.[area.ha_area_id]?.name : undefined;
+    return areaRegistryName || area.name;
+  }
+
+  private _renderManagedShadowAreaSection() {
+    if (!this._isManagedShadowHost() || !this.location) return "";
+
+    const hostId = this.location.id;
+    const shadowAreaId = this._currentManagedShadowAreaId();
+    const shadowArea = shadowAreaId ? this._managedShadowAreaById(shadowAreaId) : undefined;
+    const shadowMeta = (shadowArea?.modules?._meta || {}) as Record<string, any>;
+    const hasExpectedRole = String(shadowMeta.role || "").trim().toLowerCase() === "managed_shadow";
+    const mappedHostId = String(shadowMeta.shadow_for_location_id || "").trim();
+    const isConsistent = Boolean(
+      shadowArea &&
+      shadowArea.ha_area_id &&
+      shadowArea.parent_id === hostId &&
+      hasExpectedRole &&
+      mappedHostId === hostId
+    );
+    const currentLabel = shadowAreaId ? this._managedShadowAreaLabel(shadowAreaId) : "Not configured";
+
+    return html`
+      <div class="card-section" data-testid="managed-shadow-section">
+        <div class="section-title">
+          <ha-icon .icon=${"mdi:link-variant"}></ha-icon>
+          Managed System Area
+        </div>
+        <div class="policy-note">
+          Topomation owns this mapping. Assignments to this ${getLocationType(this.location)} are
+          remapped to a managed shadow HA area for native area_id interoperability.
+        </div>
+        <div class="subsection-help">
+          Current system area: ${currentLabel}
+        </div>
+        ${!shadowAreaId
+          ? html`
+              <div class="policy-warning">
+                Missing managed system area. It will be created automatically during sync/reconciliation.
+              </div>
+            `
+          : ""}
+        ${shadowAreaId && !isConsistent
+          ? html`
+              <div class="policy-warning">
+                Managed system area metadata is inconsistent. Topomation will repair it on next reconciliation.
+              </div>
+            `
+          : ""}
       </div>
     `;
   }
@@ -1903,7 +1984,13 @@ export class HtLocationInspector extends LitElement {
       .filter((loc) => loc.id !== this.location!.id)
       .filter((loc) => (loc.parent_id ?? null) === floorParentId)
       .filter((loc) => getLocationType(loc) === "area")
+      .filter((loc) => !this._isManagedShadowLocation(loc))
       .sort((left, right) => left.name.localeCompare(right.name));
+  }
+
+  private _isManagedShadowLocation(location: Location): boolean {
+    const meta = (location.modules?._meta || {}) as Record<string, any>;
+    return String(meta.role || "").trim().toLowerCase() === "managed_shadow";
   }
 
   private _normalizeLinkedLocationIds(
@@ -1943,6 +2030,20 @@ export class HtLocationInspector extends LitElement {
     return this._normalizeLinkedLocationIds(raw, allowedCandidates, this.location.id);
   }
 
+  private _syncLocationIds(config: OccupancyConfig): string[] {
+    if (!this.location) {
+      return [];
+    }
+
+    const allowedCandidates = new Set(this._linkedLocationCandidates().map((candidate) => candidate.id));
+    if (allowedCandidates.size === 0) {
+      return [];
+    }
+
+    const raw = this._stagedSyncLocations ?? config.sync_locations;
+    return this._normalizeLinkedLocationIds(raw, allowedCandidates, this.location.id);
+  }
+
   private _linkedLocationArraysEqual(left: string[] | undefined, right: string[]): boolean {
     if (!left || left.length !== right.length) return false;
     return left.every((locationId, index) => locationId === right[index]);
@@ -1950,6 +2051,11 @@ export class HtLocationInspector extends LitElement {
 
   private _candidateLinkedLocationIds(candidate: Location): string[] {
     const raw = ((candidate.modules?.occupancy || {}) as OccupancyConfig).linked_locations;
+    return this._normalizeLinkedLocationIds(raw, undefined, candidate.id);
+  }
+
+  private _candidateSyncLocationIds(candidate: Location): string[] {
+    const raw = ((candidate.modules?.occupancy || {}) as OccupancyConfig).sync_locations;
     return this._normalizeLinkedLocationIds(raw, undefined, candidate.id);
   }
 
@@ -1964,6 +2070,29 @@ export class HtLocationInspector extends LitElement {
     const nextConfig: OccupancyConfig = {
       ...occupancy,
       linked_locations: linkedLocationIds,
+    };
+
+    return this.hass
+      .callWS(
+        this._withEntryId({
+          type: "topomation/locations/set_module_config",
+          location_id: location.id,
+          module_id: "occupancy",
+          config: nextConfig,
+        })
+      )
+      .then(() => {
+        location.modules = location.modules || {};
+        location.modules.occupancy = nextConfig;
+        this.requestUpdate();
+      });
+  }
+
+  private _persistSyncLocationsFor(location: Location, syncLocationIds: string[]): Promise<void> {
+    const occupancy = ((location.modules?.occupancy || {}) as OccupancyConfig) || {};
+    const nextConfig: OccupancyConfig = {
+      ...occupancy,
+      sync_locations: syncLocationIds,
     };
 
     return this.hass
@@ -2030,6 +2159,48 @@ export class HtLocationInspector extends LitElement {
     });
   }
 
+  private _toggleSyncLocation(candidate: Location, enabled: boolean): void {
+    if (!this.location) return;
+    const sourceLocation = this.location;
+    const sourceLocationId = sourceLocation.id;
+    const sourceConfig = this._getOccupancyConfig();
+    const sourceSyncSet = new Set(this._syncLocationIds(sourceConfig));
+    const candidateSyncSet = new Set(this._candidateSyncLocationIds(candidate));
+
+    if (enabled) {
+      sourceSyncSet.add(candidate.id);
+      candidateSyncSet.add(sourceLocationId);
+    } else {
+      sourceSyncSet.delete(candidate.id);
+      candidateSyncSet.delete(sourceLocationId);
+    }
+
+    const nextSourceSynced = [...sourceSyncSet].sort((left, right) =>
+      this._locationName(left).localeCompare(this._locationName(right))
+    );
+    const nextCandidateSynced = [...candidateSyncSet].sort((left, right) =>
+      this._locationName(left).localeCompare(this._locationName(right))
+    );
+
+    this._stagedSyncLocations = nextSourceSynced;
+    this._enqueueLinkedPersist(async () => {
+      await this._persistSyncLocationsFor(sourceLocation, nextSourceSynced);
+      if (
+        this.location?.id === sourceLocationId &&
+        this._linkedLocationArraysEqual(this._stagedSyncLocations, nextSourceSynced)
+      ) {
+        this._stagedSyncLocations = undefined;
+      }
+      await this._persistSyncLocationsFor(candidate, nextCandidateSynced);
+      this._showToast(
+        enabled
+          ? `Synced occupancy with ${candidate.name}`
+          : `Removed occupancy sync with ${candidate.name}`,
+        "success"
+      );
+    });
+  }
+
   private _toggleTwoWayLinkedLocation(candidate: Location, enabled: boolean): void {
     if (!this.location) return;
     const sourceLocation = this.location;
@@ -2076,6 +2247,70 @@ export class HtLocationInspector extends LitElement {
     });
   }
 
+  private _renderSyncLocationsSection(config: OccupancyConfig) {
+    if (!this.location) return "";
+    const eligible = !!this._linkedLocationFloorParentId();
+    if (!eligible) {
+      return html`
+        <div class="card-section">
+          <div class="section-title">
+            <ha-icon .icon=${"mdi:link-lock"}></ha-icon>
+            Sync Rooms
+          </div>
+          <div class="subsection-help">
+            Sync Rooms is available only for area locations directly under a floor.
+          </div>
+        </div>
+      `;
+    }
+
+    const candidates = this._linkedLocationCandidates();
+    const synced = this._syncLocationIds(config);
+    const syncedSet = new Set(synced);
+    const syncedLabel = synced.length
+      ? synced.map((locationId) => this._locationName(locationId)).join(", ")
+      : "None";
+
+    return html`
+      <div class="card-section" data-testid="sync-rooms-section">
+        <div class="section-title">
+          <ha-icon .icon=${"mdi:link-lock"}></ha-icon>
+          Sync Rooms
+        </div>
+        <div class="subsection-help">
+          <strong>Recommended:</strong> synced rooms share the same occupancy state and timeout.
+          Any occupancy change in one synced room is mirrored to all others.
+        </div>
+        <div class="linked-location-meta">Synced with: ${syncedLabel}</div>
+        ${candidates.length === 0
+          ? html`<div class="adjacency-empty">No sibling area candidates available on this floor.</div>`
+          : html`
+              <div class="linked-location-list">
+                ${candidates.map((candidate) => {
+                  const checked = syncedSet.has(candidate.id);
+                  return html`
+                    <div class="linked-location-row">
+                      <label class="linked-location-left">
+                        <input
+                          type="checkbox"
+                          data-testid=${`sync-location-${candidate.id}`}
+                          .checked=${checked}
+                          @change=${(event: Event) => {
+                            const target = event.target as HTMLInputElement;
+                            this._toggleSyncLocation(candidate, target.checked);
+                          }}
+                        />
+                        <span class="linked-location-name">${candidate.name}</span>
+                      </label>
+                    </div>
+                  `;
+                })}
+              </div>
+            `}
+      </div>
+    `;
+  }
+
   private _renderLinkedLocationsSection(config: OccupancyConfig) {
     if (!this.location) return "";
     const eligible = !!this._linkedLocationFloorParentId();
@@ -2084,10 +2319,10 @@ export class HtLocationInspector extends LitElement {
         <div class="card-section">
           <div class="section-title">
             <ha-icon .icon=${"mdi:link-variant"}></ha-icon>
-            Linked Rooms
+            Directional Contributors
           </div>
           <div class="subsection-help">
-            Linked Rooms is available only for area locations directly under a floor.
+            Directional contributors are available only for area locations directly under a floor.
           </div>
         </div>
       `;
@@ -2095,6 +2330,7 @@ export class HtLocationInspector extends LitElement {
 
     const candidates = this._linkedLocationCandidates();
     const linked = this._linkedLocationIds(config);
+    const syncedSet = new Set(this._syncLocationIds(config));
     const linkedSet = new Set(linked);
     const linkedLabel = linked.length
       ? linked.map((locationId) => this._locationName(locationId)).join(", ")
@@ -2104,11 +2340,11 @@ export class HtLocationInspector extends LitElement {
       <div class="card-section">
         <div class="section-title">
           <ha-icon .icon=${"mdi:link-variant"}></ha-icon>
-          Linked Rooms
+          Directional Contributors
         </div>
         <div class="subsection-help">
-          Select locations that can contribute occupancy to this location. Links are directional.
-          Configure the reverse direction from the other location if needed.
+          Advanced: select locations that can contribute occupancy to this location directionally.
+          Configure reverse direction from the other location if needed.
         </div>
         <div class="linked-location-meta">Contributors: ${linkedLabel}</div>
         ${candidates.length === 0
@@ -2117,6 +2353,7 @@ export class HtLocationInspector extends LitElement {
               <div class="linked-location-list">
                 ${candidates.map((candidate) => {
                   const checked = linkedSet.has(candidate.id);
+                  const isSynced = syncedSet.has(candidate.id);
                   const twoWayChecked = this._isTwoWayLinked(candidate, linkedSet);
                   return html`
                     <div class="linked-location-row">
@@ -2125,6 +2362,7 @@ export class HtLocationInspector extends LitElement {
                           type="checkbox"
                           data-testid=${`linked-location-${candidate.id}`}
                           .checked=${checked}
+                          ?disabled=${isSynced}
                           @change=${(event: Event) => {
                             const target = event.target as HTMLInputElement;
                             this._toggleLinkedLocation(candidate.id, target.checked);
@@ -2137,7 +2375,7 @@ export class HtLocationInspector extends LitElement {
                           type="checkbox"
                           data-testid=${`linked-location-two-way-${candidate.id}`}
                           .checked=${twoWayChecked}
-                          ?disabled=${!checked}
+                          ?disabled=${!checked || isSynced}
                           @change=${(event: Event) => {
                             const target = event.target as HTMLInputElement;
                             this._toggleTwoWayLinkedLocation(candidate, target.checked);
@@ -2154,17 +2392,17 @@ export class HtLocationInspector extends LitElement {
     `;
   }
 
-  private _renderAdjacencyAdvancedSection() {
+  private _renderAdjacencyAdvancedSection(config: OccupancyConfig) {
     const expanded = this._showAdvancedAdjacency;
     return html`
       <div class="card-section">
         <div class="section-title">
           <ha-icon .icon=${"mdi:beaker-outline"}></ha-icon>
-          Advanced Movement Handoff
+          Advanced Occupancy Relationships
         </div>
         <div class="subsection-help">
-          Adjacency edges and handoff traces are advanced tools for explicit movement inference.
-          Most setups can use sources + linked rooms without configuring handoff graphs.
+          Directional contributors and movement handoff are advanced tools.
+          Most homes should start with Sync Rooms.
         </div>
         <div class="advanced-toggle-row">
           <button
@@ -2174,11 +2412,13 @@ export class HtLocationInspector extends LitElement {
               this._showAdvancedAdjacency = !this._showAdvancedAdjacency;
             }}
           >
-            ${expanded ? "Hide Advanced Handoff" : "Show Advanced Handoff"}
+            ${expanded ? "Hide Advanced Controls" : "Show Advanced Controls"}
           </button>
         </div>
       </div>
-      ${expanded ? html`${this._renderAdjacencySection()} ${this._renderHandoffTraceSection()}` : ""}
+      ${expanded
+        ? html`${this._renderLinkedLocationsSection(config)} ${this._renderAdjacencySection()} ${this._renderHandoffTraceSection()}`
+        : ""}
     `;
   }
 
@@ -2192,6 +2432,7 @@ export class HtLocationInspector extends LitElement {
     return (this.allLocations || [])
       .filter((loc) => loc.id !== this.location!.id)
       .filter((loc) => (loc.parent_id ?? null) === parentId)
+      .filter((loc) => !this._isManagedShadowLocation(loc))
       .filter((loc) => {
         const type = getLocationType(loc);
         return type === "area" || type === "subarea";
@@ -3232,6 +3473,7 @@ export class HtLocationInspector extends LitElement {
 
   private _renderExternalSourceComposer(config: OccupancyConfig) {
     const areas = this._availableSourceAreas();
+    const siblingAreaSourceScope = this._isSiblingAreaSourceScope();
     const selectedAreaId = this._externalAreaId || "";
     const entityOptions = selectedAreaId ? this._entitiesForArea(selectedAreaId) : [];
     const entityId = this._externalEntityId || "";
@@ -3240,10 +3482,25 @@ export class HtLocationInspector extends LitElement {
     const selectedKey = entityId
       ? this._sourceKey(entityId, defaultSignalKey)
       : "";
-    const areaLabel = this.location?.ha_area_id ? "Other Area" : "Source Area";
+    const areaLabel = siblingAreaSourceScope
+      ? "Sibling Area"
+      : this.location?.ha_area_id
+        ? "Other Area"
+        : "Source Area";
+    const areaPlaceholder = siblingAreaSourceScope ? "Select sibling area..." : "Select area...";
 
     return html`
       <div class="external-composer">
+        ${siblingAreaSourceScope
+          ? html`<div class="runtime-note">Only sibling areas on this floor can be selected.</div>`
+          : ""}
+        ${siblingAreaSourceScope && areas.length === 0
+          ? html`
+              <div class="policy-warning">
+                No sibling HA-backed areas are available for cross-area sources.
+              </div>
+            `
+          : ""}
         <div class="editor-field">
           <label for="external-source-area">${areaLabel}</label>
           <select
@@ -3257,8 +3514,8 @@ export class HtLocationInspector extends LitElement {
               this.requestUpdate();
             }}
           >
-            <option value="">Select area...</option>
-            <option value="__all__">Any area / unassigned</option>
+            <option value="">${areaPlaceholder}</option>
+            ${siblingAreaSourceScope ? "" : html`<option value="__all__">Any area / unassigned</option>`}
             ${areas.map((area) => html`<option value=${area.area_id}>${area.name}</option>`)}
           </select>
         </div>
@@ -4053,10 +4310,10 @@ export class HtLocationInspector extends LitElement {
               });
             }}
           />
-          Reapply occupancy actions on startup
+          Reapply floor actions on startup
         </label>
         <div class="startup-inline-help">
-          Applies to both On Occupied and On Vacant actions after Home Assistant startup.
+          Re-runs both On Occupied and On Vacant actions after Home Assistant starts.
         </div>
       </div>
     `;
@@ -4800,17 +5057,71 @@ export class HtLocationInspector extends LitElement {
   }
 
   private _availableSourceAreas(): Array<{ area_id: string; name: string }> {
+    if (this._isSiblingAreaSourceScope()) {
+      return this._siblingSourceAreas();
+    }
+
     const currentAreaId = this.location?.ha_area_id;
+    const shadowAreaIds = this._managedShadowAreaIdSet();
     const areaMap = this.hass?.areas || {};
     const areas = Object.values(areaMap) as Array<{ area_id?: string; name?: string }>;
     return areas
       .filter((area) => !!area.area_id)
       .filter((area) => area.area_id !== currentAreaId)
+      .filter((area) => !shadowAreaIds.has(area.area_id!))
       .map((area) => ({
         area_id: area.area_id!,
         name: area.name || area.area_id!,
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  private _isSiblingAreaSourceScope(): boolean {
+    if (!this.location) return false;
+    if (getLocationType(this.location) !== "area") return false;
+    if (!this.location.ha_area_id) return false;
+    const allLocations = this.allLocations || [];
+    if (allLocations.length === 0) return false;
+    const parentId = this.location.parent_id ?? null;
+    if (!parentId) return false;
+    const parent = allLocations.find((candidate) => candidate.id === parentId);
+    return !!parent && getLocationType(parent) === "floor";
+  }
+
+  private _siblingSourceAreas(): Array<{ area_id: string; name: string }> {
+    if (!this.location || !this._isSiblingAreaSourceScope()) return [];
+    const parentId = this.location.parent_id ?? null;
+    if (!parentId) return [];
+    const currentLocationId = this.location.id;
+    const seen = new Set<string>();
+
+    return (this.allLocations || [])
+      .filter((candidate) => candidate.id !== currentLocationId)
+      .filter((candidate) => (candidate.parent_id ?? null) === parentId)
+      .filter((candidate) => getLocationType(candidate) === "area")
+      .filter((candidate) => !this._isManagedShadowLocation(candidate))
+      .filter((candidate) => !!candidate.ha_area_id)
+      .filter((candidate) => {
+        const areaId = candidate.ha_area_id!;
+        if (seen.has(areaId)) return false;
+        seen.add(areaId);
+        return true;
+      })
+      .map((candidate) => ({
+        area_id: candidate.ha_area_id!,
+        name: candidate.name || candidate.ha_area_id!,
+      }))
+      .sort((left, right) => left.name.localeCompare(right.name));
+  }
+
+  private _managedShadowAreaIdSet(): Set<string> {
+    const ids = new Set<string>();
+    for (const location of this.allLocations || []) {
+      if (!this._isManagedShadowLocation(location)) continue;
+      if (!location.ha_area_id) continue;
+      ids.add(location.ha_area_id);
+    }
+    return ids;
   }
 
   private _entitiesForArea(areaId: string): string[] {

@@ -107,4 +107,64 @@ describe("HtLocationDialog", () => {
     expect(parentField).to.equal(undefined);
     expect(element._submitParentId()).to.equal(null);
   });
+
+  it("excludes managed shadow locations from parent options", async () => {
+    const locations: Location[] = [
+      {
+        id: "floor_main",
+        name: "Main Floor",
+        parent_id: null,
+        is_explicit_root: false,
+        entity_ids: [],
+        modules: { _meta: { type: "floor" } },
+      },
+      {
+        id: "floor_main_shadow",
+        name: "Main Floor",
+        parent_id: "floor_main",
+        is_explicit_root: false,
+        ha_area_id: "area_floor_main_shadow",
+        entity_ids: [],
+        modules: {
+          _meta: {
+            type: "area",
+            role: "managed_shadow",
+            shadow_for_location_id: "floor_main",
+          },
+        },
+      },
+      {
+        id: "area_kitchen",
+        name: "Kitchen",
+        parent_id: "floor_main",
+        is_explicit_root: false,
+        entity_ids: [],
+        modules: { _meta: { type: "area" } },
+      },
+    ];
+
+    const element = await fixture<any>(html`
+      <ht-location-dialog
+        .hass=${createHass()}
+        .open=${true}
+        .locations=${locations}
+      ></ht-location-dialog>
+    `);
+    await element.updateComplete;
+
+    element._config = {
+      name: "New Area",
+      type: "area",
+    };
+
+    const schema = element._getSchema();
+    const parentField = schema.find((field: any) => field.name === "parent_id");
+    const parentLabels = (parentField?.selector?.select?.options || []).map(
+      (opt: any) => opt?.label
+    );
+
+    expect(parentLabels).to.include("Main Floor");
+    expect(parentLabels).to.include("Kitchen");
+    expect(parentLabels.filter((label: string) => label === "Main Floor").length).to.equal(1);
+  });
 });

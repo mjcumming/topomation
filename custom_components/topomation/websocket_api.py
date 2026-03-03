@@ -58,6 +58,13 @@ _SUPPORTED_LOCATION_TYPES = frozenset(
 _LEGACY_LOCATION_TYPE_ALIASES: dict[str, str] = {
     "room": "area",
 }
+_META_ROLE_KEY = "role"
+_META_SHADOW_AREA_ID_KEY = "shadow_area_id"
+_META_SHADOW_FOR_LOCATION_ID_KEY = "shadow_for_location_id"
+_MANAGED_SHADOW_ROLE = "managed_shadow"
+_SHADOW_HOST_TYPES = frozenset({"floor", "building", "grounds"})
+_OCCUPANCY_LINKED_LOCATIONS_KEY = "linked_locations"
+_OCCUPANCY_SYNC_LOCATIONS_KEY = "sync_locations"
 
 
 def _remember_connection_entry_hint(
@@ -213,6 +220,9 @@ def _linked_room_parent_floor_id(location_manager: object, location: object) -> 
 
 def _allowed_linked_room_neighbors(location_manager: object, location: object) -> set[str]:
     """Return valid linked-room neighbor ids for one location."""
+    if _is_managed_shadow_area(location):
+        return set()
+
     floor_parent_id = _linked_room_parent_floor_id(location_manager, location)
     if not floor_parent_id:
         return set()
@@ -233,27 +243,33 @@ def _allowed_linked_room_neighbors(location_manager: object, location: object) -
             continue
         if _location_type(candidate) != "area":
             continue
+        if _is_managed_shadow_area(candidate):
+            continue
         allowed.add(candidate_id)
     return allowed
 
 
-def _normalize_linked_locations_config(
+def _normalize_neighbor_location_ids(
+    *,
     location_manager: object,
     location: object,
     config: dict[str, Any],
+    config_key: str,
+    noun: str,
+    empty_scope_message: str,
 ) -> tuple[list[str] | None, str | None]:
-    """Validate and normalize occupancy linked_locations against product policy."""
-    raw_linked = config.get("linked_locations")
-    if raw_linked is None:
+    """Validate and normalize room-neighbor config lists against scope policy."""
+    raw_values = config.get(config_key)
+    if raw_values is None:
         return None, None
-    if not isinstance(raw_linked, list):
-        return None, "linked_locations must be a list of location IDs."
+    if not isinstance(raw_values, list):
+        return None, f"{config_key} must be a list of location IDs."
 
     normalized: list[str] = []
     seen: set[str] = set()
-    for item in raw_linked:
+    for item in raw_values:
         if not isinstance(item, str):
-            return None, "linked_locations must contain string location IDs."
+            return None, f"{config_key} must contain string location IDs."
         location_id = item.strip()
         if not location_id or location_id in seen:
             continue
@@ -263,10 +279,7 @@ def _normalize_linked_locations_config(
     allowed = _allowed_linked_room_neighbors(location_manager, location)
     if not allowed:
         if normalized:
-            return (
-                None,
-                "Linked rooms are only supported for area locations directly under a floor.",
-            )
+            return None, empty_scope_message
         return [], None
 
     invalid = [location_id for location_id in normalized if location_id not in allowed]
@@ -274,11 +287,43 @@ def _normalize_linked_locations_config(
         preview = ", ".join(invalid[:3])
         return (
             None,
-            "Linked rooms must be sibling area locations under the same floor. "
+            f"{noun} must be sibling area locations under the same floor. "
             f"Invalid: {preview}",
         )
 
     return normalized, None
+
+
+def _normalize_linked_locations_config(
+    location_manager: object,
+    location: object,
+    config: dict[str, Any],
+) -> tuple[list[str] | None, str | None]:
+    """Validate and normalize occupancy linked_locations against product policy."""
+    return _normalize_neighbor_location_ids(
+        location_manager=location_manager,
+        location=location,
+        config=config,
+        config_key=_OCCUPANCY_LINKED_LOCATIONS_KEY,
+        noun="Linked rooms",
+        empty_scope_message="Linked rooms are only supported for area locations directly under a floor.",
+    )
+
+
+def _normalize_sync_locations_config(
+    location_manager: object,
+    location: object,
+    config: dict[str, Any],
+) -> tuple[list[str] | None, str | None]:
+    """Validate and normalize occupancy sync_locations against product policy."""
+    return _normalize_neighbor_location_ids(
+        location_manager=location_manager,
+        location=location,
+        config=config,
+        config_key=_OCCUPANCY_SYNC_LOCATIONS_KEY,
+        noun="Sync rooms",
+        empty_scope_message="Sync Rooms are only supported for area locations directly under a floor.",
+    )
 
 
 def _location_meta(location: object) -> dict[str, Any]:
@@ -296,6 +341,163 @@ def _location_ha_area_id(location: object) -> str | None:
     if linked:
         return str(linked)
     return _location_meta(location).get("ha_area_id")
+
+
+def _location_id(location: object) -> str:
+    """Return canonical string location id for location-like objects."""
+    return str(getattr(location, "id", "") or "")
+
+
+def _is_shadow_host_location(location: object) -> bool:
+    """Return True when location assignment must route through managed shadow area."""
+    if bool(getattr(location, "is_explicit_root", False)):
+        return False
+    return _location_type(location) in _SHADOW_HOST_TYPES
+
+
+def _is_managed_shadow_area(location: object) -> bool:
+    """Return True when location is an integration-managed shadow area."""
+    if _location_type(location) != "area":
+        return False
+    meta = _location_meta(location)
+    return str(meta.get(_META_ROLE_KEY, "")).strip().lower() == _MANAGED_SHADOW_ROLE
+
+
+def _validate_managed_shadow_area_candidate(
+    location_manager: object,
+    host_location: object,
+    shadow_location: object,
+) -> tuple[bool, str | None]:
+    """Validate whether an area location may act as managed shadow for a host."""
+    host_id = _location_id(host_location)
+    host_type = _location_type(host_location)
+    if not host_id:
+        return False, "Host location is missing an id."
+    if not _is_shadow_host_location(host_location):
+        return False, f"Location '{host_id}' ({host_type}) does not support managed shadow mapping."
+
+    shadow_id = _location_id(shadow_location)
+    if not shadow_id:
+        return False, "Shadow location is missing an id."
+    if _location_type(shadow_location) != "area":
+        return False, "Managed shadow must reference an area location."
+    if not _location_ha_area_id(shadow_location):
+        return False, "Managed shadow must reference an HA-backed area location."
+    if getattr(shadow_location, "parent_id", None) != host_id:
+        return False, "Managed shadow area must be parented directly under the host location."
+
+    if location_manager.get_location(shadow_id) is None:
+        return False, f"Managed shadow area '{shadow_id}' not found."
+
+    return True, None
+
+
+def _reconcile_managed_shadow_areas(kernel: dict[str, Any]) -> None:
+    """Invoke SyncManager managed-shadow reconciliation when available."""
+    sync_manager = kernel.get("sync_manager")
+    if sync_manager is None:
+        return
+    reconcile = getattr(sync_manager, "reconcile_managed_shadow_areas", None)
+    if callable(reconcile):
+        reconcile()
+
+
+def _normalize_meta_config(
+    location_manager: object,
+    location: object,
+    config: dict[str, Any],
+) -> tuple[dict[str, Any] | None, str | None]:
+    """Validate and normalize _meta updates.
+
+    Managed shadow metadata is integration-owned and cannot be edited via WS.
+    """
+    if not isinstance(config, dict):
+        return None, "_meta config must be an object."
+    _ = location_manager
+
+    existing = _location_meta(location)
+    existing_role = str(existing.get(_META_ROLE_KEY, "")).strip().lower()
+    if existing_role == _MANAGED_SHADOW_ROLE:
+        return None, "Managed shadow area metadata is integration-owned and cannot be edited manually."
+
+    if (
+        _META_SHADOW_AREA_ID_KEY in config
+        or _META_SHADOW_FOR_LOCATION_ID_KEY in config
+        or "proxy_area_id" in config
+        or "proxy_for_floor_id" in config
+    ):
+        return None, "Managed shadow metadata is integration-owned and cannot be set manually."
+
+    requested_role = config.get(_META_ROLE_KEY)
+    if isinstance(requested_role, str) and requested_role.strip().lower() in {
+        _MANAGED_SHADOW_ROLE,
+        "floor_proxy",
+    }:
+        return None, "Managed shadow metadata is integration-owned and cannot be set manually."
+
+    merged = {**existing, **config}
+    merged_type = _normalize_location_type(merged.get("type") or _location_type(location))
+    merged["type"] = merged_type
+
+    if merged_type not in _SHADOW_HOST_TYPES:
+        merged.pop(_META_SHADOW_AREA_ID_KEY, None)
+    if merged_type != "area":
+        merged.pop(_META_SHADOW_FOR_LOCATION_ID_KEY, None)
+        normalized_role = str(merged.get(_META_ROLE_KEY, "")).strip().lower()
+        if normalized_role == _MANAGED_SHADOW_ROLE:
+            merged.pop(_META_ROLE_KEY, None)
+
+    # Legacy proxy keys are removed as part of managed-shadow migration.
+    merged.pop("proxy_area_id", None)
+    merged.pop("proxy_for_floor_id", None)
+    if str(merged.get(_META_ROLE_KEY, "")).strip().lower() == "floor_proxy":
+        merged.pop(_META_ROLE_KEY, None)
+
+    return merged, None
+
+
+def _resolve_shadow_assignment_target(
+    location_manager: object,
+    host_location: object,
+) -> tuple[object | None, str | None]:
+    """Resolve aggregate-node assignment targets to managed shadow areas."""
+    host_id = _location_id(host_location)
+    host_type = _location_type(host_location)
+    host_meta = _location_meta(host_location)
+    raw_shadow_area_id = host_meta.get(_META_SHADOW_AREA_ID_KEY)
+    shadow_area_id = str(raw_shadow_area_id).strip() if isinstance(raw_shadow_area_id, str) else ""
+    if not shadow_area_id:
+        return None, (
+            f"{host_type.title()} '{host_id}' has no managed shadow area configured. "
+            "Run sync/reconciliation to create it."
+        )
+
+    shadow_location = location_manager.get_location(shadow_area_id)
+    if shadow_location is None:
+        return None, (
+            f"Configured managed shadow area '{shadow_area_id}' for '{host_id}' was not found. "
+            "Run sync/reconciliation to recreate it."
+        )
+
+    valid_shadow, shadow_error = _validate_managed_shadow_area_candidate(
+        location_manager,
+        host_location,
+        shadow_location,
+    )
+    if not valid_shadow:
+        return None, shadow_error
+
+    shadow_meta = _location_meta(shadow_location)
+    shadow_role = str(shadow_meta.get(_META_ROLE_KEY, "")).strip().lower()
+    shadow_for_location_id = str(shadow_meta.get(_META_SHADOW_FOR_LOCATION_ID_KEY, "")).strip()
+    if shadow_role != _MANAGED_SHADOW_ROLE or shadow_for_location_id != host_id:
+        return None, (
+            f"Configured managed shadow area '{shadow_area_id}' metadata is inconsistent for '{host_id}'. "
+            f"Ensure role is '{_MANAGED_SHADOW_ROLE}' and "
+            f"{_META_SHADOW_FOR_LOCATION_ID_KEY} matches."
+        )
+
+    return shadow_location, None
 
 
 def _is_ha_backed_location(location: object) -> bool:
@@ -979,6 +1181,21 @@ def handle_locations_create(
     name = str(msg.get("name", "")).strip()
     parent_id = msg.get("parent_id")
 
+    requested_role = str(meta.get(_META_ROLE_KEY, "")).strip().lower()
+    if (
+        _META_SHADOW_AREA_ID_KEY in meta
+        or _META_SHADOW_FOR_LOCATION_ID_KEY in meta
+        or "proxy_area_id" in meta
+        or "proxy_for_floor_id" in meta
+        or requested_role in {_MANAGED_SHADOW_ROLE, "floor_proxy"}
+    ):
+        connection.send_error(
+            msg["id"],
+            "invalid_meta",
+            "Managed shadow metadata is integration-owned and cannot be set manually.",
+        )
+        return
+
     if not name:
         connection.send_error(msg["id"], "invalid_name", "Location name is required")
         return
@@ -1050,6 +1267,7 @@ def handle_locations_create(
         if location_type == "area" and ha_area_id:
             merged_meta["ha_area_id"] = ha_area_id
         loc_mgr.set_module_config(location_id, "_meta", merged_meta)
+        _reconcile_managed_shadow_areas(kernel)
 
         schedule_persist = kernel.get("schedule_persist")
         if callable(schedule_persist):
@@ -1107,6 +1325,13 @@ def handle_locations_update(
     if location is None:
         connection.send_error(msg["id"], "not_found", f"Location {location_id} not found")
         return
+    if _is_managed_shadow_area(location):
+        connection.send_error(
+            msg["id"],
+            "operation_not_supported",
+            "Managed shadow areas are integration-owned and cannot be edited manually.",
+        )
+        return
 
     rename = None
     if "name" in changes:
@@ -1152,6 +1377,7 @@ def handle_locations_update(
         synced_floor_id: str | None = None
         if "parent_id" in changes:
             synced_floor_id = _sync_ha_area_floor_assignment(hass, loc_mgr, updated)
+        _reconcile_managed_shadow_areas(kernel)
 
         schedule_persist = kernel.get("schedule_persist")
         if callable(schedule_persist):
@@ -1200,6 +1426,13 @@ def handle_locations_delete(
     location = loc_mgr.get_location(location_id)
     if location is None:
         connection.send_error(msg["id"], "not_found", f"Location {location_id} not found")
+        return
+    if _is_managed_shadow_area(location):
+        connection.send_error(
+            msg["id"],
+            "operation_not_supported",
+            "Managed shadow areas are integration-owned and cannot be deleted manually.",
+        )
         return
 
     if bool(getattr(location, "is_explicit_root", False)):
@@ -1286,6 +1519,7 @@ def handle_locations_delete(
             if _location_ha_area_id(impacted):
                 _sync_ha_area_floor_assignment(hass, loc_mgr, impacted)
                 synced_floor_updates += 1
+        _reconcile_managed_shadow_areas(kernel)
 
         schedule_persist = kernel.get("schedule_persist")
         if callable(schedule_persist):
@@ -1336,6 +1570,13 @@ def handle_locations_reorder(
     if location_before is None:
         connection.send_error(msg["id"], "not_found", f"Location {msg['location_id']} not found")
         return
+    if _is_managed_shadow_area(location_before):
+        connection.send_error(
+            msg["id"],
+            "operation_not_supported",
+            "Managed shadow areas are integration-owned and cannot be reordered manually.",
+        )
+        return
 
     requested_parent_id = msg["new_parent_id"]
     if requested_parent_id is not None and loc_mgr.get_location(requested_parent_id) is None:
@@ -1369,6 +1610,7 @@ def handle_locations_reorder(
         _mark_sibling_group_manual_order(loc_mgr, old_parent_id)
         _mark_sibling_group_manual_order(loc_mgr, location.parent_id)
         synced_floor_id = _sync_ha_area_floor_assignment(hass, loc_mgr, location)
+        _reconcile_managed_shadow_areas(kernel)
         schedule_persist = kernel.get("schedule_persist")
         if callable(schedule_persist):
             schedule_persist("locations/reorder")
@@ -1444,12 +1686,34 @@ def handle_locations_set_module_config(
             if linked_error:
                 connection.send_error(msg["id"], "invalid_config", linked_error)
                 return
-            if normalized_linked is not None:
+            normalized_sync, sync_error = _normalize_sync_locations_config(
+                loc_mgr,
+                location,
+                config,
+            )
+            if sync_error:
+                connection.send_error(msg["id"], "invalid_config", sync_error)
+                return
+            if normalized_linked is not None or normalized_sync is not None:
                 config = dict(config)
+            if normalized_linked is not None:
                 config["linked_locations"] = normalized_linked
+            if normalized_sync is not None:
+                config["sync_locations"] = normalized_sync
+        elif module_id == "_meta":
+            normalized_meta, meta_error = _normalize_meta_config(loc_mgr, location, config)
+            if meta_error:
+                connection.send_error(msg["id"], "invalid_config", meta_error)
+                return
+            if normalized_meta is None:
+                connection.send_error(msg["id"], "invalid_config", "Invalid _meta config")
+                return
+            config = normalized_meta
 
         # Set config in LocationManager
         loc_mgr.set_module_config(location_id, module_id, config)
+        if module_id == "_meta":
+            _reconcile_managed_shadow_areas(kernel)
 
         # Notify module of config change
         if module_id in modules:
@@ -1499,6 +1763,7 @@ def handle_locations_assign_entity(
     entity_id = str(msg.get("entity_id", "")).strip()
     raw_target = msg.get("target_location_id")
     target_location_id = str(raw_target).strip() if isinstance(raw_target, str) and raw_target.strip() else None
+    requested_target_location_id = target_location_id
 
     if not entity_id:
         connection.send_error(msg["id"], "invalid_entity", "entity_id is required")
@@ -1512,6 +1777,16 @@ def handle_locations_assign_entity(
             f"Target location '{target_location_id}' not found",
         )
         return
+    if target_location is not None and _is_shadow_host_location(target_location):
+        shadow_target, shadow_error = _resolve_shadow_assignment_target(loc_mgr, target_location)
+        if shadow_error:
+            connection.send_error(msg["id"], "invalid_target", shadow_error)
+            return
+        if shadow_target is None:
+            connection.send_error(msg["id"], "invalid_target", "Could not resolve managed shadow target")
+            return
+        target_location = shadow_target
+        target_location_id = _location_id(shadow_target)
 
     previous_location_ids = [
         str(getattr(location, "id", ""))
@@ -1546,6 +1821,7 @@ def handle_locations_assign_entity(
                 "success": True,
                 "entity_id": entity_id,
                 "previous_location_ids": previous_location_ids,
+                "requested_target_location_id": requested_target_location_id,
                 "target_location_id": target_location_id,
                 "ha_area_id": synced_ha_area_id,
             },

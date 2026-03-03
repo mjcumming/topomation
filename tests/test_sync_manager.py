@@ -618,6 +618,196 @@ class TestHAToTopologySync:
         assert kitchen_loc.parent_id is None
         assert "ha_floor_id" not in kitchen_loc.modules.get("_meta", {})
 
+    async def test_area_delete_clears_floor_shadow_pointer(
+        self,
+        hass: HomeAssistant,
+        sync_manager: SyncManager,
+        loc_mgr: LocationManager,
+        clean_registries,
+    ):
+        """Deleting a managed shadow area should replace floor shadow mapping."""
+        area_reg = ar.async_get(hass)
+        floor_reg = fr.async_get(hass)
+        main_floor = floor_reg.async_create("Main Floor")
+        shadow_area = area_reg.async_create("Main Floor", floor_id=main_floor.floor_id)
+
+        await sync_manager.import_all_areas_and_floors()
+        await sync_manager.async_setup()
+
+        floor_loc_id = f"floor_{main_floor.floor_id}"
+        area_loc_id = f"area_{shadow_area.id}"
+
+        floor_loc = loc_mgr.get_location(floor_loc_id)
+        area_loc = loc_mgr.get_location(area_loc_id)
+        assert floor_loc is not None
+        assert area_loc is not None
+
+        before_floor_meta = floor_loc.modules.get("_meta", {})
+        before_shadow_area_id = str(before_floor_meta.get("shadow_area_id", "")).strip()
+        assert before_shadow_area_id
+
+        before_shadow = loc_mgr.get_location(before_shadow_area_id)
+        assert before_shadow is not None
+        before_shadow_ha_area_id = before_shadow.ha_area_id
+        assert before_shadow_ha_area_id is not None
+
+        area_reg.async_delete(before_shadow_ha_area_id)
+        await hass.async_block_till_done()
+
+        updated_floor = loc_mgr.get_location(floor_loc_id)
+        assert updated_floor is not None
+        updated_floor_meta = updated_floor.modules.get("_meta", {})
+        after_shadow_area_id = str(updated_floor_meta.get("shadow_area_id", "")).strip()
+        assert after_shadow_area_id
+
+        recreated_shadow = loc_mgr.get_location(after_shadow_area_id)
+        assert recreated_shadow is not None
+        recreated_meta = recreated_shadow.modules.get("_meta", {})
+        assert recreated_meta.get("role") == "managed_shadow"
+        assert recreated_meta.get("shadow_for_location_id") == floor_loc_id
+
+    async def test_floor_with_ha_child_area_auto_assigns_shadow(
+        self,
+        hass: HomeAssistant,
+        sync_manager: SyncManager,
+        loc_mgr: LocationManager,
+        clean_registries,
+    ):
+        """Floors with HA child areas should auto-get a managed shadow area."""
+        area_reg = ar.async_get(hass)
+        floor_reg = fr.async_get(hass)
+        main_floor = floor_reg.async_create("Main Floor")
+        system_area = area_reg.async_create("Main Floor", floor_id=main_floor.floor_id)
+
+        await sync_manager.import_all_areas_and_floors()
+        await sync_manager.async_setup()
+
+        floor_loc_id = f"floor_{main_floor.floor_id}"
+        user_area_loc_id = f"area_{system_area.id}"
+
+        floor_loc = loc_mgr.get_location(floor_loc_id)
+        user_area_loc = loc_mgr.get_location(user_area_loc_id)
+        assert floor_loc is not None
+        assert user_area_loc is not None
+
+        floor_meta = floor_loc.modules.get("_meta", {})
+        shadow_area_id = str(floor_meta.get("shadow_area_id", "")).strip()
+        assert shadow_area_id
+        assert shadow_area_id != user_area_loc_id
+
+        shadow_area_loc = loc_mgr.get_location(shadow_area_id)
+        assert shadow_area_loc is not None
+        area_meta = shadow_area_loc.modules.get("_meta", {})
+
+        assert area_meta.get("role") == "managed_shadow"
+        assert area_meta.get("shadow_for_location_id") == floor_loc_id
+
+    async def test_building_auto_creates_managed_shadow_area(
+        self,
+        hass: HomeAssistant,
+        sync_manager: SyncManager,
+        loc_mgr: LocationManager,
+        clean_registries,
+    ):
+        """Building wrappers should auto-create managed shadow areas."""
+        loc_mgr.create_location(id="building_main", name="Home", parent_id=None, is_explicit_root=False)
+        loc_mgr.set_module_config("building_main", "_meta", {"type": "building", "sync_source": "topology"})
+
+        await sync_manager.import_all_areas_and_floors()
+
+        building = loc_mgr.get_location("building_main")
+        assert building is not None
+        building_meta = building.modules.get("_meta", {})
+        shadow_id = str(building_meta.get("shadow_area_id", "")).strip()
+        assert shadow_id
+
+        shadow = loc_mgr.get_location(shadow_id)
+        assert shadow is not None
+        shadow_meta = shadow.modules.get("_meta", {})
+        assert shadow.parent_id == "building_main"
+        assert shadow.ha_area_id is not None
+        assert shadow_meta.get("role") == "managed_shadow"
+        assert shadow_meta.get("shadow_for_location_id") == "building_main"
+
+    async def test_grounds_auto_creates_managed_shadow_area(
+        self,
+        hass: HomeAssistant,
+        sync_manager: SyncManager,
+        loc_mgr: LocationManager,
+        clean_registries,
+    ):
+        """Grounds wrappers should auto-create managed shadow areas."""
+        loc_mgr.create_location(id="grounds", name="Grounds", parent_id=None, is_explicit_root=False)
+        loc_mgr.set_module_config("grounds", "_meta", {"type": "grounds", "sync_source": "topology"})
+
+        await sync_manager.import_all_areas_and_floors()
+
+        grounds = loc_mgr.get_location("grounds")
+        assert grounds is not None
+        grounds_meta = grounds.modules.get("_meta", {})
+        shadow_id = str(grounds_meta.get("shadow_area_id", "")).strip()
+        assert shadow_id
+
+        shadow = loc_mgr.get_location(shadow_id)
+        assert shadow is not None
+        shadow_meta = shadow.modules.get("_meta", {})
+        assert shadow.parent_id == "grounds"
+        assert shadow.ha_area_id is not None
+        assert shadow_meta.get("role") == "managed_shadow"
+        assert shadow_meta.get("shadow_for_location_id") == "grounds"
+
+    async def test_floor_delete_clears_area_shadow_tags(
+        self,
+        hass: HomeAssistant,
+        sync_manager: SyncManager,
+        loc_mgr: LocationManager,
+        clean_registries,
+    ):
+        """Deleting a floor should clear managed-shadow tags from reparented areas."""
+        area_reg = ar.async_get(hass)
+        floor_reg = fr.async_get(hass)
+        main_floor = floor_reg.async_create("Main Floor")
+        shadow_area = area_reg.async_create("Main Floor", floor_id=main_floor.floor_id)
+
+        await sync_manager.import_all_areas_and_floors()
+        await sync_manager.async_setup()
+
+        floor_loc_id = f"floor_{main_floor.floor_id}"
+        area_loc_id = f"area_{shadow_area.id}"
+
+        floor_loc = loc_mgr.get_location(floor_loc_id)
+        area_loc = loc_mgr.get_location(area_loc_id)
+        assert floor_loc is not None
+        assert area_loc is not None
+
+        loc_mgr.set_module_config(
+            area_loc_id,
+            "_meta",
+            {
+                **area_loc.modules.get("_meta", {}),
+                "role": "managed_shadow",
+                "shadow_for_location_id": floor_loc_id,
+            },
+        )
+        loc_mgr.set_module_config(
+            floor_loc_id,
+            "_meta",
+            {
+                **floor_loc.modules.get("_meta", {}),
+                "shadow_area_id": area_loc_id,
+            },
+        )
+
+        floor_reg.async_delete(main_floor.floor_id)
+        await hass.async_block_till_done()
+
+        assert loc_mgr.get_location(floor_loc_id) is None
+        updated_area = loc_mgr.get_location(area_loc_id)
+        assert updated_area is not None
+        updated_meta = updated_area.modules.get("_meta", {})
+        assert "role" not in updated_meta
+        assert "shadow_for_location_id" not in updated_meta
+
     async def test_area_delete_removes_location(
         self,
         hass: HomeAssistant,

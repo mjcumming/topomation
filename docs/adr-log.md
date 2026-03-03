@@ -1963,6 +1963,109 @@ runtime model.
 
 ---
 
+### ADR-HA-048: Floor Proxy Areas Use Explicit Tags + Backend Assignment Remap (2026-03-03)
+
+**Status**: ✅ APPROVED (Superseded by ADR-HA-049)
+
+**Context**:
+
+Some floor-scoped/global devices must remain in Home Assistant's native
+area model (`entity_registry.area_id`) for interoperability with HA features.
+Topomation floor nodes do not carry `ha_area_id`, and assignment to a floor does
+not currently write an HA area. A pure name-match proxy heuristic (for example,
+`area.name == floor.name`) is fragile and can hide real user areas accidentally.
+
+**Decision**:
+
+1. Introduce explicit floor-proxy metadata, not name inference:
+   - proxy area `_meta.role = "floor_proxy"`
+   - proxy area `_meta.proxy_for_floor_id = <floor_location_id>`
+   - floor `_meta.proxy_area_id = <proxy_location_id>`
+2. Keep HA floor/area lifecycle as source of truth.
+3. When assigning an entity to a floor, backend remaps target assignment to that
+   floor's configured proxy area location.
+4. Enforce one active proxy area per floor.
+5. Proxy area must be an HA-backed `area` node parented under the same floor.
+6. Missing/invalid proxy mapping returns explicit actionable errors (no silent fallback).
+7. Tree visibility is presentation-level:
+   - proxies are tagged and badged as system nodes
+   - optional tree filtering may hide tagged proxies, but data model remains explicit.
+
+**Rationale**:
+
+1. Preserves HA-native area assignment behavior for shared floor devices.
+2. Avoids hidden/implicit coupling based on mutable display names.
+3. Keeps assignment semantics deterministic and debuggable.
+4. Aligns with HA-authoritative lifecycle policy already used by wrapper nodes.
+
+**Consequences**:
+
+- ✅ Floor-target assignment can remain ergonomic while writing correct HA `area_id`.
+- ✅ Proxy intent is machine-readable and recoverable after restart/import.
+- ✅ UI can reduce clutter without relying on hidden implicit mappings.
+- ⚠️ Adds metadata reconciliation and validation paths to sync/assignment flows.
+- ⚠️ Requires migration/backfill strategy for existing manually-created "system areas".
+
+**Alternatives Considered**:
+
+- Name-match heuristic (`area.name == floor.name`): rejected as brittle under rename/localization.
+- Integration-owned non-HA proxy (`subarea`): rejected for HA area interoperability requirements.
+
+---
+
+### ADR-HA-049: Managed Shadow Areas Are Integration-Owned and Mandatory for Aggregate Hosts (2026-03-03)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+
+The floor-proxy model in ADR-HA-048 still relied on optional/manual mapping and
+did not cover aggregate wrappers consistently (`building`, `grounds`). During
+active development we chose deterministic integration ownership over optional
+operator wiring to reduce assignment ambiguity and lifecycle drift.
+
+**Decision**:
+
+1. Replace floor-proxy semantics with managed-shadow semantics:
+   - host `_meta.shadow_area_id = <shadow_location_id>`
+   - area `_meta.role = "managed_shadow"`
+   - area `_meta.shadow_for_location_id = <host_location_id>`
+2. Mandatory managed-shadow hosts are non-root:
+   - `floor`
+   - `building`
+   - `grounds`
+3. Topomation creates/recreates managed shadow HA areas automatically during
+   startup and reconciliation; no name-match adoption heuristics are used.
+   Name generation is deterministic with collision-safe ` (System)` suffixing.
+4. Assignment to managed-shadow hosts remaps to the host's shadow area before
+   persistence and HA `entity_registry.area_id` writeback.
+5. Managed-shadow metadata and wrappers are integration-owned:
+   - websocket `_meta` writes for shadow keys are rejected
+   - manual move/rename/delete of managed-shadow wrappers is rejected
+6. UI treats these as system-owned nodes and reports status read-only.
+
+**Rationale**:
+
+1. Eliminates optional wiring paths that create inconsistent assignment semantics.
+2. Makes lifecycle behavior deterministic when operators delete/reorder artifacts.
+3. Extends one assignment model across all aggregate wrappers.
+4. Reduces troubleshooting overhead by removing hidden/manual coupling.
+
+**Consequences**:
+
+- ✅ Aggregate-node assignment is deterministic and HA-interoperable.
+- ✅ Deleted managed shadows are recreated automatically.
+- ✅ UI semantics are clearer (`System Area`, integration-owned).
+- ⚠️ Adds stricter guardrails that block direct user mutation of managed shadows.
+- ⚠️ Migration cleanup is required for legacy `proxy_*` metadata keys.
+
+**Alternatives Considered**:
+
+- Optional/manual shadow binding: rejected for operational drift.
+- Name-match adoption (`area.name == host.name`): rejected as ambiguous and non-deterministic.
+
+---
+
 ## How to Use This Log
 
 ### When to Create an ADR

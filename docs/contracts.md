@@ -178,9 +178,22 @@ Additional save points:
   (for example `climate`, `vacuum`, `cover`).
 - The explicit **Add Source** picker remains broader for edge cases and may include generic `switch.*`
   entities so users can opt into uncommon/manual workflows without cluttering core discovery.
+- For HA-backed `area` locations parented by a `floor`, the cross-area picker in Detection is
+  sibling-scoped:
+  - candidate source areas must be immediate sibling `area` locations under the same floor
+  - non-sibling areas, child/subarea nodes, and non-HA-backed areas are excluded
+  - `Any area / unassigned` is not offered in this sibling-scoped mode.
 
 ## C-013 Linked Rooms + Advanced Adjacency Contract
 
+- Detection supports primary room-sync peers via occupancy config key
+  `sync_locations: string[]`.
+- Sync semantics are reciprocal and state-aligned:
+  - checking a sync peer writes both directions (`A.sync_locations += B`,
+    `B.sync_locations += A`)
+  - any occupancy contributor change in one synced room is mirrored to peers
+    using synthetic sync sources (`sync:<origin>::<source>`) so occupancy state
+    and timeout windows remain aligned.
 - Detection supports directional linked-room contributors via occupancy config key
   `linked_locations: string[]`.
 - Semantics are directional:
@@ -215,3 +228,42 @@ Additional save points:
   - candidates must share the same `parent_id` as the selected location
   - non-room topology nodes (for example `floor`, `building`, `grounds`) are
     excluded from the picker.
+
+## C-014 Managed Shadow Area Contract
+
+- Aggregate topology nodes requiring HA-native `area_id` interoperability must
+  use explicit, integration-owned managed shadow areas.
+- Managed shadow hosts:
+  - non-root `floor`
+  - non-root `building`
+  - non-root `grounds`
+- Canonical metadata keys:
+  - host `_meta.shadow_area_id = <shadow_location_id>`
+  - area `_meta.role = "managed_shadow"`
+  - area `_meta.shadow_for_location_id = <host_location_id>`
+- Managed shadow validity requirements:
+  - shadow location exists
+  - shadow is HA-backed `area`
+  - shadow is parented directly under the host location
+  - exactly one active managed shadow per host
+- Lifecycle authority:
+  - Home Assistant remains registry source of truth
+  - Topomation is authoritative for managed shadow creation/tagging
+  - on startup/reconciliation, missing or invalid managed shadows must be
+    created/recreated automatically (no name-matching inference)
+  - area names are deterministic and collision-safe (host name, then
+    host name with ` (System)` suffix variants as needed)
+- `topomation/locations/assign_entity` contract:
+  - when target is a managed shadow host, backend remaps assignment target to
+    that host's managed shadow area before persistence and HA writeback
+  - response must include resulting mapped `ha_area_id`
+  - invalid/missing managed shadow mappings must fail explicitly (no silent fallback)
+- API guardrails:
+  - managed shadow metadata is integration-owned and must be rejected on manual
+    websocket `_meta` create/update writes
+  - managed shadow area topology wrappers must reject manual move/rename/delete
+    websocket operations
+- UI visibility:
+  - managed shadow nodes are explicit/tagged (`System Area`)
+  - tree-level hiding/filtering is optional presentation behavior only; it must
+    not change assignment semantics.

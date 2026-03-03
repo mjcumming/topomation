@@ -356,6 +356,73 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(optionValues).to.not.include("binary_sensor.driveway_motion");
   });
 
+  it("hides managed shadow areas from generic external source area options", async () => {
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>): Promise<T> => {
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        return {} as T;
+      },
+      connection: {},
+      states: {},
+      areas: {
+        kitchen: { area_id: "kitchen", name: "Kitchen" },
+        floor_shadow: { area_id: "floor_shadow", name: "Main Floor (System)" },
+      },
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "virtual_zone";
+    location.name = "Virtual Zone";
+    location.ha_area_id = null;
+    location.modules._meta = { type: "area" };
+
+    const allLocations: Location[] = [
+      location,
+      {
+        ...structuredClone(baseLocation),
+        id: "area_floor_shadow",
+        name: "Main Floor",
+        parent_id: "floor_main",
+        ha_area_id: "floor_shadow",
+        modules: {
+          _meta: {
+            type: "area",
+            role: "managed_shadow",
+            shadow_for_location_id: "floor_main",
+          },
+        },
+      },
+      {
+        ...structuredClone(baseLocation),
+        id: "floor_main",
+        name: "Main Floor",
+        parent_id: null,
+        modules: { _meta: { type: "floor" } },
+      },
+    ];
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${location}
+        .allLocations=${allLocations}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    const areaSelect = element.shadowRoot!.querySelector(
+      '[data-testid="external-source-area-select"]'
+    ) as HTMLSelectElement;
+    const optionValues = Array.from(areaSelect.options).map((option) => option.value);
+
+    expect(optionValues).to.include("__all__");
+    expect(optionValues).to.include("kitchen");
+    expect(optionValues).to.not.include("floor_shadow");
+  });
+
   it("filters hidden/disabled/config entities from area entity options", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>): Promise<T> => {
@@ -1319,6 +1386,20 @@ describe("HtLocationInspector occupancy source composer", () => {
       },
       {
         ...structuredClone(baseLocation),
+        id: "area_main_floor_shadow",
+        name: "Main Floor",
+        parent_id: "floor_main",
+        ha_area_id: "main_floor_shadow",
+        modules: {
+          _meta: {
+            type: "area",
+            role: "managed_shadow",
+            shadow_for_location_id: "floor_main",
+          },
+        },
+      },
+      {
+        ...structuredClone(baseLocation),
         id: "subarea_pantry",
         name: "Pantry",
         parent_id: "area_kitchen",
@@ -1373,6 +1454,125 @@ describe("HtLocationInspector occupancy source composer", () => {
       option.textContent?.trim()
     );
     expect(optionLabels).to.deep.equal(["Hallway"]);
+  });
+
+  it("limits cross-area source picker to sibling areas on the same floor", async () => {
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>) => {
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        return {} as T;
+      },
+      connection: {},
+      states: {},
+      areas: {
+        garage: { area_id: "garage", name: "Garage" },
+        kitchen: { area_id: "kitchen", name: "Kitchen" },
+        living_room: { area_id: "living_room", name: "Living Room" },
+        garage_loft: { area_id: "garage_loft", name: "Garage Loft" },
+        garage_shadow: { area_id: "garage_shadow", name: "Garage (System)" },
+      },
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_garage";
+    location.name = "Garage";
+    location.parent_id = "floor_ground";
+    location.ha_area_id = "garage";
+    location.modules._meta = { type: "area" };
+
+    const allLocations: Location[] = [
+      location,
+      {
+        ...structuredClone(baseLocation),
+        id: "area_kitchen",
+        name: "Kitchen",
+        parent_id: "floor_ground",
+        ha_area_id: "kitchen",
+        modules: { _meta: { type: "area" } },
+      },
+      {
+        ...structuredClone(baseLocation),
+        id: "area_utility",
+        name: "Utility",
+        parent_id: "floor_ground",
+        modules: { _meta: { type: "area" } },
+      },
+      {
+        ...structuredClone(baseLocation),
+        id: "area_garage_shadow",
+        name: "Garage",
+        parent_id: "floor_ground",
+        ha_area_id: "garage_shadow",
+        modules: {
+          _meta: {
+            type: "area",
+            role: "managed_shadow",
+            shadow_for_location_id: "floor_ground",
+          },
+        },
+      },
+      {
+        ...structuredClone(baseLocation),
+        id: "subarea_garage_loft",
+        name: "Garage Loft",
+        parent_id: "area_garage",
+        ha_area_id: "garage_loft",
+        modules: { _meta: { type: "subarea" } },
+      },
+      {
+        ...structuredClone(baseLocation),
+        id: "area_living_room",
+        name: "Living Room",
+        parent_id: "floor_main",
+        ha_area_id: "living_room",
+        modules: { _meta: { type: "area" } },
+      },
+      {
+        ...structuredClone(baseLocation),
+        id: "floor_ground",
+        name: "Ground Floor",
+        parent_id: "building_home",
+        modules: { _meta: { type: "floor" } },
+      },
+      {
+        ...structuredClone(baseLocation),
+        id: "floor_main",
+        name: "Main Floor",
+        parent_id: "building_home",
+        modules: { _meta: { type: "floor" } },
+      },
+      {
+        ...structuredClone(baseLocation),
+        id: "building_home",
+        name: "Home",
+        parent_id: null,
+        modules: { _meta: { type: "building" } },
+      },
+    ];
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${location}
+        .allLocations=${allLocations}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    const areaSelect = element.shadowRoot!.querySelector(
+      '[data-testid="external-source-area-select"]'
+    ) as HTMLSelectElement;
+    expect(areaSelect).to.exist;
+
+    const optionValues = Array.from(areaSelect.options).map((option) => option.value);
+    expect(optionValues).to.deep.equal(["", "kitchen"]);
+    expect(optionValues).to.not.include("__all__");
+
+    const panelText = element.shadowRoot?.textContent || "";
+    expect(panelText).to.include("Only sibling areas on this floor can be selected.");
   });
 
   it("supports multi-select linked room contributors without locking editing", async () => {
@@ -1457,6 +1657,12 @@ describe("HtLocationInspector occupancy source composer", () => {
       ></ht-location-inspector>
     `);
     await element.updateComplete;
+    const advancedToggle = element.shadowRoot!.querySelector(
+      '[data-testid="adjacency-advanced-toggle"]'
+    ) as HTMLButtonElement;
+    expect(advancedToggle).to.exist;
+    advancedToggle.click();
+    await element.updateComplete;
 
     const familyCheckbox = element.shadowRoot!.querySelector(
       '[data-testid="linked-location-area_family_room"]'
@@ -1507,6 +1713,233 @@ describe("HtLocationInspector occupancy source composer", () => {
           item.config.linked_locations[0] === "area_dining_room"
       )
     ).to.equal(true);
+  });
+
+  it("sync rooms writes reciprocal config updates", async () => {
+    const callWsRequests: Array<Record<string, any>> = [];
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>) => {
+        callWsRequests.push(request);
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        if (request.type === "topomation/locations/set_module_config") {
+          return { success: true } as T;
+        }
+        return {} as T;
+      },
+      connection: {},
+      states: {},
+      areas: {},
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_kitchen";
+    location.name = "Kitchen";
+    location.parent_id = "floor_main";
+    location.modules._meta = { type: "area" };
+    location.modules.occupancy = {
+      enabled: true,
+      default_timeout: 300,
+      default_trailing_timeout: 120,
+      occupancy_sources: [],
+      linked_locations: [],
+      sync_locations: [],
+    };
+
+    const allLocations: Location[] = [
+      location,
+      {
+        ...structuredClone(baseLocation),
+        id: "area_family_room",
+        name: "Family Room",
+        parent_id: "floor_main",
+        modules: {
+          _meta: { type: "area" },
+          occupancy: {
+            enabled: true,
+            default_timeout: 300,
+            default_trailing_timeout: 120,
+            occupancy_sources: [],
+            linked_locations: [],
+            sync_locations: [],
+          },
+        },
+      },
+      {
+        ...structuredClone(baseLocation),
+        id: "floor_main",
+        name: "Main Floor",
+        parent_id: "building_main",
+        modules: { _meta: { type: "floor" } },
+      },
+      {
+        ...structuredClone(baseLocation),
+        id: "building_main",
+        name: "Main Building",
+        parent_id: null,
+        modules: { _meta: { type: "building" } },
+      },
+    ];
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${location}
+        .allLocations=${allLocations}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    const syncCheckbox = element.shadowRoot!.querySelector(
+      '[data-testid="sync-location-area_family_room"]'
+    ) as HTMLInputElement;
+    expect(syncCheckbox).to.exist;
+    expect(syncCheckbox.checked).to.equal(false);
+
+    syncCheckbox.click();
+    await element.updateComplete;
+
+    await waitUntil(() => {
+      return callWsRequests.some(
+        (item) =>
+          item.type === "topomation/locations/set_module_config" &&
+          item.location_id === "area_kitchen" &&
+          Array.isArray(item.config?.sync_locations) &&
+          item.config.sync_locations.includes("area_family_room")
+      );
+    }, "forward sync add request not observed");
+
+    await waitUntil(() => {
+      return callWsRequests.some(
+        (item) =>
+          item.type === "topomation/locations/set_module_config" &&
+          item.location_id === "area_family_room" &&
+          Array.isArray(item.config?.sync_locations) &&
+          item.config.sync_locations.includes("area_kitchen")
+      );
+    }, "reverse sync add request not observed");
+
+    syncCheckbox.click();
+    await element.updateComplete;
+
+    await waitUntil(() => {
+      return callWsRequests.some(
+        (item) =>
+          item.type === "topomation/locations/set_module_config" &&
+          item.location_id === "area_family_room" &&
+          Array.isArray(item.config?.sync_locations) &&
+          !item.config.sync_locations.includes("area_kitchen")
+      );
+    }, "reverse sync remove request not observed");
+  });
+
+  it("sync rooms excludes managed shadow sibling areas", async () => {
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>) => {
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        if (request.type === "topomation/locations/set_module_config") {
+          return { success: true } as T;
+        }
+        return {} as T;
+      },
+      connection: {},
+      states: {},
+      areas: {},
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_kitchen";
+    location.name = "Kitchen";
+    location.parent_id = "floor_main";
+    location.modules._meta = { type: "area" };
+    location.modules.occupancy = {
+      enabled: true,
+      default_timeout: 300,
+      default_trailing_timeout: 120,
+      occupancy_sources: [],
+      linked_locations: [],
+      sync_locations: [],
+    };
+
+    const allLocations: Location[] = [
+      location,
+      {
+        ...structuredClone(baseLocation),
+        id: "area_family_room",
+        name: "Family Room",
+        parent_id: "floor_main",
+        modules: {
+          _meta: { type: "area" },
+          occupancy: {
+            enabled: true,
+            default_timeout: 300,
+            default_trailing_timeout: 120,
+            occupancy_sources: [],
+            linked_locations: [],
+            sync_locations: [],
+          },
+        },
+      },
+      {
+        ...structuredClone(baseLocation),
+        id: "area_main_floor_shadow",
+        name: "Main Floor",
+        parent_id: "floor_main",
+        modules: {
+          _meta: {
+            type: "area",
+            role: "managed_shadow",
+            shadow_for_location_id: "floor_main",
+          },
+          occupancy: {
+            enabled: true,
+            default_timeout: 300,
+            default_trailing_timeout: 120,
+            occupancy_sources: [],
+            linked_locations: [],
+            sync_locations: [],
+          },
+        },
+      },
+      {
+        ...structuredClone(baseLocation),
+        id: "floor_main",
+        name: "Main Floor",
+        parent_id: "building_main",
+        modules: { _meta: { type: "floor" } },
+      },
+      {
+        ...structuredClone(baseLocation),
+        id: "building_main",
+        name: "Main Building",
+        parent_id: null,
+        modules: { _meta: { type: "building" } },
+      },
+    ];
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${location}
+        .allLocations=${allLocations}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    const familyCheckbox = element.shadowRoot!.querySelector(
+      '[data-testid="sync-location-area_family_room"]'
+    ) as HTMLInputElement | null;
+    const managedShadowCheckbox = element.shadowRoot!.querySelector(
+      '[data-testid="sync-location-area_main_floor_shadow"]'
+    ) as HTMLInputElement | null;
+
+    expect(familyCheckbox).to.exist;
+    expect(managedShadowCheckbox).to.equal(null);
   });
 
   it("supports optional two-way linked room toggles", async () => {
@@ -1582,6 +2015,12 @@ describe("HtLocationInspector occupancy source composer", () => {
         .allLocations=${allLocations}
       ></ht-location-inspector>
     `);
+    await element.updateComplete;
+    const advancedToggle = element.shadowRoot!.querySelector(
+      '[data-testid="adjacency-advanced-toggle"]'
+    ) as HTMLButtonElement;
+    expect(advancedToggle).to.exist;
+    advancedToggle.click();
     await element.updateComplete;
 
     const linkedCheckbox = element.shadowRoot!.querySelector(
@@ -1692,7 +2131,7 @@ describe("HtLocationInspector occupancy source composer", () => {
     const linkedRows = element.shadowRoot!.querySelectorAll('[data-testid^="linked-location-"]');
     expect(linkedRows.length).to.equal(0);
     expect(element.shadowRoot!.textContent || "").to.include(
-      "Linked Rooms is available only for area locations directly under a floor."
+      "Sync Rooms is available only for area locations directly under a floor."
     );
   });
 

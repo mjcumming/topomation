@@ -297,6 +297,7 @@ export class HtLocationDialog extends LitElement {
     const validParents = this.locations
       .filter(loc => {
         if (loc.is_explicit_root) return false;
+        if (this._isManagedShadowLocation(loc)) return false;
         const locType = getLocationType(loc);
         return allowedTypes.includes(locType);
       })
@@ -307,6 +308,11 @@ export class HtLocationDialog extends LitElement {
 
     console.log("[LocationDialog] Valid parents:", validParents.length, validParents.map(p => p.label));
     return validParents;
+  }
+
+  private _isManagedShadowLocation(location: Location): boolean {
+    const meta = (location.modules?._meta || {}) as Record<string, any>;
+    return String(meta.role || "").trim().toLowerCase() === "managed_shadow";
   }
 
   private _includeRootOption(): boolean {

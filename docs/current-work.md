@@ -1,11 +1,11 @@
 # Current work
 
-**Last updated**: 2026-02-28
+**Last updated**: 2026-03-03
 **Purpose**: short live context for parallel work, handoff, and branch safety.
 
 ## Snapshot
 
-- Active focus: tree DnD stabilization (explicit drop zones per C-011 / ADR-HA-039).
+- Active focus: managed shadow area contract + implementation checklist (ADR-HA-049 / ISSUE-057).
 - Recently completed: Tree DnD now uses explicit drop targets (before/inside/after/outdent) from pointer Y and optional outdent strip; zone-only resolver; heuristic x-offset logic removed. User order preserved by existing backend (`manual_order` + A-Z until first reorder).
 - Contract source set: `docs/contracts.md`, `docs/architecture.md`, `docs/adr-log.md`.
 
@@ -13,6 +13,7 @@
 
 | Item | Owner | Status | Notes |
 | --- | --- | --- | --- |
+| Managed shadow areas + assignment remap | active | In progress | ADR-HA-049 approved; ISSUE-057 tracks backend/UI/test checklist. |
 | Parallel branch updates | multiple | In progress | Verify `git status` before editing overlapping files. |
 | Managed action rule resilience | active | Completed | Added fallback/reconciliation contracts + production smoke coverage. |
 | Panel auth alignment | active | Completed | Panel routes are admin-only to match HA write APIs. |
