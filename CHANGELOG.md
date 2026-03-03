@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.22] - 2026-03-03
+
+### Added
+
+- Added a dedicated `Ambient` inspector tab so ambient controls and telemetry
+  are no longer mixed into the `Detection` workflow.
+
+### Changed
+
+- Simplified the Ambient tab header by removing the extra `Live/Updating...`
+  status label.
+
+### Fixed
+
+- Recent occupancy events `Show all`/`Show less` expansion now updates
+  reliably in the inspector UI.
+- Reduced noisy/contradictory occupancy reason text in the header status row
+  while preserving detailed reason context in state metadata.
+
 ## [0.2.21] - 2026-03-03
 
 ### Fixed
