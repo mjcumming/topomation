@@ -629,6 +629,19 @@ loc_mgr.set_module_config(
 - Single coordinator handles all module timeouts
 - Lazy-load frontend components
 
+### 8.3 Re-entrant Event Safety
+
+- Core `EventBus.publish()` dispatches synchronously.
+- Integration handlers subscribed to `occupancy.changed` may synchronously
+  emit new `occupancy.changed` events when they call `occupancy.trigger()` or
+  `occupancy.clear()`.
+- Any such handler must use a queue + re-entry guard + iterative drain loop
+  (non-recursive) to avoid stack growth under cascades.
+- Apply a bounded per-drain cap and drop remainder with error logging when
+  exceeded to preserve HA process availability.
+- Regression tests should include deep re-entrant chains to validate this
+  behavior (see ADR-HA-051).
+
 ---
 
 ## 9. Future Enhancements

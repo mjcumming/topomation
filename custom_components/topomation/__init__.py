@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections import deque
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from inspect import isawaitable
@@ -52,6 +53,7 @@ _SYNC_LOCATION_SOURCE_DELIMITER = "::"
 _OCCUPANCY_SYNC_LOCATIONS_KEY = "sync_locations"
 _META_ROLE_KEY = "role"
 _MANAGED_SHADOW_ROLE = "managed_shadow"
+_MAX_PROPAGATION_EVENTS_PER_DRAIN = 4096
 
 PLATFORMS: list[Platform] = [
     Platform.BINARY_SENSOR,  # Occupancy binary sensors
@@ -227,66 +229,100 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     @callback
     def _apply_linked_location_contributors(event: Event) -> None:
         """Propagate directional linked-location occupancy contributors."""
+        nonlocal linked_propagation_active
+
+        linked_event_queue.append(event)
+        if linked_propagation_active:
+            return
+
+        linked_propagation_active = True
         if occupancy_module is None:
+            linked_event_queue.clear()
+            linked_propagation_active = False
             return
 
-        payload = event.payload if isinstance(event.payload, Mapping) else {}
-        source_location_id = event.location_id
-        occupied = payload.get("occupied")
-        if not isinstance(source_location_id, str) or not source_location_id:
-            return
-        if not isinstance(occupied, bool):
-            return
-
-        linked_targets = _linked_target_location_ids(loc_mgr, source_location_id)
-        if not linked_targets:
-            return
-
-        sync_peers = set(_sync_peer_location_ids(loc_mgr, source_location_id))
-        source_contributions = _contribution_source_ids(payload)
-        source_link_id = _linked_location_source_id(source_location_id)
-
-        for target_location_id in linked_targets:
-            if target_location_id in sync_peers:
-                continue
-            target_state = _occupancy_state_for_location(occupancy_module, target_location_id)
-            if target_state is None:
-                continue
-
-            target_contributions = _contribution_source_ids(target_state)
-            reverse_link_id = _linked_location_source_id(target_location_id)
-
-            if occupied:
-                # Feedback guard for reciprocal links: if source currently depends on
-                # target's linked contribution, do not back-propagate.
-                if reverse_link_id in source_contributions:
-                    continue
-                if source_link_id in target_contributions:
-                    continue
-                try:
-                    occupancy_module.trigger(target_location_id, source_link_id, None)
-                except Exception as err:  # noqa: BLE001
+        try:
+            drained = 0
+            while linked_event_queue:
+                drained += 1
+                if drained > _MAX_PROPAGATION_EVENTS_PER_DRAIN:
                     _LOGGER.error(
-                        "Failed linked-room trigger %s -> %s: %s",
-                        source_location_id,
-                        target_location_id,
-                        err,
-                        exc_info=True,
+                        "Linked-room propagation exceeded %d queued events in one drain;"
+                        " dropping remaining events to avoid recursive startup failure",
+                        _MAX_PROPAGATION_EVENTS_PER_DRAIN,
                     )
-            else:
-                if source_link_id not in target_contributions:
-                    continue
-                try:
-                    occupancy_module.clear(target_location_id, source_link_id, 0)
-                except Exception as err:  # noqa: BLE001
-                    _LOGGER.error(
-                        "Failed linked-room clear %s -> %s: %s",
-                        source_location_id,
-                        target_location_id,
-                        err,
-                        exc_info=True,
-                    )
+                    linked_event_queue.clear()
+                    break
 
+                queued_event = linked_event_queue.popleft()
+                payload = (
+                    queued_event.payload
+                    if isinstance(queued_event.payload, Mapping)
+                    else {}
+                )
+                source_location_id = queued_event.location_id
+                occupied = payload.get("occupied")
+                if not isinstance(source_location_id, str) or not source_location_id:
+                    continue
+                if not isinstance(occupied, bool):
+                    continue
+
+                linked_targets = _linked_target_location_ids(loc_mgr, source_location_id)
+                if not linked_targets:
+                    continue
+
+                sync_peers = set(_sync_peer_location_ids(loc_mgr, source_location_id))
+                source_contributions = _contribution_source_ids(payload)
+                source_link_id = _linked_location_source_id(source_location_id)
+
+                for target_location_id in linked_targets:
+                    if target_location_id in sync_peers:
+                        continue
+                    target_state = _occupancy_state_for_location(
+                        occupancy_module,
+                        target_location_id,
+                    )
+                    if target_state is None:
+                        continue
+
+                    target_contributions = _contribution_source_ids(target_state)
+                    reverse_link_id = _linked_location_source_id(target_location_id)
+
+                    if occupied:
+                        # Feedback guard for reciprocal links: if source currently depends on
+                        # target's linked contribution, do not back-propagate.
+                        if reverse_link_id in source_contributions:
+                            continue
+                        if source_link_id in target_contributions:
+                            continue
+                        try:
+                            occupancy_module.trigger(target_location_id, source_link_id, None)
+                        except Exception as err:  # noqa: BLE001
+                            _LOGGER.error(
+                                "Failed linked-room trigger %s -> %s: %s",
+                                source_location_id,
+                                target_location_id,
+                                err,
+                                exc_info=True,
+                            )
+                    else:
+                        if source_link_id not in target_contributions:
+                            continue
+                        try:
+                            occupancy_module.clear(target_location_id, source_link_id, 0)
+                        except Exception as err:  # noqa: BLE001
+                            _LOGGER.error(
+                                "Failed linked-room clear %s -> %s: %s",
+                                source_location_id,
+                                target_location_id,
+                                err,
+                                exc_info=True,
+                            )
+        finally:
+            linked_propagation_active = False
+
+    linked_event_queue: deque[Event] = deque()
+    linked_propagation_active = False
     bus.subscribe(
         _apply_linked_location_contributors,
         EventFilter(event_type="occupancy.changed"),
@@ -295,90 +331,129 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     @callback
     def _apply_synced_location_contributors(event: Event) -> None:
         """Keep sync-room peers aligned to the same contributor set and expirations."""
+        nonlocal sync_propagation_active
+
+        sync_event_queue.append(event)
+        if sync_propagation_active:
+            return
+
+        sync_propagation_active = True
         if occupancy_module is None:
+            sync_event_queue.clear()
+            sync_propagation_active = False
             return
 
-        payload = event.payload if isinstance(event.payload, Mapping) else {}
-        source_location_id = event.location_id
-        occupied = payload.get("occupied")
-        if not isinstance(source_location_id, str) or not source_location_id:
-            return
-        if not isinstance(occupied, bool):
-            return
+        try:
+            drained = 0
+            while sync_event_queue:
+                drained += 1
+                if drained > _MAX_PROPAGATION_EVENTS_PER_DRAIN:
+                    _LOGGER.error(
+                        "Sync-room propagation exceeded %d queued events in one drain;"
+                        " dropping remaining events to avoid recursive startup failure",
+                        _MAX_PROPAGATION_EVENTS_PER_DRAIN,
+                    )
+                    sync_event_queue.clear()
+                    break
 
-        sync_targets = _sync_peer_location_ids(loc_mgr, source_location_id)
-        if not sync_targets:
-            return
-
-        event_timestamp = _normalize_utc_datetime(getattr(event, "timestamp", None))
-        source_records = _sync_contribution_records(source_location_id, payload)
-        origins_to_reconcile = {source_location_id}
-        for origin_location_id, _, _ in source_records:
-            origins_to_reconcile.add(origin_location_id)
-
-        for target_location_id in sync_targets:
-            target_state = _occupancy_state_for_location(occupancy_module, target_location_id)
-            if target_state is None:
-                continue
-
-            target_contributions = _contribution_expiration_by_source_id(target_state)
-            desired: dict[str, int | None] = {}
-            for origin_location_id, origin_source_id, expires_at in source_records:
-                if origin_location_id == target_location_id:
-                    continue
-                target_source_id = _sync_location_source_id(origin_location_id, origin_source_id)
-                if expires_at is None:
-                    desired[target_source_id] = None
-                    continue
-                remaining_seconds = max(
-                    0,
-                    int((expires_at - event_timestamp).total_seconds()),
+                queued_event = sync_event_queue.popleft()
+                payload = (
+                    queued_event.payload
+                    if isinstance(queued_event.payload, Mapping)
+                    else {}
                 )
-                if remaining_seconds <= 0:
+                source_location_id = queued_event.location_id
+                occupied = payload.get("occupied")
+                if not isinstance(source_location_id, str) or not source_location_id:
                     continue
-                desired[target_source_id] = remaining_seconds
+                if not isinstance(occupied, bool):
+                    continue
 
-            for target_source_id in list(target_contributions):
-                parsed = _parse_sync_location_source_id(target_source_id)
-                if parsed is None:
+                sync_targets = _sync_peer_location_ids(loc_mgr, source_location_id)
+                if not sync_targets:
                     continue
-                origin_location_id, _ = parsed
-                if origin_location_id not in origins_to_reconcile:
-                    continue
-                if target_source_id in desired:
-                    continue
-                try:
-                    occupancy_module.clear(target_location_id, target_source_id, 0)
-                except Exception as err:  # noqa: BLE001
-                    _LOGGER.error(
-                        "Failed sync-room clear %s -> %s (%s): %s",
-                        source_location_id,
+
+                event_timestamp = _normalize_utc_datetime(
+                    getattr(queued_event, "timestamp", None)
+                )
+                source_records = _sync_contribution_records(source_location_id, payload)
+                origins_to_reconcile = {source_location_id}
+                for origin_location_id, _, _ in source_records:
+                    origins_to_reconcile.add(origin_location_id)
+
+                for target_location_id in sync_targets:
+                    target_state = _occupancy_state_for_location(
+                        occupancy_module,
                         target_location_id,
-                        target_source_id,
-                        err,
-                        exc_info=True,
                     )
+                    if target_state is None:
+                        continue
 
-            for target_source_id, timeout in desired.items():
-                current_expires_at = target_contributions.get(target_source_id)
-                if _sync_contribution_matches(
-                    current_expires_at,
-                    timeout,
-                    event_timestamp,
-                ):
-                    continue
-                try:
-                    occupancy_module.trigger(target_location_id, target_source_id, timeout)
-                except Exception as err:  # noqa: BLE001
-                    _LOGGER.error(
-                        "Failed sync-room trigger %s -> %s (%s): %s",
-                        source_location_id,
-                        target_location_id,
-                        target_source_id,
-                        err,
-                        exc_info=True,
-                    )
+                    target_contributions = _contribution_expiration_by_source_id(target_state)
+                    desired: dict[str, int | None] = {}
+                    for origin_location_id, origin_source_id, expires_at in source_records:
+                        if origin_location_id == target_location_id:
+                            continue
+                        target_source_id = _sync_location_source_id(
+                            origin_location_id,
+                            origin_source_id,
+                        )
+                        if expires_at is None:
+                            desired[target_source_id] = None
+                            continue
+                        remaining_seconds = max(
+                            0,
+                            int((expires_at - event_timestamp).total_seconds()),
+                        )
+                        if remaining_seconds <= 0:
+                            continue
+                        desired[target_source_id] = remaining_seconds
 
+                    for target_source_id in list(target_contributions):
+                        parsed = _parse_sync_location_source_id(target_source_id)
+                        if parsed is None:
+                            continue
+                        origin_location_id, _ = parsed
+                        if origin_location_id not in origins_to_reconcile:
+                            continue
+                        if target_source_id in desired:
+                            continue
+                        try:
+                            occupancy_module.clear(target_location_id, target_source_id, 0)
+                        except Exception as err:  # noqa: BLE001
+                            _LOGGER.error(
+                                "Failed sync-room clear %s -> %s (%s): %s",
+                                source_location_id,
+                                target_location_id,
+                                target_source_id,
+                                err,
+                                exc_info=True,
+                            )
+
+                    for target_source_id, timeout in desired.items():
+                        current_expires_at = target_contributions.get(target_source_id)
+                        if _sync_contribution_matches(
+                            current_expires_at,
+                            timeout,
+                            event_timestamp,
+                        ):
+                            continue
+                        try:
+                            occupancy_module.trigger(target_location_id, target_source_id, timeout)
+                        except Exception as err:  # noqa: BLE001
+                            _LOGGER.error(
+                                "Failed sync-room trigger %s -> %s (%s): %s",
+                                source_location_id,
+                                target_location_id,
+                                target_source_id,
+                                err,
+                                exc_info=True,
+                            )
+        finally:
+            sync_propagation_active = False
+
+    sync_event_queue: deque[Event] = deque()
+    sync_propagation_active = False
     bus.subscribe(
         _apply_synced_location_contributors,
         EventFilter(event_type="occupancy.changed"),

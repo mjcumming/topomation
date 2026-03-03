@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.23] - 2026-03-03
+
+### Fixed
+
+- Prevented recursive occupancy propagation re-entry from overflowing the
+  Python call stack by draining linked/synced propagation events iteratively
+  with queue guards in runtime listeners.
+- Added regression coverage for deep re-entrant occupancy event chains to
+  ensure propagation remains stack-safe.
+
+### Changed
+
+- Documented re-entrant event safety constraints and anti-patterns across
+  architecture, contracts, coding standards, and ADR history to reduce future
+  startup-failure risk from recursive callback patterns.
+
 ## [0.2.22] - 2026-03-03
 
 ### Added

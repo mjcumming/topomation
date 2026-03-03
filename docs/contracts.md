@@ -289,3 +289,20 @@ Additional save points:
   - inherit toggle
   - dark/bright threshold controls
   - fallback-to-sun and assume-dark-on-error toggles.
+
+## C-016 Re-entrant Occupancy Callback Safety Contract
+
+- Event handlers subscribed to `occupancy.changed` that can emit additional
+  occupancy transitions (`occupancy.trigger` / `occupancy.clear`) must be
+  implemented as non-recursive queue drains.
+- Required structure:
+  - per-handler queue (`deque`)
+  - re-entry guard (`if already draining: enqueue + return`)
+  - iterative drain loop (`while queue`)
+- Required safety behavior:
+  - enforce a bounded max events per drain
+  - on exceed: log error, drop remaining queued events in that drain
+  - never allow this path to crash HA via recursion depth overflow.
+- Required regression coverage:
+  - include at least one deep re-entrant chain test to verify stack-safe
+    behavior under large event cascades.

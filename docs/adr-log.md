@@ -2115,6 +2115,68 @@ independently and occupancy clears only when no active contributions remain.
 
 ---
 
+### ADR-HA-051: Re-entrant Occupancy Propagation Must Drain Iteratively (2026-03-03)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+
+Topomation uses the core `EventBus`, whose handlers are synchronous. Linked-room
+and sync-room propagation handlers subscribe to `occupancy.changed`, and those
+handlers may call `occupancy.trigger()` / `occupancy.clear()`, which emit new
+`occupancy.changed` events immediately. Without a guard, this forms recursive
+call chains on one stack. In larger live topologies, that can produce
+`RecursionError` during startup/runtime event bursts and prevent Home Assistant
+API/auth startup from completing reliably.
+
+**Decision**:
+
+1. Any handler subscribed to `occupancy.changed` that can emit another
+   `occupancy.changed` must use iterative queue draining (not recursive
+   re-entry).
+2. Implement a per-handler re-entry guard:
+   - queue incoming events
+   - if already draining, return
+   - drain queue in a loop
+3. Add a per-drain safety cap (`max events`) to fail safe:
+   - log a high-severity error
+   - drop remaining queued events instead of risking process failure
+4. Add regression coverage with re-entrant chains deep enough to exceed normal
+   recursion thresholds.
+5. Capture this requirement in coding standards/contracts so future handlers
+   follow the same pattern by default.
+
+**Rationale**:
+
+1. Protects HA process availability; bounded degradation is preferable to
+   startup crash loops.
+2. Preserves existing linked/sync behavior while removing stack-depth coupling.
+3. Makes the failure mode explicit and testable.
+4. Keeps the fix local to integration runtime boundaries without requiring
+   immediate core bus model changes.
+
+**Consequences**:
+
+- ✅ Re-entrant propagation no longer depends on Python recursion depth.
+- ✅ Startup/runtime resilience improves under event storms and dense
+  linked/sync topologies.
+- ✅ Regression tests now cover deep re-entrant chains.
+- ⚠️ When the drain cap is exceeded, remaining propagation events in that drain
+  are intentionally dropped (with error logs) to preserve process health.
+- ℹ️ The underlying event bus remains synchronous; this ADR standardizes safe
+  integration-side handling for re-entrant workflows.
+
+**Alternatives Considered**:
+
+- Keep recursive propagation and rely on topology constraints: rejected; not
+  robust against live config complexity.
+- Make core `EventBus.publish()` asynchronous in this release: rejected; too
+  broad for a hotfix/release patch and would change core semantics.
+- Disable linked/sync propagation entirely on startup: rejected; functional
+  regression.
+
+---
+
 ## How to Use This Log
 
 ### When to Create an ADR

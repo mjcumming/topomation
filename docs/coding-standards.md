@@ -119,6 +119,48 @@ def on_occupancy_changed(event: Event) -> None:
     self.async_write_ha_state()
 ```
 
+### 2.6A Re-entrant Event Safety
+
+Home Topology's `EventBus.publish()` dispatches handlers synchronously. If a
+handler subscribed to `occupancy.changed` calls `occupancy.trigger()` or
+`occupancy.clear()`, it can synchronously emit another `occupancy.changed` and
+re-enter itself.
+
+For any such handler, use queued iterative draining with a re-entry guard:
+
+```python
+from collections import deque
+
+MAX_EVENTS_PER_DRAIN = 4096
+event_queue: deque[Event] = deque()
+draining = False
+
+@callback
+def on_occupancy_changed(event: Event) -> None:
+    nonlocal draining
+    event_queue.append(event)
+    if draining:
+        return
+
+    draining = True
+    try:
+        drained = 0
+        while event_queue:
+            drained += 1
+            if drained > MAX_EVENTS_PER_DRAIN:
+                _LOGGER.error("Propagation cap exceeded; dropping queued events")
+                event_queue.clear()
+                break
+
+            queued_event = event_queue.popleft()
+            # Safe to emit trigger/clear inside this loop
+    finally:
+        draining = False
+```
+
+Never call `occupancy.trigger()` / `occupancy.clear()` directly from a
+re-entrant callback without this pattern.
+
 ### 2.7 Logging
 
 ```python
@@ -462,6 +504,7 @@ Updated docs/work-tracking.md: tree component complete
 - [ ] Type hints on all functions
 - [ ] Async/await for all I/O
 - [ ] `@callback` for synchronous handlers
+- [ ] Re-entrant callback safety (queued drain) when handler can emit same event type
 - [ ] Proper error handling with logging
 - [ ] No blocking calls
 - [ ] Follows HA conventions
@@ -494,6 +537,8 @@ Updated docs/work-tracking.md: tree component complete
 - Block the event loop
 - Use `time.sleep()`
 - Forget `@callback` on synchronous handlers
+- Emit `occupancy.trigger()` / `occupancy.clear()` from `occupancy.changed`
+  handlers without queued re-entry guard
 - Silently swallow exceptions
 
 ✅ **DO**:

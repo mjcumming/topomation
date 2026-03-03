@@ -428,6 +428,147 @@ async def test_setup_entry_propagates_linked_location_clear(
     )
 
 
+async def test_setup_entry_linked_propagation_drains_reentrant_events_without_recursion(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    mock_location_manager: Mock,
+    mock_event_bus: Mock,
+    mock_occupancy_module: Mock,
+) -> None:
+    """Re-entrant linked propagation should drain iteratively without recursive stack growth."""
+    config_entry.add_to_hass(hass)
+
+    area_a = Mock()
+    area_a.id = "area_a"
+    area_a.name = "Area A"
+    area_a.parent_id = "floor_main"
+    area_a.is_explicit_root = False
+    area_a.entity_ids = []
+    area_a.order = 0
+    area_a.aliases = []
+    area_a.ha_area_id = None
+    area_a.ha_floor_id = None
+    area_a.modules = {"_meta": {"type": "area"}}
+
+    area_b = Mock()
+    area_b.id = "area_b"
+    area_b.name = "Area B"
+    area_b.parent_id = "floor_main"
+    area_b.is_explicit_root = False
+    area_b.entity_ids = []
+    area_b.order = 1
+    area_b.aliases = []
+    area_b.ha_area_id = None
+    area_b.ha_floor_id = None
+    area_b.modules = {"_meta": {"type": "area"}}
+
+    floor = Mock()
+    floor.id = "floor_main"
+    floor.name = "Main Floor"
+    floor.parent_id = None
+    floor.is_explicit_root = False
+    floor.entity_ids = []
+    floor.order = 0
+    floor.aliases = []
+    floor.ha_area_id = None
+    floor.ha_floor_id = None
+    floor.modules = {"_meta": {"type": "floor"}}
+
+    mock_location_manager.all_locations.return_value = [floor, area_a, area_b]
+    locations_by_id = {location.id: location for location in [floor, area_a, area_b]}
+    mock_location_manager.get_location.side_effect = lambda location_id: locations_by_id.get(location_id)
+
+    def _module_config(location_id: str, module_id: str):
+        if module_id == "occupancy":
+            if location_id == "area_a":
+                return {
+                    "enabled": True,
+                    "occupancy_sources": [],
+                    "linked_locations": ["area_b"],
+                    "sync_locations": [],
+                }
+            if location_id == "area_b":
+                return {
+                    "enabled": True,
+                    "occupancy_sources": [],
+                    "linked_locations": ["area_a"],
+                    "sync_locations": [],
+                }
+            return {
+                "enabled": True,
+                "occupancy_sources": [],
+                "linked_locations": [],
+                "sync_locations": [],
+            }
+        if module_id == "automation":
+            return {"enabled": False, "reapply_last_state_on_startup": False}
+        if module_id == "ambient":
+            return {"enabled": False}
+        return None
+
+    mock_location_manager.get_module_config.side_effect = _module_config
+    mock_occupancy_module.get_location_state.side_effect = lambda location_id: {
+        "contributions": [],
+    }
+
+    with (
+        patch("custom_components.topomation.async_register_panel"),
+        patch("custom_components.topomation.async_register_websocket_api"),
+        patch("custom_components.topomation.async_register_services"),
+        patch.object(hass.config_entries, "async_forward_entry_setups", return_value=True),
+    ):
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    linked_callback = None
+    for call in mock_event_bus.subscribe.call_args_list:
+        if len(call.args) < 2:
+            continue
+        callback = call.args[0]
+        event_filter = call.args[1]
+        if (
+            getattr(event_filter, "event_type", None) == "occupancy.changed"
+            and getattr(callback, "__name__", "") == "_apply_linked_location_contributors"
+        ):
+            linked_callback = callback
+            break
+
+    assert linked_callback is not None
+
+    chain_limit = 1200
+    trigger_count = 0
+
+    def _trigger_side_effect(location_id: str, source_id: str, timeout: int | None) -> None:
+        nonlocal trigger_count
+        trigger_count += 1
+        if trigger_count >= chain_limit:
+            return
+        nested = Mock()
+        nested.location_id = location_id
+        nested.payload = {
+            "occupied": True,
+            "previous_occupied": False,
+            "reason": "event:trigger",
+            "contributions": [],
+        }
+        linked_callback(nested)
+
+    mock_occupancy_module.trigger.side_effect = _trigger_side_effect
+
+    seed = Mock()
+    seed.location_id = "area_a"
+    seed.payload = {
+        "occupied": True,
+        "previous_occupied": False,
+        "reason": "event:trigger",
+        "contributions": [],
+    }
+    linked_callback(seed)
+
+    assert trigger_count == chain_limit
+    assert mock_occupancy_module.trigger.call_count == chain_limit
+
+
 async def test_setup_entry_propagates_sync_location_trigger(
     hass: HomeAssistant,
     config_entry: MockConfigEntry,
