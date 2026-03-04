@@ -11,7 +11,7 @@
 
 **Whole-home occupancy automation for Home Assistant — without the spaghetti.**
 
-TopoMation replaces dozens of per-room automations with a single, visual approach: model your home as a tree, assign sensors and devices, and define "when occupied / when vacant" rules — all from a point-and-click UI. Every rule becomes a native Home Assistant automation, fully visible in traces and logs. No black box. No YAML. No hunting for entity IDs.
+TopoMation replaces dozens of per-room automations with a single, visual approach: model your home as a tree, assign sensors and devices, then author rules in focused tabs for `Lighting`, `Appliances`, `Media`, and `HVAC`. Every rule becomes a native Home Assistant automation, fully visible in traces and logs. No black box. No YAML. No hunting for entity IDs.
 
 ---
 
@@ -30,7 +30,7 @@ TopoMation solves this in two moves:
 
 **1. You model your home as a tree.** A real hierarchy: buildings, grounds, floors, areas, and subareas (closets, nooks, pantries). The tree is fully drag-and-drop — grab a room and move it under a different floor, nest a closet inside a bedroom, reorganize your entire layout without breaking a single automation. Assign sensors and devices to their locations. The tree becomes your single source of truth for what's where.
 
-**2. You automate from that tree.** For each location, you configure detection sources and define *On Occupied* / *On Vacant* actions. Pick devices from a dropdown — no entity IDs. Set timeouts in the UI — no YAML. TopoMation generates native HA automations that show up in **Settings → Automations & Scenes**, appear in traces and logs, and remain fully editable. You always know what's running and why.
+**2. You automate from that tree.** For each location, you configure detection sources, ambient light behavior, and rule-based automations per domain. Lighting rules support triggers like *On occupied*, *On vacant*, *On dark*, and *On bright* with ambient/time conditions. Device-domain tabs keep non-light actions cleanly scoped. TopoMation generates native HA automations that show up in **Settings → Automations & Scenes**, appear in traces and logs, and remain fully editable. You always know what's running and why.
 
 **And the tree shows you what's happening right now.** Every node in the tree displays its live occupancy state — occupied, vacant, or locked. Occupancy propagates up the hierarchy, so a single glance at a floor node tells you whether anyone is on that floor. Expand to see exactly which rooms. It's your whole-home occupancy dashboard and your automation management surface in one view.
 
@@ -44,8 +44,8 @@ Multiple sensor types — motion, door contacts, mmWave presence, device tracker
 ### Configurable Timeouts
 Set per-location timeouts ("turn off 5 minutes after last activity") right in the UI. Motion sensors can use finite hold times; true presence sensors can stay indefinite with trailing grace periods. Occupancy that's stable without being sticky.
 
-### Daylight-Aware Actions
-Enable "Only when dark" on any occupied action. Lights come on when someone enters the room *and* the sun is below the horizon. No extra automations, no lux sensors required.
+### Daylight-Aware Rules
+Ambient status (`dark` / `bright`) is first-class. You can assign a lux sensor per location (or inherit), set dark/bright thresholds, and fall back to sunrise/sunset when needed. Lighting and device rules can include ambient and time-window conditions without writing extra automations.
 
 ### Subareas for Micro-Zones
 Give the closet, pantry, or reading nook its own occupancy and its own timeout — scoped independently from the parent room. A 5-minute closet timer doesn't affect the kitchen it's inside.
@@ -71,6 +71,14 @@ Every rule TopoMation creates is a native Home Assistant automation. You'll find
 ### Runtime Controls
 Manually trigger, clear, or vacate any location. Lock or unlock from the tree UI or via service calls. Everything is accessible for manual overrides, testing, and advanced workflows.
 
+### Inspector Tabs (Current)
+- `Detection`: source selection, timeout behavior, linked/sync relationships.
+- `Ambient`: lux source assignment, thresholds, sun fallback, live ambient diagnostics.
+- `Lighting`: rule cards for `light.*` with trigger/condition/action editing.
+- `Appliances`: rule cards for `switch.*`.
+- `Media`: rule cards for `media_player.*`.
+- `HVAC`: rule cards for `fan.*`.
+
 ---
 
 ## Five-Minute Example: The Closet Light
@@ -79,8 +87,8 @@ This is the automation everyone wants and nobody wants to maintain by hand.
 
 1. **Add a subarea** called "Closet" under the parent room in the tree.
 2. **Detection:** add the closet's motion or door sensor. Set timeout to **5 minutes**.
-3. **On Occupied:** Turn on → pick the closet light from the dropdown.
-4. **On Vacant:** Turn off → same light.
+3. **Lighting:** add Rule 1 with trigger **On occupied** and action **closet light on**.
+4. **Lighting:** add Rule 2 with trigger **On vacant** and action **closet light off**.
 
 Done. Light turns on when you walk in, turns off 5 minutes after you leave. No YAML, no entity IDs, no separate automation to create and name and debug.
 
@@ -99,7 +107,7 @@ This is the one that clicks instantly. You buy a camera with person detection �
 1. **Assign the camera's person detection entity** to the area in the tree.
 2. That's it. There is no step 2.
 
-One click. The camera's person occupancy binary sensor is now a detection source for that room. When it sees someone, the room is occupied. When it stops seeing someone, the timeout starts. All your existing On Occupied and On Vacant actions — lights, fans, whatever you've already configured — just work with the new source. No YAML to rewrite. No automations to edit. No rules to untangle and reassemble. You added a sensor to a location, and the location got smarter.
+One click. The camera's person occupancy binary sensor is now a detection source for that room. When it sees someone, the room is occupied. When it stops seeing someone, the timeout starts. All your existing lighting/device rules — lights, fans, media actions, whatever you've already configured — just work with the new source. No YAML to rewrite. No automations to edit. No rules to untangle and reassemble. You added a sensor to a location, and the location got smarter.
 
 This is what topology-driven automation actually means in practice. The *location* has behavior. Sources feed into it. When you add a new source, the behavior doesn't change — it just gets more inputs. Swap out a motion sensor for a mmWave presence sensor? Same thing. Add a door contact alongside an existing motion detector? Same thing. The location doesn't care *what* told it someone is there, only *that* something did.
 
@@ -109,7 +117,7 @@ This is the one that makes people stop and think. You have a bathroom with a dum
 
 1. **Add the bathroom** as an area in the tree.
 2. **Detection:** add the bathroom light switch as a source. Any state change (on or off) triggers occupancy. Set timeout to **20 minutes**.
-3. **On Vacant:** Turn off the bathroom light. Turn off the exhaust fan.
+3. **Lighting/HVAC:** add an **On vacant** rule to turn off the bathroom light and fan.
 
 That's it. Someone flips the light on to use the bathroom — TopoMation sees the state change and marks the room occupied. The 20-minute timer starts from that last interaction. If they flip the fan on, that's another state change — the timer resets. When they leave (and nothing changes state for 20 minutes), the room goes vacant and everything turns off.
 
@@ -120,18 +128,18 @@ No motion sensor needed. No presence sensor. The switch activity *is* the presen
 Ceiling fans, exhaust fans, space heaters — anything that should run while someone's in the room and stop when they leave:
 
 1. **Detection:** use whatever sources make sense (motion, a light switch, a door sensor).
-2. **On Occupied:** Turn on the fan.
-3. **On Vacant:** Turn off the fan.
+2. **HVAC:** add a rule with trigger **On occupied** to turn on the fan.
+3. **HVAC:** add a rule with trigger **On vacant** to turn off the fan.
 
-Pair it with a timeout and the fan shuts off automatically after the room empties. Combine it with "Only when dark" and a light in the same action list, and you get lights + fan on arrival, everything off on departure.
+Pair it with a timeout and the fan shuts off automatically after the room empties. Combine it with ambient/time conditions and a lighting rule, and you get arrival/departure behavior that still respects time-of-day and darkness.
 
 ### Light Switches as Occupancy Sensors
 
 This pattern works anywhere you have smart switches but no dedicated sensors:
 
-- **Home office:** The desk lamp switch is your detection source. Flip it on to work, and the room stays occupied until 30 minutes after your last interaction. On Vacant turns off the desk lamp, the monitor backlight, whatever else you've assigned.
-- **Laundry room:** The overhead light switch triggers occupancy. Set a 15-minute timeout. On Vacant turns off the light. You walked in, turned on the light, started laundry, walked out — 15 minutes later the light turns off by itself.
-- **Garage:** The garage light switch triggers occupancy with a 10-minute timeout. On Vacant kills the lights. No motion sensor fighting with car exhaust or temperature swings.
+- **Home office:** The desk lamp switch is your detection source. Flip it on to work, and the room stays occupied until 30 minutes after your last interaction. An `On vacant` rule turns off the desk lamp and monitor backlight.
+- **Laundry room:** The overhead light switch triggers occupancy. Set a 15-minute timeout. An `On vacant` rule turns off the light. You walked in, turned on the light, started laundry, walked out — 15 minutes later the light turns off by itself.
+- **Garage:** The garage light switch triggers occupancy with a 10-minute timeout. An `On vacant` rule kills the lights. No motion sensor fighting with car exhaust or temperature swings.
 
 The key insight: **a switch state change is proof that a human is in the room**. It's not as continuous as a motion sensor, but for rooms where you interact with a switch on entry, it's often all you need. And when you do add a dedicated sensor later — a camera, a mmWave unit, anything — you just assign it to the same location. One click. The location gets smarter; nothing else changes.
 
@@ -139,12 +147,12 @@ The key insight: **a switch state change is proof that a human is in the room**.
 
 | Scenario | How It Works |
 |---|---|
-| **Kitchen lights, daylight-aware** | On Occupied → turn on lights, enable "Only when dark." Lights only come on after sunset. |
+| **Kitchen lights, daylight-aware** | Lighting rule: trigger `On occupied`, ambient condition `Must be dark`, then set light targets. |
 | **Open-plan living/kitchen** | Sync living room + kitchen so occupancy and vacancy happen together with shared timing. |
-| **Guest bathroom, no sensors** | Light switch as detection source, 20-min timeout. On Vacant turns off lights and exhaust fan. Never forget the bathroom light again. |
-| **Bedroom fan + lights** | Motion sensor for detection. On Occupied → fan on, lights on (only when dark). On Vacant → everything off. |
+| **Guest bathroom, no sensors** | Light switch as detection source, 20-min timeout. `On vacant` rules turn off lights and exhaust fan. |
+| **Bedroom fan + lights** | Motion sensor for detection. Lighting + HVAC rules handle arrival/departure behavior with optional ambient/time conditions. |
 | **Outdoor path lights** | Add a `grounds` root, create areas for pathways. Use motion sensors with short timeouts. |
-| **Garage with no motion sensor** | Overhead light switch as detection, 10-min timeout. On Vacant turns off lights. No sensor fighting with heat or exhaust. |
+| **Garage with no motion sensor** | Overhead light switch as detection, 10-min timeout. `On vacant` lighting rule turns off lights. |
 | **Camera with person detection** | Assign the camera's person binary sensor to the area. One click. All existing actions work with the new source — no YAML, no rule edits. |
 | **Scene lock** | Lock a room's occupancy state while watching a movie. Unlock when done. Lights stay put. |
 | **Party mode** | Lock the main floor with `subtree` scope. Every room underneath freezes — no lights turning off on guests. Unlock when the party's over. |
@@ -190,12 +198,14 @@ Full guide: [Installation Guide](docs/installation.md)
 
 ### Quick Start
 
-1. Open **Location Manager** from the sidebar.
+1. Open **TopoMation** from the sidebar.
 2. Review imported floors and areas, then shape your hierarchy with buildings, grounds, and subareas.
 3. Assign sensors and devices to locations.
-4. Configure detection sources and timeouts.
-5. Define On Occupied and On Vacant actions.
-6. Validate with the occupancy entities and manual controls.
+4. Configure `Detection` sources and timeouts.
+5. Configure `Ambient` defaults (lux sensor assignment, thresholds, sun fallback).
+6. Add `Lighting` rules (`On occupied`, `On vacant`, `On dark`, `On bright`) with conditions/actions.
+7. Add `Appliances`, `Media`, and `HVAC` rules as needed.
+8. Validate with occupancy entities, rule traces, and manual controls.
 
 ---
 
@@ -236,7 +246,7 @@ TopoMation is in **alpha**. The core occupancy model, source normalization, time
 
 ### Known Limitations
 
-- "Only when dark" uses sun position (`sun.sun`), not per-room lux sensors.
+- Ambient sensor assignment is explicit (no auto-discovery). Assign a lux sensor per location or inherit from parent.
 - Admin privileges are required for panel routes and managed automation writes.
 
 ---
@@ -290,4 +300,4 @@ MIT — see [LICENSE](LICENSE).
 
 ---
 
-**Maintainer:** Mike Cumming · **Status:** Alpha · **Last Updated:** 2026-03-01
+**Maintainer:** Mike Cumming · **Status:** Alpha · **Last Updated:** 2026-03-04
