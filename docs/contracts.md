@@ -283,7 +283,7 @@ Additional save points:
 - Inspector header must expose ambient status at-a-glance:
   - show effective lux level on the top card
   - indicate inherited source state when applicable.
-- Inspector Detection view must expose ambient diagnostics/config:
+- Inspector Ambient view must expose ambient diagnostics/config:
   - current lux, `is_dark`, `is_bright`, source sensor/location, source method
   - explicit lux sensor selector
   - inherit toggle
@@ -306,3 +306,48 @@ Additional save points:
 - Required regression coverage:
   - include at least one deep re-entrant chain test to verify stack-safe
     behavior under large event cascades.
+
+## C-017 Lighting (`dusk_dawn`) Policy Contract
+
+- Inspector IA in this phase:
+  - top-level tabs: `Detection`, `Ambient`, `Lighting`, `Appliances`, `Media`, `HVAC`
+  - no top-level `Advanced` tab and no generic `Actions` tab
+  - advanced occupancy controls are rendered inside `Detection`.
+- `Lighting` uses the rule-card editor for `light.*` only.
+- Non-light managed automation tabs are split by domain:
+  - `Appliances` -> `switch.*`
+  - `Media` -> `media_player.*`
+  - `HVAC` -> `fan.*`
+- Module id remains `dusk_dawn` in this phase.
+- Dev-phase v3 contract in `modules.dusk_dawn`:
+  - `version: 3`
+  - `blocks: [{ id, name, start_time, end_time, time_condition_enabled, trigger_mode, ambient_condition, must_be_occupied, already_on_behavior, light_targets[] }]`
+  - `trigger_mode: on_occupied | on_vacant | on_dark | on_bright` (per block)
+  - `ambient_condition: any | dark | bright` (per block)
+  - `must_be_occupied: bool` (per block)
+  - `already_on_behavior: leave_unchanged | set_target` (per block legacy default/fallback)
+  - `time_condition_enabled: bool` (per block, optional time-window gate)
+  - `start_time/end_time: HH:MM` (per block, overnight windows allowed)
+  - `light_targets[]: [{ entity_id, power: on|off, brightness_pct?, color_hex?, already_on_behavior? }]`
+  - `light_targets[].already_on_behavior: leave_unchanged | set_target` (optional per-light override)
+- Top-level `enabled`, `trigger_mode`, `already_on_behavior` are not part of v3.
+- Policy is considered active when at least one block has at least one light action.
+- Integration startup should ensure v3-safe defaults exist for every location:
+  - `version: 3`
+  - `blocks: []`
+- WebSocket `locations/set_module_config` validates `module_id == "dusk_dawn"`:
+  - reject invalid enum values for block-level trigger/already-on modes
+  - reject invalid `start_time` / `end_time` format (must be `HH:MM`)
+  - require unique block ids
+  - clamp `brightness_pct` to `1..100` when provided
+  - normalize `color_hex` to `#RRGGBB` when provided
+  - validate optional `light_targets[].already_on_behavior`
+  - reject non-`light.*` targets
+- Ownership constraint:
+  - hard-block `light.*` overlap between Lighting-policy targets and managed-action targets in `Appliances` / `Media` / `HVAC` for the same location.
+- Shared startup reapply behavior:
+  - each automation tab renders its own startup toggle UI
+  - all toggles persist to the same key: `modules.automation.reapply_last_state_on_startup`.
+- Contract migration policy for this dev phase:
+  - if stored config is pre-v3 or legacy-shape, reset to v3 defaults (no compatibility shim).
+- UI contract is locked by `docs/lighting-ui-contract.md` and must be updated with any lighting-tab UX change.

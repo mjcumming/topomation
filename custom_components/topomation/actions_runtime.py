@@ -7,7 +7,7 @@ import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
 from time import monotonic
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from home_topology import Event as KernelEvent
 from home_topology import EventBus, EventFilter
@@ -27,7 +27,7 @@ from .const import (
 if TYPE_CHECKING:
     from home_topology import LocationManager
 
-ActionTriggerType = Literal["occupied", "vacant"]
+ActionTriggerType = Literal["on_occupied", "on_vacant"]
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -195,8 +195,9 @@ class TopomationActionsRuntime:
             return
 
         trigger_type: ActionTriggerType = (
-            "occupied" if occupancy_state.state == "on" else "vacant"
+            "on_occupied" if occupancy_state.state == "on" else "on_vacant"
         )
+        transition_label = "occupied" if trigger_type == "on_occupied" else "vacant"
         automations = self._automations_for(location_id, trigger_type)
         failures: list[dict[str, str]] = []
         triggered = 0
@@ -231,7 +232,7 @@ class TopomationActionsRuntime:
         summary: dict[str, Any] = {
             "phase": "startup_reapply",
             "location_id": location_id,
-            "transition": trigger_type,
+            "transition": transition_label,
             "occupancy_entity_id": occupancy_entity_id,
             "total_automations": len(automations),
             "triggered_automations": triggered,
@@ -248,7 +249,7 @@ class TopomationActionsRuntime:
                 "triggered=%d failed=%d duration_ms=%d"
             ),
             location_id,
-            trigger_type,
+            transition_label,
             len(automations),
             triggered,
             len(failures),
@@ -263,12 +264,13 @@ class TopomationActionsRuntime:
         if not isinstance(location_id, str) or not isinstance(occupied, bool):
             return
 
-        trigger_type: ActionTriggerType = "occupied" if occupied else "vacant"
+        trigger_type: ActionTriggerType = "on_occupied" if occupied else "on_vacant"
+        transition_label = "occupied" if trigger_type == "on_occupied" else "vacant"
         automations = self._automations_for(location_id, trigger_type)
         summary = {
             "phase": "occupancy_transition",
             "location_id": location_id,
-            "transition": trigger_type,
+            "transition": transition_label,
             "total_automations": len(automations),
             "automations": automations,
         }
@@ -276,7 +278,7 @@ class TopomationActionsRuntime:
         _LOGGER.info(
             "Occupancy action summary: location=%s transition=%s total=%d",
             location_id,
-            trigger_type,
+            transition_label,
             len(automations),
         )
 
@@ -387,11 +389,17 @@ class TopomationActionsRuntime:
             trigger_type = parsed.get("trigger_type")
             if not isinstance(location_id, str) or not location_id:
                 return None
-            if trigger_type not in ("occupied", "vacant"):
-                return None
+            normalized_trigger_type = str(trigger_type or "").strip().lower()
+            if normalized_trigger_type == "occupied":
+                normalized_trigger_type = "on_occupied"
+            elif normalized_trigger_type == "vacant":
+                normalized_trigger_type = "on_vacant"
+            if normalized_trigger_type not in ("on_occupied", "on_vacant"):
+                # Runtime summary/reapply only tracks occupancy-driven automations.
+                continue
             return _TopomationMetadata(
                 location_id=location_id,
-                trigger_type=trigger_type,
+                trigger_type=cast(ActionTriggerType, normalized_trigger_type),
             )
 
         return None

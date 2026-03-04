@@ -16,7 +16,12 @@ import "./ht-location-tree";
 import "./ht-location-inspector";
 import "./ht-location-dialog";
 
-type ManagerView = "location" | "occupancy" | "actions";
+type ManagerView =
+  | "location"
+  | "occupancy"
+  | "appliances"
+  | "media"
+  | "hvac";
 type RightPanelMode = "inspector" | "assign";
 type AssignmentFilter = "all" | "unassigned" | "assigned";
 type OccupancyTransitionState = {
@@ -957,7 +962,9 @@ export class TopomationPanel extends LitElement {
 
   private _managerViewFromPath(path: string): ManagerView {
     if (path.startsWith("/topomation-occupancy")) return "occupancy";
-    if (path.startsWith("/topomation-actions")) return "actions";
+    if (path.startsWith("/topomation-appliances")) return "appliances";
+    if (path.startsWith("/topomation-media")) return "media";
+    if (path.startsWith("/topomation-hvac")) return "hvac";
     return "location";
   }
 
@@ -966,7 +973,9 @@ export class TopomationPanel extends LitElement {
     if (
       configuredView === "location" ||
       configuredView === "occupancy" ||
-      configuredView === "actions"
+      configuredView === "appliances" ||
+      configuredView === "media" ||
+      configuredView === "hvac"
     ) {
       return configuredView;
     }

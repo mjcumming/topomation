@@ -499,7 +499,7 @@ describe('TopomationPanel integration (fake hass)', () => {
     expect((element as any)._locations.find((loc: any) => loc.id === "kitchen")).to.equal(undefined);
   });
 
-  it("shows add and delete controls in actions manager view", async () => {
+  it("shows add and delete controls in media manager view", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(req: Record<string, any>): Promise<T> => {
         if (req.type === "topomation/locations/list") {
@@ -526,7 +526,7 @@ describe('TopomationPanel integration (fake hass)', () => {
     const element = await fixture<HTMLDivElement>(html`
       <topomation-panel
         .hass=${hass}
-        .panel=${{ config: { topomation_view: "actions" } }}
+        .panel=${{ config: { topomation_view: "media" } }}
       ></topomation-panel>
     `);
 
@@ -543,7 +543,7 @@ describe('TopomationPanel integration (fake hass)', () => {
     expect(labels.some((label) => label.includes("Delete Selected"))).to.equal(true);
   });
 
-  it("opens location dialog when Add Structure is clicked in actions view", async () => {
+  it("opens location dialog when Add Structure is clicked in media view", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(req: Record<string, any>): Promise<T> => {
         if (req.type === "topomation/locations/list") {
@@ -570,7 +570,7 @@ describe('TopomationPanel integration (fake hass)', () => {
     const element = await fixture<HTMLDivElement>(html`
       <topomation-panel
         .hass=${hass}
-        .panel=${{ config: { topomation_view: "actions" } }}
+        .panel=${{ config: { topomation_view: "media" } }}
       ></topomation-panel>
     `);
 
@@ -632,7 +632,7 @@ describe('TopomationPanel integration (fake hass)', () => {
     expect(receivedDetail).to.deep.equal({ open: true });
   });
 
-  it("renders inline action list in actions view without Add Rule dialog", async () => {
+  it("renders media rules editor in media view", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(req: Record<string, any>): Promise<T> => {
         if (req.type === "topomation/locations/list") {
@@ -655,11 +655,11 @@ describe('TopomationPanel integration (fake hass)', () => {
       callApi: async <T>(): Promise<T> => ({ result: "ok" } as T),
       connection: {},
       states: {
-        "light.kitchen_main": {
-          entity_id: "light.kitchen_main",
+        "fan.kitchen_hood": {
+          entity_id: "fan.kitchen_hood",
           state: "off",
           attributes: {
-            friendly_name: "Kitchen Main Light",
+            friendly_name: "Kitchen Hood",
             area_id: "kitchen",
           },
         },
@@ -675,7 +675,7 @@ describe('TopomationPanel integration (fake hass)', () => {
     const element = await fixture<HTMLDivElement>(html`
       <topomation-panel
         .hass=${hass}
-        .panel=${{ config: { topomation_view: "actions" } }}
+        .panel=${{ config: { topomation_view: "media" } }}
       ></topomation-panel>
     `);
 
@@ -687,18 +687,18 @@ describe('TopomationPanel integration (fake hass)', () => {
     expect(inspector).to.exist;
 
     await waitUntil(
-      () =>
-        !!Array.from(inspector.shadowRoot?.querySelectorAll(".action-device-row") || []).length,
-      "inline action rows not rendered"
+      () => !!inspector.shadowRoot?.querySelector('[data-testid="actions-rules-section"]'),
+      "rules section not rendered"
     );
 
-    const addRuleButton = Array.from(inspector.shadowRoot.querySelectorAll("button")).find((el) =>
-      (el.textContent || "").includes("Add Rule")
-    );
-    expect(addRuleButton).to.not.exist;
+    const addRuleButton = inspector.shadowRoot?.querySelector(
+      '[data-testid="action-rule-add"]'
+    ) as HTMLButtonElement | null;
+    expect(addRuleButton).to.exist;
 
-    const rowText = inspector.shadowRoot?.textContent || "";
-    expect(rowText).to.contain("Kitchen Main Light");
+    const text = inspector.shadowRoot?.textContent || "";
+    expect(text).to.contain("Media Rules");
+    expect(text).to.contain("No media rules configured yet.");
   });
 
 
@@ -1422,12 +1422,12 @@ describe('TopomationPanel integration (fake hass)', () => {
   it("resolves manager view from panel config and path", async () => {
     const element = document.createElement("topomation-panel") as any;
 
-    element.panel = { config: { topomation_view: "actions" } };
-    expect(element._managerView()).to.equal("actions");
+    element.panel = { config: { topomation_view: "media" } };
+    expect(element._managerView()).to.equal("media");
 
     element.panel = undefined;
-    element.route = { path: "/topomation-actions" };
-    expect(element._managerView()).to.equal("actions");
+    element.route = { path: "/topomation-media" };
+    expect(element._managerView()).to.equal("media");
 
     element.route = { path: "/topomation-occupancy" };
     expect(element._managerView()).to.equal("occupancy");

@@ -2177,6 +2177,70 @@ API/auth startup from completing reliably.
 
 ---
 
+### ADR-HA-052: Automation IA Splits by Domain Tabs; Startup Reapply Is Tab-Local UI (2026-03-04)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+
+The prior inspector IA mixed concerns across `Detection`, `Actions`, and an
+explicit `Advanced` tab, while startup reapply was presented as one global strip.
+As lighting rules became trigger/condition/action driven and non-light automations
+expanded, this created UX ambiguity:
+
+- "Actions" became a catch-all label with unclear domain ownership.
+- Ambient controls and advanced occupancy controls competed for space/priority.
+- Users expected startup/reapply settings inside the tab they were editing.
+- Add/delete/save rule affordances diverged between lighting and non-light flows.
+
+**Decision**:
+
+1. Inspector top-level tabs are now:
+   - `Detection`
+   - `Ambient`
+   - `Lighting`
+   - `Appliances`
+   - `Media`
+   - `HVAC`
+2. `Advanced` is no longer a top-level tab; advanced occupancy controls live
+   inside `Detection` as in-tab advanced disclosure.
+3. Startup reapply setting is rendered per automation tab (`Lighting`,
+   `Appliances`, `Media`, `HVAC`) and all toggles persist to the same shared
+   key: `modules.automation.reapply_last_state_on_startup`.
+4. `Lighting` remains the sole owner of `light.*` policy editing
+   (`modules.dusk_dawn`), while `Appliances`/`Media`/`HVAC` own non-light
+   managed-action rules.
+5. Rule-editor affordances are standardized across automation tabs:
+   - clickable rule title rename
+   - footer `Delete rule`
+   - footer `Add rule`
+   - header `Save changes` draft commit model.
+
+**Rationale**:
+
+1. Aligns IA with real domain ownership instead of trigger-centric legacy labels.
+2. Improves user predictability: tab context matches the device class being automated.
+3. Keeps advanced controls discoverable without promoting them to primary navigation.
+4. Reduces accidental cross-authority overlap between lighting and managed actions.
+5. Preserves one backend startup policy bit while improving where users edit it.
+
+**Consequences**:
+
+- ✅ Cleaner, domain-first navigation and fewer ambiguous "where should this rule live?" decisions.
+- ✅ Consistent rule-card UX across automation tabs.
+- ✅ Startup policy remains backward-compatible in stored config (single key).
+- ⚠️ Alias routes/docs/tests must be kept in sync as top-level tab taxonomy evolves.
+- ⚠️ Future domain additions (for example climate/humidifier) should follow this pattern
+  and not reintroduce a generic catch-all actions tab.
+
+**Alternatives Considered**:
+
+- Keep `Actions` + `On Occupied`/`On Vacant` subtabs: rejected; too ambiguous as scope grew.
+- Keep global startup strip in header: rejected; weak locality-of-reference.
+- Keep `Advanced` as top-level tab: rejected; high-nav prominence for low-frequency controls.
+
+---
+
 ## How to Use This Log
 
 ### When to Create an ADR

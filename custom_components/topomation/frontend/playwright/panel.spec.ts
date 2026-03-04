@@ -21,6 +21,102 @@ async function selectKitchen(page: any): Promise<void> {
   await kitchenRow.click();
 }
 
+async function openActionsTab(
+  page: any
+): Promise<void> {
+  const inspector = page.locator("ht-location-inspector");
+  await expect(inspector).toBeVisible();
+  await inspector.getByRole("button", { name: "Media" }).click();
+}
+
+async function openLightingTab(page: any): Promise<void> {
+  const inspector = page.locator("ht-location-inspector");
+  await expect(inspector).toBeVisible();
+  await inspector.getByRole("button", { name: "Lighting" }).click();
+}
+
+async function ensureLightingRuleExists(page: any): Promise<void> {
+  const inspector = page.locator("ht-location-inspector");
+  const rows = inspector.locator(".dusk-block-row");
+  if ((await rows.count()) > 0) return;
+  await inspector.getByTestId("duskdawn-block-add-bottom").click();
+  await expect(rows.first()).toBeVisible();
+}
+
+async function kitchenTopomationActionSummaries(page: any): Promise<
+  Array<{
+    id: string;
+    trigger_type: string;
+    trigger_to: string | null;
+    ambient_condition: string;
+    action: string | null;
+    action_entity_id: string | null;
+    has_dark_condition: boolean;
+    time_after: string | null;
+    time_before: string | null;
+  }>
+> {
+  return await page.evaluate(async () => {
+    const metadataPrefix = "[topomation]";
+    const mock = (window as any).mockHass;
+    const entries = await mock.hass.callWS({ type: "config/entity_registry/list" });
+    const automations = entries.filter(
+      (entry: any) =>
+        entry?.domain === "automation" &&
+        typeof entry?.unique_id === "string" &&
+        entry.unique_id.startsWith("topomation_")
+    );
+
+    const results: Array<Record<string, any>> = [];
+    for (const entry of automations) {
+      if (!entry?.entity_id) continue;
+      const configResp = await mock.hass.callWS({
+        type: "automation/config",
+        entity_id: entry.entity_id,
+      });
+      const config = configResp?.config || {};
+      const description = typeof config?.description === "string" ? config.description : "";
+      const metadataLine = description
+        .split(/\r?\n/)
+        .map((line: string) => line.trim())
+        .find((line: string) => line.startsWith(metadataPrefix));
+      if (!metadataLine) continue;
+
+      let metadata: any = null;
+      try {
+        metadata = JSON.parse(metadataLine.slice(metadataPrefix.length).trim());
+      } catch (_err) {
+        metadata = null;
+      }
+      if (!metadata || metadata.location_id !== "kitchen") continue;
+
+      const conditions = Array.isArray(config.conditions) ? config.conditions : [];
+      const timeCondition = conditions.find(
+        (condition: any) => condition?.condition === "time"
+      );
+      const hasDarkCondition = conditions.some(
+        (condition: any) =>
+          condition?.condition === "state" &&
+          condition?.entity_id === "sun.sun" &&
+          condition?.state === "below_horizon"
+      );
+
+      results.push({
+        id: entry.unique_id,
+        trigger_type: metadata.trigger_type || "",
+        trigger_to: config?.triggers?.[0]?.to ?? null,
+        ambient_condition: metadata.ambient_condition || "any",
+        action: config?.actions?.[0]?.action ?? null,
+        action_entity_id: config?.actions?.[0]?.target?.entity_id ?? null,
+        has_dark_condition: hasDarkCondition,
+        time_after: timeCondition?.after ?? null,
+        time_before: timeCondition?.before ?? null,
+      });
+    }
+    return results;
+  });
+}
+
 test("mock harness loads and renders tree rows", async ({ page }) => {
   await page.goto("/mock-harness.html");
 
@@ -183,179 +279,172 @@ test("selecting location shows occupancy inspector with area sensors", async ({ 
   await expect(inspector.locator(".candidate-list").first()).toBeVisible();
 });
 
-test("actions tab uses inline device list instead of Add Rule dialog", async ({ page }) => {
+test("lighting tab contract: clickable rule title, footer delete, add-rule button", async ({ page }) => {
+  await page.goto("/mock-harness.html");
+  await selectKitchen(page);
+  await openLightingTab(page);
+  await ensureLightingRuleExists(page);
+
+  const inspector = page.locator("ht-location-inspector");
+  const firstRule = inspector.locator(".dusk-block-row").first();
+
+  await expect(inspector.locator(".section-title", { hasText: "Lighting rules" })).toHaveCount(1);
+  const sectionTitles = await inspector
+    .locator(".section-title")
+    .evaluateAll((nodes) => nodes.map((node) => (node.textContent || "").trim()));
+  expect(sectionTitles).not.toContain("Rules");
+  await expect(inspector.getByText("All lighting rule changes saved.")).toHaveCount(0);
+  const titleButton = firstRule.locator(".dusk-block-title-button");
+  await expect(titleButton).toBeVisible();
+  await titleButton.click();
+  await expect(firstRule.locator("input.dusk-block-title-input")).toBeVisible();
+  await expect(firstRule.locator(".dusk-block-footer").getByRole("button", { name: "Delete rule" })).toBeVisible();
+  await expect(inspector.getByTestId("duskdawn-block-add")).toHaveCount(0);
+  await expect(inspector.getByTestId("duskdawn-block-add-bottom")).toBeVisible();
+});
+
+test("lighting tab contract: time window reveals begin/end and per-light only-if-off control", async ({ page }) => {
+  await page.goto("/mock-harness.html");
+  await selectKitchen(page);
+  await openLightingTab(page);
+  await ensureLightingRuleExists(page);
+
+  const inspector = page.locator("ht-location-inspector");
+  const firstRule = inspector.locator(".dusk-block-row").first();
+  const triggerSelect = firstRule.locator(".dusk-rule-row", { hasText: "Trigger" }).locator("select");
+  await expect(firstRule.locator("select[data-testid*='-ambient-condition']")).toHaveCount(0);
+  await expect(firstRule.locator("[data-testid*='-ambient-locked']")).toContainText("Must be dark");
+
+  await triggerSelect.selectOption("on_occupied");
+  await expect(firstRule.locator("select[data-testid*='-ambient-condition']")).toHaveCount(1);
+  await expect(firstRule.locator("[data-testid*='-must-be-occupied-locked']")).toContainText(
+    "Must be occupied"
+  );
+  await expect(firstRule.locator("input[data-testid*='-must-be-occupied']")).toHaveCount(0);
+
+  const timeRow = firstRule.locator(".dusk-conditions .config-row", { hasText: "Use time window" });
+  await expect(timeRow).toBeVisible();
+  await timeRow.locator("input[type='checkbox']").check();
+  await expect(firstRule.locator("input[type='time']")).toHaveCount(2);
+  await expect(firstRule.locator(".dusk-rule-row", { hasText: "Already-on behavior" })).toHaveCount(0);
+
+  const includeToggle = firstRule.locator("input[data-testid*='-include-']").first();
+  await expect(includeToggle).toBeVisible();
+  await includeToggle.check();
+
+  const includeCount = await firstRule.locator("input[data-testid*='-include-']").count();
+  const onlyIfOffCount = await firstRule.locator("input[data-testid*='-already-on-']").count();
+  expect(onlyIfOffCount).toBeLessThan(includeCount);
+  await expect(firstRule.locator("select[data-testid*='-power-']").first()).toBeVisible();
+  await expect(firstRule.locator("input[data-testid*='-already-on-']").first()).toBeVisible();
+});
+
+test("media tab renders rule editor", async ({ page }) => {
   await page.goto("/mock-harness.html");
   await selectKitchen(page);
 
   const inspector = page.locator("ht-location-inspector");
-  await expect(inspector).toBeVisible();
+  await openActionsTab(page);
 
-  await page.getByRole("button", { name: "On Occupied" }).click();
-  await expect(inspector).toContainText("Kitchen Main Light");
-  await expect(inspector.getByRole("button", { name: "+ Add Rule" })).toHaveCount(0);
-  await expect(page.getByText("New Home Assistant Automation")).not.toBeVisible();
+  await expect(inspector).toContainText("Media Rules");
+  await expect(inspector.getByRole("button", { name: "Add rule" })).toBeVisible();
+  await expect(inspector.getByRole("button", { name: "On Occupied" })).toHaveCount(0);
+  await expect(inspector.getByRole("button", { name: "On Vacant" })).toHaveCount(0);
 });
 
-test("inline include toggle creates and removes managed automation rules", async ({ page }) => {
+test("actions rule add/save/delete persists managed automations", async ({ page }) => {
   await page.goto("/mock-harness.html");
   await selectKitchen(page);
-  await page.getByRole("button", { name: "On Occupied" }).click();
+  await openActionsTab(page);
 
-  const row = page
-    .locator("ht-location-inspector .action-device-row", { hasText: "Kitchen Main Light" })
+  const inspector = page.locator("ht-location-inspector");
+  await inspector.getByRole("button", { name: "Add rule" }).click();
+  const rule = inspector
+    .locator(".dusk-block-row[data-testid^='action-rule-']")
     .first();
-  const toggle = row.locator('input[type="checkbox"]').first();
+  await expect(rule).toBeVisible();
 
-  await expect(row).toBeVisible();
-  await expect(toggle).not.toBeChecked();
-  await toggle.check();
-
-  await expect
-    .poll(async () =>
-      page.evaluate(async () => {
-        const mock = (window as any).mockHass;
-        const entries = await mock.hass.callWS({ type: "config/entity_registry/list" });
-        return entries.filter(
-          (entry: any) =>
-            entry?.domain === "automation" &&
-            typeof entry?.unique_id === "string" &&
-            entry.unique_id.startsWith("topomation_")
-        ).length;
-      })
-    )
-    .toBe(1);
-
-  await toggle.uncheck();
+  await rule.locator(".dusk-rule-row", { hasText: "Trigger" }).locator("select").selectOption("on_occupied");
+  await rule
+    .locator(".dusk-rule-row", { hasText: "Device" })
+    .locator("select")
+    .selectOption("media_player.kitchen_speaker");
+  await rule.locator(".dusk-rule-row", { hasText: "Action" }).locator("select").selectOption("media_pause");
+  await inspector.getByRole("button", { name: "Save changes" }).click();
 
   await expect
-    .poll(async () =>
-      page.evaluate(async () => {
-        const mock = (window as any).mockHass;
-        const entries = await mock.hass.callWS({ type: "config/entity_registry/list" });
-        return entries.filter(
-          (entry: any) =>
-            entry?.domain === "automation" &&
-            typeof entry?.unique_id === "string" &&
-            entry.unique_id.startsWith("topomation_")
-        ).length;
-      })
-    )
-    .toBe(0);
+    .poll(async () => {
+      const summaries = await kitchenTopomationActionSummaries(page);
+      return summaries.some(
+        (summary) =>
+          summary.trigger_type === "on_occupied" &&
+          summary.trigger_to === "on" &&
+          summary.action === "media_player.media_pause" &&
+          summary.action_entity_id === "media_player.kitchen_speaker"
+      );
+    })
+    .toBe(true);
+
+  await rule.getByRole("button", { name: "Delete rule" }).click();
+  await inspector.getByRole("button", { name: "Save changes" }).click();
+  await expect.poll(async () => (await kitchenTopomationActionSummaries(page)).length).toBe(0);
 });
 
-test("inline action service selector controls created automation action", async ({ page }) => {
+test("actions rule ambient + time conditions persist into automation config", async ({ page }) => {
   await page.goto("/mock-harness.html");
   await selectKitchen(page);
-  await page.getByRole("button", { name: "On Occupied" }).click();
+  await openActionsTab(page);
 
-  const row = page
-    .locator("ht-location-inspector .action-device-row", { hasText: "Kitchen Main Light" })
+  const inspector = page.locator("ht-location-inspector");
+  await inspector.getByRole("button", { name: "Add rule" }).click();
+  const rule = inspector
+    .locator(".dusk-block-row[data-testid^='action-rule-']")
     .first();
-  const serviceSelect = row.locator("select.action-service-select");
-  const toggle = row.locator('input[type="checkbox"]').first();
+  await expect(rule).toBeVisible();
 
-  await expect(row).toBeVisible();
-  await serviceSelect.selectOption("turn_off");
-  await toggle.check();
+  await rule.locator(".dusk-rule-row", { hasText: "Trigger" }).locator("select").selectOption("on_occupied");
+  await rule
+    .locator(".dusk-rule-row", { hasText: "Device" })
+    .locator("select")
+    .selectOption("media_player.kitchen_speaker");
+  await rule.locator(".dusk-rule-row", { hasText: "Action" }).locator("select").selectOption("media_play");
+  await rule
+    .locator(".dusk-conditions .config-row", { hasText: "Ambient must be" })
+    .locator("select")
+    .selectOption("dark");
+
+  const timeRow = rule.locator(".dusk-conditions .config-row", { hasText: "Use time window" });
+  await timeRow.locator("input[type='checkbox']").check();
+  const startInput = rule.locator("input[type='time']").nth(0);
+  const endInput = rule.locator("input[type='time']").nth(1);
+  await startInput.fill("21:30");
+  await startInput.dispatchEvent("change");
+  await endInput.fill("23:45");
+  await endInput.dispatchEvent("change");
+
+  await inspector.getByRole("button", { name: "Save changes" }).click();
 
   await expect
-    .poll(async () =>
-      page.evaluate(async () => {
-        const mock = (window as any).mockHass;
-        const entries = await mock.hass.callWS({ type: "config/entity_registry/list" });
-        const rule = entries.find(
-          (entry: any) =>
-            entry?.domain === "automation" &&
-            typeof entry?.unique_id === "string" &&
-            entry.unique_id.startsWith("topomation_kitchen_occupied")
-        );
-        if (!rule?.entity_id) return null;
-        const configResp = await mock.hass.callWS({
-          type: "automation/config",
-          entity_id: rule.entity_id,
-        });
-        return configResp?.config?.actions?.[0]?.action || null;
-      })
-    )
-    .toBe("light.turn_off");
-});
-
-test("inline dark toggle writes sun-based condition for managed automation rule", async ({ page }) => {
-  await page.goto("/mock-harness.html");
-  await selectKitchen(page);
-  await page.getByRole("button", { name: "On Occupied" }).click();
-
-  const row = page
-    .locator("ht-location-inspector .action-device-row", { hasText: "Kitchen Main Light" })
-    .first();
-  const includeToggle = row.locator("input.action-include-input");
-  const darkToggle = row.locator("input.action-dark-input");
-
-  await expect(row).toBeVisible();
-  await darkToggle.check();
-  await includeToggle.check();
-
-  await expect
-    .poll(async () =>
-      page.evaluate(async () => {
-        const mock = (window as any).mockHass;
-        const entries = await mock.hass.callWS({ type: "config/entity_registry/list" });
-        const rule = entries.find(
-          (entry: any) =>
-            entry?.domain === "automation" &&
-            typeof entry?.unique_id === "string" &&
-            entry.unique_id.startsWith("topomation_kitchen_occupied")
-        );
-        if (!rule?.entity_id) return null;
-        const configResp = await mock.hass.callWS({
-          type: "automation/config",
-          entity_id: rule.entity_id,
-        });
-        const conditions = configResp?.config?.conditions || [];
-        return conditions.some(
-          (condition: any) =>
-            condition?.condition === "state" &&
-            condition?.entity_id === "sun.sun" &&
-            condition?.state === "below_horizon"
-        );
-      })
-    )
+    .poll(async () => {
+      const summaries = await kitchenTopomationActionSummaries(page);
+      return summaries.some(
+        (summary) =>
+          summary.trigger_type === "on_occupied" &&
+          summary.ambient_condition === "dark" &&
+          summary.has_dark_condition &&
+          summary.time_after === "21:30" &&
+          summary.time_before === "23:45"
+      );
+    })
     .toBe(true);
 });
 
-test("inline actions support all common device types", async ({ page }) => {
+test("media rule service options align to media player controls", async ({ page }) => {
   await page.goto("/mock-harness.html");
 
-  await page.evaluate(() => {
+  await page.evaluate(async () => {
     const mock = (window as any).mockHass;
     Object.assign(mock.hass.states, {
-      "light.kitchen_basic": {
-        entity_id: "light.kitchen_basic",
-        state: "off",
-        attributes: {
-          friendly_name: "Kitchen Basic Light",
-          area_id: "kitchen",
-          supported_color_modes: ["onoff"],
-        },
-      },
-      "light.kitchen_dimmer": {
-        entity_id: "light.kitchen_dimmer",
-        state: "off",
-        attributes: {
-          friendly_name: "Kitchen Dimmer",
-          area_id: "kitchen",
-          supported_color_modes: ["brightness"],
-        },
-      },
-      "light.kitchen_accent": {
-        entity_id: "light.kitchen_accent",
-        state: "off",
-        attributes: {
-          friendly_name: "Kitchen Accent",
-          area_id: "kitchen",
-          supported_color_modes: ["rgb", "brightness"],
-        },
-      },
       "fan.kitchen_fan": {
         entity_id: "fan.kitchen_fan",
         state: "off",
@@ -372,293 +461,123 @@ test("inline actions support all common device types", async ({ page }) => {
           area_id: "kitchen",
         },
       },
-      "media_player.kitchen_tv": {
-        entity_id: "media_player.kitchen_tv",
-        state: "paused",
+      "cover.kitchen_shade": {
+        entity_id: "cover.kitchen_shade",
+        state: "open",
         attributes: {
-          friendly_name: "Kitchen TV",
+          friendly_name: "Kitchen Shade",
           area_id: "kitchen",
-          device_class: "tv",
         },
       },
+    });
+    await mock.hass.callWS({
+      type: "topomation/locations/assign_entity",
+      target_location_id: "kitchen",
+      entity_id: "fan.kitchen_fan",
+    });
+    await mock.hass.callWS({
+      type: "topomation/locations/assign_entity",
+      target_location_id: "kitchen",
+      entity_id: "media_player.kitchen_receiver",
+    });
+    await mock.hass.callWS({
+      type: "topomation/locations/assign_entity",
+      target_location_id: "kitchen",
+      entity_id: "cover.kitchen_shade",
     });
     const panel = document.querySelector("topomation-panel") as any;
     panel.hass = mock.getReactiveHass();
   });
 
   await selectKitchen(page);
-  await page.getByRole("button", { name: "On Occupied" }).click();
+  await openActionsTab(page);
+  const inspector = page.locator("ht-location-inspector");
+  await inspector.getByRole("button", { name: "Add rule" }).click();
+  const rule = inspector
+    .locator(".dusk-block-row[data-testid^='action-rule-']")
+    .first();
+  await expect(rule).toBeVisible();
 
-  const cases = [
-    {
-      name: "Kitchen Basic Light",
-      entityId: "light.kitchen_basic",
-      action: "light.turn_off",
-      options: ["turn_on", "turn_off"],
-      select: "turn_off",
-    },
-    {
-      name: "Kitchen Dimmer",
-      entityId: "light.kitchen_dimmer",
-      action: "light.turn_off",
-      options: ["turn_on", "turn_off"],
-      select: "turn_off",
-    },
-    {
-      name: "Kitchen Accent",
-      entityId: "light.kitchen_accent",
-      action: "light.turn_off",
-      options: ["turn_on", "turn_off"],
-      select: "turn_off",
-    },
-    {
-      name: "Kitchen Fan",
-      entityId: "fan.kitchen_fan",
-      action: "fan.turn_off",
-      options: ["turn_on", "turn_off"],
-      select: "turn_off",
-    },
-    {
-      name: "Kitchen Receiver",
-      entityId: "media_player.kitchen_receiver",
-      action: "media_player.media_stop",
-      options: ["media_stop", "media_pause", "turn_off"],
-      select: "media_stop",
-    },
-    {
-      name: "Kitchen TV",
-      entityId: "media_player.kitchen_tv",
-      action: "media_player.media_stop",
-      options: ["media_stop", "media_pause", "turn_off"],
-      select: "media_stop",
-    },
-  ];
-
-  for (const entry of cases) {
-    const row = page
-      .locator("ht-location-inspector .action-device-row", { hasText: entry.name })
-      .first();
-    const serviceSelect = row.locator("select.action-service-select");
-    const toggle = row.locator('input[type="checkbox"]').first();
-
-    await expect(row).toBeVisible();
-    await expect
-      .poll(async () =>
-        serviceSelect.evaluate((el) =>
-          Array.from((el as HTMLSelectElement).options).map((opt) => opt.value)
-        )
+  const deviceSelect = rule.locator(".dusk-rule-row", { hasText: "Device" }).locator("select");
+  const actionSelect = rule.locator(".dusk-rule-row", { hasText: "Action" }).locator("select");
+  await deviceSelect.selectOption("media_player.kitchen_receiver");
+  await expect
+    .poll(async () =>
+      actionSelect.evaluate((el) =>
+        Array.from((el as HTMLSelectElement).options).map((option) => option.value)
       )
-      .toEqual(entry.options);
-
-    await serviceSelect.selectOption(entry.select);
-    await toggle.check();
-
-    await expect
-      .poll(async () =>
-        page.evaluate(
-          async ({ targetEntityId, expectedAction }) => {
-            const mock = (window as any).mockHass;
-            const entries = await mock.hass.callWS({ type: "config/entity_registry/list" });
-            const topomationAutomations = entries.filter(
-              (entry: any) =>
-                entry?.domain === "automation" &&
-                typeof entry?.unique_id === "string" &&
-                entry.unique_id.startsWith("topomation_kitchen_occupied")
-            );
-            const configs = await Promise.all(
-              topomationAutomations.map(async (entry: any) => {
-                const configResp = await mock.hass.callWS({
-                  type: "automation/config",
-                  entity_id: entry.entity_id,
-                });
-                return configResp?.config;
-              })
-            );
-            return configs.some(
-              (config: any) =>
-                config?.actions?.[0]?.target?.entity_id === targetEntityId &&
-                config?.actions?.[0]?.action === expectedAction
-            );
-          },
-          { targetEntityId: entry.entityId, expectedAction: entry.action }
-        )
-      )
-      .toBe(true);
-  }
+    )
+    .toEqual([
+      "turn_on",
+      "turn_off",
+      "media_play",
+      "media_play_pause",
+      "media_pause",
+      "media_stop",
+      "volume_up",
+      "volume_down",
+    ]);
 });
 
-test("light occupied/vacant mappings are not inverted", async ({ page }) => {
+test("on occupied/on vacant triggers map to on/off occupancy state transitions", async ({ page }) => {
   await page.goto("/mock-harness.html");
   await selectKitchen(page);
+  await openActionsTab(page);
 
-  const getMatchingConfigs = async (prefix: string) =>
-    page.evaluate(async (uniquePrefix) => {
-      const mock = (window as any).mockHass;
-      const entries = await mock.hass.callWS({ type: "config/entity_registry/list" });
-      const matches = entries.filter(
-        (entry: any) =>
-          entry?.domain === "automation" &&
-          typeof entry?.unique_id === "string" &&
-          entry.unique_id.startsWith(uniquePrefix)
-      );
-      const configs = await Promise.all(
-        matches.map(async (entry: any) => {
-          const configResp = await mock.hass.callWS({
-            type: "automation/config",
-            entity_id: entry.entity_id,
-          });
-          return configResp?.config;
-        })
-      );
-      return configs;
-    }, prefix);
-
-  // Occupied -> turn_on
-  await page.getByRole("button", { name: "On Occupied" }).click();
-  const occupiedRow = page
-    .locator("ht-location-inspector .action-device-row", { hasText: "Kitchen Main Light" })
-    .first();
-  await occupiedRow.locator("select.action-service-select").selectOption("turn_on");
-  await occupiedRow.locator('input[type="checkbox"]').first().check();
-
-  await expect
-    .poll(async () => {
-      const configs = await getMatchingConfigs("topomation_kitchen_occupied");
-      return configs.some(
-        (config: any) =>
-          config?.triggers?.[0]?.to === "on" &&
-          config?.actions?.[0]?.action === "light.turn_on" &&
-          config?.actions?.[0]?.target?.entity_id === "light.kitchen_main"
-      );
-    })
-    .toBe(true);
-
-  // Vacant -> turn_off
-  await page.getByRole("button", { name: "On Vacant" }).click();
-  const vacantRow = page
-    .locator("ht-location-inspector .action-device-row", { hasText: "Kitchen Main Light" })
-    .first();
-  await vacantRow.locator("select.action-service-select").selectOption("turn_off");
-  await vacantRow.locator('input[type="checkbox"]').first().check();
-
-  await expect
-    .poll(async () => {
-      const configs = await getMatchingConfigs("topomation_kitchen_vacant");
-      return configs.some(
-        (config: any) =>
-          config?.triggers?.[0]?.to === "off" &&
-          config?.actions?.[0]?.action === "light.turn_off" &&
-          config?.actions?.[0]?.target?.entity_id === "light.kitchen_main"
-      );
-    })
-    .toBe(true);
-});
-
-test("action row prefers enabled rule service when duplicate managed rules exist", async ({ page }) => {
-  await page.goto("/mock-harness.html");
-
-  await page.evaluate(async () => {
-    const mock = (window as any).mockHass;
-    const description =
-      'Managed by Topomation.\n[topomation] {"version":1,"location_id":"kitchen","trigger_type":"occupied"}';
-
-    await mock.hass.callApi("post", "config/automation/config/topomation_kitchen_occupied_a", {
-      alias: "A Occupied Kitchen Light On",
-      description,
-      triggers: [{ trigger: "state", entity_id: "binary_sensor.kitchen_occupancy", to: "on" }],
-      conditions: [],
-      actions: [{ action: "light.turn_on", target: { entity_id: "light.kitchen_main" } }],
-      mode: "single",
-    });
-
-    await mock.hass.callApi("post", "config/automation/config/topomation_kitchen_occupied_b", {
-      alias: "B Occupied Kitchen Light Off",
-      description,
-      triggers: [{ trigger: "state", entity_id: "binary_sensor.kitchen_occupancy", to: "on" }],
-      conditions: [],
-      actions: [{ action: "light.turn_off", target: { entity_id: "light.kitchen_main" } }],
-      mode: "single",
-    });
-
-    const entries = await mock.hass.callWS({ type: "config/entity_registry/list" });
-    const automationToDisable = entries.find(
-      (entry: any) => entry?.unique_id === "topomation_kitchen_occupied_a"
-    );
-    const automationToEnable = entries.find(
-      (entry: any) => entry?.unique_id === "topomation_kitchen_occupied_b"
-    );
-    if (!automationToDisable?.entity_id) {
-      throw new Error("Failed to resolve automation entity for duplicate-rule regression setup");
-    }
-    if (!automationToEnable?.entity_id) {
-      throw new Error("Failed to resolve second automation entity for duplicate-rule regression setup");
-    }
-
-    // Keep mock state object in sync so listTopomationActionRules can resolve enabled/disabled.
-    mock.hass.states[automationToDisable.entity_id] = {
-      entity_id: automationToDisable.entity_id,
-      state: "off",
-      attributes: { friendly_name: "A Occupied Kitchen Light On" },
-    };
-    mock.hass.states[automationToEnable.entity_id] = {
-      entity_id: automationToEnable.entity_id,
-      state: "on",
-      attributes: { friendly_name: "B Occupied Kitchen Light Off" },
-    };
-  });
-
-  await selectKitchen(page);
-  await page.getByRole("button", { name: "On Occupied" }).click();
-
-  const duplicateRuleStates = await page.evaluate(async () => {
-    const mock = (window as any).mockHass;
-    const entries = await mock.hass.callWS({ type: "config/entity_registry/list" });
-    const byId = new Map(entries.map((entry: any) => [entry.unique_id, entry]));
-    const a = byId.get("topomation_kitchen_occupied_a");
-    const b = byId.get("topomation_kitchen_occupied_b");
-    return {
-      a: a ? mock.hass.states[a.entity_id]?.state : null,
-      b: b ? mock.hass.states[b.entity_id]?.state : null,
-    };
-  });
-  expect(duplicateRuleStates).toEqual({ a: "off", b: "on" });
-
-  const inspectorRuleSummary = await page.evaluate(() => {
-    const panel = document.querySelector("topomation-panel") as any;
-    const inspector = panel?.shadowRoot?.querySelector("ht-location-inspector") as any;
-    return (inspector?._actionRules || []).map((rule: any) => ({
-      id: rule.id,
-      action_service: rule.action_service,
-      action_entity_id: rule.action_entity_id,
-      trigger_type: rule.trigger_type,
-      enabled: rule.enabled,
-    }));
-  });
-  expect(inspectorRuleSummary).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({
-        id: "topomation_kitchen_occupied_a",
-        action_service: "turn_on",
-        action_entity_id: "light.kitchen_main",
-        trigger_type: "occupied",
-        enabled: false,
-      }),
-      expect.objectContaining({
-        id: "topomation_kitchen_occupied_b",
-        action_service: "turn_off",
-        action_entity_id: "light.kitchen_main",
-        trigger_type: "occupied",
-        enabled: true,
-      }),
-    ])
+  const inspector = page.locator("ht-location-inspector");
+  const deleteButtons = inspector.locator(
+    ".dusk-block-row[data-testid^='action-rule-'] .dusk-block-footer button"
   );
+  while ((await deleteButtons.count()) > 0) {
+    await deleteButtons.first().click();
+  }
+  const saveRulesButton = inspector.getByRole("button", { name: "Save changes" });
+  if (await saveRulesButton.isEnabled()) {
+    await saveRulesButton.click();
+  }
+  await expect.poll(async () => (await kitchenTopomationActionSummaries(page)).length).toBe(0);
 
-  const selectedService = await page.evaluate(() => {
-    const panel = document.querySelector("topomation-panel") as any;
-    const inspector = panel?.shadowRoot?.querySelector("ht-location-inspector") as any;
-    return inspector?._selectedManagedActionService("light.kitchen_main", "occupied");
-  });
-  expect(selectedService).toBe("turn_off");
+  await inspector.getByRole("button", { name: "Add rule" }).click();
+  const occupiedRule = inspector
+    .locator(".dusk-block-row[data-testid^='action-rule-']")
+    .last();
+  await occupiedRule.locator(".dusk-rule-row", { hasText: "Trigger" }).locator("select").selectOption("on_occupied");
+  await occupiedRule
+    .locator(".dusk-rule-row", { hasText: "Device" })
+    .locator("select")
+    .selectOption("media_player.kitchen_speaker");
+  await occupiedRule.locator(".dusk-rule-row", { hasText: "Action" }).locator("select").selectOption("media_play");
+
+  await inspector.getByRole("button", { name: "Add rule" }).click();
+  const vacantRule = inspector
+    .locator(".dusk-block-row[data-testid^='action-rule-']")
+    .last();
+  await vacantRule.locator(".dusk-rule-row", { hasText: "Trigger" }).locator("select").selectOption("on_vacant");
+  await vacantRule
+    .locator(".dusk-rule-row", { hasText: "Device" })
+    .locator("select")
+    .selectOption("media_player.kitchen_speaker");
+  await vacantRule.locator(".dusk-rule-row", { hasText: "Action" }).locator("select").selectOption("media_stop");
+
+  await inspector.getByRole("button", { name: "Save changes" }).click();
+  await expect
+    .poll(async () => {
+      const summaries = await kitchenTopomationActionSummaries(page);
+      const hasOccupied = summaries.some(
+        (summary) =>
+          summary.trigger_type === "on_occupied" &&
+          summary.trigger_to === "on" &&
+          summary.action === "media_player.media_play"
+      );
+      const hasVacant = summaries.some(
+        (summary) =>
+          summary.trigger_type === "on_vacant" &&
+          summary.trigger_to === "off" &&
+          summary.action === "media_player.media_stop"
+      );
+      return hasOccupied && hasVacant;
+    })
+    .toBe(true);
 });
 
 test("integration-owned building shows explicit source composer guidance", async ({ page }) => {
@@ -707,6 +626,6 @@ test("left manager header title remains Topology across routes", async ({ page }
   await setPanelPath("/topomation-occupancy");
   await expect(headerTitle).toHaveText("Topology");
 
-  await setPanelPath("/topomation-actions");
+  await setPanelPath("/topomation-media");
   await expect(headerTitle).toHaveText("Topology");
 });

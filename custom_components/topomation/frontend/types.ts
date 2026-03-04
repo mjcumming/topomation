@@ -130,6 +130,40 @@ export interface AmbientLightReading {
   timestamp?: string;
 }
 
+export type DuskDawnTriggerMode =
+  | "on_occupied"
+  | "on_vacant"
+  | "on_dark"
+  | "on_bright";
+export type DuskDawnAmbientCondition = "any" | "dark" | "bright";
+
+export type DuskDawnAlreadyOnBehavior = "leave_unchanged" | "set_target";
+
+export interface DuskDawnLightTarget {
+  entity_id?: string;
+  power?: "on" | "off";
+  brightness_pct?: number | null;
+  color_hex?: string | null;
+  already_on_behavior?: DuskDawnAlreadyOnBehavior;
+}
+
+export interface DuskDawnScheduleBlock {
+  id?: string;
+  name?: string;
+  start_time?: string;
+  end_time?: string;
+  time_condition_enabled?: boolean;
+  trigger_mode?: DuskDawnTriggerMode;
+  ambient_condition?: DuskDawnAmbientCondition;
+  must_be_occupied?: boolean;
+  already_on_behavior?: DuskDawnAlreadyOnBehavior;
+  light_targets?: DuskDawnLightTarget[];
+}
+
+export interface DuskDawnConfig extends ModuleConfig {
+  blocks?: DuskDawnScheduleBlock[];
+}
+
 export interface OccupancySource {
   entity_id: string;
   source_id?: string;
@@ -148,10 +182,16 @@ export interface TopomationActionRule {
   id: string;
   entity_id: string;
   name: string;
-  trigger_type: "occupied" | "vacant";
+  trigger_type: "on_occupied" | "on_vacant" | "on_dark" | "on_bright";
   action_entity_id?: string;
   action_service?: string;
-  require_dark: boolean;
+  ambient_condition?: "any" | "dark" | "bright";
+  must_be_occupied?: boolean;
+  time_condition_enabled?: boolean;
+  start_time?: string;
+  end_time?: string;
+  // Legacy compatibility (older backend/frontend payloads)
+  require_dark?: boolean;
   enabled: boolean;
 }
 

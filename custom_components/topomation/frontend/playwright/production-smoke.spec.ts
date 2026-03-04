@@ -35,6 +35,37 @@ async function selectKitchen(page: any): Promise<void> {
   await expect(page.locator("ht-location-inspector")).toBeVisible();
 }
 
+async function openActionsTab(
+  page: any
+): Promise<void> {
+  const inspector = page.locator("ht-location-inspector");
+  await expect(inspector).toBeVisible();
+  await inspector.getByRole("button", { name: "Media" }).click();
+}
+
+async function openLightingTab(page: any): Promise<void> {
+  const inspector = page.locator("ht-location-inspector");
+  await expect(inspector).toBeVisible();
+  await inspector.getByRole("button", { name: "Lighting" }).click();
+}
+
+async function addBasicKitchenActionRule(page: any): Promise<void> {
+  const inspector = page.locator("ht-location-inspector");
+  await expect(inspector).toBeVisible();
+  await inspector.getByRole("button", { name: "Add rule" }).click();
+  const rule = inspector
+    .locator(".dusk-block-row[data-testid^='action-rule-']")
+    .first();
+  await expect(rule).toBeVisible();
+  await rule.locator(".dusk-rule-row", { hasText: "Trigger" }).locator("select").selectOption("on_occupied");
+  await rule
+    .locator(".dusk-rule-row", { hasText: "Device" })
+    .locator("select")
+    .selectOption("media_player.kitchen_speaker");
+  await rule.locator(".dusk-rule-row", { hasText: "Action" }).locator("select").selectOption("media_pause");
+  await inspector.getByRole("button", { name: "Save changes" }).click();
+}
+
 async function kitchenReapplyFlag(page: any): Promise<boolean> {
   return await page.evaluate(async () => {
     const mock = (window as any).mockHass;
@@ -52,8 +83,19 @@ async function kitchenManagedRuleCount(page: any): Promise<number> {
       (entry: any) =>
         entry?.domain === "automation" &&
         typeof entry?.unique_id === "string" &&
-        entry.unique_id.startsWith("topomation_kitchen_occupied")
-    ).length;
+        entry.unique_id.startsWith("topomation_kitchen_")
+      ).length;
+  });
+}
+
+async function kitchenActionRuleCount(page: any): Promise<number> {
+  return await page.evaluate(async () => {
+    const mock = (window as any).mockHass;
+    const response = await mock.hass.callWS({
+      type: "topomation/actions/rules/list",
+      location_id: "kitchen",
+    });
+    return Array.isArray(response?.rules) ? response.rules.length : 0;
   });
 }
 
@@ -64,6 +106,7 @@ test.describe("Production profile smoke", () => {
 
   test("startup toggle persists through eventual consistency and full reload", async ({ page }) => {
     await selectKitchen(page);
+    await openLightingTab(page);
 
     const toggle = page.locator(
       "ht-location-inspector .startup-inline-toggle input[type='checkbox']"
@@ -76,6 +119,7 @@ test.describe("Production profile smoke", () => {
     await page.reload();
     await expect(page.locator("topomation-panel")).toBeVisible();
     await selectKitchen(page);
+    await openLightingTab(page);
 
     const toggleAfterReload = page.locator(
       "ht-location-inspector .startup-inline-toggle input[type='checkbox']"
@@ -150,9 +194,12 @@ test.describe("Production profile smoke", () => {
       .toBe(true);
   });
 
-  test("managed action toggle survives delayed automation registry visibility", async ({ page }) => {
+  test("managed action rule save survives delayed automation registry visibility", async ({ page }) => {
     await selectKitchen(page);
-    await page.getByRole("button", { name: "On Occupied" }).click();
+    await openActionsTab(page);
+    const initialRuleCount = await page
+      .locator("ht-location-inspector .dusk-block-row[data-testid^='action-rule-']")
+      .count();
 
     // Simulate production lag where automation registry/config reads briefly
     // return stale data right after a create call.
@@ -167,7 +214,7 @@ test.describe("Production profile smoke", () => {
         const result = await originalCallApi(method, endpoint, parameters);
         if (
           String(method || "").toLowerCase() === "post" &&
-          String(endpoint || "").startsWith("config/automation/config/topomation_kitchen_occupied")
+          String(endpoint || "").startsWith("config/automation/config/topomation_kitchen_")
         ) {
           createdSincePatch = true;
         }
@@ -190,31 +237,25 @@ test.describe("Production profile smoke", () => {
       };
     });
 
-    const row = page
-      .locator("ht-location-inspector .action-device-row", { hasText: "Kitchen Main Light" })
-      .first();
-    const toggle = row.locator('input[type="checkbox"]').first();
-    await expect(row).toBeVisible();
-    await toggle.check();
+    await addBasicKitchenActionRule(page);
 
     await expect.poll(async () => await kitchenManagedRuleCount(page)).toBeGreaterThan(0);
 
     await page.reload();
     await expect(page.locator("topomation-panel")).toBeVisible();
     await selectKitchen(page);
-    await page.getByRole("button", { name: "On Occupied" }).click();
+    await openActionsTab(page);
     await expect(
-      page
-        .locator("ht-location-inspector .action-device-row", { hasText: "Kitchen Main Light" })
-        .first()
-        .locator('input[type="checkbox"]')
-        .first()
-    ).toBeChecked();
+      page.locator("ht-location-inspector .dusk-block-row[data-testid^='action-rule-']")
+    ).toHaveCount(initialRuleCount + 1);
   });
 
-  test("managed action toggle survives entity registry access failures", async ({ page }) => {
+  test("managed action rule save survives entity registry access failures", async ({ page }) => {
     await selectKitchen(page);
-    await page.getByRole("button", { name: "On Occupied" }).click();
+    await openActionsTab(page);
+    const initialRuleCount = await page
+      .locator("ht-location-inspector .dusk-block-row[data-testid^='action-rule-']")
+      .count();
 
     await page.evaluate(() => {
       const mock = (window as any).mockHass;
@@ -227,25 +268,15 @@ test.describe("Production profile smoke", () => {
       };
     });
 
-    const row = page
-      .locator("ht-location-inspector .action-device-row", { hasText: "Kitchen Main Light" })
-      .first();
-    const toggle = row.locator('input[type="checkbox"]').first();
-    await expect(row).toBeVisible();
-    await toggle.check();
-
-    await expect(toggle).toBeChecked();
+    await addBasicKitchenActionRule(page);
+    await expect.poll(async () => await kitchenActionRuleCount(page)).toBeGreaterThan(0);
 
     await page.reload();
     await expect(page.locator("topomation-panel")).toBeVisible();
     await selectKitchen(page);
-    await page.getByRole("button", { name: "On Occupied" }).click();
+    await openActionsTab(page);
     await expect(
-      page
-        .locator("ht-location-inspector .action-device-row", { hasText: "Kitchen Main Light" })
-        .first()
-        .locator('input[type="checkbox"]')
-        .first()
-    ).toBeChecked();
+      page.locator("ht-location-inspector .dusk-block-row[data-testid^='action-rule-']")
+    ).toHaveCount(initialRuleCount + 1);
   });
 });

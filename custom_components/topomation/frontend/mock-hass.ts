@@ -97,6 +97,10 @@ export const MOCK_LOCATIONS: Location[] = [
     origin: "ha",
     entity_ids: [
       "light.kitchen_main",
+      "light.kitchen_island",
+      "light.kitchen_pendants",
+      "light.kitchen_under_cabinet",
+      "light.kitchen_sink",
       "binary_sensor.kitchen_motion",
       "binary_sensor.kitchen_door",
       "media_player.kitchen_speaker",
@@ -237,6 +241,46 @@ export const MOCK_STATES: Record<string, any> = {
       brightness: 170,
       rgb_color: [255, 180, 120],
       supported_color_modes: ["rgb", "brightness"],
+    },
+  },
+  "light.kitchen_island": {
+    entity_id: "light.kitchen_island",
+    state: "off",
+    attributes: {
+      friendly_name: "Kitchen Island",
+      area_id: "kitchen",
+      brightness: 140,
+      supported_color_modes: ["brightness"],
+    },
+  },
+  "light.kitchen_pendants": {
+    entity_id: "light.kitchen_pendants",
+    state: "off",
+    attributes: {
+      friendly_name: "Kitchen Pendants",
+      area_id: "kitchen",
+      brightness: 110,
+      supported_color_modes: ["brightness"],
+    },
+  },
+  "light.kitchen_under_cabinet": {
+    entity_id: "light.kitchen_under_cabinet",
+    state: "off",
+    attributes: {
+      friendly_name: "Kitchen Under Cabinet",
+      area_id: "kitchen",
+      supported_color_modes: ["onoff"],
+      color_mode: "onoff",
+    },
+  },
+  "light.kitchen_sink": {
+    entity_id: "light.kitchen_sink",
+    state: "off",
+    attributes: {
+      friendly_name: "Kitchen Sink",
+      area_id: "kitchen",
+      supported_color_modes: ["onoff"],
+      color_mode: "onoff",
     },
   },
   "light.living_room": {
@@ -455,7 +499,16 @@ const TOPOMATION_AUTOMATION_ID_PREFIX = "topomation_";
 
 function parseTopomationMetadata(
   description: unknown
-): { location_id: string; trigger_type: "occupied" | "vacant"; require_dark?: boolean } | null {
+): {
+  location_id: string;
+  trigger_type: "on_occupied" | "on_vacant" | "on_dark" | "on_bright";
+  ambient_condition?: "any" | "dark" | "bright";
+  must_be_occupied?: boolean;
+  time_condition_enabled?: boolean;
+  start_time?: string;
+  end_time?: string;
+  require_dark?: boolean;
+} | null {
   if (typeof description !== "string" || !description.includes(TOPOMATION_METADATA_PREFIX)) {
     return null;
   }
@@ -470,15 +523,51 @@ function parseTopomationMetadata(
       const parsed = JSON.parse(payload) as {
         location_id?: unknown;
         trigger_type?: unknown;
+        ambient_condition?: unknown;
+        must_be_occupied?: unknown;
+        time_condition_enabled?: unknown;
+        start_time?: unknown;
+        end_time?: unknown;
         require_dark?: unknown;
       };
+      const rawTriggerType =
+        typeof parsed.trigger_type === "string" ? parsed.trigger_type.trim().toLowerCase() : "";
+      const normalizedTriggerType =
+        rawTriggerType === "occupied"
+          ? "on_occupied"
+          : rawTriggerType === "vacant"
+            ? "on_vacant"
+            : rawTriggerType;
+      const rawAmbientCondition =
+        typeof parsed.ambient_condition === "string"
+          ? parsed.ambient_condition.trim().toLowerCase()
+          : "";
       if (
         typeof parsed.location_id === "string" &&
-        (parsed.trigger_type === "occupied" || parsed.trigger_type === "vacant")
+        (normalizedTriggerType === "on_occupied" ||
+          normalizedTriggerType === "on_vacant" ||
+          normalizedTriggerType === "on_dark" ||
+          normalizedTriggerType === "on_bright")
       ) {
         return {
           location_id: parsed.location_id,
-          trigger_type: parsed.trigger_type,
+          trigger_type: normalizedTriggerType,
+          ambient_condition:
+            rawAmbientCondition === "any" ||
+            rawAmbientCondition === "dark" ||
+            rawAmbientCondition === "bright"
+              ? rawAmbientCondition
+              : undefined,
+          must_be_occupied:
+            typeof parsed.must_be_occupied === "boolean"
+              ? parsed.must_be_occupied
+              : undefined,
+          time_condition_enabled:
+            typeof parsed.time_condition_enabled === "boolean"
+              ? parsed.time_condition_enabled
+              : undefined,
+          start_time: typeof parsed.start_time === "string" ? parsed.start_time : undefined,
+          end_time: typeof parsed.end_time === "string" ? parsed.end_time : undefined,
           require_dark:
             typeof parsed.require_dark === "boolean" ? parsed.require_dark : undefined,
         };
@@ -717,6 +806,17 @@ export function createMockHass(options: any = {}): any {
           trigger_type: metadata.trigger_type,
           action_entity_id: summary.action_entity_id,
           action_service: summary.action_service,
+          ambient_condition:
+            metadata.ambient_condition ||
+            (typeof metadata.require_dark === "boolean"
+              ? metadata.require_dark
+                ? "dark"
+                : "any"
+              : "any"),
+          must_be_occupied: Boolean(metadata.must_be_occupied),
+          time_condition_enabled: Boolean(metadata.time_condition_enabled),
+          start_time: metadata.start_time,
+          end_time: metadata.end_time,
           require_dark:
             typeof metadata.require_dark === "boolean"
               ? metadata.require_dark
@@ -800,7 +900,20 @@ export function createMockHass(options: any = {}): any {
     }
     if (request.type === "topomation/actions/rules/create") {
       const locationId = String(request.location_id || "").trim();
-      const triggerType = request.trigger_type === "vacant" ? "vacant" : "occupied";
+      const rawTriggerType = String(request.trigger_type || "")
+        .trim()
+        .toLowerCase();
+      const triggerType =
+        rawTriggerType === "occupied"
+          ? "on_occupied"
+          : rawTriggerType === "vacant"
+            ? "on_vacant"
+            : rawTriggerType === "on_occupied" ||
+                rawTriggerType === "on_vacant" ||
+                rawTriggerType === "on_dark" ||
+                rawTriggerType === "on_bright"
+              ? rawTriggerType
+              : "on_occupied";
       const actionEntityId = String(request.action_entity_id || "").trim();
       const actionService = String(request.action_service || "").trim() || "turn_off";
       const alias = String(request.name || "Topomation managed rule").trim() || "Topomation managed rule";
@@ -813,7 +926,10 @@ export function createMockHass(options: any = {}): any {
         const attrs = states[entityId]?.attributes || {};
         return attrs.device_class === "occupancy" && attrs.location_id === locationId;
       });
-      if (!occupancyEntityId) {
+      const mustBeOccupied = Boolean(request.must_be_occupied);
+      const needsOccupancyEntity =
+        triggerType === "on_occupied" || triggerType === "on_vacant" || mustBeOccupied;
+      if (needsOccupancyEntity && !occupancyEntityId) {
         throw new Error(`No occupancy binary sensor found for location '${locationId}'`);
       }
 
@@ -821,9 +937,68 @@ export function createMockHass(options: any = {}): any {
         .toString(36)
         .padStart(4, "0");
       const configId = `${TOPOMATION_AUTOMATION_ID_PREFIX}${slugify(locationId)}_${triggerType}_${Date.now()}_${random}`;
+      const ambientConditionRaw = String(request.ambient_condition || "")
+        .trim()
+        .toLowerCase();
       const requireDark = Boolean(request.require_dark);
+      const ambientCondition =
+        ambientConditionRaw === "any" || ambientConditionRaw === "dark" || ambientConditionRaw === "bright"
+          ? ambientConditionRaw
+          : requireDark
+            ? "dark"
+            : triggerType === "on_dark"
+              ? "dark"
+              : triggerType === "on_bright"
+                ? "bright"
+                : "any";
+      const timeConditionEnabled = Boolean(request.time_condition_enabled);
+      const startTime = String(request.start_time || "18:00").trim() || "18:00";
+      const endTime = String(request.end_time || "23:59").trim() || "23:59";
       const actionDomain = actionEntityId.includes(".") ? actionEntityId.split(".", 1)[0] : "homeassistant";
-      const triggerState = triggerType === "occupied" ? "on" : "off";
+      const triggers: Array<Record<string, any>> =
+        triggerType === "on_occupied" || triggerType === "on_vacant"
+          ? [
+              {
+                trigger: "state",
+                entity_id: occupancyEntityId,
+                to: triggerType === "on_occupied" ? "on" : "off",
+              },
+            ]
+          : [
+              {
+                trigger: "state",
+                entity_id: "sun.sun",
+                to: triggerType === "on_dark" ? "below_horizon" : "above_horizon",
+              },
+            ];
+      const conditions: Array<Record<string, any>> = [];
+      if (ambientCondition === "dark") {
+        conditions.push({
+          condition: "state",
+          entity_id: "sun.sun",
+          state: "below_horizon",
+        });
+      } else if (ambientCondition === "bright") {
+        conditions.push({
+          condition: "state",
+          entity_id: "sun.sun",
+          state: "above_horizon",
+        });
+      }
+      if (mustBeOccupied && occupancyEntityId) {
+        conditions.push({
+          condition: "state",
+          entity_id: occupancyEntityId,
+          state: "on",
+        });
+      }
+      if (timeConditionEnabled) {
+        conditions.push({
+          condition: "time",
+          after: startTime,
+          before: endTime,
+        });
+      }
 
       const configPayload = {
         id: configId,
@@ -831,27 +1006,18 @@ export function createMockHass(options: any = {}): any {
         description:
           "Managed by Topomation.\n" +
           `${TOPOMATION_METADATA_PREFIX} ${JSON.stringify({
-            version: 2,
+            version: 3,
             location_id: locationId,
             trigger_type: triggerType,
-            require_dark: requireDark,
+            ambient_condition: ambientCondition,
+            must_be_occupied: mustBeOccupied,
+            time_condition_enabled: timeConditionEnabled,
+            start_time: startTime,
+            end_time: endTime,
+            require_dark: ambientCondition === "dark",
           })}`,
-        triggers: [
-          {
-            trigger: "state",
-            entity_id: occupancyEntityId,
-            to: triggerState,
-          },
-        ],
-        conditions: requireDark
-          ? [
-              {
-                condition: "state",
-                entity_id: "sun.sun",
-                state: "below_horizon",
-              },
-            ]
-          : [],
+        triggers,
+        conditions,
         actions: [
           {
             action: `${actionDomain}.${actionService}`,
@@ -898,7 +1064,12 @@ export function createMockHass(options: any = {}): any {
           trigger_type: triggerType,
           action_entity_id: actionEntityId,
           action_service: actionService,
-          require_dark: requireDark,
+          ambient_condition: ambientCondition,
+          must_be_occupied: mustBeOccupied,
+          time_condition_enabled: timeConditionEnabled,
+          start_time: startTime,
+          end_time: endTime,
+          require_dark: ambientCondition === "dark",
           enabled: true,
         },
       };

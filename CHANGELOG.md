@@ -9,6 +9,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.24] - 2026-03-04
+
+### Changed
+
+- Refined inspector automation IA to domain-first tabs:
+  `Detection`, `Ambient`, `Lighting`, `Appliances`, `Media`, and `HVAC`.
+- Moved startup reapply control into each automation tab while persisting the
+  same shared automation-module key (`reapply_last_state_on_startup`).
+- Updated hidden panel route aliases to match domain tabs
+  (`/topomation-appliances`, `/topomation-media`, `/topomation-hvac`).
+
+### Fixed
+
+- Fixed Add Rule behavior for non-light automation tabs so a visible draft rule
+  row is created even when there is no preselected compatible entity.
+- Updated Playwright workflow coverage for the new startup-toggle location in
+  the Lighting tab.
+- Removed a stale mypy `type: ignore` in actions runtime metadata parsing and
+  replaced it with explicit typed casting.
+
+### Documentation
+
+- Added ADR-HA-052 for domain-tab automation IA and tab-local startup controls.
+- Updated architecture/contracts to reflect ambient split, lighting ownership,
+  domain-specific automation tabs, and shared startup reapply persistence.
+- Added active lighting UX documents:
+  `docs/dusk-dawn-lighting-ui-spec.md` and `docs/lighting-ui-contract.md`.
+
 ## [0.2.23] - 2026-03-03
 
 ### Fixed

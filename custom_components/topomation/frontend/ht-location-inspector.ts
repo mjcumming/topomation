@@ -1,12 +1,17 @@
 import { LitElement, html, css } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import { live } from "lit/directives/live.js";
 import { repeat } from "lit/directives/repeat.js";
 import type {
   AdjacencyEdge,
   AmbientConfig,
   AmbientLightReading,
   AutomationConfig,
+  DuskDawnAmbientCondition,
+  DuskDawnAlreadyOnBehavior,
+  DuskDawnConfig,
+  DuskDawnLightTarget,
+  DuskDawnScheduleBlock,
+  DuskDawnTriggerMode,
   HandoffTrace,
   HomeAssistant,
   Location,
@@ -34,9 +39,37 @@ import {
 type SourceSignalKey = OccupancySource["signal_key"];
 type CandidateItem = { key: string; entityId: string; signalKey?: SourceSignalKey };
 type WiabEntityListKey = "interior_entities" | "door_entities" | "exterior_door_entities";
-type ActionDeviceType = "light" | "dimmer" | "color_light" | "fan" | "stereo" | "tv";
-type InspectorTab = "detection" | "ambient" | "occupied_actions" | "vacant_actions";
-type InspectorTabRequest = InspectorTab | "occupancy" | "actions";
+type InspectorTab =
+  | "detection"
+  | "ambient"
+  | "lighting"
+  | "appliances"
+  | "media"
+  | "hvac";
+type InspectorTabRequest =
+  | InspectorTab
+  | "occupancy"
+  | "dusk_dawn";
+type DeviceAutomationTab = "appliances" | "media" | "hvac";
+type DuskDawnResolvedTarget = {
+  entity_id: string;
+  power: "on" | "off";
+  brightness_pct?: number;
+  color_hex?: string;
+  already_on_behavior?: DuskDawnAlreadyOnBehavior;
+};
+type DuskDawnResolvedBlock = {
+  id: string;
+  name: string;
+  start_time: string;
+  end_time: string;
+  time_condition_enabled: boolean;
+  trigger_mode: DuskDawnTriggerMode;
+  ambient_condition: DuskDawnAmbientCondition;
+  must_be_occupied: boolean;
+  already_on_behavior: DuskDawnAlreadyOnBehavior;
+  light_targets: DuskDawnResolvedTarget[];
+};
 type OccupancyLockDirective = {
   sourceId: string;
   mode: string;
@@ -107,13 +140,17 @@ export class HtLocationInspector extends LitElement {
   @state() private _entityAreaById: Record<string, string | null> = {};
   @state() private _entityRegistryMetaById: Record<string, EntityRegistryMeta> = {};
   @state() private _actionRules: TopomationActionRule[] = [];
+  @state() private _actionRulesDraft?: TopomationActionRule[];
+  @state() private _actionRulesDraftDirty = false;
+  @state() private _savingActionRules = false;
   @state() private _loadingActionRules = false;
   @state() private _actionRulesError?: string;
+  @state() private _actionRulesSaveError?: string;
   @state() private _liveOccupancyStateByLocation: Record<string, Record<string, any>> = {};
   @state() private _nowEpochMs = Date.now();
-  @state() private _actionToggleBusy: Record<string, boolean> = {};
-  @state() private _actionServiceSelections: Record<string, string> = {};
-  @state() private _actionDarkSelections: Record<string, boolean> = {};
+  @state() private _editingActionRuleNameId?: string;
+  @state() private _editingActionRuleNameValue = "";
+  private _actionRuleTabById: Record<string, DeviceAutomationTab> = {};
   @state() private _savingLinkedLocations = false;
   @state() private _stagedLinkedLocations?: string[];
   @state() private _stagedSyncLocations?: string[];
@@ -134,6 +171,12 @@ export class HtLocationInspector extends LitElement {
   @state() private _loadingAmbientReading = false;
   @state() private _ambientReadingError?: string;
   @state() private _savingAmbientConfig = false;
+  @state() private _savingDuskDawnConfig = false;
+  @state() private _duskDawnDraft?: DuskDawnConfig;
+  @state() private _duskDawnDraftDirty = false;
+  @state() private _duskDawnSaveError?: string;
+  @state() private _editingLightingRuleNameId?: string;
+  @state() private _editingLightingRuleNameValue = "";
   private _onTimeoutMemory: Record<string, number> = {};
   private _entityAreaLoadPromise?: Promise<void>;
   private _actionRulesLoadSeq = 0;
@@ -240,6 +283,361 @@ export class HtLocationInspector extends LitElement {
       .ambient-value {
         font-size: 13px;
         color: var(--primary-text-color);
+      }
+
+      .dusk-status-grid {
+        display: grid;
+        grid-template-columns: minmax(160px, 220px) 1fr;
+        gap: 8px 12px;
+      }
+
+      .dusk-status-key {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--text-secondary-color);
+        font-weight: 700;
+      }
+
+      .dusk-status-value {
+        font-size: 13px;
+        color: var(--primary-text-color);
+      }
+
+      .dusk-target-list {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        max-height: 220px;
+        overflow-y: auto;
+      }
+
+      .dusk-target-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+      }
+
+      .dusk-target-row code {
+        font-size: 11px;
+        color: var(--text-secondary-color);
+      }
+
+      .dusk-light-actions {
+        margin-top: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .dusk-light-action-row {
+        border: 1px solid var(--divider-color);
+        border-radius: 8px;
+        padding: 8px;
+        background: var(--card-background-color);
+      }
+
+      .dusk-light-action-grid {
+        display: grid;
+        grid-template-columns:
+          26px
+          minmax(170px, 260px)
+          minmax(240px, 360px)
+          minmax(70px, 100px)
+          minmax(140px, 200px);
+        gap: 8px;
+        align-items: center;
+      }
+
+      .dusk-light-action-grid.disabled {
+        opacity: 0.65;
+      }
+
+      .dusk-light-entity-meta {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        min-width: 0;
+      }
+
+      .dusk-light-entity-meta code {
+        font-size: 11px;
+        color: var(--text-secondary-color);
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .dusk-light-action-grid input[type="color"] {
+        width: 44px;
+        height: 30px;
+        padding: 0;
+        border: 1px solid var(--divider-color);
+        border-radius: 6px;
+        background: var(--card-background-color);
+      }
+
+      .dusk-light-action-grid select {
+        width: 100%;
+      }
+
+      .dusk-level-control {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+      }
+
+      .dusk-level-slider {
+        width: 100%;
+      }
+
+      .dusk-level-value {
+        min-width: 38px;
+        font-size: 12px;
+        color: var(--text-secondary-color);
+      }
+
+      .dusk-off-only-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        color: var(--text-secondary-color);
+        user-select: none;
+      }
+
+      .dusk-off-only-toggle input[type="checkbox"] {
+        width: 16px;
+        height: 16px;
+      }
+
+      .dusk-block-list {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        margin-top: 6px;
+      }
+
+      .dusk-block-row {
+        border: 1px solid var(--divider-color);
+        border-radius: var(--border-radius);
+        padding: 16px;
+        background: rgba(var(--rgb-primary-color), 0.03);
+      }
+
+      .dusk-block-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+
+      .dusk-block-title {
+        font-size: 16px;
+        font-weight: 600;
+        color: var(--primary-text-color);
+      }
+
+      .dusk-block-title-button {
+        border: none;
+        background: transparent;
+        color: var(--primary-text-color);
+        font-size: 16px;
+        font-weight: 600;
+        padding: 2px 4px;
+        cursor: pointer;
+        text-align: left;
+        border-radius: 6px;
+      }
+
+      .dusk-block-title-button:hover {
+        background: rgba(var(--rgb-primary-color), 0.08);
+      }
+
+      .dusk-block-title-input {
+        width: min(100%, 380px);
+        font-size: 16px;
+        font-weight: 600;
+      }
+
+      .dusk-rule-row {
+        display: grid;
+        grid-template-columns: minmax(180px, 230px) minmax(320px, 1fr);
+        gap: 12px;
+        align-items: center;
+        margin-top: 12px;
+      }
+
+      .dusk-section-heading {
+        margin-top: 18px;
+        margin-bottom: 8px;
+      }
+
+      .dusk-rule-section-title {
+        font-size: 14px;
+        font-weight: 500;
+        letter-spacing: 0;
+        text-transform: none;
+        color: var(--primary-text-color);
+      }
+
+      .dusk-block-footer {
+        display: flex;
+        justify-content: flex-end;
+        margin-top: 12px;
+      }
+
+      .dusk-delete-rule-button {
+        min-width: 112px;
+      }
+
+      .dusk-list-footer {
+        display: flex;
+        justify-content: flex-end;
+        margin-top: 12px;
+      }
+
+      .dusk-conditions {
+        margin-top: 14px;
+        margin-left: 8px;
+        padding-left: 12px;
+        border-left: 2px solid rgba(var(--rgb-primary-color), 0.18);
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+
+      .dusk-conditions .config-row {
+        grid-template-columns: minmax(220px, 320px) minmax(320px, 1fr);
+        padding: 8px 0;
+        border-bottom: none;
+      }
+
+      .dusk-conditions .config-value {
+        width: 100%;
+      }
+
+      .dusk-condition-derived {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 7px 10px;
+        border-radius: 8px;
+        border: 1px solid var(--divider-color);
+        background: var(--card-background-color);
+        color: var(--primary-text-color);
+        font-size: 13px;
+        font-weight: 500;
+      }
+
+      .dusk-condition-derived-note {
+        color: var(--text-secondary-color);
+        font-size: 12px;
+        font-weight: 400;
+      }
+
+      .dusk-wide-select {
+        min-width: 340px;
+        width: min(100%, 560px);
+        max-width: 560px;
+      }
+
+      .dusk-block-grid {
+        display: grid;
+        grid-template-columns: minmax(120px, 160px) minmax(180px, 1fr);
+        gap: 10px;
+        align-items: center;
+      }
+
+      .dusk-block-grid input[type="time"],
+      .dusk-block-grid input[type="number"],
+      .dusk-block-grid input[type="text"] {
+        width: 100%;
+      }
+
+      .dusk-time-fields {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(200px, 260px));
+        gap: 12px;
+        max-width: 560px;
+      }
+
+      .dusk-time-inline {
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      .dusk-time-inline-fields {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .dusk-time-field {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        min-width: 122px;
+      }
+
+      .dusk-time-input {
+        width: 100%;
+        min-height: 36px;
+      }
+
+      .dusk-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin: 10px 0 12px;
+      }
+
+      .dusk-save-button {
+        border: 1px solid var(--divider-color);
+        background: var(--card-background-color);
+        color: var(--primary-text-color);
+        border-radius: 8px;
+        padding: 8px 12px;
+        min-width: 114px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      .dusk-save-button.dirty {
+        border-color: var(--primary-color);
+        background: var(--primary-color);
+        color: var(--primary-background-color, #fff);
+      }
+
+      .dusk-save-button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+
+      .dusk-inline-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 8px;
+      }
+
+      .dusk-inline-actions-end {
+        justify-content: flex-end;
+        margin-top: 14px;
+      }
+
+      .section-title-actions .button,
+      .dusk-list-footer .button,
+      .dusk-inline-actions-end .button {
+        min-width: 108px;
+        white-space: nowrap;
       }
 
       .occupancy-events {
@@ -385,6 +783,25 @@ export class HtLocationInspector extends LitElement {
         color: var(--secondary-text-color);
         margin-bottom: var(--spacing-md);
         display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .section-title-row {
+        max-width: 900px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 6px;
+      }
+
+      .section-title-row .section-title {
+        margin-bottom: 0;
+      }
+
+      .section-title-actions {
+        display: inline-flex;
         align-items: center;
         gap: 8px;
       }
@@ -539,6 +956,11 @@ export class HtLocationInspector extends LitElement {
         border-radius: var(--border-radius);
         font-size: 14px;
         width: 84px;
+      }
+
+      .dusk-time-field .input {
+        width: 132px;
+        min-width: 132px;
       }
 
       .timeout-slider {
@@ -1481,6 +1903,62 @@ export class HtLocationInspector extends LitElement {
           grid-template-columns: 1fr;
         }
 
+        .dusk-block-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .dusk-rule-row {
+          grid-template-columns: 1fr;
+        }
+
+        .dusk-wide-select {
+          min-width: 0;
+          width: 100%;
+          max-width: 100%;
+        }
+
+        .dusk-conditions {
+          margin-left: 0;
+          padding-left: 10px;
+        }
+
+        .dusk-conditions .config-row {
+          grid-template-columns: 1fr;
+        }
+
+        .dusk-time-fields {
+          grid-template-columns: 1fr;
+          max-width: 100%;
+        }
+
+        .dusk-time-inline {
+          align-items: flex-start;
+          width: 100%;
+        }
+
+        .dusk-time-inline-fields {
+          width: 100%;
+        }
+
+        .dusk-light-action-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .dusk-toolbar {
+          flex-direction: column;
+          align-items: stretch;
+        }
+
+        .section-title-row {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+
+        .section-title-actions {
+          width: 100%;
+          justify-content: flex-end;
+        }
+
         .sources-heading {
           flex-direction: column;
           align-items: flex-start;
@@ -1504,7 +1982,7 @@ export class HtLocationInspector extends LitElement {
 
     return html`
       <div class="inspector-container">
-        ${this._renderHeader()} ${this._renderActionStartupConfig()} ${this._renderTabs()}
+        ${this._renderHeader()} ${this._renderTabs()}
         ${this._renderContent()}
       </div>
     `;
@@ -1548,14 +2026,22 @@ export class HtLocationInspector extends LitElement {
         this._showAdvancedAdjacency = false;
         this._showRecentOccupancyEvents = false;
         this._onTimeoutMemory = {};
-        this._actionToggleBusy = {};
-        this._actionServiceSelections = {};
+        this._actionRulesDraft = undefined;
+        this._actionRulesDraftDirty = false;
+        this._actionRulesSaveError = undefined;
+        this._editingActionRuleNameId = undefined;
+        this._editingActionRuleNameValue = "";
+        this._actionRuleTabById = {};
         this._ambientReading = undefined;
         this._ambientReadingError = undefined;
+        this._cancelLightingRuleNameEdit();
+        this._resetDuskDawnDraftFromLocation();
         if (this.hass) {
           void this._loadEntityAreaAssignments();
         }
         void this._loadAmbientReading();
+      } else if (!this._duskDawnDraftDirty) {
+        this._resetDuskDawnDraftFromLocation();
       }
       void this._loadActionRules();
     }
@@ -1592,6 +2078,9 @@ export class HtLocationInspector extends LitElement {
       const rules = await listTopomationActionRules(this.hass, locationId, this.entryId);
       if (loadSeq !== this._actionRulesLoadSeq) return false;
       this._actionRules = rules;
+      if (!this._actionRulesDraftDirty) {
+        this._resetActionRulesDraftFromLoaded();
+      }
       return true;
     } catch (err: any) {
       if (loadSeq !== this._actionRulesLoadSeq) return false;
@@ -1772,6 +2261,465 @@ export class HtLocationInspector extends LitElement {
     return normalized.includes("lux") || normalized.includes("illuminance") || normalized.includes("light_level");
   }
 
+  private _duskDawnDefaults(): DuskDawnConfig {
+    return {
+      version: 3,
+      blocks: [],
+    };
+  }
+
+  private _normalizeDuskDawnTriggerMode(value: unknown): DuskDawnTriggerMode {
+    if (value === "on_occupied") return "on_occupied";
+    if (value === "on_vacant") return "on_vacant";
+    if (value === "on_dark") return "on_dark";
+    if (value === "on_bright") return "on_bright";
+    // Legacy v3 values from earlier drafts.
+    if (value === "while_dark_on_occupancy") return "on_occupied";
+    if (value === "at_dark_if_occupied") return "on_dark";
+    return "on_dark";
+  }
+
+  private _defaultAmbientConditionForTrigger(triggerMode: DuskDawnTriggerMode): DuskDawnAmbientCondition {
+    if (triggerMode === "on_dark") return "any";
+    if (triggerMode === "on_bright") return "any";
+    return "any";
+  }
+
+  private _lockedAmbientConditionForTrigger(
+    triggerMode: DuskDawnTriggerMode
+  ): DuskDawnAmbientCondition | undefined {
+    if (triggerMode === "on_dark") return "dark";
+    if (triggerMode === "on_bright") return "bright";
+    return undefined;
+  }
+
+  private _isAmbientConditionLockedByTrigger(triggerMode: DuskDawnTriggerMode): boolean {
+    return this._lockedAmbientConditionForTrigger(triggerMode) !== undefined;
+  }
+
+  private _lockedMustBeOccupiedForTrigger(triggerMode: DuskDawnTriggerMode): boolean | undefined {
+    if (triggerMode === "on_occupied") return true;
+    if (triggerMode === "on_vacant") return false;
+    return undefined;
+  }
+
+  private _isMustBeOccupiedLockedByTrigger(triggerMode: DuskDawnTriggerMode): boolean {
+    return this._lockedMustBeOccupiedForTrigger(triggerMode) !== undefined;
+  }
+
+  private _applyTriggerDerivedBlockConstraints(block: DuskDawnScheduleBlock): DuskDawnScheduleBlock {
+    const triggerMode = this._normalizeDuskDawnTriggerMode(block.trigger_mode);
+    const next: DuskDawnScheduleBlock = { ...block };
+    const lockedAmbient = this._lockedAmbientConditionForTrigger(triggerMode);
+    if (lockedAmbient !== undefined) {
+      next.ambient_condition = lockedAmbient;
+    }
+    const lockedMustBeOccupied = this._lockedMustBeOccupiedForTrigger(triggerMode);
+    if (lockedMustBeOccupied !== undefined) {
+      next.must_be_occupied = lockedMustBeOccupied;
+    }
+    return next;
+  }
+
+  private _normalizeDuskDawnAmbientCondition(
+    value: unknown,
+    triggerMode: DuskDawnTriggerMode
+  ): DuskDawnAmbientCondition {
+    const lockedAmbient = this._lockedAmbientConditionForTrigger(triggerMode);
+    if (lockedAmbient !== undefined) return lockedAmbient;
+    if (value === "dark") return "dark";
+    if (value === "bright") return "bright";
+    if (value === "any") return "any";
+    return this._defaultAmbientConditionForTrigger(triggerMode);
+  }
+
+  private _normalizeDuskDawnMustBeOccupied(value: unknown, legacyTriggerMode: unknown): boolean {
+    const normalizedTrigger = this._normalizeDuskDawnTriggerMode(legacyTriggerMode);
+    const lockedMustBeOccupied = this._lockedMustBeOccupiedForTrigger(normalizedTrigger);
+    if (lockedMustBeOccupied !== undefined) return lockedMustBeOccupied;
+    if (typeof value === "boolean") return value;
+    return legacyTriggerMode === "at_dark_if_occupied";
+  }
+
+  private _normalizeDuskDawnAlreadyOnBehavior(value: unknown): DuskDawnAlreadyOnBehavior {
+    if (value === "set_target") return "set_target";
+    return "set_target";
+  }
+
+  private _timeToMinutes(raw: string): number | undefined {
+    const normalized = String(raw || "").trim();
+    const match = normalized.match(/^([01]\d|2[0-3]):([0-5]\d)$/);
+    if (!match) return undefined;
+    return Number(match[1]) * 60 + Number(match[2]);
+  }
+
+  private _normalizeDuskDawnStartTime(value: unknown, fallback: string): string {
+    const raw = typeof value === "string" ? value.trim() : "";
+    if (this._timeToMinutes(raw) !== undefined) return raw;
+    return fallback;
+  }
+
+  private _clampBrightnessPct(value: unknown, fallback = 30): number {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return Math.max(1, Math.min(100, fallback));
+    return Math.max(1, Math.min(100, Math.round(parsed)));
+  }
+
+  private _normalizeColorHex(value: unknown, fallback?: string): string | undefined {
+    const raw = typeof value === "string" ? value.trim() : "";
+    const normalized = raw.startsWith("#") ? raw : raw ? `#${raw}` : "";
+    if (/^#[0-9a-fA-F]{6}$/.test(normalized)) {
+      return normalized.toLowerCase();
+    }
+    return fallback;
+  }
+
+  private _normalizeDuskDawnBlockId(value: unknown, fallback: string): string {
+    const raw = typeof value === "string" ? value.trim() : "";
+    return raw || fallback;
+  }
+
+  private _normalizeLegacyDuskDawnRuleName(value: unknown, fallbackIndex: number): string {
+    const raw = typeof value === "string" ? value.trim() : "";
+    if (!raw) return `Rule ${fallbackIndex + 1}`;
+    const legacyBlockMatch = raw.match(/^block\s+(\d+)$/i);
+    if (legacyBlockMatch) {
+      return `Rule ${legacyBlockMatch[1]}`;
+    }
+    return raw;
+  }
+
+  private _sanitizeDuskDawnLightTargets(raw: unknown): DuskDawnLightTarget[] {
+    const normalized: DuskDawnLightTarget[] = [];
+    const seen = new Set<string>();
+    if (Array.isArray(raw)) {
+      for (const item of raw) {
+        if (!item || typeof item !== "object") continue;
+        const target = item as DuskDawnLightTarget;
+        const entityId = typeof target.entity_id === "string" ? target.entity_id.trim() : "";
+        if (!entityId || !entityId.startsWith("light.") || seen.has(entityId)) continue;
+        seen.add(entityId);
+        const power: "on" | "off" = target.power === "off" ? "off" : "on";
+        const normalizedTarget: DuskDawnLightTarget = {
+          entity_id: entityId,
+          power,
+        };
+        const rawAlreadyOn =
+          typeof target.already_on_behavior === "string" ? target.already_on_behavior.trim() : "";
+        if (rawAlreadyOn) {
+          normalizedTarget.already_on_behavior = this._normalizeDuskDawnAlreadyOnBehavior(rawAlreadyOn);
+        }
+        if (power === "on") {
+          if (this._isDimmableEntity(entityId) && target.brightness_pct !== null && target.brightness_pct !== undefined) {
+            normalizedTarget.brightness_pct = this._clampBrightnessPct(target.brightness_pct, 30);
+          }
+          const colorHex = this._normalizeColorHex(target.color_hex);
+          if (colorHex && this._isColorCapableEntity(entityId)) {
+            normalizedTarget.color_hex = colorHex;
+          }
+        }
+        normalized.push(normalizedTarget);
+      }
+    }
+
+    return normalized;
+  }
+
+  private _sanitizeDuskDawnBlock(raw: unknown, fallbackId: string, fallbackIndex: number): DuskDawnScheduleBlock {
+    const block = raw && typeof raw === "object" ? (raw as DuskDawnScheduleBlock) : {};
+    const rawTriggerMode = (block as Record<string, unknown>).trigger_mode;
+    const triggerMode = this._normalizeDuskDawnTriggerMode(rawTriggerMode);
+    const id = this._normalizeDuskDawnBlockId(block.id, fallbackId);
+    const name = this._normalizeLegacyDuskDawnRuleName(block.name, fallbackIndex);
+    const startTime = this._normalizeDuskDawnStartTime(block.start_time, "18:00");
+    const endTime = this._normalizeDuskDawnStartTime(block.end_time, "23:59");
+    const sanitized: DuskDawnScheduleBlock = {
+      id,
+      name,
+      start_time: startTime,
+      end_time: endTime,
+      time_condition_enabled: Boolean(block.time_condition_enabled),
+      trigger_mode: triggerMode,
+      ambient_condition: this._normalizeDuskDawnAmbientCondition(block.ambient_condition, triggerMode),
+      must_be_occupied: this._normalizeDuskDawnMustBeOccupied(block.must_be_occupied, rawTriggerMode),
+      already_on_behavior: this._normalizeDuskDawnAlreadyOnBehavior(block.already_on_behavior),
+      light_targets: this._sanitizeDuskDawnLightTargets(block.light_targets),
+    };
+    return this._applyTriggerDerivedBlockConstraints(sanitized);
+  }
+
+  private _sanitizeDuskDawnBlocks(raw: unknown): DuskDawnScheduleBlock[] {
+    if (!Array.isArray(raw)) return [];
+    const sanitized: DuskDawnScheduleBlock[] = [];
+    const seenIds = new Set<string>();
+    for (let index = 0; index < raw.length; index += 1) {
+      const item = raw[index];
+      if (!item || typeof item !== "object") continue;
+      const block = item as DuskDawnScheduleBlock;
+      const id = this._normalizeDuskDawnBlockId(block.id, `rule_${index + 1}`);
+      if (seenIds.has(id)) continue;
+      seenIds.add(id);
+      sanitized.push(this._sanitizeDuskDawnBlock(block, id, sanitized.length));
+    }
+    return sanitized;
+  }
+
+  private _getDuskDawnConfig(): DuskDawnConfig {
+    const defaults = this._duskDawnDefaults();
+    const raw = ((this.location?.modules?.dusk_dawn || {}) as DuskDawnConfig) || {};
+    if (Number(raw.version) !== 3) {
+      return defaults;
+    }
+    return {
+      version: 3,
+      blocks: this._sanitizeDuskDawnBlocks(raw.blocks),
+    };
+  }
+
+  private _resetDuskDawnDraftFromLocation(): void {
+    if (!this.location) {
+      this._duskDawnDraft = undefined;
+      this._duskDawnDraftDirty = false;
+      this._duskDawnSaveError = undefined;
+      this._cancelLightingRuleNameEdit();
+      return;
+    }
+    const source = this._getDuskDawnConfig();
+    this._duskDawnDraft = {
+      version: 3,
+      blocks: this._sanitizeDuskDawnBlocks(source.blocks),
+    };
+    this._duskDawnDraftDirty = false;
+    this._duskDawnSaveError = undefined;
+    this._cancelLightingRuleNameEdit();
+  }
+
+  private _workingDuskDawnConfig(): DuskDawnConfig {
+    return this._duskDawnDraft || this._getDuskDawnConfig();
+  }
+
+  private _setDuskDawnDraft(config: DuskDawnConfig): void {
+    this._duskDawnDraft = {
+      version: 3,
+      blocks: this._sanitizeDuskDawnBlocks(config.blocks),
+    };
+    this._duskDawnDraftDirty = true;
+    this._duskDawnSaveError = undefined;
+    this.requestUpdate();
+  }
+
+  private _duskDawnBlocks(config: DuskDawnConfig): DuskDawnResolvedBlock[] {
+    return this._sanitizeDuskDawnBlocks(config.blocks).map((block, index) => ({
+      id: String(block.id || `rule_${index + 1}`),
+      name: this._normalizeLegacyDuskDawnRuleName(block.name, index),
+      start_time: String(block.start_time || "18:00"),
+      end_time: String(block.end_time || "23:59"),
+      time_condition_enabled: Boolean(block.time_condition_enabled),
+      trigger_mode: this._normalizeDuskDawnTriggerMode(block.trigger_mode),
+      ambient_condition: this._normalizeDuskDawnAmbientCondition(block.ambient_condition, this._normalizeDuskDawnTriggerMode(block.trigger_mode)),
+      must_be_occupied: this._normalizeDuskDawnMustBeOccupied(block.must_be_occupied, block.trigger_mode),
+      already_on_behavior: this._normalizeDuskDawnAlreadyOnBehavior(block.already_on_behavior),
+      light_targets: this._sanitizeDuskDawnLightTargets(block.light_targets).map((target) => ({
+        entity_id: String(target.entity_id || ""),
+        power: target.power === "off" ? "off" : "on",
+        brightness_pct: typeof target.brightness_pct === "number" ? this._clampBrightnessPct(target.brightness_pct, 30) : undefined,
+        color_hex: this._normalizeColorHex(target.color_hex),
+        already_on_behavior:
+          typeof target.already_on_behavior === "string" && target.already_on_behavior.trim()
+            ? this._normalizeDuskDawnAlreadyOnBehavior(target.already_on_behavior)
+            : undefined,
+      })),
+    }));
+  }
+
+  private _duskDawnConfiguredActionCount(config: DuskDawnConfig): number {
+    return this._duskDawnBlocks(config).reduce((total, block) => total + block.light_targets.length, 0);
+  }
+
+  private _duskDawnValidationErrors(config: DuskDawnConfig): string[] {
+    const errors: string[] = [];
+    const blocks = this._duskDawnBlocks(config);
+    for (const block of blocks) {
+      if (!String(block.name || "").trim()) {
+        errors.push("Rule name is required.");
+      }
+      if (this._timeToMinutes(block.start_time) === undefined) {
+        errors.push(`Invalid start time for ${block.name}.`);
+      }
+      if (this._timeToMinutes(block.end_time) === undefined) {
+        errors.push(`Invalid end time for ${block.name}.`);
+      }
+      for (const target of block.light_targets) {
+        if (!target.entity_id || !target.entity_id.startsWith("light.")) {
+          errors.push(`Invalid light target in ${block.name}.`);
+          break;
+        }
+      }
+    }
+    return errors;
+  }
+
+  private async _updateDuskDawnConfig(config: DuskDawnConfig): Promise<boolean> {
+    if (!this.location) return false;
+    this._savingDuskDawnConfig = true;
+    try {
+      const sanitized: DuskDawnConfig = {
+        version: 3,
+        blocks: this._sanitizeDuskDawnBlocks(config.blocks),
+      };
+      await this.hass.callWS(
+        this._withEntryId({
+          type: "topomation/locations/set_module_config",
+          location_id: this.location.id,
+          module_id: "dusk_dawn",
+          config: sanitized,
+        })
+      );
+      this.location.modules.dusk_dawn = sanitized;
+      this.requestUpdate();
+      this._showToast("Lighting settings updated", "success");
+      return true;
+    } catch (err: any) {
+      console.error("Failed to update lighting settings", err);
+      this._showToast(err?.message || "Failed to update lighting settings", "error");
+      return false;
+    } finally {
+      this._savingDuskDawnConfig = false;
+    }
+  }
+
+  private _duskDawnTargetEntities(): string[] {
+    if (!this.location) return [];
+    const entities = new Set<string>();
+    for (const entityId of this.location.entity_ids || []) {
+      if (entityId.startsWith("light.")) entities.add(entityId);
+    }
+    if (this.location.ha_area_id) {
+      for (const entityId of this._entitiesForArea(this.location.ha_area_id)) {
+        if (entityId.startsWith("light.")) entities.add(entityId);
+      }
+    }
+    return [...entities].sort((left, right) => this._entityName(left).localeCompare(this._entityName(right)));
+  }
+
+  private _defaultDuskDawnLightTarget(entityId?: string): DuskDawnLightTarget {
+    const fallbackEntity = entityId || this._duskDawnTargetEntities()[0] || "";
+    const target: DuskDawnLightTarget = {
+      entity_id: fallbackEntity,
+      power: "on",
+      already_on_behavior: "set_target",
+    };
+    if (fallbackEntity && this._isDimmableEntity(fallbackEntity)) {
+      target.brightness_pct = 30;
+    }
+    if (fallbackEntity && this._isColorCapableEntity(fallbackEntity)) {
+      target.color_hex = "#ffffff";
+    }
+    return target;
+  }
+
+  private _updateDuskDawnBlockLightTargets(
+    config: DuskDawnConfig,
+    blockId: string,
+    nextTargets: DuskDawnLightTarget[]
+  ): void {
+    const blocks = this._sanitizeDuskDawnBlocks(config.blocks).map((block) =>
+      block.id === blockId
+        ? {
+            ...block,
+            light_targets: nextTargets,
+          }
+        : block
+    );
+    this._setDuskDawnDraft({
+      ...config,
+      blocks,
+    });
+  }
+
+  private _addDuskDawnBlock(config: DuskDawnConfig): void {
+    const blocks = this._sanitizeDuskDawnBlocks(config.blocks);
+    const ruleIndex = blocks.length + 1;
+    blocks.push({
+      id: `rule_${Date.now()}_${ruleIndex}`,
+      name: `Rule ${ruleIndex}`,
+      start_time: "18:00",
+      end_time: "23:59",
+      time_condition_enabled: false,
+      trigger_mode: "on_dark",
+      ambient_condition: "any",
+      must_be_occupied: false,
+      already_on_behavior: "set_target",
+      light_targets: [],
+    });
+    this._setDuskDawnDraft({
+      ...config,
+      blocks,
+    });
+  }
+
+  private _removeDuskDawnBlock(config: DuskDawnConfig, blockId: string): void {
+    const blocks = this._sanitizeDuskDawnBlocks(config.blocks).filter((block) => block.id !== blockId);
+    this._setDuskDawnDraft({
+      ...config,
+      blocks,
+    });
+  }
+
+  private _updateDuskDawnBlock(
+    config: DuskDawnConfig,
+    blockId: string,
+    patch: Partial<DuskDawnScheduleBlock>
+  ): void {
+    const blocks = this._sanitizeDuskDawnBlocks(config.blocks).map((block) => {
+      if (block.id !== blockId) return block;
+      const merged = { ...block, ...patch };
+      return this._applyTriggerDerivedBlockConstraints(merged);
+    });
+    this._setDuskDawnDraft({
+      ...config,
+      blocks,
+    });
+  }
+
+  private _startLightingRuleNameEdit(blockId: string, currentName: string): void {
+    this._editingLightingRuleNameId = blockId;
+    this._editingLightingRuleNameValue = currentName;
+    this.requestUpdate();
+  }
+
+  private _cancelLightingRuleNameEdit(): void {
+    this._editingLightingRuleNameId = undefined;
+    this._editingLightingRuleNameValue = "";
+    this.requestUpdate();
+  }
+
+  private _commitLightingRuleNameEdit(
+    config: DuskDawnConfig,
+    blockId: string,
+    fallbackLabel: string
+  ): void {
+    if (this._editingLightingRuleNameId !== blockId) return;
+    const nextName = this._editingLightingRuleNameValue.trim() || fallbackLabel;
+    this._updateDuskDawnBlock(config, blockId, { name: nextName });
+    this._cancelLightingRuleNameEdit();
+  }
+
+  private async _saveDuskDawnDraft(): Promise<void> {
+    const draft = this._workingDuskDawnConfig();
+    const ok = await this._updateDuskDawnConfig(draft);
+    if (ok) {
+      this._resetDuskDawnDraftFromLocation();
+    } else {
+      this._duskDawnSaveError = "Save failed. Review values and try again.";
+    }
+  }
+
+  private _resetDuskDawnDraft(): void {
+    this._resetDuskDawnDraftFromLocation();
+    this._showToast("Lighting changes reverted", "success");
+  }
+
   private async _loadEntityAreaAssignments(): Promise<void> {
     if (this._entityAreaLoadPromise || !this.hass?.callWS) return;
 
@@ -1930,22 +2878,40 @@ export class HtLocationInspector extends LitElement {
           Ambient
         </button>
         <button
-          class="tab ${this._activeTab === "occupied_actions" ? "active" : ""}"
+          class="tab ${this._activeTab === "lighting" ? "active" : ""}"
           @click=${() => {
-            this._activeTab = "occupied_actions";
+            this._activeTab = "lighting";
             this.requestUpdate();
           }}
         >
-          On Occupied
+          Lighting
         </button>
         <button
-          class="tab ${this._activeTab === "vacant_actions" ? "active" : ""}"
+          class="tab ${this._activeTab === "appliances" ? "active" : ""}"
           @click=${() => {
-            this._activeTab = "vacant_actions";
+            this._activeTab = "appliances";
             this.requestUpdate();
           }}
         >
-          On Vacant
+          Appliances
+        </button>
+        <button
+          class="tab ${this._activeTab === "media" ? "active" : ""}"
+          @click=${() => {
+            this._activeTab = "media";
+            this.requestUpdate();
+          }}
+        >
+          Media
+        </button>
+        <button
+          class="tab ${this._activeTab === "hvac" ? "active" : ""}"
+          @click=${() => {
+            this._activeTab = "hvac";
+            this.requestUpdate();
+          }}
+        >
+          HVAC
         </button>
       </div>
     `;
@@ -1956,10 +2922,18 @@ export class HtLocationInspector extends LitElement {
     return html`
       <div class="tab-content">
         ${activeTab === "detection"
-          ? this._renderOccupancyTab()
+          ? html`${this._renderOccupancyTab()} ${this._renderAdvancedTab()}`
           : activeTab === "ambient"
             ? this._renderAmbientTab()
-            : this._renderActionsTab(activeTab === "occupied_actions" ? "occupied" : "vacant")}
+          : activeTab === "lighting"
+              ? this._renderDuskDawnTab()
+            : activeTab === "appliances"
+              ? this._renderDeviceAutomationTab("appliances")
+            : activeTab === "media"
+              ? this._renderDeviceAutomationTab("media")
+            : activeTab === "hvac"
+              ? this._renderDeviceAutomationTab("hvac")
+            : ""}
       </div>
     `;
   }
@@ -1971,10 +2945,12 @@ export class HtLocationInspector extends LitElement {
   private _mapRequestedTab(requested?: InspectorTabRequest): InspectorTab | undefined {
     if (requested === "detection") return "detection";
     if (requested === "ambient") return "ambient";
-    if (requested === "occupied_actions") return "occupied_actions";
-    if (requested === "vacant_actions") return "vacant_actions";
+    if (requested === "lighting") return "lighting";
+    if (requested === "appliances") return "appliances";
+    if (requested === "media") return "media";
+    if (requested === "hvac") return "hvac";
+    if (requested === "dusk_dawn") return "lighting";
     if (requested === "occupancy") return "detection";
-    if (requested === "actions") return "occupied_actions";
     return undefined;
   }
 
@@ -2112,7 +3088,7 @@ export class HtLocationInspector extends LitElement {
               Floors do not use direct occupancy sources. Floor occupancy is derived from child areas, so
               add sensors to those areas and use this floor for aggregated automation.
             </div>
-          ${floorSourceCount > 0
+            ${floorSourceCount > 0
               ? html`
                   <div class="policy-warning">
                     This floor still has ${floorSourceCount} unsupported source${floorSourceCount === 1 ? "" : "s"} in
@@ -2121,7 +3097,6 @@ export class HtLocationInspector extends LitElement {
                 `
               : ""}
           </div>
-          ${this._renderManagedShadowAreaSection()}
         </div>
       `;
     }
@@ -2220,13 +3195,28 @@ export class HtLocationInspector extends LitElement {
             <div class="subsection-help">
               ${hasHaAreaLink
                 ? siblingAreaSourceScope
-                  ? "Need cross-area coverage? Add a source from a sibling area on this floor."
-                  : "Need cross-area coverage? Add a source from another area."
+                  ? "Need more coverage? Add a source from a sibling area or include all compatible entities from this area."
+                  : "Need more coverage? Add a source from another area or include all compatible entities from this area."
                 : "Add a source from any HA area (including unassigned entities)."}
             </div>
             ${this._renderExternalSourceComposer(config)}
           </div>
         </div>
+        ${this._renderSyncLocationsSection(config)}
+      </div>
+    `;
+  }
+
+  private _renderAmbientTab() {
+    if (!this.location) return "";
+    return html`<div>${this._renderAmbientSection()}</div>`;
+  }
+
+  private _renderAdvancedTab() {
+    if (!this.location) return "";
+    const config = (this.location.modules.occupancy || {}) as OccupancyConfig;
+    return html`
+      <div>
         ${this._renderSyncLocationsSection(config)}
         ${this._renderWiabSection(config)}
         ${this._renderAdjacencyAdvancedSection(config)}
@@ -2235,10 +3225,494 @@ export class HtLocationInspector extends LitElement {
     `;
   }
 
-  private _renderAmbientTab() {
+  private _renderDuskDawnTab() {
     if (!this.location) return "";
+    const config = this._workingDuskDawnConfig();
+    const validationErrors = this._duskDawnValidationErrors(config);
+    const busy = this._savingDuskDawnConfig;
+    const hasUnsaved = this._duskDawnDraftDirty;
+
     return html`
-      <div>${this._renderAmbientSection()}</div>
+      ${this._renderActionStartupConfig("lighting")}
+      <div class="card-section" data-testid="duskdawn-policy-section">
+        <div class="section-title-row">
+          <div class="section-title">
+            <ha-icon .icon=${"mdi:tune-variant"}></ha-icon>
+            Lighting rules
+          </div>
+          <div class="section-title-actions">
+            <button
+              class="dusk-save-button ${hasUnsaved ? "dirty" : ""}"
+              type="button"
+              data-testid="lighting-rules-save"
+              ?disabled=${busy || !hasUnsaved}
+              @click=${() => this._saveDuskDawnDraft()}
+            >
+              Save changes
+            </button>
+          </div>
+        </div>
+        ${this._duskDawnSaveError
+          ? html`<div class="policy-warning" data-testid="lighting-rules-save-error">${this._duskDawnSaveError}</div>`
+          : ""}
+        ${validationErrors.map(
+          (error) => html`<div class="policy-warning" data-testid="duskdawn-validation">${error}</div>`
+        )}
+        ${this._renderDuskDawnBlocks(config, busy)}
+      </div>
+    `;
+  }
+
+  private _renderDuskDawnBlockLightActions(
+    targetsRaw: DuskDawnLightTarget[] | undefined,
+    blockAlreadyOnBehavior: DuskDawnAlreadyOnBehavior,
+    busy: boolean,
+    onChange: (nextTargets: DuskDawnLightTarget[]) => void,
+    testIdPrefix: string
+  ) {
+    const candidates = this._duskDawnTargetEntities();
+    const targets = this._sanitizeDuskDawnLightTargets(targetsRaw);
+    const existingIds = targets.map((target) => String(target.entity_id || "").trim()).filter(Boolean);
+    const entityIds = [...candidates, ...existingIds.filter((entityId) => !candidates.includes(entityId))];
+    const targetByEntity = new Map(targets.map((target) => [String(target.entity_id || "").trim(), target]));
+
+    return html`
+      <div class="dusk-light-actions" data-testid=${`${testIdPrefix}-actions`}>
+        ${entityIds.length === 0 ? html`<div class="text-muted">No local lights found for this location.</div>` : ""}
+        ${entityIds.map((entityId, index) => {
+          const target = targetByEntity.get(entityId);
+          const included = Boolean(target);
+          const power: "on" | "off" = target?.power === "off" ? "off" : "on";
+          const dimmable = entityId ? this._isDimmableEntity(entityId) : false;
+          const colorCapable = entityId ? this._isColorCapableEntity(entityId) : false;
+          const brightness = this._clampBrightnessPct(target?.brightness_pct, 30);
+          const level = power === "off" ? 0 : brightness;
+          const colorHex = this._normalizeColorHex(target?.color_hex, "#ffffff") || "#ffffff";
+          const alreadyOnBehavior = this._normalizeDuskDawnAlreadyOnBehavior(
+            target?.already_on_behavior || blockAlreadyOnBehavior
+          );
+          const showOnlyIfOff = dimmable;
+          const onlyIfOff = alreadyOnBehavior === "leave_unchanged";
+
+          const upsertTarget = (patch: Partial<DuskDawnLightTarget>) => {
+            const nextTargets = targets.map((item) => ({ ...item }));
+            const targetIndex = nextTargets.findIndex((item) => item.entity_id === entityId);
+            const baseTarget =
+              targetIndex >= 0
+                ? { ...nextTargets[targetIndex] }
+                : this._defaultDuskDawnLightTarget(entityId);
+            const nextTarget: DuskDawnLightTarget = {
+              ...baseTarget,
+              ...patch,
+              entity_id: entityId,
+            };
+
+            if (nextTarget.power === "off") {
+              delete nextTarget.brightness_pct;
+              delete nextTarget.color_hex;
+            } else {
+              if (dimmable) {
+                nextTarget.brightness_pct = this._clampBrightnessPct(nextTarget.brightness_pct, 30);
+              } else {
+                delete nextTarget.brightness_pct;
+              }
+              if (colorCapable) {
+                nextTarget.color_hex = this._normalizeColorHex(nextTarget.color_hex, "#ffffff") || "#ffffff";
+              } else {
+                delete nextTarget.color_hex;
+              }
+            }
+
+            if (targetIndex >= 0) {
+              nextTargets[targetIndex] = nextTarget;
+            } else {
+              nextTargets.push(nextTarget);
+            }
+            onChange(nextTargets);
+          };
+
+          const removeTarget = () => {
+            onChange(targets.filter((item) => item.entity_id !== entityId));
+          };
+
+          return html`
+            <div class="dusk-light-action-row" data-testid=${`${testIdPrefix}-row-${index}`}>
+              <div class="dusk-light-action-grid ${included ? "" : "disabled"}">
+                <input
+                  type="checkbox"
+                  class="switch-input"
+                  .checked=${included}
+                  ?disabled=${busy}
+                  data-testid=${`${testIdPrefix}-include-${index}`}
+                  @change=${(ev: Event) => {
+                    const checked = (ev.target as HTMLInputElement).checked;
+                    if (checked) {
+                      upsertTarget({
+                        power: "on",
+                        already_on_behavior: showOnlyIfOff ? blockAlreadyOnBehavior : "set_target",
+                      });
+                    } else {
+                      removeTarget();
+                    }
+                  }}
+                />
+                <div class="dusk-light-entity-meta">
+                  <span>${this._entityName(entityId)}</span>
+                  <code>${entityId}</code>
+                </div>
+                ${dimmable
+                  ? html`
+                      <label class="dusk-level-control">
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          step="1"
+                          class="dusk-level-slider"
+                          .value=${String(level)}
+                          ?disabled=${busy || !included}
+                          data-testid=${`${testIdPrefix}-level-${index}`}
+                          @input=${(ev: Event) => {
+                            const raw = Number((ev.target as HTMLInputElement).value);
+                            const nextLevel = Number.isFinite(raw)
+                              ? Math.max(0, Math.min(100, Math.round(raw)))
+                              : 0;
+                            if (nextLevel <= 0) {
+                              upsertTarget({ power: "off" });
+                            } else {
+                              upsertTarget({ power: "on", brightness_pct: nextLevel });
+                            }
+                          }}
+                        />
+                        <span class="dusk-level-value">${level}%</span>
+                      </label>
+                    `
+                  : html`
+                      <select
+                        .value=${power}
+                        ?disabled=${busy || !included}
+                        data-testid=${`${testIdPrefix}-power-${index}`}
+                        @change=${(ev: Event) => {
+                          const nextPower: "on" | "off" =
+                            (ev.target as HTMLSelectElement).value === "off" ? "off" : "on";
+                          upsertTarget({ power: nextPower });
+                        }}
+                      >
+                        <option value="on">On</option>
+                        <option value="off">Off</option>
+                      </select>
+                    `}
+                ${included && power === "on" && colorCapable
+                  ? html`
+                      <input
+                        type="color"
+                        class="input"
+                        .value=${colorHex}
+                        ?disabled=${busy}
+                        data-testid=${`${testIdPrefix}-color-${index}`}
+                        @change=${(ev: Event) => {
+                          upsertTarget({
+                            color_hex:
+                              this._normalizeColorHex((ev.target as HTMLInputElement).value, "#ffffff") || "#ffffff",
+                          });
+                        }}
+                      />
+                    `
+                  : html`<span class="text-muted">-</span>`}
+                ${showOnlyIfOff
+                  ? html`
+                      <label class="dusk-off-only-toggle">
+                        <input
+                          type="checkbox"
+                          .checked=${onlyIfOff}
+                          ?disabled=${busy || !included}
+                          data-testid=${`${testIdPrefix}-already-on-${index}`}
+                          @change=${(ev: Event) => {
+                            upsertTarget({
+                              already_on_behavior: (ev.target as HTMLInputElement).checked
+                                ? "leave_unchanged"
+                                : "set_target",
+                            });
+                          }}
+                        />
+                        <span>Only if off</span>
+                      </label>
+                    `
+                  : html`<span class="text-muted">-</span>`}
+              </div>
+            </div>
+          `;
+        })}
+      </div>
+    `;
+  }
+
+  private _renderDuskDawnBlocks(config: DuskDawnConfig, busy: boolean) {
+    const blocks = this._duskDawnBlocks(config);
+    return html`
+      <div data-testid="duskdawn-schedule">
+        <div class="dusk-block-list">
+          ${blocks.length === 0
+            ? html`<div class="text-muted">No lighting rules configured yet.</div>`
+            : blocks.map((block, index) => {
+                const label = block.name?.trim() || `Rule ${index + 1}`;
+                const blockId = String(block.id || "");
+                const editingName = this._editingLightingRuleNameId === blockId;
+                const triggerMode = this._normalizeDuskDawnTriggerMode(block.trigger_mode);
+                const ambientLocked = this._isAmbientConditionLockedByTrigger(triggerMode);
+                const ambientCondition = this._normalizeDuskDawnAmbientCondition(
+                  block.ambient_condition,
+                  triggerMode
+                );
+                const mustBeOccupiedLocked = this._isMustBeOccupiedLockedByTrigger(triggerMode);
+                const mustBeOccupied = this._normalizeDuskDawnMustBeOccupied(
+                  block.must_be_occupied,
+                  triggerMode
+                );
+                const ambientConditionLabel =
+                  ambientCondition === "dark"
+                    ? "Must be dark"
+                    : ambientCondition === "bright"
+                      ? "Must be bright"
+                      : "Ignore ambient";
+                const occupancyConditionLabel = mustBeOccupied ? "Must be occupied" : "Must be vacant";
+                return html`
+                  <div class="dusk-block-row" data-testid=${`duskdawn-block-${blockId}`}>
+                    <div class="dusk-block-head">
+                      ${editingName
+                        ? html`
+                            <input
+                              type="text"
+                              class="input dusk-block-title-input"
+                              .value=${this._editingLightingRuleNameValue}
+                              ?disabled=${busy}
+                              data-testid=${`duskdawn-block-${blockId}-name`}
+                              @input=${(ev: Event) => {
+                                this._editingLightingRuleNameValue = (ev.target as HTMLInputElement).value;
+                                this.requestUpdate();
+                              }}
+                              @blur=${() => this._commitLightingRuleNameEdit(config, blockId, `Rule ${index + 1}`)}
+                              @keydown=${(ev: KeyboardEvent) => {
+                                if (ev.key === "Enter") {
+                                  this._commitLightingRuleNameEdit(config, blockId, `Rule ${index + 1}`);
+                                } else if (ev.key === "Escape") {
+                                  this._cancelLightingRuleNameEdit();
+                                }
+                              }}
+                            />
+                          `
+                        : html`
+                            <button
+                              type="button"
+                              class="dusk-block-title-button"
+                              ?disabled=${busy}
+                              data-testid=${`duskdawn-block-${blockId}-name`}
+                              @click=${() => this._startLightingRuleNameEdit(blockId, label)}
+                            >
+                              ${label}
+                            </button>
+                          `}
+                    </div>
+                    <div class="dusk-rule-row">
+                      <span class="config-label">Trigger</span>
+                      <select
+                        class="dusk-wide-select"
+                        .value=${triggerMode}
+                        ?disabled=${busy}
+                        data-testid=${`duskdawn-block-${blockId}-trigger`}
+                        @change=${(ev: Event) => {
+                          const nextEvent = String((ev.target as HTMLSelectElement).value) as DuskDawnTriggerMode;
+                          this._updateDuskDawnBlock(config, blockId, {
+                            trigger_mode: nextEvent,
+                          });
+                        }}
+                      >
+                        <option value="on_occupied">On occupied</option>
+                        <option value="on_vacant">On vacant</option>
+                        <option value="on_dark">On dark</option>
+                        <option value="on_bright">On bright</option>
+                      </select>
+                    </div>
+                    <div class="dusk-rule-section-title dusk-section-heading">Conditions</div>
+                    <div class="dusk-conditions">
+                    <div class="config-row">
+                      <div>
+                        <div class="config-label">Ambient must be</div>
+                        <div class="config-help">
+                          ${ambientLocked
+                            ? "Derived from trigger."
+                            : "Optional ambient filter at trigger time."}
+                        </div>
+                      </div>
+                      <div class="config-value">
+                        ${ambientLocked
+                          ? html`
+                              <div
+                                class="dusk-condition-derived"
+                                data-testid=${`duskdawn-block-${blockId}-ambient-locked`}
+                              >
+                                <span>${ambientConditionLabel}</span>
+                                <span class="dusk-condition-derived-note">Set by trigger</span>
+                              </div>
+                            `
+                          : html`
+                              <select
+                                class="dusk-wide-select"
+                                .value=${ambientCondition}
+                                ?disabled=${busy}
+                                data-testid=${`duskdawn-block-${blockId}-ambient-condition`}
+                                @change=${(ev: Event) =>
+                                  this._updateDuskDawnBlock(config, blockId, {
+                                    ambient_condition: this._normalizeDuskDawnAmbientCondition(
+                                      (ev.target as HTMLSelectElement).value,
+                                      triggerMode
+                                    ),
+                                  })}
+                              >
+                                <option value="any">Ignore ambient</option>
+                                <option value="dark">Must be dark</option>
+                                <option value="bright">Must be bright</option>
+                              </select>
+                            `}
+                      </div>
+                    </div>
+                    <div class="config-row">
+                      <div>
+                        <div class="config-label">Must be occupied</div>
+                        <div class="config-help">
+                          ${mustBeOccupiedLocked
+                            ? "Derived from trigger."
+                            : "Apply this rule only when the location is occupied at trigger time."}
+                        </div>
+                      </div>
+                      <div class="config-value">
+                        ${mustBeOccupiedLocked
+                          ? html`
+                              <div
+                                class="dusk-condition-derived"
+                                data-testid=${`duskdawn-block-${blockId}-must-be-occupied-locked`}
+                              >
+                                <span>${occupancyConditionLabel}</span>
+                                <span class="dusk-condition-derived-note">Set by trigger</span>
+                              </div>
+                            `
+                          : html`
+                              <input
+                                type="checkbox"
+                                class="switch-input"
+                                .checked=${Boolean(mustBeOccupied)}
+                                ?disabled=${busy}
+                                data-testid=${`duskdawn-block-${blockId}-must-be-occupied`}
+                                @change=${(ev: Event) =>
+                                  this._updateDuskDawnBlock(config, blockId, {
+                                    must_be_occupied: (ev.target as HTMLInputElement).checked,
+                                  })}
+                              />
+                            `}
+                      </div>
+                    </div>
+                    <div class="config-row">
+                      <div>
+                        <div class="config-label">Use time window</div>
+                        <div class="config-help">
+                          Limit this rule to a time range. Crossing midnight is supported.
+                        </div>
+                      </div>
+                      <div class="config-value">
+                        <div class="dusk-time-inline">
+                          <input
+                            type="checkbox"
+                            class="switch-input"
+                            .checked=${Boolean(block.time_condition_enabled)}
+                            ?disabled=${busy}
+                            data-testid=${`duskdawn-block-${blockId}-time-window`}
+                            @change=${(ev: Event) =>
+                              this._updateDuskDawnBlock(config, blockId, {
+                                time_condition_enabled: (ev.target as HTMLInputElement).checked,
+                              })}
+                          />
+                          ${block.time_condition_enabled
+                            ? html`
+                                <div class="dusk-time-inline-fields">
+                                  <label class="dusk-time-field">
+                                    <span class="config-label">Begin</span>
+                                    <input
+                                      type="time"
+                                      class="input dusk-time-input"
+                                      step="60"
+                                      .value=${String(block.start_time || "18:00")}
+                                      ?disabled=${busy}
+                                      data-testid=${`duskdawn-block-${blockId}-start-time`}
+                                      @change=${(ev: Event) =>
+                                        this._updateDuskDawnBlock(config, blockId, {
+                                          start_time: this._normalizeDuskDawnStartTime(
+                                            (ev.target as HTMLInputElement).value,
+                                            String(block.start_time || "18:00")
+                                          ),
+                                        })}
+                                    />
+                                  </label>
+                                  <label class="dusk-time-field">
+                                    <span class="config-label">End</span>
+                                    <input
+                                      type="time"
+                                      class="input dusk-time-input"
+                                      step="60"
+                                      .value=${String(block.end_time || "23:59")}
+                                      ?disabled=${busy}
+                                      data-testid=${`duskdawn-block-${blockId}-end-time`}
+                                      @change=${(ev: Event) =>
+                                        this._updateDuskDawnBlock(config, blockId, {
+                                          end_time: this._normalizeDuskDawnStartTime(
+                                            (ev.target as HTMLInputElement).value,
+                                            String(block.end_time || "23:59")
+                                          ),
+                                        })}
+                                    />
+                                  </label>
+                                </div>
+                              `
+                            : ""}
+                        </div>
+                      </div>
+                    </div>
+                    </div>
+                    <div class="dusk-rule-section-title dusk-section-heading">Actions</div>
+                    ${this._renderDuskDawnBlockLightActions(
+                      block.light_targets,
+                      block.already_on_behavior,
+                      busy,
+                      (nextTargets) =>
+                        this._updateDuskDawnBlockLightTargets(config, blockId, nextTargets),
+                      `duskdawn-block-${blockId}`
+                    )}
+                    <div class="dusk-block-footer">
+                      <button
+                        class="button button-primary dusk-delete-rule-button"
+                        type="button"
+                        data-testid=${`duskdawn-block-${blockId}-delete`}
+                        ?disabled=${busy}
+                        @click=${() => this._removeDuskDawnBlock(config, blockId)}
+                      >
+                        Delete rule
+                      </button>
+                    </div>
+                  </div>
+                `;
+              })}
+        </div>
+        <div class="dusk-list-footer">
+          <button
+            class="button button-primary"
+            type="button"
+            data-testid="duskdawn-block-add-bottom"
+            ?disabled=${busy}
+            @click=${() => this._addDuskDawnBlock(config)}
+          >
+            Add rule
+          </button>
+        </div>
+      </div>
     `;
   }
 
@@ -3660,7 +5134,13 @@ export class HtLocationInspector extends LitElement {
     const sourceIndexByKey = new Map<string, number>();
     sources.forEach((source, index) => sourceIndexByKey.set(this._sourceKeyFromSource(source), index));
 
-    const areaEntityIds = [...(this.location.entity_ids || [])].sort((a, b) =>
+    const areaEntityIdSet = new Set<string>(this.location.entity_ids || []);
+    if (this.location.ha_area_id) {
+      for (const entityId of this._entitiesForArea(this.location.ha_area_id)) {
+        areaEntityIdSet.add(entityId);
+      }
+    }
+    const areaEntityIds = [...areaEntityIdSet].sort((a, b) =>
       this._entityName(a).localeCompare(this._entityName(b))
     );
     const candidateAreaEntityIds = areaEntityIds.filter((entityId) => this._isCoreAreaSourceEntity(entityId));
@@ -4059,8 +5539,14 @@ export class HtLocationInspector extends LitElement {
   private _renderExternalSourceComposer(config: OccupancyConfig) {
     const areas = this._availableSourceAreas();
     const siblingAreaSourceScope = this._isSiblingAreaSourceScope();
+    const currentAreaId = this.location?.ha_area_id || "";
+    const hasHaAreaLink = Boolean(currentAreaId);
     const selectedAreaId = this._externalAreaId || "";
-    const entityOptions = selectedAreaId ? this._entitiesForArea(selectedAreaId) : [];
+    const entityOptions = !selectedAreaId
+      ? []
+      : selectedAreaId === "__this_area__"
+        ? (currentAreaId ? this._entitiesForArea(currentAreaId) : [])
+        : this._entitiesForArea(selectedAreaId);
     const entityId = this._externalEntityId || "";
     const existing = new Set(this._workingSources(config).map((source) => this._sourceKeyFromSource(source)));
     const defaultSignalKey = entityId ? this._defaultSignalKeyForEntity(entityId) : undefined;
@@ -4077,7 +5563,7 @@ export class HtLocationInspector extends LitElement {
     return html`
       <div class="external-composer">
         ${siblingAreaSourceScope
-          ? html`<div class="runtime-note">Only sibling areas on this floor are available.</div>`
+          ? html`<div class="runtime-note">Sibling areas on this floor are available, plus all compatible entities in this area.</div>`
           : ""}
         ${siblingAreaSourceScope && areas.length === 0
           ? html`
@@ -4100,6 +5586,7 @@ export class HtLocationInspector extends LitElement {
             }}
           >
             <option value="">${areaPlaceholder}</option>
+            ${hasHaAreaLink ? html`<option value="__this_area__">This area (all compatible)</option>` : ""}
             ${siblingAreaSourceScope ? "" : html`<option value="__all__">Any area / unassigned</option>`}
             ${areas.map((area) => html`<option value=${area.area_id}>${area.name}</option>`)}
           </select>
@@ -4733,152 +6220,772 @@ export class HtLocationInspector extends LitElement {
     `;
   }
 
-  private _renderActionsTab(triggerType: "occupied" | "vacant") {
-    if (!this.location) return "";
+  private _normalizeActionTriggerType(value: unknown): TopomationActionRule["trigger_type"] {
+    const normalized = String(value || "")
+      .trim()
+      .toLowerCase();
+    if (normalized === "on_occupied") return "on_occupied";
+    if (normalized === "on_vacant") return "on_vacant";
+    if (normalized === "occupied") return "on_occupied";
+    if (normalized === "vacant") return "on_vacant";
+    return "on_occupied";
+  }
 
-    const actionEntities = this._actionTargetEntities(triggerType);
-    const sectionTitle = triggerType === "occupied" ? "When Occupied" : "When Vacant";
-    const infoText =
-      triggerType === "occupied"
-        ? "Rules in this tab run when occupancy changes to occupied."
-        : "Rules in this tab run when occupancy changes to vacant.";
+  private _defaultActionAmbientConditionForTrigger(
+    triggerType: TopomationActionRule["trigger_type"]
+  ): "any" | "dark" | "bright" {
+    void triggerType;
+    return "any";
+  }
+
+  private _normalizeActionAmbientCondition(
+    value: unknown,
+    triggerType: TopomationActionRule["trigger_type"]
+  ): "any" | "dark" | "bright" {
+    const normalized = String(value || "")
+      .trim()
+      .toLowerCase();
+    if (normalized === "any" || normalized === "dark" || normalized === "bright") {
+      return normalized;
+    }
+    return this._defaultActionAmbientConditionForTrigger(triggerType);
+  }
+
+  private _normalizeActionTime(value: unknown, fallback: string): string {
+    const raw = String(value || "").trim();
+    if (!raw) return fallback;
+    const parts = raw.split(":");
+    if (parts.length < 2) return fallback;
+    const hour = Number(parts[0]);
+    const minute = Number(parts[1]);
+    if (!Number.isFinite(hour) || !Number.isFinite(minute)) return fallback;
+    if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return fallback;
+    return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+  }
+
+  private _defaultActionServiceForTrigger(
+    entityId: string,
+    triggerType: TopomationActionRule["trigger_type"]
+  ): string {
+    const domain = String(entityId || "").split(".", 1)[0];
+    if (domain === "media_player") {
+      if (triggerType === "on_vacant") {
+        return "media_stop";
+      }
+      return "media_play";
+    }
+    if (domain === "switch") {
+      return triggerType === "on_vacant" ? "turn_off" : "turn_on";
+    }
+    if (triggerType === "on_vacant") {
+      return "turn_off";
+    }
+    return "turn_on";
+  }
+
+  private _actionServiceOptionsForRule(
+    entityId: string,
+    triggerType: TopomationActionRule["trigger_type"]
+  ): Array<{ value: string; label: string }> {
+    const normalizedEntityId = String(entityId || "").trim();
+    if (!normalizedEntityId) return [];
+    const domain = normalizedEntityId.split(".", 1)[0];
+    if (domain === "media_player") {
+      return [
+        { value: "turn_on", label: "Power on" },
+        { value: "turn_off", label: "Power off" },
+        { value: "media_play", label: "Play" },
+        { value: "media_play_pause", label: "Play/Pause" },
+        { value: "media_pause", label: "Pause" },
+        { value: "media_stop", label: "Stop" },
+        { value: "volume_up", label: "Volume up" },
+        { value: "volume_down", label: "Volume down" },
+      ];
+    }
+    if (domain === "fan") {
+      return [
+        { value: "turn_on", label: "Turn on" },
+        { value: "turn_off", label: "Turn off" },
+      ];
+    }
+    if (domain === "switch") {
+      return [
+        { value: "turn_on", label: "Turn on" },
+        { value: "turn_off", label: "Turn off" },
+        { value: "toggle", label: "Toggle" },
+      ];
+    }
+    const defaultService = this._defaultActionServiceForTrigger(normalizedEntityId, triggerType);
+    return [
+      { value: "turn_on", label: "Turn on" },
+      { value: "turn_off", label: "Turn off" },
+    ].sort((a, b) => (a.value === defaultService ? -1 : b.value === defaultService ? 1 : 0));
+  }
+
+  private _actionDomainsForTab(tab: DeviceAutomationTab): string[] {
+    if (tab === "appliances") return ["switch"];
+    if (tab === "media") return ["media_player"];
+    return ["fan"];
+  }
+
+  private _tabForActionEntity(entityId: string): DeviceAutomationTab | undefined {
+    const domain = String(entityId || "").split(".", 1)[0];
+    if (domain === "switch") return "appliances";
+    if (domain === "media_player") return "media";
+    if (domain === "fan") return "hvac";
+    return undefined;
+  }
+
+  private _isActionRuleEntity(entityId: string, tab?: DeviceAutomationTab): boolean {
+    const stateObj = this.hass?.states?.[entityId];
+    if (!stateObj) return false;
+    const domain = entityId.split(".", 1)[0];
+    if (!tab) {
+      return domain === "switch" || domain === "media_player" || domain === "fan";
+    }
+    return this._actionDomainsForTab(tab).includes(domain);
+  }
+
+  private _actionRuleTargetEntities(tab?: DeviceAutomationTab): string[] {
+    if (!this.location) return [];
+    const ids = new Set<string>();
+    for (const entityId of this.location.entity_ids || []) {
+      if (this._isActionRuleEntity(entityId, tab)) {
+        ids.add(entityId);
+      }
+    }
+    if (this.location.ha_area_id) {
+      for (const entityId of this._entitiesForArea(this.location.ha_area_id)) {
+        if (this._isActionRuleEntity(entityId, tab)) {
+          ids.add(entityId);
+        }
+      }
+    }
+    return [...ids].sort((a, b) => this._entityName(a).localeCompare(this._entityName(b)));
+  }
+
+  private _normalizeActionRule(
+    rule: Partial<TopomationActionRule>,
+    index: number
+  ): TopomationActionRule {
+    const triggerType = this._normalizeActionTriggerType(rule.trigger_type);
+    const candidates = this._actionRuleTargetEntities();
+    const fallbackEntity = candidates[0] || "";
+    const actionEntityId =
+      typeof rule.action_entity_id === "string" && rule.action_entity_id.trim().length > 0
+        ? rule.action_entity_id
+        : fallbackEntity;
+    const actionService =
+      typeof rule.action_service === "string" && rule.action_service.trim().length > 0
+        ? rule.action_service
+        : this._defaultActionServiceForTrigger(actionEntityId, triggerType);
+    const id =
+      typeof rule.id === "string" && rule.id.trim().length > 0
+        ? rule.id
+        : `action_rule_${index + 1}`;
+    return {
+      id,
+      entity_id:
+        typeof rule.entity_id === "string" && rule.entity_id.trim().length > 0
+          ? rule.entity_id
+          : `automation.${id}`,
+      name:
+        typeof rule.name === "string" && rule.name.trim().length > 0
+          ? rule.name.trim()
+          : `Rule ${index + 1}`,
+      trigger_type: triggerType,
+      action_entity_id: actionEntityId || undefined,
+      action_service: actionService || undefined,
+      ambient_condition: this._normalizeActionAmbientCondition(
+        rule.ambient_condition,
+        triggerType
+      ),
+      must_be_occupied: Boolean(rule.must_be_occupied),
+      time_condition_enabled: Boolean(rule.time_condition_enabled),
+      start_time: this._normalizeActionTime(rule.start_time, "18:00"),
+      end_time: this._normalizeActionTime(rule.end_time, "23:59"),
+      enabled: rule.enabled !== false,
+      require_dark: this._normalizeActionAmbientCondition(rule.ambient_condition, triggerType) === "dark",
+    };
+  }
+
+  private _workingActionRules(): TopomationActionRule[] {
+    const source = this._actionRulesDraft ?? this._actionRules;
+    return source.map((rule, index) => this._normalizeActionRule(rule, index));
+  }
+
+  private _rulesForDeviceAutomationTab(tab: DeviceAutomationTab): TopomationActionRule[] {
+    const rules = this._workingActionRules();
+    return rules.filter((rule) => {
+      const actionEntityId = String(rule.action_entity_id || "").trim();
+      if (!actionEntityId) {
+        return this._actionRuleTabById[String(rule.id || "")] === tab;
+      }
+      const entityTab = this._tabForActionEntity(actionEntityId);
+      return entityTab === tab;
+    });
+  }
+
+  private _resetActionRulesDraftFromLoaded(): void {
+    const normalizedRules = this._actionRules.map((rule, index) =>
+      this._normalizeActionRule(rule, index)
+    );
+    this._actionRulesDraft = normalizedRules;
+    this._actionRulesDraftDirty = false;
+    this._actionRulesSaveError = undefined;
+    this._editingActionRuleNameId = undefined;
+    this._editingActionRuleNameValue = "";
+    this._actionRuleTabById = {};
+    for (const rule of normalizedRules) {
+      const ruleId = String(rule.id || "");
+      const tab = this._tabForActionEntity(String(rule.action_entity_id || "").trim());
+      if (ruleId && tab) {
+        this._actionRuleTabById[ruleId] = tab;
+      }
+    }
+  }
+
+  private _setActionRulesDraft(rules: TopomationActionRule[]): void {
+    const normalizedRules = rules.map((rule, index) => this._normalizeActionRule(rule, index));
+    const nextRuleIds = new Set(normalizedRules.map((rule) => String(rule.id || "")));
+    const nextTabById: Record<string, DeviceAutomationTab> = {};
+    for (const [ruleId, tab] of Object.entries(this._actionRuleTabById)) {
+      if (nextRuleIds.has(ruleId)) {
+        nextTabById[ruleId] = tab;
+      }
+    }
+    for (const rule of normalizedRules) {
+      const ruleId = String(rule.id || "");
+      const entityTab = this._tabForActionEntity(String(rule.action_entity_id || "").trim());
+      if (ruleId && entityTab) {
+        nextTabById[ruleId] = entityTab;
+      }
+    }
+    this._actionRuleTabById = nextTabById;
+    this._actionRulesDraft = normalizedRules;
+    this._actionRulesDraftDirty = true;
+    this._actionRulesSaveError = undefined;
+    this.requestUpdate();
+  }
+
+  private _addActionRule(tab: DeviceAutomationTab): void {
+    const rules = this._workingActionRules();
+    const candidates = this._actionRuleTargetEntities(tab);
+    const actionEntityId = candidates[0] || "";
+    const nextRule = this._normalizeActionRule(
+      {
+        id: `action_rule_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+        entity_id: "",
+        name: `Rule ${rules.length + 1}`,
+        trigger_type: "on_occupied",
+        action_entity_id: actionEntityId,
+        action_service: this._defaultActionServiceForTrigger(actionEntityId, "on_occupied"),
+        ambient_condition: "any",
+        must_be_occupied: false,
+        time_condition_enabled: false,
+        start_time: "18:00",
+        end_time: "23:59",
+        enabled: true,
+      },
+      rules.length
+    );
+    this._actionRuleTabById[String(nextRule.id || "")] = tab;
+    this._setActionRulesDraft([...rules, nextRule]);
+  }
+
+  private _updateActionRule(
+    ruleId: string,
+    patch: Partial<TopomationActionRule>
+  ): void {
+    const rules = this._workingActionRules().map((rule, index) => {
+      if (rule.id !== ruleId) return this._normalizeActionRule(rule, index);
+      const merged = {
+        ...rule,
+        ...patch,
+      };
+      if (Object.prototype.hasOwnProperty.call(patch, "trigger_type")) {
+        const triggerType = this._normalizeActionTriggerType(patch.trigger_type);
+        merged.trigger_type = triggerType;
+        if (!Object.prototype.hasOwnProperty.call(patch, "ambient_condition")) {
+          merged.ambient_condition = this._defaultActionAmbientConditionForTrigger(triggerType);
+        }
+        if (
+          !Object.prototype.hasOwnProperty.call(patch, "action_service") &&
+          typeof merged.action_entity_id === "string" &&
+          merged.action_entity_id
+        ) {
+          merged.action_service = this._defaultActionServiceForTrigger(
+            merged.action_entity_id,
+            triggerType
+          );
+        }
+      }
+      if (Object.prototype.hasOwnProperty.call(patch, "action_entity_id")) {
+        const entityId = String(patch.action_entity_id || "").trim();
+        merged.action_entity_id = entityId || undefined;
+        if (entityId && !Object.prototype.hasOwnProperty.call(patch, "action_service")) {
+          merged.action_service = this._defaultActionServiceForTrigger(
+            entityId,
+            this._normalizeActionTriggerType(merged.trigger_type)
+          );
+        }
+      }
+      return this._normalizeActionRule(merged, index);
+    });
+    this._setActionRulesDraft(rules);
+  }
+
+  private _removeActionRule(ruleId: string): void {
+    const rules = this._workingActionRules().filter((rule) => rule.id !== ruleId);
+    this._setActionRulesDraft(rules);
+  }
+
+  private _startActionRuleNameEdit(ruleId: string, currentName: string): void {
+    this._editingActionRuleNameId = ruleId;
+    this._editingActionRuleNameValue = currentName;
+    this.requestUpdate();
+  }
+
+  private _cancelActionRuleNameEdit(): void {
+    this._editingActionRuleNameId = undefined;
+    this._editingActionRuleNameValue = "";
+  }
+
+  private _commitActionRuleNameEdit(ruleId: string, fallback: string): void {
+    const value = this._editingActionRuleNameValue.trim() || fallback;
+    this._cancelActionRuleNameEdit();
+    this._updateActionRule(ruleId, { name: value });
+  }
+
+  private _actionRuleValidationErrors(rules: TopomationActionRule[]): string[] {
+    const errors: string[] = [];
+    const hhmmPattern = /^([01]\d|2[0-3]):([0-5]\d)$/;
+    rules.forEach((rule, index) => {
+      const label = rule.name?.trim() || `Rule ${index + 1}`;
+      if (!rule.action_entity_id) {
+        errors.push(`${label}: select a target device.`);
+      }
+      if (!rule.action_service) {
+        errors.push(`${label}: select an action service.`);
+      }
+      if (rule.time_condition_enabled) {
+        if (!hhmmPattern.test(String(rule.start_time || ""))) {
+          errors.push(`${label}: begin time must be HH:MM.`);
+        }
+        if (!hhmmPattern.test(String(rule.end_time || ""))) {
+          errors.push(`${label}: end time must be HH:MM.`);
+        }
+      }
+    });
+    return errors;
+  }
+
+  private async _saveActionRulesDraft(): Promise<void> {
+    if (!this.location || !this.hass || this._savingActionRules) return;
+    const rules = this._workingActionRules();
+    const validationErrors = this._actionRuleValidationErrors(rules);
+    if (validationErrors.length > 0) {
+      this._actionRulesSaveError = validationErrors[0];
+      this.requestUpdate();
+      return;
+    }
+
+    this._savingActionRules = true;
+    this._actionRulesSaveError = undefined;
+    this.requestUpdate();
+
+    try {
+      const existingRules = [...this._actionRules];
+      if (existingRules.length > 0) {
+        await Promise.all(
+          existingRules.map((rule) =>
+            deleteTopomationActionRule(this.hass, rule, this.entryId)
+          )
+        );
+      }
+
+      const created: TopomationActionRule[] = [];
+      for (const [index, rule] of rules.entries()) {
+        if (!rule.action_entity_id || !rule.action_service) continue;
+        const normalizedRule = this._normalizeActionRule(rule, index);
+        const createdRule = await createTopomationActionRule(
+          this.hass,
+          {
+            location: this.location,
+            name: normalizedRule.name || `Rule ${index + 1}`,
+            trigger_type: normalizedRule.trigger_type,
+            action_entity_id: normalizedRule.action_entity_id,
+            action_service: normalizedRule.action_service,
+            ambient_condition: normalizedRule.ambient_condition,
+            must_be_occupied: Boolean(normalizedRule.must_be_occupied),
+            time_condition_enabled: Boolean(normalizedRule.time_condition_enabled),
+            start_time: normalizedRule.start_time,
+            end_time: normalizedRule.end_time,
+            require_dark: normalizedRule.ambient_condition === "dark",
+          },
+          this.entryId
+        );
+        created.push(createdRule);
+      }
+
+      this._actionRules = created;
+      this._resetActionRulesDraftFromLoaded();
+      this._showToast("Action rules saved", "success");
+    } catch (err: any) {
+      this._actionRulesSaveError = err?.message || "Failed to save action rules";
+      this._showToast(this._actionRulesSaveError, "error");
+    } finally {
+      this._savingActionRules = false;
+      this.requestUpdate();
+    }
+  }
+
+  private _resetActionRulesDraft(): void {
+    this._resetActionRulesDraftFromLoaded();
+    this._showToast("Action rule changes reverted", "success");
+  }
+
+  private _deviceAutomationTabMeta(
+    tab: DeviceAutomationTab
+  ): { icon: string; label: string; emptyMessage: string } {
+    if (tab === "appliances") {
+      return {
+        icon: "mdi:power-plug",
+        label: "Appliance Rules",
+        emptyMessage: "No appliance rules configured yet.",
+      };
+    }
+    if (tab === "media") {
+      return {
+        icon: "mdi:speaker-wireless",
+        label: "Media Rules",
+        emptyMessage: "No media rules configured yet.",
+      };
+    }
+    return {
+      icon: "mdi:fan",
+      label: "HVAC Rules",
+      emptyMessage: "No HVAC rules configured yet.",
+    };
+  }
+
+  private _renderDeviceAutomationTab(tab: DeviceAutomationTab) {
+    if (!this.location) return "";
+    const busy = this._savingActionRules || this._loadingActionRules;
+    const meta = this._deviceAutomationTabMeta(tab);
+    const rules = this._rulesForDeviceAutomationTab(tab);
+    const validationErrors = this._actionRuleValidationErrors(rules);
+    const hasUnsaved = this._actionRulesDraftDirty;
+    const entityOptions = this._actionRuleTargetEntities(tab);
 
     return html`
-      <div>
-        <div class="card-section">
+      ${this._renderActionStartupConfig(tab)}
+      <div class="card-section" data-testid="actions-rules-section">
+        <div class="section-title-row">
           <div class="section-title">
-            <ha-icon .icon=${"mdi:flash"}></ha-icon>
-            ${sectionTitle} device actions
+            <ha-icon .icon=${meta.icon}></ha-icon>
+            ${meta.label}
           </div>
-
-          <div class="subsection-help">
-            Select the devices to manage in this tab. Media players intentionally support only
-            Stop and Turn off here for common occupancy behavior.
-            Use custom Home Assistant automations for advanced play/turn-on scenarios.
-          </div>
-
-          <div class="action-device-list">
-            ${this._loadingActionRules
-              ? html`
-                  <div class="empty-state">
-                    <div class="text-muted">Loading device actions...</div>
-                  </div>
-                `
-              : this._actionRulesError
-                ? html`
-                    <div class="empty-state">
-                      <div class="text-muted">${this._actionRulesError}</div>
-                    </div>
-                  `
-                : actionEntities.length === 0
-              ? html`
-                  <div class="empty-state">
-                    <div class="text-muted">
-                      No common controllable devices found for this location yet.
-                    </div>
-                  </div>
-                `
-              : repeat(
-                  actionEntities,
-                  (entityId) => entityId,
-                  (entityId) => {
-                    const enabled = this._isManagedActionEnabled(entityId, triggerType);
-                    const busyKey = this._actionToggleKey(entityId, triggerType);
-                    const busy = Boolean(this._actionToggleBusy[busyKey]);
-                    const service = this._selectedManagedActionService(entityId, triggerType);
-                    const requireDark = this._selectedManagedActionRequireDark(entityId, triggerType);
-                    const supportsDarkCondition = this._supportsDarkCondition(triggerType);
-                    const serviceOptions = this._actionServiceOptions(entityId, triggerType);
-                    return html`
-                    <div class="source-item action-device-row ${enabled ? "enabled" : ""}">
-                      <div class="action-include-control">
-                        <input
-                          type="checkbox"
-                          class="action-include-input"
-                          .checked=${enabled}
-                          ?disabled=${busy || this._loadingActionRules}
-                          aria-label=${`Include ${this._entityName(entityId)}`}
-                          @change=${(ev: Event) =>
-                            this._handleManagedActionToggle(
-                              entityId,
-                              triggerType,
-                              (ev.target as HTMLInputElement).checked
-                            )}
-                        />
-                      </div>
-                      <div class="source-icon">
-                        <ha-icon .icon=${this._deviceIcon(entityId)}></ha-icon>
-                      </div>
-                      <div class="source-info">
-                        <div class="action-name-row">
-                          <div class="source-name">${this._entityName(entityId)}</div>
-                          <div class="action-entity-inline">${entityId}</div>
-                        </div>
-                        <div class="source-details">
-                          State: ${this._entityState(entityId)}
-                        </div>
-                      </div>
-                      <div class="action-controls">
-                        <select
-                          class="action-service-select"
-                          .value=${live(service)}
-                          ?disabled=${busy || this._loadingActionRules}
-                          @change=${(ev: Event) =>
-                            this._handleManagedActionServiceChange(
-                              entityId,
-                              triggerType,
-                              (ev.target as HTMLSelectElement).value
-                            )}
-                        >
-                          ${serviceOptions.map(
-                            (option) =>
-                              html`<option value=${option.value}>${option.label}</option>`
-                          )}
-                        </select>
-                        ${supportsDarkCondition
-                          ? html`
-                              <label class="action-dark-toggle">
-                                <input
-                                  type="checkbox"
-                                  class="action-dark-input"
-                                  .checked=${requireDark}
-                                  ?disabled=${busy || this._loadingActionRules}
-                                  @change=${(ev: Event) =>
-                                    this._handleManagedActionDarkChange(
-                                      entityId,
-                                      triggerType,
-                                      (ev.target as HTMLInputElement).checked
-                                    )}
-                                />
-                                Only when dark
-                              </label>
-                            `
-                          : ""}
-                        ${busy ? html`<span class="text-muted">Saving...</span>` : ""}
-                      </div>
-                    </div>
-                  `;
-                  }
-                )}
+          <div class="section-title-actions">
+            <button
+              class="dusk-save-button ${hasUnsaved ? "dirty" : ""}"
+              type="button"
+              data-testid="actions-rules-save"
+              ?disabled=${busy || !hasUnsaved}
+              @click=${() => this._saveActionRulesDraft()}
+            >
+              Save changes
+            </button>
           </div>
         </div>
+        ${this._actionRulesError
+          ? html`<div class="policy-warning">${this._actionRulesError}</div>`
+          : ""}
+        ${this._actionRulesSaveError
+          ? html`<div class="policy-warning">${this._actionRulesSaveError}</div>`
+          : ""}
+        ${validationErrors.map((error) => html`<div class="policy-warning">${error}</div>`)}
 
-        <div class="card-section">
-          <div class="section-title">
-            <ha-icon .icon=${"mdi:information-outline"}></ha-icon>
-            How it works
-          </div>
-          <div class="text-muted" style="font-size: 13px; line-height: 1.4;">
-            ${infoText} Topomation creates tagged Home Assistant automations automatically.
-          </div>
+        <div class="dusk-block-list">
+          ${rules.length === 0
+            ? html`
+                <div class="text-muted">
+                  ${meta.emptyMessage}
+                  ${entityOptions.length === 0
+                    ? html`No compatible ${tab} devices found in this location.`
+                    : ""}
+                </div>
+              `
+            : rules.map((rule, index) => {
+                const editingName = this._editingActionRuleNameId === String(rule.id || "");
+                const label = rule.name?.trim() || `Rule ${index + 1}`;
+                const serviceOptions = this._actionServiceOptionsForRule(
+                  rule.action_entity_id || "",
+                  rule.trigger_type
+                );
+                return html`
+                  <div class="dusk-block-row" data-testid=${`action-rule-${rule.id}`}>
+                    <div class="dusk-block-head">
+                      ${editingName
+                        ? html`
+                            <input
+                              type="text"
+                              class="input dusk-block-title-input"
+                              .value=${this._editingActionRuleNameValue}
+                              ?disabled=${busy}
+                              @input=${(ev: Event) => {
+                                this._editingActionRuleNameValue = (ev.target as HTMLInputElement).value;
+                              }}
+                              @blur=${() =>
+                                this._commitActionRuleNameEdit(
+                                  String(rule.id || ""),
+                                  `Rule ${index + 1}`
+                                )}
+                              @keydown=${(ev: KeyboardEvent) => {
+                                if (ev.key === "Enter") {
+                                  this._commitActionRuleNameEdit(
+                                    String(rule.id || ""),
+                                    `Rule ${index + 1}`
+                                  );
+                                } else if (ev.key === "Escape") {
+                                  this._cancelActionRuleNameEdit();
+                                }
+                              }}
+                            />
+                          `
+                        : html`
+                            <button
+                              type="button"
+                              class="dusk-block-title-button"
+                              ?disabled=${busy}
+                              @click=${() =>
+                                this._startActionRuleNameEdit(
+                                  String(rule.id || ""),
+                                  label
+                                )}
+                            >
+                              ${label}
+                            </button>
+                          `}
+                    </div>
+
+                    <div class="dusk-rule-row">
+                      <span class="config-label">Trigger</span>
+                      <select
+                        class="dusk-wide-select"
+                        .value=${rule.trigger_type}
+                        ?disabled=${busy}
+                        @change=${(ev: Event) =>
+                          this._updateActionRule(String(rule.id || ""), {
+                            trigger_type: this._normalizeActionTriggerType(
+                              (ev.target as HTMLSelectElement).value
+                            ),
+                          })}
+                      >
+                        <option value="on_occupied">On occupied</option>
+                        <option value="on_vacant">On vacant</option>
+                      </select>
+                    </div>
+
+                    <div class="dusk-rule-section-title">Conditions</div>
+                    <div class="dusk-conditions">
+                      <div class="config-row">
+                        <div>
+                          <div class="config-label">Ambient must be</div>
+                          <div class="config-help">
+                            Optional ambient filter at trigger time.
+                          </div>
+                        </div>
+                        <div class="config-value">
+                          <select
+                            class="dusk-wide-select"
+                            .value=${rule.ambient_condition ||
+                            this._defaultActionAmbientConditionForTrigger(rule.trigger_type)}
+                            ?disabled=${busy}
+                            @change=${(ev: Event) =>
+                              this._updateActionRule(String(rule.id || ""), {
+                                ambient_condition: this._normalizeActionAmbientCondition(
+                                  (ev.target as HTMLSelectElement).value,
+                                  rule.trigger_type
+                                ),
+                              })}
+                          >
+                            <option value="any">Ignore ambient</option>
+                            <option value="dark">Must be dark</option>
+                            <option value="bright">Must be bright</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div class="config-row">
+                        <div>
+                          <div class="config-label">Must be occupied</div>
+                          <div class="config-help">
+                            Apply this rule only when the location is occupied at trigger time.
+                          </div>
+                        </div>
+                        <div class="config-value">
+                          <input
+                            type="checkbox"
+                            class="switch-input"
+                            .checked=${Boolean(rule.must_be_occupied)}
+                            ?disabled=${busy}
+                            @change=${(ev: Event) =>
+                              this._updateActionRule(String(rule.id || ""), {
+                                must_be_occupied: (ev.target as HTMLInputElement).checked,
+                              })}
+                          />
+                        </div>
+                      </div>
+
+                      <div class="config-row">
+                        <div>
+                          <div class="config-label">Use time window</div>
+                          <div class="config-help">
+                            Limit this rule to a time range. Crossing midnight is supported.
+                          </div>
+                        </div>
+                        <div class="config-value">
+                          <input
+                            type="checkbox"
+                            class="switch-input"
+                            .checked=${Boolean(rule.time_condition_enabled)}
+                            ?disabled=${busy}
+                            @change=${(ev: Event) =>
+                              this._updateActionRule(String(rule.id || ""), {
+                                time_condition_enabled: (ev.target as HTMLInputElement).checked,
+                              })}
+                          />
+                        </div>
+                      </div>
+
+                      ${rule.time_condition_enabled
+                        ? html`
+                            <div class="dusk-time-fields" style="margin-top: 8px;">
+                              <label class="dusk-time-field">
+                                <span class="config-label">Begin</span>
+                                <input
+                                  type="time"
+                                  class="input"
+                                  .value=${String(rule.start_time || "18:00")}
+                                  ?disabled=${busy}
+                                  @change=${(ev: Event) =>
+                                    this._updateActionRule(String(rule.id || ""), {
+                                      start_time: this._normalizeActionTime(
+                                        (ev.target as HTMLInputElement).value,
+                                        "18:00"
+                                      ),
+                                    })}
+                                />
+                              </label>
+                              <label class="dusk-time-field">
+                                <span class="config-label">End</span>
+                                <input
+                                  type="time"
+                                  class="input"
+                                  .value=${String(rule.end_time || "23:59")}
+                                  ?disabled=${busy}
+                                  @change=${(ev: Event) =>
+                                    this._updateActionRule(String(rule.id || ""), {
+                                      end_time: this._normalizeActionTime(
+                                        (ev.target as HTMLInputElement).value,
+                                        "23:59"
+                                      ),
+                                    })}
+                                />
+                              </label>
+                            </div>
+                          `
+                        : ""}
+                    </div>
+
+                    <div class="dusk-rule-section-title">Actions</div>
+                    <div class="dusk-rule-row">
+                      <span class="config-label">Device</span>
+                      <select
+                        class="dusk-wide-select"
+                        .value=${rule.action_entity_id || ""}
+                        ?disabled=${busy}
+                        @change=${(ev: Event) =>
+                          this._updateActionRule(String(rule.id || ""), {
+                            action_entity_id: (ev.target as HTMLSelectElement).value,
+                          })}
+                      >
+                        <option value="">Select device...</option>
+                        ${entityOptions.map((entityId) => html`
+                          <option value=${entityId}>
+                            ${this._entityName(entityId)} (${entityId})
+                          </option>
+                        `)}
+                      </select>
+                    </div>
+                    <div class="dusk-rule-row">
+                      <span class="config-label">Action</span>
+                      <select
+                        class="dusk-wide-select"
+                        .value=${rule.action_service || ""}
+                        ?disabled=${busy || !rule.action_entity_id}
+                        @change=${(ev: Event) =>
+                          this._updateActionRule(String(rule.id || ""), {
+                            action_service: (ev.target as HTMLSelectElement).value,
+                          })}
+                      >
+                        ${!rule.action_entity_id
+                          ? html`<option value="">Select device first...</option>`
+                          : serviceOptions.map(
+                              (option) => html`<option value=${option.value}>${option.label}</option>`
+                            )}
+                      </select>
+                    </div>
+                    <div class="dusk-block-footer">
+                      <button
+                        class="button button-primary dusk-delete-rule-button"
+                        type="button"
+                        data-testid=${`action-rule-${rule.id}-delete`}
+                        ?disabled=${busy}
+                        @click=${() => this._removeActionRule(String(rule.id || ""))}
+                      >
+                        Delete rule
+                      </button>
+                    </div>
+                  </div>
+                `;
+              })}
+        </div>
+
+        <div class="dusk-list-footer">
+          <button
+            class="button button-primary"
+            data-testid="action-rule-add"
+            ?disabled=${busy}
+            @click=${() => this._addActionRule(tab)}
+          >
+            Add rule
+          </button>
         </div>
       </div>
     `;
   }
 
-  private _renderActionStartupConfig() {
+  private _renderActionStartupConfig(tab: "lighting" | DeviceAutomationTab) {
     const config = this._getAutomationConfig();
     const reapplyOnStartup = Boolean(config.reapply_last_state_on_startup);
+    const tabLabel =
+      tab === "lighting"
+        ? "lighting"
+        : tab === "appliances"
+          ? "appliance"
+          : tab === "media"
+            ? "media"
+            : "HVAC";
+    const heading =
+      tab === "lighting"
+        ? "Reapply lighting rules on startup"
+        : tab === "appliances"
+          ? "Reapply appliance rules on startup"
+          : tab === "media"
+            ? "Reapply media rules on startup"
+            : "Reapply HVAC rules on startup";
 
     return html`
       <div class="startup-inline">
@@ -4887,6 +6994,7 @@ export class HtLocationInspector extends LitElement {
             type="checkbox"
             class="switch-input"
             .checked=${reapplyOnStartup}
+            data-testid=${`startup-reapply-${tab}`}
             @change=${(ev: Event) => {
               const checked = (ev.target as HTMLInputElement).checked;
               this._updateAutomationConfig({
@@ -4895,536 +7003,13 @@ export class HtLocationInspector extends LitElement {
               });
             }}
           />
-          Reapply floor actions on startup
+          ${heading}
         </label>
         <div class="startup-inline-help">
-          Re-runs both On Occupied and On Vacant actions after Home Assistant starts.
+          Re-runs matching ${tabLabel} rules for this location after Home Assistant starts.
         </div>
       </div>
     `;
-  }
-
-  private _actionToggleKey(entityId: string, triggerType: "occupied" | "vacant"): string {
-    return `${triggerType}:${entityId}`;
-  }
-
-  private _actionTargetEntities(triggerType: "occupied" | "vacant"): string[] {
-    if (!this.location) return [];
-    const ids = new Set<string>();
-
-    for (const entityId of this.location.entity_ids || []) {
-      if (this._isActionDeviceEntity(entityId)) {
-        ids.add(entityId);
-      }
-    }
-
-    if (this.location.ha_area_id) {
-      for (const entityId of this._entitiesForArea(this.location.ha_area_id)) {
-        if (this._isActionDeviceEntity(entityId)) {
-          ids.add(entityId);
-        }
-      }
-    }
-
-    return [...ids].sort((a, b) => {
-      const aEnabled = this._isManagedActionEnabled(a, triggerType);
-      const bEnabled = this._isManagedActionEnabled(b, triggerType);
-      if (aEnabled !== bEnabled) return aEnabled ? -1 : 1;
-
-      const aType = this._actionDeviceType(a) || "zzzz";
-      const bType = this._actionDeviceType(b) || "zzzz";
-      if (aType !== bType) return aType.localeCompare(bType);
-      return this._entityName(a).localeCompare(this._entityName(b));
-    });
-  }
-
-  private _isActionDeviceEntity(entityId: string): boolean {
-    return Boolean(this._actionDeviceType(entityId));
-  }
-
-  private _actionDeviceType(entityId: string): ActionDeviceType | undefined {
-    const stateObj = this.hass?.states?.[entityId];
-    if (!stateObj) return undefined;
-    const domain = entityId.split(".", 1)[0];
-    const attrs = stateObj.attributes || {};
-
-    if (domain === "fan") return "fan";
-
-    if (domain === "media_player") {
-      const deviceClass = String(attrs.device_class || "").toLowerCase();
-      const nameHaystack = `${attrs.friendly_name || ""} ${entityId}`.toLowerCase();
-      if (deviceClass === "tv" || /\btv\b/.test(nameHaystack) || nameHaystack.includes("television")) {
-        return "tv";
-      }
-      return "stereo";
-    }
-
-    if (domain !== "light") return undefined;
-
-    const colorModes = Array.isArray(attrs.supported_color_modes) ? attrs.supported_color_modes : [];
-    const hasColorMode = colorModes.some((mode) =>
-      ["hs", "xy", "rgb", "rgbw", "rgbww", "color_temp"].includes(String(mode))
-    );
-    const hasColorAttribute =
-      Array.isArray(attrs.hs_color) ||
-      Array.isArray(attrs.xy_color) ||
-      Array.isArray(attrs.rgb_color) ||
-      typeof attrs.color_temp_kelvin === "number" ||
-      typeof attrs.color_temp === "number";
-    if (hasColorMode || hasColorAttribute) return "color_light";
-
-    const hasBrightnessMode = colorModes.some((mode) => String(mode) !== "onoff");
-    const hasBrightnessAttribute =
-      typeof attrs.brightness === "number" ||
-      typeof attrs.brightness_pct === "number" ||
-      typeof attrs.brightness_step === "number" ||
-      typeof attrs.brightness_step_pct === "number";
-    if (hasBrightnessMode || hasBrightnessAttribute) return "dimmer";
-
-    return "light";
-  }
-
-  private _actionDeviceTypeLabel(deviceType: ActionDeviceType): string {
-    if (deviceType === "light") return "Light";
-    if (deviceType === "dimmer") return "Dimmer";
-    if (deviceType === "color_light") return "Color light";
-    if (deviceType === "fan") return "Fan";
-    if (deviceType === "stereo") return "Stereo";
-    if (deviceType === "tv") return "TV";
-    return "Device";
-  }
-
-  private _defaultManagedActionService(entityId: string, triggerType: "occupied" | "vacant"): string {
-    const domain = entityId.split(".", 1)[0];
-    if (domain === "media_player") return triggerType === "occupied" ? "media_stop" : "turn_off";
-    return triggerType === "occupied" ? "turn_on" : "turn_off";
-  }
-
-  private _actionServiceOptions(
-    entityId: string,
-    triggerType: "occupied" | "vacant"
-  ): Array<{ value: string; label: string }> {
-    const domain = entityId.split(".", 1)[0];
-    if (domain === "cover") {
-      return [
-        { value: "open_cover", label: "Open cover" },
-        { value: "close_cover", label: "Close cover" },
-        { value: "stop_cover", label: "Stop cover" },
-      ];
-    }
-    if (domain === "media_player") {
-      const defaultService = this._defaultManagedActionService(entityId, triggerType);
-      return [
-        { value: "media_stop", label: "Stop" },
-        { value: "media_pause", label: "Pause" },
-        { value: "turn_off", label: "Turn off" },
-      ].sort((a, b) => (a.value === defaultService ? -1 : b.value === defaultService ? 1 : 0));
-    }
-    const defaultService = this._defaultManagedActionService(entityId, triggerType);
-    return [
-      { value: "turn_on", label: "Turn on" },
-      { value: "turn_off", label: "Turn off" },
-    ].sort((a, b) => (a.value === defaultService ? -1 : b.value === defaultService ? 1 : 0));
-  }
-
-  private _actionServiceLabel(service: string): string {
-    return service
-      .split("_")
-      .map((chunk) => chunk.charAt(0).toUpperCase() + chunk.slice(1))
-      .join(" ");
-  }
-
-  private _supportsDarkCondition(triggerType: "occupied" | "vacant"): boolean {
-    return triggerType === "occupied";
-  }
-
-  private _selectedManagedActionService(entityId: string, triggerType: "occupied" | "vacant"): string {
-    const key = this._actionToggleKey(entityId, triggerType);
-    const defaultService = this._defaultManagedActionService(entityId, triggerType);
-    const selected = this._actionServiceSelections[key];
-    if (selected) return selected;
-
-    const matchingRules = this._rulesForManagedActionEntity(entityId, triggerType);
-    const enabledRule = matchingRules.find(
-      (rule) =>
-        rule.enabled &&
-        typeof rule.action_service === "string" &&
-        rule.action_service.length > 0
-    );
-    if (enabledRule?.action_service) return enabledRule.action_service;
-
-    const fallbackRule = matchingRules.find(
-      (rule) =>
-        typeof rule.action_service === "string" &&
-        rule.action_service.length > 0
-    );
-    if (fallbackRule?.action_service) return fallbackRule.action_service;
-
-    return defaultService;
-  }
-
-  private _selectedManagedActionRequireDark(
-    entityId: string,
-    triggerType: "occupied" | "vacant"
-  ): boolean {
-    if (!this._supportsDarkCondition(triggerType)) {
-      return false;
-    }
-
-    const key = this._actionToggleKey(entityId, triggerType);
-    if (Object.prototype.hasOwnProperty.call(this._actionDarkSelections, key)) {
-      return Boolean(this._actionDarkSelections[key]);
-    }
-
-    const matchingRules = this._rulesForManagedActionEntity(entityId, triggerType);
-    const enabledRule = matchingRules.find((rule) => rule.enabled);
-    if (enabledRule) {
-      return Boolean(enabledRule.require_dark);
-    }
-
-    const fallbackRule = matchingRules[0];
-    if (fallbackRule) {
-      return Boolean(fallbackRule.require_dark);
-    }
-
-    return false;
-  }
-
-  private _rulesForManagedActionEntity(
-    entityId: string,
-    triggerType: "occupied" | "vacant"
-  ): TopomationActionRule[] {
-    return this._actionRules.filter(
-      (rule) =>
-        rule.trigger_type === triggerType &&
-        rule.action_entity_id === entityId
-    );
-  }
-
-  private _isManagedActionEnabled(entityId: string, triggerType: "occupied" | "vacant"): boolean {
-    return this._rulesForManagedActionEntity(entityId, triggerType).some((rule) => rule.enabled);
-  }
-
-  private _isManagedActionServiceSelected(
-    entityId: string,
-    triggerType: "occupied" | "vacant",
-    actionService: string
-  ): boolean {
-    return this._rulesForManagedActionEntity(entityId, triggerType).some(
-      (rule) => rule.enabled && rule.action_service === actionService
-    );
-  }
-
-  private _isManagedActionRequireDarkSelected(
-    entityId: string,
-    triggerType: "occupied" | "vacant",
-    requireDark: boolean
-  ): boolean {
-    return this._rulesForManagedActionEntity(entityId, triggerType).some(
-      (rule) => rule.enabled && Boolean(rule.require_dark) === requireDark
-    );
-  }
-
-  private async _reloadActionRulesUntil(
-    predicate: () => boolean,
-    attempts = 8,
-    delayMs = 250
-  ): Promise<boolean> {
-    for (let attempt = 0; attempt < attempts; attempt += 1) {
-      if (predicate()) {
-        return true;
-      }
-      const ok = await this._loadActionRules();
-      if (ok && predicate()) {
-        return true;
-      }
-      if (attempt < attempts - 1) {
-        await new Promise((resolve) => window.setTimeout(resolve, delayMs));
-      }
-    }
-    return false;
-  }
-
-  private _deviceIcon(entityId: string): string {
-    const actionDeviceType = this._actionDeviceType(entityId);
-    if (actionDeviceType === "light") return "mdi:lightbulb-outline";
-    if (actionDeviceType === "dimmer") return "mdi:lightbulb-on";
-    if (actionDeviceType === "color_light") return "mdi:palette";
-    if (actionDeviceType === "fan") return "mdi:fan";
-    if (actionDeviceType === "stereo") return "mdi:speaker";
-    if (actionDeviceType === "tv") return "mdi:television";
-    return "mdi:robot";
-  }
-
-  private _managedRuleName(entityId: string, triggerType: "occupied" | "vacant"): string {
-    const locationName = this.location?.name || "Location";
-    const entityName = this._entityName(entityId);
-    const action = this._selectedManagedActionService(entityId, triggerType).replace(/_/g, " ");
-    const triggerLabel = triggerType === "occupied" ? "Occupied" : "Vacant";
-    return `${locationName} ${triggerLabel}: ${entityName} (${action})`;
-  }
-
-  private async _replaceManagedActionRules(
-    entityId: string,
-    triggerType: "occupied" | "vacant",
-    actionService: string,
-    requireDark: boolean
-  ): Promise<TopomationActionRule | undefined> {
-    if (!this.location) return;
-
-    const existing = this._rulesForManagedActionEntity(entityId, triggerType);
-    if (existing.length > 0) {
-      await Promise.all(
-        existing.map((rule) => deleteTopomationActionRule(this.hass, rule, this.entryId))
-      );
-    }
-
-    const createdRule = await createTopomationActionRule(this.hass, {
-      location: this.location,
-      name: this._managedRuleName(entityId, triggerType),
-      trigger_type: triggerType,
-      action_entity_id: entityId,
-      action_service: actionService,
-      require_dark: requireDark,
-    }, this.entryId);
-    return createdRule;
-  }
-
-  private _setManagedActionRuleLocal(
-    rule: TopomationActionRule,
-    entityId: string,
-    triggerType: "occupied" | "vacant",
-    actionService: string,
-    requireDark: boolean
-  ): void {
-    const optimisticRule: TopomationActionRule = {
-      ...rule,
-      trigger_type: triggerType,
-      action_entity_id: entityId,
-      action_service: actionService,
-      require_dark: requireDark,
-      enabled: true,
-    };
-
-    const remainder = this._actionRules.filter(
-      (existing) =>
-        !(
-          existing.trigger_type === triggerType &&
-          existing.action_entity_id === entityId
-        )
-    );
-    this._actionRules = [...remainder, optimisticRule];
-  }
-
-  private _removeManagedActionRulesLocal(
-    entityId: string,
-    triggerType: "occupied" | "vacant"
-  ): void {
-    this._actionRules = this._actionRules.filter(
-      (rule) =>
-        !(
-          rule.trigger_type === triggerType &&
-          rule.action_entity_id === entityId
-        )
-    );
-  }
-
-  private async _handleManagedActionServiceChange(
-    entityId: string,
-    triggerType: "occupied" | "vacant",
-    actionService: string
-  ): Promise<void> {
-    const key = this._actionToggleKey(entityId, triggerType);
-    this._actionServiceSelections = {
-      ...this._actionServiceSelections,
-      [key]: actionService,
-    };
-
-    const enabled = this._isManagedActionEnabled(entityId, triggerType);
-    if (!enabled) {
-      this.requestUpdate();
-      return;
-    }
-
-    this._actionToggleBusy = { ...this._actionToggleBusy, [key]: true };
-    this.requestUpdate();
-
-    try {
-      const requireDark = this._selectedManagedActionRequireDark(entityId, triggerType);
-      const created = await this._replaceManagedActionRules(
-        entityId,
-        triggerType,
-        actionService,
-        requireDark
-      );
-      if (created) {
-        this._setManagedActionRuleLocal(
-          created,
-          entityId,
-          triggerType,
-          actionService,
-          requireDark
-        );
-      }
-      const converged = await this._reloadActionRulesUntil(
-        () =>
-          this._isManagedActionServiceSelected(entityId, triggerType, actionService) &&
-          this._isManagedActionRequireDarkSelected(entityId, triggerType, requireDark)
-      );
-      if (!converged) {
-        this._showToast(
-          "Saved, but Topomation could not verify the updated automation yet. Check browser console logs for details.",
-          "error"
-        );
-      }
-    } catch (err: any) {
-      console.error("Failed to update managed action service", {
-        locationId: this.location?.id,
-        entityId,
-        triggerType,
-        actionService,
-        error: err,
-      });
-      this._showToast(err?.message || "Failed to update automation", "error");
-    } finally {
-      const { [key]: _omit, ...remaining } = this._actionToggleBusy;
-      this._actionToggleBusy = remaining;
-      this.requestUpdate();
-    }
-  }
-
-  private async _handleManagedActionDarkChange(
-    entityId: string,
-    triggerType: "occupied" | "vacant",
-    requireDark: boolean
-  ): Promise<void> {
-    if (!this._supportsDarkCondition(triggerType)) {
-      return;
-    }
-
-    const key = this._actionToggleKey(entityId, triggerType);
-    this._actionDarkSelections = {
-      ...this._actionDarkSelections,
-      [key]: requireDark,
-    };
-
-    const enabled = this._isManagedActionEnabled(entityId, triggerType);
-    if (!enabled) {
-      this.requestUpdate();
-      return;
-    }
-
-    this._actionToggleBusy = { ...this._actionToggleBusy, [key]: true };
-    this.requestUpdate();
-
-    try {
-      const actionService = this._selectedManagedActionService(entityId, triggerType);
-      const created = await this._replaceManagedActionRules(
-        entityId,
-        triggerType,
-        actionService,
-        requireDark
-      );
-      if (created) {
-        this._setManagedActionRuleLocal(
-          created,
-          entityId,
-          triggerType,
-          actionService,
-          requireDark
-        );
-      }
-      const converged = await this._reloadActionRulesUntil(
-        () =>
-          this._isManagedActionServiceSelected(entityId, triggerType, actionService) &&
-          this._isManagedActionRequireDarkSelected(entityId, triggerType, requireDark)
-      );
-      if (!converged) {
-        this._showToast(
-          "Saved, but Topomation could not verify the updated automation yet. Check browser console logs for details.",
-          "error"
-        );
-      }
-    } catch (err: any) {
-      console.error("Failed to update managed action dark condition", {
-        locationId: this.location?.id,
-        entityId,
-        triggerType,
-        requireDark,
-        error: err,
-      });
-      this._showToast(err?.message || "Failed to update automation", "error");
-    } finally {
-      const { [key]: _omit, ...remaining } = this._actionToggleBusy;
-      this._actionToggleBusy = remaining;
-      this.requestUpdate();
-    }
-  }
-
-  private async _handleManagedActionToggle(
-    entityId: string,
-    triggerType: "occupied" | "vacant",
-    nextEnabled: boolean
-  ): Promise<void> {
-    if (!this.location) return;
-    const busyKey = this._actionToggleKey(entityId, triggerType);
-    this._actionToggleBusy = { ...this._actionToggleBusy, [busyKey]: true };
-    this.requestUpdate();
-
-    try {
-      const rules = this._rulesForManagedActionEntity(entityId, triggerType);
-      const actionService = this._selectedManagedActionService(entityId, triggerType);
-      const requireDark = this._selectedManagedActionRequireDark(entityId, triggerType);
-      if (nextEnabled) {
-        const created = await this._replaceManagedActionRules(
-          entityId,
-          triggerType,
-          actionService,
-          requireDark
-        );
-        if (created) {
-          this._setManagedActionRuleLocal(
-            created,
-            entityId,
-            triggerType,
-            actionService,
-            requireDark
-          );
-        }
-      } else if (rules.length > 0) {
-        await Promise.all(
-          rules.map((rule) => deleteTopomationActionRule(this.hass, rule, this.entryId))
-        );
-        this._removeManagedActionRulesLocal(entityId, triggerType);
-      }
-
-      const converged = await this._reloadActionRulesUntil(
-        () =>
-          this._isManagedActionEnabled(entityId, triggerType) === nextEnabled &&
-          (!nextEnabled ||
-            (this._isManagedActionServiceSelected(entityId, triggerType, actionService) &&
-              this._isManagedActionRequireDarkSelected(entityId, triggerType, requireDark)))
-      );
-      if (!converged) {
-        this._showToast(
-          "Saved, but Topomation could not verify the updated automation yet. Check browser console logs for details.",
-          "error"
-        );
-      }
-    } catch (err: any) {
-      console.error("Failed to update managed action rule", {
-        locationId: this.location?.id,
-        entityId,
-        triggerType,
-        nextEnabled,
-        error: err,
-      });
-      this._showToast(err?.message || "Failed to update automation", "error");
-    } finally {
-      const { [busyKey]: _omit, ...remaining } = this._actionToggleBusy;
-      this._actionToggleBusy = remaining;
-      this.requestUpdate();
-    }
   }
 
   private _workingSources(config: OccupancyConfig): OccupancySource[] {
@@ -5721,7 +7306,7 @@ export class HtLocationInspector extends LitElement {
     return Object.keys(states)
       .filter((entityId) => {
         const registryAreaId = this._entityAreaById[entityId];
-        if (registryAreaId !== undefined) {
+        if (registryAreaId !== undefined && registryAreaId !== null) {
           return registryAreaId === areaId;
         }
         return states[entityId]?.attributes?.area_id === areaId;

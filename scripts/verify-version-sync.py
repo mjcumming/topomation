@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Verify manifest.json, const.py, and pyproject.toml versions match. Exit 1 if not."""
-from pathlib import Path
+
 import json
 import re
 import sys
+from pathlib import Path
+
 
 def main() -> None:
     manifest_path = Path("custom_components/topomation/manifest.json")

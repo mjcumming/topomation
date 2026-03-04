@@ -1,6 +1,7 @@
 import type { HomeAssistant, Location } from "./types";
 
-export type ActionTriggerType = "occupied" | "vacant";
+export type ActionTriggerType = "on_occupied" | "on_vacant" | "on_dark" | "on_bright";
+export type ActionAmbientCondition = "any" | "dark" | "bright";
 
 export interface TopomationActionRule {
   id: string;
@@ -9,7 +10,13 @@ export interface TopomationActionRule {
   trigger_type: ActionTriggerType;
   action_entity_id?: string;
   action_service?: string;
-  require_dark: boolean;
+  ambient_condition?: ActionAmbientCondition;
+  must_be_occupied?: boolean;
+  time_condition_enabled?: boolean;
+  start_time?: string;
+  end_time?: string;
+  // Legacy compatibility
+  require_dark?: boolean;
   enabled: boolean;
 }
 
@@ -17,6 +24,11 @@ interface TopomationRuleMetadata {
   version: number;
   location_id: string;
   trigger_type: ActionTriggerType;
+  ambient_condition?: ActionAmbientCondition;
+  must_be_occupied?: boolean;
+  time_condition_enabled?: boolean;
+  start_time?: string;
+  end_time?: string;
   require_dark?: boolean;
 }
 
@@ -40,6 +52,8 @@ const TOPOMATION_METADATA_PREFIX = "[topomation]";
 const TOPOMATION_LABEL_NAME = "Topomation";
 const TOPOMATION_OCCUPIED_LABEL_NAME = "Topomation - On Occupied";
 const TOPOMATION_VACANT_LABEL_NAME = "Topomation - On Vacant";
+const TOPOMATION_DARK_LABEL_NAME = "Topomation - On Dark";
+const TOPOMATION_BRIGHT_LABEL_NAME = "Topomation - On Bright";
 const TOPOMATION_CATEGORY_NAME = "Topomation";
 const WS_TYPE_ACTION_RULES_LIST = "topomation/actions/rules/list";
 const WS_TYPE_ACTION_RULES_CREATE = "topomation/actions/rules/create";
@@ -95,6 +109,39 @@ function automationConfigEndpoint(automationId: string): string {
   return `config/automation/config/${encodeURIComponent(automationId)}`;
 }
 
+function normalizeTriggerType(raw: unknown): ActionTriggerType | null {
+  const normalized = String(raw || "")
+    .trim()
+    .toLowerCase();
+  if (normalized === "occupied") return "on_occupied";
+  if (normalized === "vacant") return "on_vacant";
+  if (normalized === "on_occupied" || normalized === "on_vacant" || normalized === "on_dark" || normalized === "on_bright") {
+    return normalized;
+  }
+  return null;
+}
+
+function defaultAmbientCondition(triggerType: ActionTriggerType): ActionAmbientCondition {
+  if (triggerType === "on_dark") return "dark";
+  if (triggerType === "on_bright") return "bright";
+  return "any";
+}
+
+function normalizeAmbientCondition(
+  triggerType: ActionTriggerType,
+  rawAmbientCondition: unknown,
+  requireDark: boolean
+): ActionAmbientCondition {
+  const normalized = String(rawAmbientCondition || "")
+    .trim()
+    .toLowerCase();
+  if (normalized === "any" || normalized === "dark" || normalized === "bright") {
+    return normalized;
+  }
+  if (requireDark) return "dark";
+  return defaultAmbientCondition(triggerType);
+}
+
 async function callAutomationConfigApi<T>(
   hass: HomeAssistant,
   method: "post" | "delete",
@@ -145,14 +192,27 @@ function parseRuleMetadata(description: unknown): TopomationRuleMetadata | null 
 
     try {
       const parsed = JSON.parse(jsonPayload) as TopomationRuleMetadata;
-      if (
-        typeof parsed?.location_id === "string" &&
-        (parsed?.trigger_type === "occupied" || parsed?.trigger_type === "vacant")
-      ) {
+      const triggerType = normalizeTriggerType(parsed?.trigger_type);
+      if (typeof parsed?.location_id === "string" && triggerType) {
         return {
           version: Number(parsed.version) || 1,
           location_id: parsed.location_id,
-          trigger_type: parsed.trigger_type,
+          trigger_type: triggerType,
+          ambient_condition: normalizeAmbientCondition(
+            triggerType,
+            parsed.ambient_condition,
+            Boolean(parsed.require_dark)
+          ),
+          must_be_occupied: Boolean(parsed.must_be_occupied),
+          time_condition_enabled: Boolean(parsed.time_condition_enabled),
+          start_time:
+            typeof parsed.start_time === "string" && parsed.start_time.trim().length > 0
+              ? parsed.start_time.trim()
+              : undefined,
+          end_time:
+            typeof parsed.end_time === "string" && parsed.end_time.trim().length > 0
+              ? parsed.end_time.trim()
+              : undefined,
           require_dark: typeof parsed.require_dark === "boolean" ? parsed.require_dark : undefined,
         };
       }
@@ -478,9 +538,13 @@ async function applyTopomationGrouping(
 
   const primaryLabelId = await ensureLabelId(hass, TOPOMATION_LABEL_NAME);
   const triggerLabelName =
-    triggerType === "occupied"
+    triggerType === "on_occupied"
       ? TOPOMATION_OCCUPIED_LABEL_NAME
-      : TOPOMATION_VACANT_LABEL_NAME;
+      : triggerType === "on_vacant"
+        ? TOPOMATION_VACANT_LABEL_NAME
+        : triggerType === "on_dark"
+          ? TOPOMATION_DARK_LABEL_NAME
+          : TOPOMATION_BRIGHT_LABEL_NAME;
   const triggerLabelId = await ensureLabelId(hass, triggerLabelName);
   const categoryId = await ensureAutomationCategoryId(hass);
 
@@ -562,6 +626,17 @@ async function listTopomationActionRulesLegacy(
           trigger_type: metadata.trigger_type,
           action_entity_id: summary.action_entity_id,
           action_service: summary.action_service,
+          ambient_condition: normalizeAmbientCondition(
+            metadata.trigger_type,
+            metadata.ambient_condition,
+            typeof metadata.require_dark === "boolean"
+              ? metadata.require_dark
+              : hasSunDarkCondition(config)
+          ),
+          must_be_occupied: Boolean(metadata.must_be_occupied),
+          time_condition_enabled: Boolean(metadata.time_condition_enabled),
+          start_time: metadata.start_time,
+          end_time: metadata.end_time,
           require_dark:
             typeof metadata.require_dark === "boolean"
               ? metadata.require_dark
@@ -614,7 +689,35 @@ export async function listTopomationActionRules(
       ...(entryId ? { entry_id: entryId } : {}),
     });
     if (Array.isArray(response?.rules)) {
-      return [...response.rules].sort((a, b) => a.name.localeCompare(b.name));
+      return response.rules
+        .map((rule) => {
+          const triggerType = normalizeTriggerType(rule.trigger_type);
+          if (!triggerType) return null;
+          const requireDark = Boolean(rule.require_dark);
+          const ambientCondition = normalizeAmbientCondition(
+            triggerType,
+            rule.ambient_condition,
+            requireDark
+          );
+          return {
+            ...rule,
+            trigger_type: triggerType,
+            ambient_condition: ambientCondition,
+            must_be_occupied: Boolean(rule.must_be_occupied),
+            time_condition_enabled: Boolean(rule.time_condition_enabled),
+            start_time:
+              typeof rule.start_time === "string" && rule.start_time.length > 0
+                ? rule.start_time
+                : undefined,
+            end_time:
+              typeof rule.end_time === "string" && rule.end_time.length > 0
+                ? rule.end_time
+                : undefined,
+            require_dark: requireDark || ambientCondition === "dark",
+          } satisfies TopomationActionRule;
+        })
+        .filter((rule): rule is TopomationActionRule => !!rule)
+        .sort((a, b) => a.name.localeCompare(b.name));
     }
   } catch (err) {
     if (!isWsCommandUnavailable(err)) {
@@ -633,28 +736,75 @@ async function createTopomationActionRuleLegacy(
     trigger_type: ActionTriggerType;
     action_entity_id: string;
     action_service: string;
+    ambient_condition?: ActionAmbientCondition;
+    must_be_occupied?: boolean;
+    time_condition_enabled?: boolean;
+    start_time?: string;
+    end_time?: string;
     require_dark?: boolean;
   }
 ): Promise<TopomationActionRule> {
+  if (args.trigger_type === "on_dark" || args.trigger_type === "on_bright") {
+    throw new Error("Legacy action-rule fallback does not support dark/bright triggers");
+  }
+
+  const automationId = buildAutomationId(args.location, args.trigger_type);
   const occupancyEntityId = findOccupancyEntityId(hass, args.location.id);
   if (!occupancyEntityId) {
     throw new Error(
       `No occupancy binary sensor found for location \"${args.location.name}\" (${args.location.id})`
     );
   }
-
-  const automationId = buildAutomationId(args.location, args.trigger_type);
-  const triggerState = args.trigger_type === "occupied" ? "on" : "off";
+  const triggerState = args.trigger_type === "on_occupied" ? "on" : "off";
   const actionDomain = args.action_entity_id.includes(".")
     ? args.action_entity_id.split(".", 1)[0]
     : "homeassistant";
+  const ambientCondition = normalizeAmbientCondition(
+    args.trigger_type,
+    args.ambient_condition,
+    Boolean(args.require_dark)
+  );
 
   const metadata: TopomationRuleMetadata = {
-    version: 2,
+    version: 3,
     location_id: args.location.id,
     trigger_type: args.trigger_type,
-    require_dark: Boolean(args.require_dark),
+    ambient_condition: ambientCondition,
+    must_be_occupied: Boolean(args.must_be_occupied),
+    time_condition_enabled: Boolean(args.time_condition_enabled),
+    start_time: args.start_time || "18:00",
+    end_time: args.end_time || "23:59",
+    require_dark: ambientCondition === "dark",
   };
+
+  const conditions: Array<Record<string, unknown>> = [];
+  if (ambientCondition === "dark") {
+    conditions.push({
+      condition: "state",
+      entity_id: "sun.sun",
+      state: "below_horizon",
+    });
+  } else if (ambientCondition === "bright") {
+    conditions.push({
+      condition: "state",
+      entity_id: "sun.sun",
+      state: "above_horizon",
+    });
+  }
+  if (args.must_be_occupied) {
+    conditions.push({
+      condition: "state",
+      entity_id: occupancyEntityId,
+      state: "on",
+    });
+  }
+  if (args.time_condition_enabled) {
+    conditions.push({
+      condition: "time",
+      after: args.start_time || "18:00",
+      before: args.end_time || "23:59",
+    });
+  }
 
   await callAutomationConfigApi<{ result: string }>(hass, "post", automationId, {
     alias: args.name,
@@ -666,15 +816,7 @@ async function createTopomationActionRuleLegacy(
         to: triggerState,
       },
     ],
-    conditions: args.require_dark
-      ? [
-          {
-            condition: "state",
-            entity_id: "sun.sun",
-            state: "below_horizon",
-          },
-        ]
-      : [],
+    conditions,
     actions: [
       {
         action: `${actionDomain}.${args.action_service}`,
@@ -698,7 +840,12 @@ async function createTopomationActionRuleLegacy(
     trigger_type: args.trigger_type,
     action_entity_id: args.action_entity_id,
     action_service: args.action_service,
-    require_dark: Boolean(args.require_dark),
+    ambient_condition: ambientCondition,
+    must_be_occupied: Boolean(args.must_be_occupied),
+    time_condition_enabled: Boolean(args.time_condition_enabled),
+    start_time: args.start_time || "18:00",
+    end_time: args.end_time || "23:59",
+    require_dark: ambientCondition === "dark",
     enabled: true,
   };
 }
@@ -711,6 +858,11 @@ export async function createTopomationActionRule(
     trigger_type: ActionTriggerType;
     action_entity_id: string;
     action_service: string;
+    ambient_condition?: ActionAmbientCondition;
+    must_be_occupied?: boolean;
+    time_condition_enabled?: boolean;
+    start_time?: string;
+    end_time?: string;
     require_dark?: boolean;
   },
   entryId?: string
@@ -723,14 +875,38 @@ export async function createTopomationActionRule(
       trigger_type: args.trigger_type,
       action_entity_id: args.action_entity_id,
       action_service: args.action_service,
+      ambient_condition: args.ambient_condition,
+      must_be_occupied: Boolean(args.must_be_occupied),
+      time_condition_enabled: Boolean(args.time_condition_enabled),
+      start_time: args.start_time,
+      end_time: args.end_time,
       require_dark: Boolean(args.require_dark),
       ...(entryId ? { entry_id: entryId } : {}),
     });
 
     if (response?.rule) {
+      const normalizedTrigger = normalizeTriggerType(response.rule.trigger_type) || args.trigger_type;
+      const requireDark = Boolean(response.rule.require_dark);
+      const ambientCondition = normalizeAmbientCondition(
+        normalizedTrigger,
+        response.rule.ambient_condition,
+        requireDark
+      );
       return {
         ...response.rule,
-        require_dark: Boolean(response.rule.require_dark),
+        trigger_type: normalizedTrigger,
+        ambient_condition: ambientCondition,
+        must_be_occupied: Boolean(response.rule.must_be_occupied),
+        time_condition_enabled: Boolean(response.rule.time_condition_enabled),
+        start_time:
+          typeof response.rule.start_time === "string" && response.rule.start_time.length > 0
+            ? response.rule.start_time
+            : undefined,
+        end_time:
+          typeof response.rule.end_time === "string" && response.rule.end_time.length > 0
+            ? response.rule.end_time
+            : undefined,
+        require_dark: requireDark || ambientCondition === "dark",
       };
     }
   } catch (err) {

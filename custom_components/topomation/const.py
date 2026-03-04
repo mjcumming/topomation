@@ -2,7 +2,7 @@
 
 DOMAIN = "topomation"
 NAME = "Topomation"
-VERSION = "0.2.23"
+VERSION = "0.2.24"
 
 # Storage
 STORAGE_VERSION = 1
@@ -17,9 +17,9 @@ PANEL_ICON = "mdi:floor-plan"
 PANEL_OCCUPANCY_URL = "/topomation-occupancy"
 PANEL_OCCUPANCY_TITLE = "Occupancy Manager"
 PANEL_OCCUPANCY_ICON = "mdi:home-account"
-PANEL_ACTIONS_URL = "/topomation-actions"
-PANEL_ACTIONS_TITLE = "Actions Manager"
-PANEL_ACTIONS_ICON = "mdi:flash"
+PANEL_APPLIANCES_URL = "/topomation-appliances"
+PANEL_MEDIA_URL = "/topomation-media"
+PANEL_HVAC_URL = "/topomation-hvac"
 
 PANEL_DEFINITIONS = (
     {
@@ -37,8 +37,22 @@ PANEL_DEFINITIONS = (
         "sidebar_visible": False,
     },
     {
-        "view": "actions",
-        "url": PANEL_ACTIONS_URL,
+        "view": "appliances",
+        "url": PANEL_APPLIANCES_URL,
+        "title": None,
+        "icon": None,
+        "sidebar_visible": False,
+    },
+    {
+        "view": "media",
+        "url": PANEL_MEDIA_URL,
+        "title": None,
+        "icon": None,
+        "sidebar_visible": False,
+    },
+    {
+        "view": "hvac",
+        "url": PANEL_HVAC_URL,
         "title": None,
         "icon": None,
         "sidebar_visible": False,

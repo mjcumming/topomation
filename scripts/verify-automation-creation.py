@@ -21,8 +21,8 @@ import json
 import os
 import sys
 import time
-import urllib.request
 import urllib.error
+import urllib.request
 
 # Load ha-config.env if present
 _CONFIG_ENV = os.path.join(os.path.dirname(__file__), "..", "tests", "ha-config.env")
@@ -71,7 +71,7 @@ def main() -> int:
     print(f"  POST {url}")
     print()
 
-    req = urllib.request.Request(
+    req = urllib.request.Request(  # noqa: S310 - verification script targets HA URL from local env
         url,
         data=json.dumps(payload).encode("utf-8"),
         method="POST",
@@ -82,7 +82,9 @@ def main() -> int:
     )
 
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(  # noqa: S310 - verification script targets HA URL from local env
+            req, timeout=30
+        ) as resp:
             result = json.loads(resp.read().decode())
             print(f"  Response: {result}")
     except urllib.error.HTTPError as e:
@@ -100,18 +102,18 @@ def main() -> int:
 
     print()
     print("Step 2: Checking if automation appears in entity registry")
-    ws_url = HA_URL.replace("http://", "ws://").replace("https://", "wss://")
-    ws_url = f"{ws_url}/api/websocket"
-    print(f"  (Would need WebSocket to list entities - checking states API instead)")
+    print("  (Would need WebSocket to list entities - checking states API instead)")
 
     # Use REST API to get states
     states_url = f"{HA_URL}/api/states"
-    req2 = urllib.request.Request(
+    req2 = urllib.request.Request(  # noqa: S310 - verification script targets HA URL from local env
         states_url,
         headers={"Authorization": f"Bearer {HA_TOKEN}"},
     )
     try:
-        with urllib.request.urlopen(req2, timeout=10) as resp2:
+        with urllib.request.urlopen(  # noqa: S310 - verification script targets HA URL from local env
+            req2, timeout=10
+        ) as resp2:
             states = json.loads(resp2.read().decode())
     except Exception as e:
         print(f"  Could not fetch states: {e}")

@@ -271,7 +271,7 @@ def handle_locations_list(hass, connection, msg):
 
 ### 3.7 Frontend Panel (`frontend/`)
 
-**Purpose**: Visual manager workspace for topology, occupancy, and actions
+**Purpose**: Visual manager workspace for topology, occupancy, and automation rules
 
 **Technology**: Lit (LitElement) - HA's native framework
 
@@ -280,7 +280,9 @@ def handle_locations_list(hass, connection, msg):
 - `Location Manager` (`/topomation`) is the single visible sidebar entry.
 - Alias routes are retained for deep linking and default-focus behavior:
   - `/topomation-occupancy` (defaults inspector to `Detection`)
-  - `/topomation-actions` (defaults inspector to `On Occupied`)
+  - `/topomation-appliances` (defaults inspector to `Appliances`)
+  - `/topomation-media` (defaults inspector to `Media`)
+  - `/topomation-hvac` (defaults inspector to `HVAC`)
 
 All routes use the same underlying `topomation-panel` frontend module and
 shared location tree selection context.
@@ -292,8 +294,16 @@ shared location tree selection context.
   - occupancy toggle icon (house): mark occupied/unoccupied
   - lock icon: lock/unlock location
 - Occupancy quick-controls are source-aware (`manual_ui`) and respect lock invariants (no mutation while locked).
-- Inspector tabs are split into `Detection`, `On Occupied`, and `On Vacant`.
-- `On Occupied` / `On Vacant` rules are created as native Home Assistant automation entities (managed in HA's automation system).
+- Inspector IA is split into top-level tabs:
+  - `Detection`
+  - `Ambient`
+  - `Lighting`
+  - `Appliances`
+  - `Media`
+  - `HVAC`
+- Advanced occupancy relationship controls are kept under `Detection` as an in-tab advanced section (not a separate top-level tab).
+- `Lighting` rules persist under module id `dusk_dawn` (internal id retained during dev phase).
+- `Appliances` / `Media` / `HVAC` rules are authored as native Home Assistant automations via `topomation/actions/rules/*`.
 - Topomation tags those automations with panel metadata + labels/category so each location tab can filter only its own rules.
 - The panel is WS-first for rule writes:
   `topomation/actions/rules/*` commands call integration backend code, and backend
@@ -304,8 +314,12 @@ shared location tree selection context.
 - Backend create treats registration as the success condition:
   if write+reload does not yield runtime registration, Topomation rolls back the
   write and returns an actionable error.
-- The built-in action list is intentionally common-case: media players support `Stop` and `Turn off` only.
-  Advanced occupancy-driven play/turn-on behavior is expected to be authored as custom HA automations using Topomation occupancy entities.
+- Startup reapply policy is edited in each automation tab (`Lighting`, `Appliances`, `Media`, `HVAC`) but persists to one shared automation-module key:
+  `modules.automation.reapply_last_state_on_startup`.
+- Built-in non-light action domains in this phase are constrained to:
+  - `switch.*` (Appliances)
+  - `media_player.*` (Media)
+  - `fan.*` (HVAC)
 - Integration-owned nodes (`building`, `grounds`, `subarea`) are configured through explicit source assignment in inspector.
 - HA-backed wrappers (`floor_*`, `area_*`) keep HA-linked entity discovery defaults.
 
@@ -458,7 +472,30 @@ Broken/invalid persisted payloads are ignored and do not block startup.
       "order": 2,
       "modules": {
         "_meta": { "type": "area", "category": "kitchen" },
-        "occupancy": { "enabled": true, "default_timeout": 600 }
+        "occupancy": { "enabled": true, "default_timeout": 600 },
+        "ambient": {
+          "lux_sensor": null,
+          "inherit_from_parent": true,
+          "dark_threshold": 50,
+          "bright_threshold": 500
+        },
+        "dusk_dawn": {
+          "version": 3,
+          "blocks": [
+            {
+              "id": "evening",
+              "name": "Evening",
+              "start_time": "16:00",
+              "end_time": "23:59",
+              "time_condition_enabled": true,
+              "trigger_mode": "on_dark",
+              "ambient_condition": "dark",
+              "must_be_occupied": false,
+              "already_on_behavior": "leave_unchanged",
+              "light_targets": []
+            }
+          ]
+        }
       }
     }
   ]

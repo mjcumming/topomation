@@ -22,10 +22,14 @@ async def test_async_list_rules_filters_to_location_and_extracts_summary(
     """List endpoint returns only matching location rules with action summary."""
     manager = TopomationManagedActions(hass)
     metadata = {
-        "version": 2,
+        "version": 3,
         "location_id": "bathroom",
-        "trigger_type": "vacant",
-        "require_dark": True,
+        "trigger_type": "on_vacant",
+        "ambient_condition": "dark",
+        "must_be_occupied": False,
+        "time_condition_enabled": False,
+        "start_time": "18:00",
+        "end_time": "23:59",
     }
     description = f"Managed by Topomation.\n{TOPOMATION_AUTOMATION_METADATA_PREFIX} {json.dumps(metadata)}"
 
@@ -79,9 +83,12 @@ async def test_async_list_rules_filters_to_location_and_extracts_summary(
     rule = rules[0]
     assert rule["id"] == "topomation_bathroom_vacant"
     assert rule["entity_id"] == "automation.bathroom_vacant"
-    assert rule["trigger_type"] == "vacant"
+    assert rule["trigger_type"] == "on_vacant"
     assert rule["action_entity_id"] == "light.bathroom"
     assert rule["action_service"] == "turn_off"
+    assert rule["ambient_condition"] == "dark"
+    assert rule["must_be_occupied"] is False
+    assert rule["time_condition_enabled"] is False
     assert rule["require_dark"] is True
     assert rule["enabled"] is False
 
@@ -93,16 +100,24 @@ async def test_async_delete_rules_for_location_deletes_only_matching_automations
     """Delete helper should only delete Topomation automations for target location."""
     manager = TopomationManagedActions(hass)
     metadata_kitchen = {
-        "version": 2,
+        "version": 3,
         "location_id": "kitchen",
-        "trigger_type": "occupied",
-        "require_dark": False,
+        "trigger_type": "on_occupied",
+        "ambient_condition": "any",
+        "must_be_occupied": False,
+        "time_condition_enabled": False,
+        "start_time": "18:00",
+        "end_time": "23:59",
     }
     metadata_bedroom = {
-        "version": 2,
+        "version": 3,
         "location_id": "bedroom",
-        "trigger_type": "vacant",
-        "require_dark": False,
+        "trigger_type": "on_vacant",
+        "ambient_condition": "any",
+        "must_be_occupied": False,
+        "time_condition_enabled": False,
+        "start_time": "18:00",
+        "end_time": "23:59",
     }
     kitchen_description = (
         "Managed by Topomation.\n"
@@ -163,15 +178,20 @@ def test_private_helpers_parse_and_mutate_config() -> None:
         {
             "version": 2,
             "location_id": "bathroom",
-            "trigger_type": "occupied",
-            "require_dark": False,
+            "trigger_type": "on_occupied",
+            "ambient_condition": "any",
+            "must_be_occupied": False,
+            "time_condition_enabled": False,
+            "start_time": "18:00",
+            "end_time": "23:59",
         }
     )
     parsed = manager._parse_metadata(f"Managed by Topomation.\n{metadata_line}")  # noqa: SLF001
     assert parsed is not None
     assert parsed.location_id == "bathroom"
-    assert parsed.trigger_type == "occupied"
-    assert parsed.require_dark is False
+    assert parsed.trigger_type == "on_occupied"
+    assert parsed.ambient_condition == "any"
+    assert parsed.must_be_occupied is False
     assert manager._parse_metadata("Managed by Topomation") is None  # noqa: SLF001
 
     action_entity, action_service = manager._extract_action_summary(  # noqa: SLF001
@@ -296,7 +316,7 @@ def test_apply_topomation_grouping_uses_topomation_labels_and_category(
 
     manager._apply_topomation_grouping(  # noqa: SLF001
         "automation.kitchen_occupied",
-        "occupied",
+        "on_occupied",
         area_id="area_kitchen",
     )
 

@@ -55,6 +55,14 @@ _META_ROLE_KEY = "role"
 _MANAGED_SHADOW_ROLE = "managed_shadow"
 _MAX_PROPAGATION_EVENTS_PER_DRAIN = 4096
 
+
+def _default_dusk_dawn_config() -> dict[str, Any]:
+    """Return canonical default dusk/dawn module config."""
+    return {
+        "version": 3,
+        "blocks": [],
+    }
+
 PLATFORMS: list[Platform] = [
     Platform.BINARY_SENSOR,  # Occupancy binary sensors
 ]
@@ -729,6 +737,35 @@ def _setup_default_configs(loc_mgr: LocationManager, modules: dict[str, Any]) ->
                 location_id=location.id,
                 module_id=module_id,
                 config=default_config,
+            )
+
+        # Dusk/dawn is config-only in v1 and does not have a kernel module object.
+        existing_dusk_dawn = loc_mgr.get_module_config(location.id, "dusk_dawn")
+        dusk_defaults = _default_dusk_dawn_config()
+        if isinstance(existing_dusk_dawn, dict):
+            # Dev-phase contract migration policy:
+            # pre-v3 shapes are reset to v3 defaults (no compatibility shim).
+            if (
+                int(existing_dusk_dawn.get("version", 0)) == 3
+                and isinstance(existing_dusk_dawn.get("blocks"), list)
+            ):
+                normalized_dusk_dawn = {
+                    "version": 3,
+                    "blocks": existing_dusk_dawn.get("blocks", []),
+                }
+            else:
+                normalized_dusk_dawn = dusk_defaults
+            if normalized_dusk_dawn != existing_dusk_dawn:
+                loc_mgr.set_module_config(
+                    location_id=location.id,
+                    module_id="dusk_dawn",
+                    config=normalized_dusk_dawn,
+                )
+        elif not existing_dusk_dawn:
+            loc_mgr.set_module_config(
+                location_id=location.id,
+                module_id="dusk_dawn",
+                config=dusk_defaults,
             )
 
 

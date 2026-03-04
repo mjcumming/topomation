@@ -30,6 +30,8 @@ If a file is not listed as active below, treat it as reference-only.
 | `docs/cursor-guide.md` | Agent reference and repository operating notes | Active (Reference) |
 | `docs/tree-dnd-stabilization-plan.md` | Tree DnD explicit drop targets — implementation plan (C-011, ADR-HA-039) | Active (Operational) |
 | `docs/ambient-light-v1-design.md` | Ambient light v1 design scope, UX, and phased implementation plan | Active (Operational) |
+| `docs/dusk-dawn-lighting-ui-spec.md` | Lighting rules model UI spec (triggers, conditions, actions, ownership boundaries) | Active (Operational) |
+| `docs/lighting-ui-contract.md` | Locked Lighting-tab UX contract and acceptance checks | Active |
 
 ## Project Docs Scope (`/project`)
 

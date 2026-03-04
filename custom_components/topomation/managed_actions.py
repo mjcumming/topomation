@@ -30,17 +30,22 @@ from homeassistant.helpers.network import get_url
 
 from .const import DOMAIN, TOPOMATION_AUTOMATION_METADATA_PREFIX
 
-ActionTriggerType = Literal["occupied", "vacant"]
+ActionTriggerType = Literal["on_occupied", "on_vacant", "on_dark", "on_bright"]
+ActionAmbientCondition = Literal["any", "dark", "bright"]
 
 _TOPOMATION_AUTOMATION_ID_PREFIX = "topomation_"
 _TOPOMATION_LABEL_NAME = "TopoMation"
 _TOPOMATION_OCCUPIED_LABEL_NAME = "TopoMation - On Occupied"
 _TOPOMATION_VACANT_LABEL_NAME = "TopoMation - On Vacant"
+_TOPOMATION_DARK_LABEL_NAME = "TopoMation - On Dark"
+_TOPOMATION_BRIGHT_LABEL_NAME = "TopoMation - On Bright"
 _TOPOMATION_CATEGORY_NAME = "TopoMation"
 _TOPOMATION_SYSTEM_USER_NAME = "Topomation"
 _AUTOMATION_API_REFRESH_TOKEN_KEY = "_automation_api_refresh_token"  # noqa: S105
 _ENTITY_RESOLVE_MAX_ATTEMPTS = 20
 _ENTITY_RESOLVE_WAIT_SECONDS = 0.25
+_VALID_TRIGGER_TYPES = frozenset({"on_occupied", "on_vacant", "on_dark", "on_bright"})
+_VALID_AMBIENT_CONDITIONS = frozenset({"any", "dark", "bright"})
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -51,7 +56,11 @@ class _TopomationMetadata:
 
     location_id: str
     trigger_type: ActionTriggerType
-    require_dark: bool
+    ambient_condition: ActionAmbientCondition
+    must_be_occupied: bool
+    time_condition_enabled: bool
+    start_time: str
+    end_time: str
 
 
 class TopomationManagedActions:
@@ -158,11 +167,13 @@ class TopomationManagedActions:
                     "trigger_type": metadata.trigger_type,
                     "action_entity_id": action_entity_id,
                     "action_service": action_service,
-                    "require_dark": (
-                        metadata.require_dark
-                        if metadata is not None
-                        else self._has_sun_dark_condition(raw_config)
-                    ),
+                    "ambient_condition": metadata.ambient_condition,
+                    "must_be_occupied": metadata.must_be_occupied,
+                    "time_condition_enabled": metadata.time_condition_enabled,
+                    "start_time": metadata.start_time,
+                    "end_time": metadata.end_time,
+                    # Legacy compatibility for older frontends.
+                    "require_dark": metadata.ambient_condition == "dark",
                     "enabled": enabled,
                 }
             )
@@ -175,10 +186,15 @@ class TopomationManagedActions:
         *,
         location: Any,
         name: str,
-        trigger_type: ActionTriggerType,
+        trigger_type: str,
         action_entity_id: str,
         action_service: str,
-        require_dark: bool,
+        require_dark: bool = False,
+        ambient_condition: str | None = None,
+        must_be_occupied: bool = False,
+        time_condition_enabled: bool = False,
+        start_time: str | None = None,
+        end_time: str | None = None,
     ) -> dict[str, Any]:
         """Create or replace one managed action automation (HA config/automation.py pattern)."""
         location_id = str(getattr(location, "id", "")).strip()
@@ -186,27 +202,66 @@ class TopomationManagedActions:
         if not location_id:
             raise ValueError("Location id is required")
 
-        occupancy_entity_id = self._find_occupancy_entity_id(location_id)
-        if occupancy_entity_id is None:
-            raise ValueError(
-                f'No occupancy binary sensor found for location "{location_name}" ({location_id})'
-            )
-
-        automation_id = self._build_stable_automation_id(
-            location_id, trigger_type, action_entity_id
+        normalized_trigger = self._normalize_trigger_type(trigger_type)
+        normalized_ambient_condition = self._normalize_ambient_condition(
+            ambient_condition=ambient_condition,
+            trigger_type=normalized_trigger,
+            require_dark=require_dark,
         )
-        trigger_state = "on" if trigger_type == "occupied" else "off"
+        normalized_start_time = self._normalize_time_hhmm(start_time, "18:00")
+        normalized_end_time = self._normalize_time_hhmm(end_time, "23:59")
+
+        occupancy_entity_id: str | None = None
+        requires_occupancy_entity = normalized_trigger in {"on_occupied", "on_vacant"} or bool(
+            must_be_occupied
+        )
+        if requires_occupancy_entity:
+            occupancy_entity_id = self._find_occupancy_entity_id(location_id)
+            if occupancy_entity_id is None:
+                raise ValueError(
+                    f'No occupancy binary sensor found for location "{location_name}" ({location_id})'
+                )
+
+        ambient_config = self._ambient_trigger_config(location)
+        automation_id = self._build_stable_automation_id(
+            location_id,
+            normalized_trigger,
+            action_entity_id,
+            name,
+        )
         action_domain = (
             action_entity_id.split(".", 1)[0]
             if "." in action_entity_id
             else "homeassistant"
         )
 
+        triggers = self._build_trigger_definitions(
+            trigger_type=normalized_trigger,
+            occupancy_entity_id=occupancy_entity_id,
+            ambient_config=ambient_config,
+        )
+        if not triggers:
+            raise ValueError("Unable to build automation triggers for this rule")
+
+        conditions = self._build_condition_definitions(
+            ambient_condition=normalized_ambient_condition,
+            must_be_occupied=bool(must_be_occupied),
+            occupancy_entity_id=occupancy_entity_id,
+            time_condition_enabled=bool(time_condition_enabled),
+            start_time=normalized_start_time,
+            end_time=normalized_end_time,
+            ambient_config=ambient_config,
+        )
+
         metadata_payload = {
-            "version": 2,
+            "version": 3,
             "location_id": location_id,
-            "trigger_type": trigger_type,
-            "require_dark": bool(require_dark),
+            "trigger_type": normalized_trigger,
+            "ambient_condition": normalized_ambient_condition,
+            "must_be_occupied": bool(must_be_occupied),
+            "time_condition_enabled": bool(time_condition_enabled),
+            "start_time": normalized_start_time,
+            "end_time": normalized_end_time,
         }
         description = "Managed by Topomation.\n" + self._metadata_line(metadata_payload)
 
@@ -214,24 +269,8 @@ class TopomationManagedActions:
             CONF_ID: automation_id,
             "alias": name,
             "description": description,
-            "triggers": [
-                {
-                    "trigger": "state",
-                    "entity_id": occupancy_entity_id,
-                    "to": trigger_state,
-                }
-            ],
-            "conditions": (
-                [
-                    {
-                        "condition": "state",
-                        "entity_id": "sun.sun",
-                        "state": "below_horizon",
-                    }
-                ]
-                if require_dark
-                else []
-            ),
+            "triggers": triggers,
+            "conditions": conditions,
             "actions": [
                 {
                     "action": f"{action_domain}.{action_service}",
@@ -274,7 +313,7 @@ class TopomationManagedActions:
                 .get("ha_area_id")
             )
             self._apply_topomation_grouping(
-                entity_id, trigger_type, area_id=ha_area_id
+                entity_id, normalized_trigger, area_id=ha_area_id
             )
         else:
             _LOGGER.warning(
@@ -291,10 +330,16 @@ class TopomationManagedActions:
             "id": automation_id,
             "entity_id": entity_id or f"automation.{automation_id}",
             "name": name,
-            "trigger_type": trigger_type,
+            "trigger_type": normalized_trigger,
             "action_entity_id": action_entity_id,
             "action_service": action_service,
-            "require_dark": bool(require_dark),
+            "ambient_condition": normalized_ambient_condition,
+            "must_be_occupied": bool(must_be_occupied),
+            "time_condition_enabled": bool(time_condition_enabled),
+            "start_time": normalized_start_time,
+            "end_time": normalized_end_time,
+            # Legacy compatibility for older frontends.
+            "require_dark": normalized_ambient_condition == "dark",
             "enabled": True,
         }
 
@@ -387,18 +432,236 @@ class TopomationManagedActions:
             return state.entity_id
         return None
 
+    def _normalize_trigger_type(self, trigger_type: str) -> ActionTriggerType:
+        """Normalize legacy/new trigger aliases to the canonical trigger set."""
+        normalized = str(trigger_type or "").strip().lower()
+        if normalized == "occupied":
+            normalized = "on_occupied"
+        elif normalized == "vacant":
+            normalized = "on_vacant"
+        if normalized not in _VALID_TRIGGER_TYPES:
+            raise ValueError(f"Invalid trigger_type '{trigger_type}'")
+        return normalized  # type: ignore[return-value]
+
+    def _default_ambient_condition_for_trigger(
+        self,
+        trigger_type: ActionTriggerType,
+    ) -> ActionAmbientCondition:
+        if trigger_type == "on_dark":
+            return "dark"
+        if trigger_type == "on_bright":
+            return "bright"
+        return "any"
+
+    def _normalize_ambient_condition(
+        self,
+        *,
+        ambient_condition: str | None,
+        trigger_type: ActionTriggerType,
+        require_dark: bool,
+    ) -> ActionAmbientCondition:
+        if isinstance(ambient_condition, str):
+            normalized = ambient_condition.strip().lower()
+            if normalized in _VALID_AMBIENT_CONDITIONS:
+                return normalized  # type: ignore[return-value]
+        if require_dark:
+            return "dark"
+        return self._default_ambient_condition_for_trigger(trigger_type)
+
+    def _normalize_time_hhmm(self, value: str | None, fallback: str) -> str:
+        raw = str(value or "").strip()
+        if not raw:
+            return fallback
+        parts = raw.split(":")
+        if len(parts) < 2:
+            return fallback
+        try:
+            hour = int(parts[0])
+            minute = int(parts[1])
+        except ValueError:
+            return fallback
+        if hour < 0 or hour > 23 or minute < 0 or minute > 59:
+            return fallback
+        return f"{hour:02d}:{minute:02d}"
+
+    def _ambient_trigger_config(self, location: Any) -> dict[str, Any]:
+        """Extract ambient trigger-relevant configuration from the location config."""
+        modules = getattr(location, "modules", {}) or {}
+        ambient = modules.get("ambient", {}) if isinstance(modules, Mapping) else {}
+        if not isinstance(ambient, Mapping):
+            ambient = {}
+
+        lux_sensor_raw = str(ambient.get("lux_sensor", "") or "").strip()
+        lux_sensor = lux_sensor_raw if lux_sensor_raw.startswith("sensor.") else None
+
+        try:
+            dark_threshold = float(ambient.get("dark_threshold", 50))
+        except (TypeError, ValueError):
+            dark_threshold = 50.0
+        try:
+            bright_threshold = float(ambient.get("bright_threshold", 500))
+        except (TypeError, ValueError):
+            bright_threshold = max(dark_threshold + 1.0, 500.0)
+
+        if bright_threshold <= dark_threshold:
+            bright_threshold = dark_threshold + 1.0
+
+        return {
+            "lux_sensor": lux_sensor,
+            "dark_threshold": dark_threshold,
+            "bright_threshold": bright_threshold,
+            "fallback_to_sun": bool(ambient.get("fallback_to_sun", True)),
+        }
+
+    def _build_trigger_definitions(
+        self,
+        *,
+        trigger_type: ActionTriggerType,
+        occupancy_entity_id: str | None,
+        ambient_config: Mapping[str, Any],
+    ) -> list[dict[str, Any]]:
+        """Build Home Assistant trigger definitions for one managed action rule."""
+        triggers: list[dict[str, Any]] = []
+        if trigger_type in {"on_occupied", "on_vacant"}:
+            if not occupancy_entity_id:
+                raise ValueError("Occupancy trigger requested but no occupancy entity was found")
+            triggers.append(
+                {
+                    "trigger": "state",
+                    "entity_id": occupancy_entity_id,
+                    "to": "on" if trigger_type == "on_occupied" else "off",
+                }
+            )
+            return triggers
+
+        lux_sensor = ambient_config.get("lux_sensor")
+        if isinstance(lux_sensor, str) and lux_sensor:
+            if trigger_type == "on_dark":
+                triggers.append(
+                    {
+                        "trigger": "numeric_state",
+                        "entity_id": lux_sensor,
+                        "below": float(ambient_config.get("dark_threshold", 50.0)),
+                    }
+                )
+            elif trigger_type == "on_bright":
+                triggers.append(
+                    {
+                        "trigger": "numeric_state",
+                        "entity_id": lux_sensor,
+                        "above": float(ambient_config.get("bright_threshold", 500.0)),
+                    }
+                )
+
+        fallback_to_sun = bool(ambient_config.get("fallback_to_sun", True))
+        if fallback_to_sun or not triggers:
+            triggers.append(
+                {
+                    "trigger": "state",
+                    "entity_id": "sun.sun",
+                    "to": "below_horizon" if trigger_type == "on_dark" else "above_horizon",
+                }
+            )
+        return triggers
+
+    def _ambient_condition_clause(
+        self,
+        *,
+        ambient_condition: ActionAmbientCondition,
+        ambient_config: Mapping[str, Any],
+    ) -> dict[str, Any] | None:
+        """Build ambient state condition block for dark/bright constraints."""
+        if ambient_condition == "any":
+            return None
+
+        lux_sensor = ambient_config.get("lux_sensor")
+        fallback_to_sun = bool(ambient_config.get("fallback_to_sun", True))
+        dark_state = ambient_condition == "dark"
+        clauses: list[dict[str, Any]] = []
+
+        if isinstance(lux_sensor, str) and lux_sensor:
+            threshold_key = "dark_threshold" if dark_state else "bright_threshold"
+            threshold = float(ambient_config.get(threshold_key, 50.0 if dark_state else 500.0))
+            clauses.append(
+                {
+                    "condition": "numeric_state",
+                    "entity_id": lux_sensor,
+                    "below" if dark_state else "above": threshold,
+                }
+            )
+        if fallback_to_sun or not clauses:
+            clauses.append(
+                {
+                    "condition": "state",
+                    "entity_id": "sun.sun",
+                    "state": "below_horizon" if dark_state else "above_horizon",
+                }
+            )
+
+        if len(clauses) == 1:
+            return clauses[0]
+        return {
+            "condition": "or",
+            "conditions": clauses,
+        }
+
+    def _build_condition_definitions(
+        self,
+        *,
+        ambient_condition: ActionAmbientCondition,
+        must_be_occupied: bool,
+        occupancy_entity_id: str | None,
+        time_condition_enabled: bool,
+        start_time: str,
+        end_time: str,
+        ambient_config: Mapping[str, Any],
+    ) -> list[dict[str, Any]]:
+        """Build Home Assistant condition list for one managed action rule."""
+        conditions: list[dict[str, Any]] = []
+
+        ambient_clause = self._ambient_condition_clause(
+            ambient_condition=ambient_condition,
+            ambient_config=ambient_config,
+        )
+        if ambient_clause is not None:
+            conditions.append(ambient_clause)
+
+        if must_be_occupied:
+            if not occupancy_entity_id:
+                raise ValueError("Must-be-occupied condition requires an occupancy sensor")
+            conditions.append(
+                {
+                    "condition": "state",
+                    "entity_id": occupancy_entity_id,
+                    "state": "on",
+                }
+            )
+
+        if time_condition_enabled:
+            conditions.append(
+                {
+                    "condition": "time",
+                    "after": start_time,
+                    "before": end_time,
+                }
+            )
+
+        return conditions
+
     def _build_stable_automation_id(
         self,
         location_id: str,
         trigger_type: ActionTriggerType,
         action_entity_id: str,
+        rule_name: str,
     ) -> str:
-        """Build a stable Topomation automation id so save updates in place instead of duplicating."""
+        """Build a stable Topomation automation id so saves update in place."""
         loc_slug = self._slugify(location_id)
         action_slug = self._slugify(action_entity_id)
+        name_slug = self._slugify(rule_name)[:40]
         return (
             f"{_TOPOMATION_AUTOMATION_ID_PREFIX}"
-            f"{loc_slug}_{trigger_type}_{action_slug}"
+            f"{loc_slug}_{trigger_type}_{action_slug}_{name_slug}"
         )
 
     @staticmethod
@@ -430,15 +693,43 @@ class TopomationManagedActions:
             except json.JSONDecodeError:
                 return None
             location_id = parsed.get("location_id")
-            trigger_type = parsed.get("trigger_type")
             if not isinstance(location_id, str) or not location_id:
                 return None
-            if trigger_type not in ("occupied", "vacant"):
+
+            raw_trigger_type = parsed.get("trigger_type")
+            try:
+                trigger_type = self._normalize_trigger_type(str(raw_trigger_type or ""))
+            except ValueError:
                 return None
+
+            ambient_condition = self._normalize_ambient_condition(
+                ambient_condition=(
+                    parsed.get("ambient_condition")
+                    if isinstance(parsed, Mapping)
+                    else None
+                ),
+                trigger_type=trigger_type,
+                require_dark=bool(parsed.get("require_dark", False)),
+            )
+            must_be_occupied = bool(parsed.get("must_be_occupied", False))
+            time_condition_enabled = bool(parsed.get("time_condition_enabled", False))
+            start_time = self._normalize_time_hhmm(
+                parsed.get("start_time") if isinstance(parsed, Mapping) else None,
+                "18:00",
+            )
+            end_time = self._normalize_time_hhmm(
+                parsed.get("end_time") if isinstance(parsed, Mapping) else None,
+                "23:59",
+            )
+
             return _TopomationMetadata(
                 location_id=location_id,
                 trigger_type=trigger_type,
-                require_dark=bool(parsed.get("require_dark", False)),
+                ambient_condition=ambient_condition,
+                must_be_occupied=must_be_occupied,
+                time_condition_enabled=time_condition_enabled,
+                start_time=start_time,
+                end_time=end_time,
             )
         return None
 
@@ -567,10 +858,16 @@ class TopomationManagedActions:
             return
         labels = set(entry.labels or ())
         primary_label = self._ensure_label(_TOPOMATION_LABEL_NAME)
+        if trigger_type == "on_occupied":
+            trigger_label_name = _TOPOMATION_OCCUPIED_LABEL_NAME
+        elif trigger_type == "on_vacant":
+            trigger_label_name = _TOPOMATION_VACANT_LABEL_NAME
+        elif trigger_type == "on_dark":
+            trigger_label_name = _TOPOMATION_DARK_LABEL_NAME
+        else:
+            trigger_label_name = _TOPOMATION_BRIGHT_LABEL_NAME
         trigger_label = self._ensure_label(
-            _TOPOMATION_OCCUPIED_LABEL_NAME
-            if trigger_type == "occupied"
-            else _TOPOMATION_VACANT_LABEL_NAME
+            trigger_label_name
         )
         if primary_label:
             labels.add(primary_label)

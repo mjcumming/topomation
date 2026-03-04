@@ -21,6 +21,12 @@ async function selectKitchen(page: any): Promise<void> {
   await kitchenRow.click();
 }
 
+async function openLightingTab(page: any): Promise<void> {
+  const inspector = page.locator("ht-location-inspector");
+  await expect(inspector).toBeVisible();
+  await inspector.getByRole("button", { name: "Lighting" }).click();
+}
+
 async function listLocations(page: any): Promise<any[]> {
   return await page.evaluate(async () => {
     const mock = (window as any).mockHass;
@@ -195,6 +201,7 @@ test("startup reapply toggle saves automation module config", async ({ page }) =
   await page.goto("/mock-harness.html");
 
   await selectKitchen(page);
+  await openLightingTab(page);
   const startupToggle = page.locator(
     "ht-location-inspector .startup-inline-toggle input[type='checkbox']"
   );

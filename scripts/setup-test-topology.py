@@ -13,10 +13,11 @@ This creates a realistic house structure:
 """
 
 import asyncio
+
 import aiohttp
 
 
-async def setup_topology():
+async def setup_topology() -> None:
     """Create test topology via WebSocket API."""
 
     # Connect to Home Assistant WebSocket

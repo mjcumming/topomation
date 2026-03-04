@@ -20,8 +20,8 @@ import json
 import os
 import sys
 import time
-import urllib.request
 import urllib.error
+import urllib.request
 
 # Load ha-config.env if present
 _CONFIG_ENV = os.path.join(os.path.dirname(__file__), "..", "tests", "ha-config.env")
@@ -53,9 +53,13 @@ def _request(method: str, url: str, data: dict | None = None) -> tuple[int, dict
         "Content-Type": "application/json",
     }
     body = json.dumps(data).encode("utf-8") if data is not None else None
-    req = urllib.request.Request(url, data=body, method=method, headers=headers)
+    req = urllib.request.Request(  # noqa: S310 - verification script targets HA URL from local env
+        url, data=body, method=method, headers=headers
+    )
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(  # noqa: S310 - verification script targets HA URL from local env
+            req, timeout=30
+        ) as resp:
             raw = resp.read().decode()
             return resp.status, json.loads(raw) if raw.strip() else {}
     except urllib.error.HTTPError as e:
