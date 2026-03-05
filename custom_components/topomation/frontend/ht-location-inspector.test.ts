@@ -1931,10 +1931,12 @@ describe("HtLocationInspector occupancy source composer", () => {
     `);
     await element.updateComplete;
 
+    const syncSections = element.shadowRoot!.querySelectorAll('[data-testid="sync-rooms-section"]');
     const syncSection = element.shadowRoot!.querySelector('[data-testid="sync-rooms-section"]');
     const syncCheckbox = element.shadowRoot!.querySelector(
       '[data-testid="sync-location-area_family_room"]'
     ) as HTMLInputElement | null;
+    expect(syncSections.length).to.equal(1);
     expect(syncSection).to.exist;
     expect(syncCheckbox).to.exist;
   });
@@ -3598,7 +3600,7 @@ describe("HtLocationInspector WIAB configuration", () => {
       blocks: [
         {
           id: "evening",
-          name: "Evening",
+          name: "Rule 1",
           start_time: "16:00",
           trigger_mode: "on_dark",
           ambient_condition: "dark",
@@ -3650,7 +3652,7 @@ describe("HtLocationInspector WIAB configuration", () => {
       '[data-testid="duskdawn-block-evening-name"]'
     ) as HTMLButtonElement | null;
     expect(nameButton).to.exist;
-    expect(nameButton?.textContent || "").to.include("Evening");
+    expect(nameButton?.textContent || "").to.include("Rule 1");
     nameButton?.click();
     await element.updateComplete;
 
@@ -3658,7 +3660,7 @@ describe("HtLocationInspector WIAB configuration", () => {
       '[data-testid="duskdawn-block-evening-name"]'
     ) as HTMLInputElement | null;
     expect(nameInput).to.exist;
-    expect(nameInput?.value).to.equal("Evening");
+    expect(nameInput?.value).to.equal("Rule 1");
 
     const timeWindowToggle = element.shadowRoot?.querySelector(
       '[data-testid="duskdawn-block-evening-time-window"]'
@@ -3730,6 +3732,7 @@ describe("HtLocationInspector WIAB configuration", () => {
             request.config.blocks.some(
               (block: any) =>
                 block?.id === "evening" &&
+                block?.name === "On dark: Kitchen Ceiling (16:00-23:59)" &&
                 block?.must_be_occupied === true &&
                 block?.time_condition_enabled === true &&
                 Array.isArray(block?.light_targets) &&

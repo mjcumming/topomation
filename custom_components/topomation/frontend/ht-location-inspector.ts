@@ -2389,6 +2389,56 @@ export class HtLocationInspector extends LitElement {
     return raw;
   }
 
+  private _isPlaceholderRuleName(value: unknown): boolean {
+    const raw = typeof value === "string" ? value.trim() : "";
+    if (!raw) return true;
+    return /^rule\s+\d+$/i.test(raw) || /^block\s+\d+$/i.test(raw);
+  }
+
+  private _humanizeEntityId(entityId: string): string {
+    const raw = String(entityId || "").trim();
+    if (!raw) return "Device";
+    const [, objectId = raw] = raw.split(".", 2);
+    const normalized = objectId
+      .replace(/[_\s]+/g, " ")
+      .trim()
+      .replace(/\b\w/g, (char) => char.toUpperCase());
+    return normalized || raw;
+  }
+
+  private _lightingTriggerLabel(triggerMode: DuskDawnTriggerMode): string {
+    if (triggerMode === "on_occupied") return "On occupied";
+    if (triggerMode === "on_vacant") return "On vacant";
+    if (triggerMode === "on_bright") return "On bright";
+    return "On dark";
+  }
+
+  private _autoLightingRuleName(block: DuskDawnScheduleBlock, index: number): string {
+    const triggerMode = this._normalizeDuskDawnTriggerMode(block.trigger_mode);
+    let name = this._lightingTriggerLabel(triggerMode);
+    const targets = this._sanitizeDuskDawnLightTargets(block.light_targets);
+    if (targets.length > 0) {
+      const firstTargetLabel = this._humanizeEntityId(targets[0].entity_id);
+      const suffix = targets.length > 1 ? ` +${targets.length - 1}` : "";
+      name = `${name}: ${firstTargetLabel}${suffix}`;
+    }
+    if (block.time_condition_enabled) {
+      const begin = this._normalizeDuskDawnStartTime(block.start_time, "18:00");
+      const end = this._normalizeDuskDawnStartTime(block.end_time, "23:59");
+      name = `${name} (${begin}-${end})`;
+    }
+    if (name === this._lightingTriggerLabel(triggerMode)) {
+      return `${name} (${index + 1})`;
+    }
+    return name;
+  }
+
+  private _resolveLightingRuleName(block: DuskDawnScheduleBlock, index: number): string {
+    const explicitName = String(block.name || "").trim();
+    if (!this._isPlaceholderRuleName(explicitName)) return explicitName;
+    return this._autoLightingRuleName(block, index);
+  }
+
   private _sanitizeDuskDawnLightTargets(raw: unknown): DuskDawnLightTarget[] {
     const normalized: DuskDawnLightTarget[] = [];
     const seen = new Set<string>();
@@ -2707,7 +2757,14 @@ export class HtLocationInspector extends LitElement {
 
   private async _saveDuskDawnDraft(): Promise<void> {
     const draft = this._workingDuskDawnConfig();
-    const ok = await this._updateDuskDawnConfig(draft);
+    const normalizedDraft: DuskDawnConfig = {
+      version: 3,
+      blocks: this._duskDawnBlocks(draft).map((block, index) => ({
+        ...block,
+        name: this._resolveLightingRuleName(block, index),
+      })),
+    };
+    const ok = await this._updateDuskDawnConfig(normalizedDraft);
     if (ok) {
       this._resetDuskDawnDraftFromLocation();
     } else {
@@ -3217,7 +3274,6 @@ export class HtLocationInspector extends LitElement {
     const config = (this.location.modules.occupancy || {}) as OccupancyConfig;
     return html`
       <div>
-        ${this._renderSyncLocationsSection(config)}
         ${this._renderWiabSection(config)}
         ${this._renderAdjacencyAdvancedSection(config)}
         ${this._isManagedShadowHost() ? this._renderManagedShadowAreaSection() : ""}
@@ -6238,6 +6294,47 @@ export class HtLocationInspector extends LitElement {
     return "any";
   }
 
+  private _actionTriggerLabel(triggerType: TopomationActionRule["trigger_type"]): string {
+    if (triggerType === "on_occupied") return "On occupied";
+    if (triggerType === "on_vacant") return "On vacant";
+    if (triggerType === "on_bright") return "On bright";
+    return "On dark";
+  }
+
+  private _serviceLabel(actionService?: string): string {
+    const raw = String(actionService || "").trim();
+    if (!raw) return "";
+    return raw.replace(/[_.]+/g, " ");
+  }
+
+  private _autoActionRuleName(rule: TopomationActionRule, index: number): string {
+    const triggerType = this._normalizeActionTriggerType(rule.trigger_type);
+    let name = this._actionTriggerLabel(triggerType);
+    const entityId = String(rule.action_entity_id || "").trim();
+    if (entityId) {
+      name = `${name}: ${this._entityName(entityId)}`;
+    }
+    const service = this._serviceLabel(rule.action_service);
+    if (service) {
+      name = `${name} (${service})`;
+    }
+    if (rule.time_condition_enabled) {
+      const begin = this._normalizeActionTime(rule.start_time, "18:00");
+      const end = this._normalizeActionTime(rule.end_time, "23:59");
+      name = `${name} ${begin}-${end}`;
+    }
+    if (name === this._actionTriggerLabel(triggerType)) {
+      return `${name} (${index + 1})`;
+    }
+    return name;
+  }
+
+  private _resolveActionRuleName(rule: TopomationActionRule, index: number): string {
+    const explicitName = String(rule.name || "").trim();
+    if (!this._isPlaceholderRuleName(explicitName)) return explicitName;
+    return this._autoActionRuleName(rule, index);
+  }
+
   private _normalizeActionAmbientCondition(
     value: unknown,
     triggerType: TopomationActionRule["trigger_type"]
@@ -6582,7 +6679,10 @@ export class HtLocationInspector extends LitElement {
 
   private async _saveActionRulesDraft(): Promise<void> {
     if (!this.location || !this.hass || this._savingActionRules) return;
-    const rules = this._workingActionRules();
+    const rules = this._workingActionRules().map((rule, index) => ({
+      ...rule,
+      name: this._resolveActionRuleName(rule, index),
+    }));
     const validationErrors = this._actionRuleValidationErrors(rules);
     if (validationErrors.length > 0) {
       this._actionRulesSaveError = validationErrors[0];
