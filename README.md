@@ -68,6 +68,11 @@ Locks are stackable and source-tagged, so multiple locks can coexist and each on
 ### Full Transparency — No Black Box
 Every rule TopoMation creates is a native Home Assistant automation. You'll find them in **Settings → Automations & Scenes**. They appear in traces. They show up in logs. If something unexpected happens, you trace it the same way you'd trace any other HA automation.
 
+Managed-rule sync is Home Assistant–canonical: TopoMation reloads from HA at startup,
+listens for `automation.*` changes while the inspector is open, and applies saves as
+in-place upserts (plus delete removed rules only). Rule identity is tracked with
+stable metadata (`rule_uuid`) so edits do not require delete/recreate churn.
+
 ### Runtime Controls
 Manually trigger, clear, or vacate any location. Lock or unlock from the tree UI or via service calls. Everything is accessible for manual overrides, testing, and advanced workflows.
 

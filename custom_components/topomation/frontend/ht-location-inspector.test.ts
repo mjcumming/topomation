@@ -2861,11 +2861,16 @@ describe("HtLocationInspector occupancy source composer", () => {
         }
         if (request.type === "topomation/actions/rules/create") {
           createCalls.push(request);
+          const automationId =
+            typeof request.automation_id === "string" && request.automation_id.length > 0
+              ? request.automation_id
+              : "rule_created";
           return {
             rule: {
-              id: "rule_created",
-              entity_id: "automation.rule_created",
+              id: automationId,
+              entity_id: `automation.${automationId}`,
               name: request.name,
+              rule_uuid: request.rule_uuid,
               trigger_type: request.trigger_type,
               action_entity_id: request.action_entity_id,
               action_service: request.action_service,
@@ -2959,9 +2964,12 @@ describe("HtLocationInspector occupancy source composer", () => {
     saveButton!.click();
 
     await waitUntil(() => createCalls.length === 1, "expected action rule create call");
-    expect(deleteCalls.length).to.equal(1);
+    expect(deleteCalls.length).to.equal(0);
 
     const payload = createCalls[0];
+    expect(payload.automation_id).to.equal("rule_existing");
+    expect(typeof payload.rule_uuid).to.equal("string");
+    expect(String(payload.rule_uuid || "").length).to.be.greaterThan(0);
     expect(payload.trigger_type).to.equal("on_vacant");
     expect(payload.ambient_condition).to.equal("bright");
     expect(payload.must_be_occupied).to.equal(true);
@@ -2971,6 +2979,106 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(payload.action_entity_id).to.equal("fan.kitchen_hood");
     expect(payload.action_service).to.equal("turn_off");
     expect(payload.require_dark).to.equal(false);
+  });
+
+  it("reloads action rules from Home Assistant when external changes occur during draft edits", async () => {
+    let listCalls = 0;
+    let stateChangedHandler: ((event: any) => void) | undefined;
+
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>) => {
+        if (request.type === "topomation/actions/rules/list") {
+          listCalls += 1;
+          if (listCalls < 3) {
+            return {
+              rules: [
+                {
+                  id: "rule_existing",
+                  entity_id: "automation.rule_existing",
+                  name: "Existing",
+                  trigger_type: "on_occupied",
+                  action_entity_id: "fan.kitchen_hood",
+                  action_service: "turn_on",
+                  ambient_condition: "any",
+                  must_be_occupied: false,
+                  time_condition_enabled: false,
+                  start_time: "18:00",
+                  end_time: "23:59",
+                  enabled: true,
+                },
+              ],
+            } as T;
+          }
+          return { rules: [] } as T;
+        }
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        return [] as T;
+      },
+      connection: {
+        subscribeEvents: async (cb: (event: any) => void, eventType?: string) => {
+          if (eventType === "state_changed") stateChangedHandler = cb;
+          return () => {};
+        },
+      } as any,
+      states: {
+        "fan.kitchen_hood": {
+          entity_id: "fan.kitchen_hood",
+          state: "off",
+          attributes: {
+            friendly_name: "Kitchen Hood",
+            area_id: "kitchen",
+          },
+        },
+      },
+      areas: {},
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_kitchen";
+    location.ha_area_id = "kitchen";
+    location.modules._meta = { type: "area" };
+    location.entity_ids = ["fan.kitchen_hood"];
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector .hass=${hass} .location=${location} .forcedTab=${"hvac"}></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    await waitUntil(
+      () => (element.shadowRoot?.querySelectorAll(".dusk-block-row").length || 0) === 1,
+      "expected initial managed action rule to render"
+    );
+
+    const addRuleButton = element.shadowRoot?.querySelector(
+      '[data-testid="action-rule-add"]'
+    ) as HTMLButtonElement | null;
+    expect(addRuleButton).to.exist;
+    addRuleButton!.click();
+    await element.updateComplete;
+
+    await waitUntil(
+      () => (element.shadowRoot?.querySelectorAll(".dusk-block-row").length || 0) === 2,
+      "expected local draft rule row to render"
+    );
+
+    expect(stateChangedHandler).to.exist;
+    stateChangedHandler!({
+      data: {
+        entity_id: "automation.rule_existing",
+        old_state: { entity_id: "automation.rule_existing", state: "on", attributes: {} },
+        new_state: null,
+      },
+    });
+
+    await waitUntil(() => listCalls >= 3, "expected action rules reload after external automation change");
+    await waitUntil(
+      () => (element.shadowRoot?.querySelectorAll(".dusk-block-row").length || 0) === 0,
+      "expected draft to reload from Home Assistant after external rule removal"
+    );
+    expect(element.shadowRoot?.textContent || "").to.include("No HVAC rules configured yet.");
   });
 });
 describe("HtLocationInspector WIAB configuration", () => {
@@ -3746,5 +3854,76 @@ describe("HtLocationInspector WIAB configuration", () => {
         ),
       "dusk/dawn light action was not persisted"
     );
+  });
+
+  it("adds a lighting rule from empty state", async () => {
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>): Promise<T> => {
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        if (request.type === "topomation/ambient/get_reading") {
+          return {
+            lux: 900,
+            is_dark: false,
+            is_bright: true,
+            source_sensor: null,
+            source_location: null,
+            timestamp: new Date().toISOString(),
+          } as T;
+        }
+        return { success: true } as T;
+      },
+      connection: {},
+      states: {
+        "light.kitchen_ceiling": {
+          entity_id: "light.kitchen_ceiling",
+          state: "off",
+          attributes: {
+            friendly_name: "Kitchen Ceiling",
+            supported_color_modes: ["brightness"],
+          },
+        },
+      },
+      areas: {
+        kitchen: { area_id: "kitchen", name: "Kitchen" },
+      },
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_kitchen";
+    location.name = "Kitchen";
+    location.ha_area_id = "kitchen";
+    location.entity_ids = ["light.kitchen_ceiling"];
+    location.modules._meta = { type: "area" };
+    location.modules.dusk_dawn = {
+      version: 3,
+      blocks: [],
+    };
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector .hass=${hass} .location=${location}></ht-location-inspector>
+    `);
+
+    const lightingTab = Array.from(element.shadowRoot?.querySelectorAll(".tab") || []).find((tab) =>
+      (tab.textContent || "").includes("Lighting")
+    ) as HTMLButtonElement | undefined;
+    expect(lightingTab).to.exist;
+    lightingTab?.click();
+    await element.updateComplete;
+
+    const addButton = element.shadowRoot?.querySelector(
+      '[data-testid="duskdawn-block-add-bottom"]'
+    ) as HTMLButtonElement | null;
+    expect(addButton).to.exist;
+
+    expect(element.shadowRoot?.querySelectorAll(".dusk-block-row").length || 0).to.equal(0);
+    addButton!.click();
+    await element.updateComplete;
+
+    expect(element.shadowRoot?.querySelectorAll(".dusk-block-row").length || 0).to.equal(1);
+    const ruleTitle = element.shadowRoot?.querySelector(".dusk-block-title-button");
+    expect(ruleTitle?.textContent || "").to.contain("Rule 1");
   });
 });

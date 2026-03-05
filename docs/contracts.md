@@ -118,11 +118,17 @@ Additional save points:
     and return an actionable error.
 - Managed automation metadata must remain machine-parseable in description:
   - `Managed by Topomation.`
-  - `[topomation] {"version":...,"location_id":...,"trigger_type":...}`
+  - `[topomation] {"version":...,"location_id":...,"trigger_type":...,"rule_uuid":...}`
+- Managed rule identity contract:
+  - backend accepts optional `automation_id` and `rule_uuid` on create/upsert.
+  - saves must update existing rules in place when `automation_id` is known.
+  - saves must only delete removed rules (no delete-all/recreate cycle).
 - If `config/entity_registry/list` is unavailable, action rule discovery must fall back
   to `hass.states` automation entities and continue operating.
 - Inspector must reconcile external automation add/delete changes while open via
   `state_changed` (`automation.*`) subscription + debounced reload.
+- Reconciliation strategy in this phase is event-driven (startup hydration +
+  `automation.*` subscription). No periodic polling loop is required.
 - UI save behavior requirement:
   - successful create/update/delete should not visually revert checkbox/select state
     during temporary HA registry/config eventual consistency windows.

@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -46,6 +47,8 @@ _ENTITY_RESOLVE_MAX_ATTEMPTS = 20
 _ENTITY_RESOLVE_WAIT_SECONDS = 0.25
 _VALID_TRIGGER_TYPES = frozenset({"on_occupied", "on_vacant", "on_dark", "on_bright"})
 _VALID_AMBIENT_CONDITIONS = frozenset({"any", "dark", "bright"})
+_AUTOMATION_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_]+$")
+_RULE_UUID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{7,63}$")
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -61,6 +64,7 @@ class _TopomationMetadata:
     time_condition_enabled: bool
     start_time: str
     end_time: str
+    rule_uuid: str
 
 
 class TopomationManagedActions:
@@ -172,6 +176,7 @@ class TopomationManagedActions:
                     "time_condition_enabled": metadata.time_condition_enabled,
                     "start_time": metadata.start_time,
                     "end_time": metadata.end_time,
+                    "rule_uuid": metadata.rule_uuid or self._rule_uuid_from_automation_id(automation_id or entity_id),
                     # Legacy compatibility for older frontends.
                     "require_dark": metadata.ambient_condition == "dark",
                     "enabled": enabled,
@@ -195,6 +200,8 @@ class TopomationManagedActions:
         time_condition_enabled: bool = False,
         start_time: str | None = None,
         end_time: str | None = None,
+        automation_id: str | None = None,
+        rule_uuid: str | None = None,
     ) -> dict[str, Any]:
         """Create or replace one managed action automation (HA config/automation.py pattern)."""
         location_id = str(getattr(location, "id", "")).strip()
@@ -223,12 +230,20 @@ class TopomationManagedActions:
                 )
 
         ambient_config = self._ambient_trigger_config(location)
-        automation_id = self._build_stable_automation_id(
-            location_id,
-            normalized_trigger,
-            action_entity_id,
-            name,
+        normalized_rule_uuid = self._normalize_rule_uuid(
+            rule_uuid or self._rule_uuid_from_automation_id(automation_id or "")
         )
+        automation_id = self._normalize_existing_automation_id(automation_id)
+        if not automation_id:
+            automation_id = self._build_stable_automation_id(
+                location_id,
+                normalized_trigger,
+                action_entity_id,
+                name,
+                normalized_rule_uuid,
+            )
+        if not normalized_rule_uuid:
+            normalized_rule_uuid = self._rule_uuid_from_automation_id(automation_id)
         action_domain = (
             action_entity_id.split(".", 1)[0]
             if "." in action_entity_id
@@ -262,6 +277,7 @@ class TopomationManagedActions:
             "time_condition_enabled": bool(time_condition_enabled),
             "start_time": normalized_start_time,
             "end_time": normalized_end_time,
+            "rule_uuid": normalized_rule_uuid,
         }
         description = "Managed by Topomation.\n" + self._metadata_line(metadata_payload)
 
@@ -338,6 +354,7 @@ class TopomationManagedActions:
             "time_condition_enabled": bool(time_condition_enabled),
             "start_time": normalized_start_time,
             "end_time": normalized_end_time,
+            "rule_uuid": normalized_rule_uuid,
             # Legacy compatibility for older frontends.
             "require_dark": normalized_ambient_condition == "dark",
             "enabled": True,
@@ -654,15 +671,64 @@ class TopomationManagedActions:
         trigger_type: ActionTriggerType,
         action_entity_id: str,
         rule_name: str,
+        rule_uuid: str | None = None,
     ) -> str:
         """Build a stable Topomation automation id so saves update in place."""
         loc_slug = self._slugify(location_id)
         action_slug = self._slugify(action_entity_id)
+        if rule_uuid:
+            uuid_slug = self._slugify(rule_uuid)[:24]
+            return (
+                f"{_TOPOMATION_AUTOMATION_ID_PREFIX}"
+                f"{loc_slug}_{trigger_type}_{action_slug}_{uuid_slug}"
+            )
         name_slug = self._slugify(rule_name)[:40]
         return (
             f"{_TOPOMATION_AUTOMATION_ID_PREFIX}"
             f"{loc_slug}_{trigger_type}_{action_slug}_{name_slug}"
         )
+
+    def _normalize_existing_automation_id(self, value: str | None) -> str | None:
+        """Normalize optional user-supplied automation id for in-place updates."""
+        raw = str(value or "").strip()
+        if not raw:
+            return None
+        if raw.startswith("automation."):
+            raw = raw.split(".", 1)[1].strip()
+        if not raw:
+            return None
+        if _AUTOMATION_ID_PATTERN.fullmatch(raw):
+            return raw
+        normalized = self._slugify(raw)
+        return normalized or None
+
+    def _normalize_rule_uuid(self, value: str | None) -> str:
+        """Normalize stable per-rule UUID/token used for metadata + id suffix."""
+        raw = str(value or "").strip().lower()
+        if not raw:
+            return ""
+        normalized = re.sub(r"[^a-z0-9_-]+", "", raw).strip("_-")
+        if not normalized:
+            return ""
+        if len(normalized) > 64:
+            normalized = normalized[:64]
+        if _RULE_UUID_PATTERN.fullmatch(normalized):
+            return normalized
+        return ""
+
+    def _rule_uuid_from_automation_id(self, automation_id: str) -> str:
+        """Derive a deterministic rule token from an automation id when metadata is missing."""
+        raw = str(automation_id or "").strip().lower()
+        if raw.startswith("automation."):
+            raw = raw.split(".", 1)[1]
+        normalized = re.sub(r"[^a-z0-9_-]+", "", raw).strip("_-")
+        if not normalized:
+            return ""
+        if len(normalized) > 64:
+            normalized = normalized[-64:]
+        if _RULE_UUID_PATTERN.fullmatch(normalized):
+            return normalized
+        return ""
 
     @staticmethod
     def _slugify(value: str) -> str:
@@ -721,6 +787,13 @@ class TopomationManagedActions:
                 parsed.get("end_time") if isinstance(parsed, Mapping) else None,
                 "23:59",
             )
+            rule_uuid = self._normalize_rule_uuid(
+                parsed.get("rule_uuid") if isinstance(parsed, Mapping) else None
+            )
+            if not rule_uuid and isinstance(parsed, Mapping):
+                rule_uuid = self._rule_uuid_from_automation_id(
+                    str(parsed.get("automation_id", "")).strip()
+                )
 
             return _TopomationMetadata(
                 location_id=location_id,
@@ -730,6 +803,7 @@ class TopomationManagedActions:
                 time_condition_enabled=time_condition_enabled,
                 start_time=start_time,
                 end_time=end_time,
+                rule_uuid=rule_uuid,
             )
         return None
 

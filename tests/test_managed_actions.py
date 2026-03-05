@@ -193,6 +193,18 @@ def test_private_helpers_parse_and_mutate_config() -> None:
     assert parsed.ambient_condition == "any"
     assert parsed.must_be_occupied is False
     assert manager._parse_metadata("Managed by Topomation") is None  # noqa: SLF001
+    assert parsed.rule_uuid == ""
+
+    generated_id = manager._build_stable_automation_id(  # noqa: SLF001
+        "kitchen",
+        "on_dark",
+        "fan.kitchen_hood",
+        "Kitchen dark safety",
+        "rule_abc12345",
+    )
+    assert generated_id.endswith("_rule_abc12345")
+    assert manager._normalize_existing_automation_id("automation.kitchen dark safety") == "kitchen_dark_safety"  # noqa: SLF001
+    assert manager._normalize_rule_uuid("Rule-ABC_12345678") == "rule-abc_12345678"  # noqa: SLF001
 
     action_entity, action_service = manager._extract_action_summary(  # noqa: SLF001
         {

@@ -2241,6 +2241,66 @@ expanded, this created UX ambiguity:
 
 ---
 
+### ADR-HA-053: Managed Rule Sync Is HA-Canonical with Stable Rule Identity (2026-03-05)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+
+Managed automation rules (`Appliances`, `Media`, `HVAC`) are authored in the
+Topomation UI but executed/stored as native Home Assistant automations.
+Two failure patterns still created drift and operator confusion:
+
+1. Save flow used delete-all/recreate, which churned automation IDs and could
+   duplicate/reorder rules during edits.
+2. External HA edits/deletes could diverge from a local draft between loads.
+
+We need HA to remain the single source of truth while preserving stable rule
+identity and predictable in-place updates.
+
+**Decision**:
+
+1. Home Assistant automation entities/config remain canonical for managed rules.
+   Topomation does not persist a parallel managed-rule database.
+2. Managed rule metadata now carries a stable `rule_uuid` token
+   (`[topomation] {..., "rule_uuid": ...}`).
+3. Save path is upsert+diff (not delete-all/recreate):
+   - update existing rules in place using explicit `automation_id`
+   - create new rules with stable identity metadata
+   - delete only rules removed from the draft
+4. After save, inspector re-reads rules from HA and rehydrates UI from that
+   canonical snapshot.
+5. Reconciliation remains event-driven:
+   - startup load from HA
+   - debounced reload on `state_changed` for `automation.*` while inspector open
+6. No periodic polling loop in this phase. Polling is deferred unless event-driven
+   reconciliation proves insufficient in live operations.
+
+**Rationale**:
+
+1. Preserves native HA ownership and interoperability.
+2. Prevents identity churn and unintended duplicates on edits.
+3. Makes drift resolution deterministic and auditable.
+4. Keeps runtime simpler than adding aggressive background polling.
+
+**Consequences**:
+
+- ✅ Rule edits are in-place when possible; IDs remain stable across rename/condition edits.
+- ✅ UI state always converges back to what HA currently has registered.
+- ✅ External HA changes are reflected while inspector is open.
+- ⚠️ If HA changes while a local draft is dirty, draft may be discarded/reloaded to
+  preserve canonical HA truth.
+- ⚠️ Lighting (`modules.dusk_dawn`) remains separate from managed-action automation
+  entities in this phase.
+
+**Alternatives Considered**:
+
+- Keep delete-all/recreate saves: rejected due ID churn and drift risk.
+- Add periodic full polling: deferred; event-driven sync is sufficient for v1.
+- Add local DB as source-of-truth: rejected; conflicts with HA-native automation model.
+
+---
+
 ## How to Use This Log
 
 ### When to Create an ADR

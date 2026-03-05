@@ -1513,7 +1513,9 @@ export class TopomationPanel extends LitElement {
       const byId = new Map<string, Location>();
       for (const loc of response.locations) byId.set(loc.id, loc);
       const uniqueLocations = Array.from(byId.values());
-      const visibleLocations = uniqueLocations.filter((loc) => !loc.is_explicit_root);
+      const visibleLocations = uniqueLocations.filter(
+        (loc) => !loc.is_explicit_root && !this._isManagedShadowLocation(loc)
+      );
       this._locations = [...visibleLocations];
       this._adjacencyEdges = Array.isArray(response.adjacency_edges)
         ? [...response.adjacency_edges]

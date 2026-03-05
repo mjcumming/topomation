@@ -8,6 +8,7 @@ export interface TopomationActionRule {
   entity_id: string;
   name: string;
   trigger_type: ActionTriggerType;
+  rule_uuid?: string;
   action_entity_id?: string;
   action_service?: string;
   ambient_condition?: ActionAmbientCondition;
@@ -24,6 +25,7 @@ interface TopomationRuleMetadata {
   version: number;
   location_id: string;
   trigger_type: ActionTriggerType;
+  rule_uuid?: string;
   ambient_condition?: ActionAmbientCondition;
   must_be_occupied?: boolean;
   time_condition_enabled?: boolean;
@@ -198,6 +200,10 @@ function parseRuleMetadata(description: unknown): TopomationRuleMetadata | null 
           version: Number(parsed.version) || 1,
           location_id: parsed.location_id,
           trigger_type: triggerType,
+          rule_uuid:
+            typeof parsed.rule_uuid === "string" && parsed.rule_uuid.trim().length > 0
+              ? parsed.rule_uuid.trim()
+              : undefined,
           ambient_condition: normalizeAmbientCondition(
             triggerType,
             parsed.ambient_condition,
@@ -624,6 +630,7 @@ async function listTopomationActionRulesLegacy(
           entity_id: entry.entity_id,
           name,
           trigger_type: metadata.trigger_type,
+          rule_uuid: metadata.rule_uuid,
           action_entity_id: summary.action_entity_id,
           action_service: summary.action_service,
           ambient_condition: normalizeAmbientCondition(
@@ -742,6 +749,8 @@ async function createTopomationActionRuleLegacy(
     start_time?: string;
     end_time?: string;
     require_dark?: boolean;
+    automation_id?: string;
+    rule_uuid?: string;
   }
 ): Promise<TopomationActionRule> {
   if (args.trigger_type === "on_dark" || args.trigger_type === "on_bright") {
@@ -864,6 +873,8 @@ export async function createTopomationActionRule(
     start_time?: string;
     end_time?: string;
     require_dark?: boolean;
+    automation_id?: string;
+    rule_uuid?: string;
   },
   entryId?: string
 ): Promise<TopomationActionRule> {
@@ -881,6 +892,8 @@ export async function createTopomationActionRule(
       start_time: args.start_time,
       end_time: args.end_time,
       require_dark: Boolean(args.require_dark),
+      ...(args.automation_id ? { automation_id: args.automation_id } : {}),
+      ...(args.rule_uuid ? { rule_uuid: args.rule_uuid } : {}),
       ...(entryId ? { entry_id: entryId } : {}),
     });
 
@@ -895,6 +908,10 @@ export async function createTopomationActionRule(
       return {
         ...response.rule,
         trigger_type: normalizedTrigger,
+        rule_uuid:
+          typeof response.rule.rule_uuid === "string" && response.rule.rule_uuid.trim().length > 0
+            ? response.rule.rule_uuid.trim()
+            : args.rule_uuid,
         ambient_condition: ambientCondition,
         must_be_occupied: Boolean(response.rule.must_be_occupied),
         time_condition_enabled: Boolean(response.rule.time_condition_enabled),

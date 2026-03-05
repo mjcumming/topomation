@@ -107,6 +107,72 @@ describe("ha-automation-rules websocket path", () => {
     expect(callApi).not.toHaveBeenCalled();
   });
 
+  it("forwards automation identity fields for in-place rule updates", async () => {
+    const createdRule: TopomationActionRule = {
+      id: "topomation_kitchen_on_dark_fan_kitchen_hood_rule_abc123",
+      entity_id: "automation.topomation_kitchen_on_dark_fan_kitchen_hood_rule_abc123",
+      name: "Kitchen dark safety",
+      rule_uuid: "rule_abc123",
+      trigger_type: "on_dark",
+      action_entity_id: "fan.kitchen_hood",
+      action_service: "turn_on",
+      ambient_condition: "dark",
+      must_be_occupied: true,
+      time_condition_enabled: true,
+      start_time: "22:00",
+      end_time: "05:30",
+      require_dark: true,
+      enabled: true,
+    };
+
+    const callWS = vi.fn(async (request: Record<string, unknown>) => {
+      if (request.type === "topomation/actions/rules/create") {
+        return { rule: createdRule };
+      }
+      return {};
+    });
+    const hass = {
+      callWS,
+      callApi: vi.fn(),
+      states: {},
+    } as any;
+
+    await createTopomationActionRule(hass, {
+      location: {
+        id: "kitchen",
+        name: "Kitchen",
+      } as any,
+      name: createdRule.name,
+      trigger_type: "on_dark",
+      action_entity_id: "fan.kitchen_hood",
+      action_service: "turn_on",
+      ambient_condition: "dark",
+      must_be_occupied: true,
+      time_condition_enabled: true,
+      start_time: "22:00",
+      end_time: "05:30",
+      automation_id: "topomation_kitchen_on_dark_fan_kitchen_hood_rule_abc123",
+      rule_uuid: "rule_abc123",
+    });
+
+    expect(callWS).toHaveBeenCalledWith({
+      type: "topomation/actions/rules/create",
+      location_id: "kitchen",
+      name: createdRule.name,
+      trigger_type: "on_dark",
+      action_entity_id: "fan.kitchen_hood",
+      action_service: "turn_on",
+      ambient_condition: "dark",
+      must_be_occupied: true,
+      time_condition_enabled: true,
+      start_time: "22:00",
+      end_time: "05:30",
+      require_dark: false,
+      automation_id: "topomation_kitchen_on_dark_fan_kitchen_hood_rule_abc123",
+      rule_uuid: "rule_abc123",
+    });
+  });
+
   it("fails fast when set_enabled ws command is unavailable", async () => {
     const callWS = vi.fn(async (request: Record<string, unknown>) => {
       if (request.type === "topomation/actions/rules/set_enabled") {

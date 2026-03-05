@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.25] - 2026-03-05
+
+### Added
+
+- Introduced stable managed-rule identity (`rule_uuid`) for action-rule metadata
+  and WebSocket create/update flows, enabling deterministic rule tracking across
+  UI saves and runtime reloads.
+
+### Changed
+
+- Switched managed action-rule saves from delete/recreate to HA-canonical
+  upsert+diff behavior, preserving existing automation IDs when rules are edited.
+- Updated runtime/frontend contracts and architecture docs to formalize
+  Home Assistant as the single source of truth for rule state.
+- Expanded inspector/action-rule test coverage for identity-aware create/update
+  behavior and reconciliation semantics.
+
+### Fixed
+
+- Restored managed shadow-area filtering in the topology tree so
+  integration-owned shadow locations remain hidden from user-facing lists.
+
 ## [0.2.24] - 2026-03-04
 
 ### Changed

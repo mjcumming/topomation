@@ -2184,6 +2184,8 @@ async def handle_action_rules_list(
         vol.Optional("start_time"): str,
         vol.Optional("end_time"): str,
         vol.Optional("require_dark", default=False): bool,
+        vol.Optional("automation_id"): str,
+        vol.Optional("rule_uuid"): str,
         vol.Optional("entry_id"): str,
     }
 )
@@ -2274,6 +2276,8 @@ async def handle_action_rules_create(
             time_condition_enabled=time_condition_enabled,
             start_time=start_time.strip() if isinstance(start_time, str) else None,
             end_time=end_time.strip() if isinstance(end_time, str) else None,
+            automation_id=str(msg.get("automation_id", "")).strip() or None,
+            rule_uuid=str(msg.get("rule_uuid", "")).strip() or None,
         )
     except ValueError as err:
         _LOGGER.warning(

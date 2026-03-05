@@ -1,11 +1,12 @@
 # Current work
 
-**Last updated**: 2026-03-03
+**Last updated**: 2026-03-05
 **Purpose**: short live context for parallel work, handoff, and branch safety.
 
 ## Snapshot
 
 - Active focus: managed shadow area contract + implementation checklist (ADR-HA-049 / ISSUE-057).
+- Active focus: HA-canonical managed-rule sync (ADR-HA-053) with stable rule identity and in-place upserts.
 - New planning track: ambient light v1 design baseline captured in `docs/ambient-light-v1-design.md` before dusk/dawn coupling work.
 - Recently completed: Tree DnD now uses explicit drop targets (before/inside/after/outdent) from pointer Y and optional outdent strip; zone-only resolver; heuristic x-offset logic removed. User order preserved by existing backend (`manual_order` + A-Z until first reorder).
 - Contract source set: `docs/contracts.md`, `docs/architecture.md`, `docs/adr-log.md`.
@@ -18,6 +19,7 @@
 | Ambient light v1 design + implementation sequencing | active | In progress | Design guide added; next step is phase-A inspector read path and config UX. |
 | Parallel branch updates | multiple | In progress | Verify `git status` before editing overlapping files. |
 | Managed action rule resilience | active | Completed | Added fallback/reconciliation contracts + production smoke coverage. |
+| Managed rule HA-canonical upsert sync | active | Completed | Save path now upserts by automation id + stable `rule_uuid`; delete only removed rules. |
 | Panel auth alignment | active | Completed | Panel routes are admin-only to match HA write APIs. |
 | Managed action backend WS path | active | Completed | Frontend now routes rule save/delete/enable to integration backend commands. |
 | Registration verification hardening | active | Completed | Create now fails+rolls back when HA does not register automation after reload. |

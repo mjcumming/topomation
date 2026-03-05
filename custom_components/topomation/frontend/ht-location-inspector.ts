@@ -2077,9 +2077,18 @@ export class HtLocationInspector extends LitElement {
     try {
       const rules = await listTopomationActionRules(this.hass, locationId, this.entryId);
       if (loadSeq !== this._actionRulesLoadSeq) return false;
+      const previousSignature = this._actionRulesSignature(this._actionRules);
+      const nextSignature = this._actionRulesSignature(rules);
+      const changedInHa = previousSignature !== nextSignature;
       this._actionRules = rules;
       if (!this._actionRulesDraftDirty) {
         this._resetActionRulesDraftFromLoaded();
+      } else if (changedInHa) {
+        this._resetActionRulesDraftFromLoaded();
+        this._showToast(
+          "Rules changed in Home Assistant. Local draft was reloaded.",
+          "warning"
+        );
       }
       return true;
     } catch (err: any) {
@@ -2094,6 +2103,27 @@ export class HtLocationInspector extends LitElement {
         this.requestUpdate();
       }
     }
+  }
+
+  private _actionRulesSignature(rules: TopomationActionRule[]): string {
+    const normalized = rules
+      .map((rule) => ({
+        id: String(rule.id || ""),
+        entity_id: String(rule.entity_id || ""),
+        name: String(rule.name || ""),
+        rule_uuid: String(rule.rule_uuid || ""),
+        trigger_type: String(rule.trigger_type || ""),
+        action_entity_id: String(rule.action_entity_id || ""),
+        action_service: String(rule.action_service || ""),
+        ambient_condition: String(rule.ambient_condition || ""),
+        must_be_occupied: Boolean(rule.must_be_occupied),
+        time_condition_enabled: Boolean(rule.time_condition_enabled),
+        start_time: String(rule.start_time || ""),
+        end_time: String(rule.end_time || ""),
+        enabled: Boolean(rule.enabled),
+      }))
+      .sort((left, right) => `${left.id}|${left.entity_id}`.localeCompare(`${right.id}|${right.entity_id}`));
+    return JSON.stringify(normalized);
   }
 
   private _ambientDefaults(): AmbientConfig {
@@ -2687,8 +2717,9 @@ export class HtLocationInspector extends LitElement {
     });
   }
 
-  private _addDuskDawnBlock(config: DuskDawnConfig): void {
-    const blocks = this._sanitizeDuskDawnBlocks(config.blocks);
+  private _addDuskDawnBlock(config?: DuskDawnConfig): void {
+    const effectiveConfig = config || this._workingDuskDawnConfig();
+    const blocks = this._sanitizeDuskDawnBlocks(effectiveConfig.blocks);
     const ruleIndex = blocks.length + 1;
     blocks.push({
       id: `rule_${Date.now()}_${ruleIndex}`,
@@ -2703,7 +2734,7 @@ export class HtLocationInspector extends LitElement {
       light_targets: [],
     });
     this._setDuskDawnDraft({
-      ...config,
+      ...effectiveConfig,
       blocks,
     });
   }
@@ -3763,7 +3794,7 @@ export class HtLocationInspector extends LitElement {
             type="button"
             data-testid="duskdawn-block-add-bottom"
             ?disabled=${busy}
-            @click=${() => this._addDuskDawnBlock(config)}
+            @click=${() => this._addDuskDawnBlock()}
           >
             Add rule
           </button>
@@ -6360,6 +6391,38 @@ export class HtLocationInspector extends LitElement {
     return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
   }
 
+  private _generateRuleUuid(): string {
+    const cryptoApi = (globalThis as any)?.crypto;
+    if (cryptoApi && typeof cryptoApi.randomUUID === "function") {
+      const uuid = String(cryptoApi.randomUUID()).trim().toLowerCase();
+      if (uuid) return uuid;
+    }
+    return `rule_${Date.now().toString(36)}_${Math.floor(Math.random() * 1_000_000)
+      .toString(36)
+      .padStart(4, "0")}`;
+  }
+
+  private _normalizeRuleUuid(rawValue: unknown, fallbackSeed?: string): string {
+    const raw =
+      typeof rawValue === "string" && rawValue.trim().length > 0
+        ? rawValue.trim().toLowerCase()
+        : "";
+    const cleanedRaw = raw.replace(/[^a-z0-9_-]+/g, "").replace(/^[-_]+|[-_]+$/g, "");
+    if (cleanedRaw.length >= 8) {
+      return cleanedRaw.slice(0, 64);
+    }
+
+    const fallback = String(fallbackSeed || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, "")
+      .replace(/^[-_]+|[-_]+$/g, "");
+    if (fallback.length >= 8) {
+      return fallback.slice(-64);
+    }
+    return this._generateRuleUuid();
+  }
+
   private _defaultActionServiceForTrigger(
     entityId: string,
     triggerType: TopomationActionRule["trigger_type"]
@@ -6480,6 +6543,7 @@ export class HtLocationInspector extends LitElement {
       typeof rule.id === "string" && rule.id.trim().length > 0
         ? rule.id
         : `action_rule_${index + 1}`;
+    const ruleUuid = this._normalizeRuleUuid(rule.rule_uuid, id);
     return {
       id,
       entity_id:
@@ -6490,6 +6554,7 @@ export class HtLocationInspector extends LitElement {
         typeof rule.name === "string" && rule.name.trim().length > 0
           ? rule.name.trim()
           : `Rule ${index + 1}`,
+      rule_uuid: ruleUuid,
       trigger_type: triggerType,
       action_entity_id: actionEntityId || undefined,
       action_service: actionService || undefined,
@@ -6574,6 +6639,7 @@ export class HtLocationInspector extends LitElement {
         id: `action_rule_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
         entity_id: "",
         name: `Rule ${rules.length + 1}`,
+        rule_uuid: this._generateRuleUuid(),
         trigger_type: "on_occupied",
         action_entity_id: actionEntityId,
         action_service: this._defaultActionServiceForTrigger(actionEntityId, "on_occupied"),
@@ -6695,24 +6761,25 @@ export class HtLocationInspector extends LitElement {
     this.requestUpdate();
 
     try {
-      const existingRules = [...this._actionRules];
-      if (existingRules.length > 0) {
-        await Promise.all(
-          existingRules.map((rule) =>
-            deleteTopomationActionRule(this.hass, rule, this.entryId)
-          )
-        );
-      }
-
-      const created: TopomationActionRule[] = [];
+      const existingRules = await listTopomationActionRules(
+        this.hass,
+        this.location.id,
+        this.entryId
+      );
+      const existingById = new Map(existingRules.map((rule) => [String(rule.id || ""), rule]));
+      const retainedRuleIds = new Set<string>();
       for (const [index, rule] of rules.entries()) {
         if (!rule.action_entity_id || !rule.action_service) continue;
         const normalizedRule = this._normalizeActionRule(rule, index);
+        const existing = existingById.get(String(normalizedRule.id || ""));
+        const automationId = existing ? String(existing.id || "") : undefined;
         const createdRule = await createTopomationActionRule(
           this.hass,
           {
             location: this.location,
             name: normalizedRule.name || `Rule ${index + 1}`,
+            rule_uuid: normalizedRule.rule_uuid,
+            automation_id: automationId || undefined,
             trigger_type: normalizedRule.trigger_type,
             action_entity_id: normalizedRule.action_entity_id,
             action_service: normalizedRule.action_service,
@@ -6725,10 +6792,22 @@ export class HtLocationInspector extends LitElement {
           },
           this.entryId
         );
-        created.push(createdRule);
+        retainedRuleIds.add(String(createdRule.id || ""));
       }
 
-      this._actionRules = created;
+      const deleteOps = existingRules
+        .filter((rule) => !retainedRuleIds.has(String(rule.id || "")))
+        .map((rule) => deleteTopomationActionRule(this.hass, rule, this.entryId));
+      if (deleteOps.length > 0) {
+        await Promise.all(deleteOps);
+      }
+
+      const syncedRules = await listTopomationActionRules(
+        this.hass,
+        this.location.id,
+        this.entryId
+      );
+      this._actionRules = syncedRules;
       this._resetActionRulesDraftFromLoaded();
       this._showToast("Action rules saved", "success");
     } catch (err: any) {

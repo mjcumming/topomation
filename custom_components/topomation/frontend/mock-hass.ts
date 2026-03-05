@@ -917,6 +917,8 @@ export function createMockHass(options: any = {}): any {
       const actionEntityId = String(request.action_entity_id || "").trim();
       const actionService = String(request.action_service || "").trim() || "turn_off";
       const alias = String(request.name || "Topomation managed rule").trim() || "Topomation managed rule";
+      const providedAutomationId = String(request.automation_id || "").trim();
+      const providedRuleUuid = String(request.rule_uuid || "").trim().toLowerCase();
       if (!locationId || !actionEntityId) {
         throw new Error("invalid_payload: location_id and action_entity_id are required");
       }
@@ -936,7 +938,14 @@ export function createMockHass(options: any = {}): any {
       const random = Math.floor(Math.random() * 1_000_000)
         .toString(36)
         .padStart(4, "0");
-      const configId = `${TOPOMATION_AUTOMATION_ID_PREFIX}${slugify(locationId)}_${triggerType}_${Date.now()}_${random}`;
+      const normalizedRuleUuid =
+        providedRuleUuid.replace(/[^a-z0-9_-]+/g, "").replace(/^[-_]+|[-_]+$/g, "").slice(0, 64) ||
+        `rule_${Date.now().toString(36)}_${random}`;
+      const configId =
+        providedAutomationId ||
+        `${TOPOMATION_AUTOMATION_ID_PREFIX}${slugify(locationId)}_${triggerType}_${slugify(
+          actionEntityId
+        )}_${slugify(normalizedRuleUuid).slice(-24)}`;
       const ambientConditionRaw = String(request.ambient_condition || "")
         .trim()
         .toLowerCase();
@@ -1014,6 +1023,7 @@ export function createMockHass(options: any = {}): any {
             time_condition_enabled: timeConditionEnabled,
             start_time: startTime,
             end_time: endTime,
+            rule_uuid: normalizedRuleUuid,
             require_dark: ambientCondition === "dark",
           })}`,
         triggers,
@@ -1030,7 +1040,8 @@ export function createMockHass(options: any = {}): any {
       };
       automationConfigsById[configId] = configPayload;
 
-      const entry = {
+      const existingEntry = automationEntryByConfigId.get(configId);
+      const entry = existingEntry || {
         entity_id: `automation.${slugify(alias)}`,
         unique_id: configId,
         domain: "automation",
@@ -1061,6 +1072,7 @@ export function createMockHass(options: any = {}): any {
           id: configId,
           entity_id: entry.entity_id,
           name: alias,
+          rule_uuid: normalizedRuleUuid,
           trigger_type: triggerType,
           action_entity_id: actionEntityId,
           action_service: actionService,

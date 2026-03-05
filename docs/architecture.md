@@ -305,15 +305,21 @@ shared location tree selection context.
 - `Lighting` rules persist under module id `dusk_dawn` (internal id retained during dev phase).
 - `Appliances` / `Media` / `HVAC` rules are authored as native Home Assistant automations via `topomation/actions/rules/*`.
 - Topomation tags those automations with panel metadata + labels/category so each location tab can filter only its own rules.
+- Managed rule metadata includes stable per-rule identity (`rule_uuid`) inside
+  `[topomation]` description payloads so edits can be applied in place.
 - The panel is WS-first for rule writes:
   `topomation/actions/rules/*` commands call integration backend code, and backend
   code performs HA automation config mutations/reload.
+- Save path for managed rules is HA-canonical upsert+diff:
+  update/create from draft, then delete only removed rules, then reload from HA.
 - Managed-action mutation paths are strict backend contracts:
   create/delete/enable fail explicitly when backend WS commands are unavailable
   (no browser-side mutation fallback).
 - Backend create treats registration as the success condition:
   if write+reload does not yield runtime registration, Topomation rolls back the
   write and returns an actionable error.
+- Reconciliation is event-driven (startup load + `automation.*` state_changed
+  subscription while inspector is open); no periodic polling loop in v1.
 - Startup reapply policy is edited in each automation tab (`Lighting`, `Appliances`, `Media`, `HVAC`) but persists to one shared automation-module key:
   `modules.automation.reapply_last_state_on_startup`.
 - Built-in non-light action domains in this phase are constrained to:

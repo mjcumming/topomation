@@ -268,6 +268,8 @@ describe('TopomationPanel integration (fake hass)', () => {
     await waitUntil(() => (element as any)._loading === false, "panel did not finish loading");
 
     expect((element as any)._selectedId).to.equal("main_floor");
+    const loadedLocations = ((element as any)._locations || []) as Location[];
+    expect(loadedLocations.map((loc) => loc.id)).to.not.include("main-floor-shadow");
 
     (element as any)._locationDialogOpen = true;
     element.requestUpdate();

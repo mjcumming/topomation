@@ -2820,6 +2820,8 @@ async def test_action_rules_create_uses_managed_runtime(hass: HomeAssistant) -> 
         time_condition_enabled=False,
         start_time=None,
         end_time=None,
+        automation_id=None,
+        rule_uuid=None,
     )
     schedule_persist.assert_called_once_with("actions/rules/create")
     connection.send_error.assert_not_called()
@@ -2873,6 +2875,8 @@ async def test_action_rules_create_forwards_rule_conditions(hass: HomeAssistant)
             "time_condition_enabled": True,
             "start_time": "22:00",
             "end_time": "05:30",
+            "automation_id": "topomation_kitchen_on_dark_fan_kitchen_hood_rule_abc123",
+            "rule_uuid": "rule_abc123",
         },
     )
     await hass.async_block_till_done()
@@ -2889,6 +2893,8 @@ async def test_action_rules_create_forwards_rule_conditions(hass: HomeAssistant)
         time_condition_enabled=True,
         start_time="22:00",
         end_time="05:30",
+        automation_id="topomation_kitchen_on_dark_fan_kitchen_hood_rule_abc123",
+        rule_uuid="rule_abc123",
     )
     connection.send_error.assert_not_called()
     connection.send_result.assert_called_once()

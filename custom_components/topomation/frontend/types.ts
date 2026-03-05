@@ -183,6 +183,7 @@ export interface TopomationActionRule {
   entity_id: string;
   name: string;
   trigger_type: "on_occupied" | "on_vacant" | "on_dark" | "on_bright";
+  rule_uuid?: string;
   action_entity_id?: string;
   action_service?: string;
   ambient_condition?: "any" | "dark" | "bright";
