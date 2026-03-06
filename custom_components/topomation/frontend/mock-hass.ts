@@ -507,6 +507,7 @@ function parseTopomationMetadata(
   time_condition_enabled?: boolean;
   start_time?: string;
   end_time?: string;
+  run_on_startup?: boolean;
   require_dark?: boolean;
 } | null {
   if (typeof description !== "string" || !description.includes(TOPOMATION_METADATA_PREFIX)) {
@@ -528,6 +529,7 @@ function parseTopomationMetadata(
         time_condition_enabled?: unknown;
         start_time?: unknown;
         end_time?: unknown;
+        run_on_startup?: unknown;
         require_dark?: unknown;
       };
       const rawTriggerType =
@@ -568,6 +570,10 @@ function parseTopomationMetadata(
               : undefined,
           start_time: typeof parsed.start_time === "string" ? parsed.start_time : undefined,
           end_time: typeof parsed.end_time === "string" ? parsed.end_time : undefined,
+          run_on_startup:
+            typeof parsed.run_on_startup === "boolean"
+              ? parsed.run_on_startup
+              : undefined,
           require_dark:
             typeof parsed.require_dark === "boolean" ? parsed.require_dark : undefined,
         };
@@ -817,6 +823,10 @@ export function createMockHass(options: any = {}): any {
           time_condition_enabled: Boolean(metadata.time_condition_enabled),
           start_time: metadata.start_time,
           end_time: metadata.end_time,
+          run_on_startup:
+            typeof metadata.run_on_startup === "boolean"
+              ? metadata.run_on_startup
+              : undefined,
           require_dark:
             typeof metadata.require_dark === "boolean"
               ? metadata.require_dark
@@ -963,6 +973,8 @@ export function createMockHass(options: any = {}): any {
       const timeConditionEnabled = Boolean(request.time_condition_enabled);
       const startTime = String(request.start_time || "18:00").trim() || "18:00";
       const endTime = String(request.end_time || "23:59").trim() || "23:59";
+      const runOnStartup =
+        typeof request.run_on_startup === "boolean" ? request.run_on_startup : undefined;
       const actionDomain = actionEntityId.includes(".") ? actionEntityId.split(".", 1)[0] : "homeassistant";
       const triggers: Array<Record<string, any>> =
         triggerType === "on_occupied" || triggerType === "on_vacant"
@@ -1015,7 +1027,7 @@ export function createMockHass(options: any = {}): any {
         description:
           "Managed by Topomation.\n" +
           `${TOPOMATION_METADATA_PREFIX} ${JSON.stringify({
-            version: 3,
+            version: 4,
             location_id: locationId,
             trigger_type: triggerType,
             ambient_condition: ambientCondition,
@@ -1023,6 +1035,7 @@ export function createMockHass(options: any = {}): any {
             time_condition_enabled: timeConditionEnabled,
             start_time: startTime,
             end_time: endTime,
+            ...(typeof runOnStartup === "boolean" ? { run_on_startup: runOnStartup } : {}),
             rule_uuid: normalizedRuleUuid,
             require_dark: ambientCondition === "dark",
           })}`,
@@ -1081,6 +1094,7 @@ export function createMockHass(options: any = {}): any {
           time_condition_enabled: timeConditionEnabled,
           start_time: startTime,
           end_time: endTime,
+          run_on_startup: runOnStartup,
           require_dark: ambientCondition === "dark",
           enabled: true,
         },

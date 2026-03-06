@@ -18,7 +18,6 @@ from homeassistant.core import Event as HAEvent
 from homeassistant.helpers.event import async_call_later
 
 from .const import (
-    AUTOMATION_REAPPLY_CONFIG_KEY,
     AUTOMATION_STARTUP_BUFFER_SECONDS,
     EVENT_TOPOMATION_ACTIONS_SUMMARY,
     TOPOMATION_AUTOMATION_METADATA_PREFIX,
@@ -27,7 +26,8 @@ from .const import (
 if TYPE_CHECKING:
     from home_topology import LocationManager
 
-ActionTriggerType = Literal["on_occupied", "on_vacant"]
+ManagedActionTriggerType = Literal["on_occupied", "on_vacant", "on_dark", "on_bright"]
+OccupancyActionTriggerType = Literal["on_occupied", "on_vacant"]
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -38,7 +38,8 @@ class _TopomationAutomation:
 
     entity_id: str
     location_id: str
-    trigger_type: ActionTriggerType
+    trigger_type: ManagedActionTriggerType
+    run_on_startup: bool | None
 
 
 @dataclass(slots=True)
@@ -46,29 +47,8 @@ class _TopomationMetadata:
     """Metadata embedded in Topomation-managed automation descriptions."""
 
     location_id: str
-    trigger_type: ActionTriggerType
-
-
-def ensure_automation_config_defaults(loc_mgr: LocationManager) -> bool:
-    """Ensure per-location automation defaults exist for this integration version."""
-    updated = False
-    for location in loc_mgr.all_locations():
-        config = loc_mgr.get_module_config(location.id, "automation")
-        if not isinstance(config, dict):
-            continue
-        if AUTOMATION_REAPPLY_CONFIG_KEY in config:
-            continue
-
-        loc_mgr.set_module_config(
-            location.id,
-            "automation",
-            {
-                **config,
-                AUTOMATION_REAPPLY_CONFIG_KEY: False,
-            },
-        )
-        updated = True
-    return updated
+    trigger_type: ManagedActionTriggerType
+    run_on_startup: bool | None
 
 
 class TopomationActionsRuntime:
@@ -148,16 +128,29 @@ class TopomationActionsRuntime:
         )
 
     async def async_reapply_startup_actions(self) -> None:
-        """Apply current occupied/vacant action automations for opted-in locations."""
-        for location in self._loc_mgr.all_locations():
-            config = self._loc_mgr.get_module_config(location.id, "automation")
-            if not isinstance(config, dict):
-                continue
-            if not bool(config.get(AUTOMATION_REAPPLY_CONFIG_KEY, False)):
-                continue
-            await self._async_reapply_location(location.id)
+        """Apply startup-eligible automations for opted-in locations."""
+        automations = self._iter_topomation_automations()
+        automations_by_location: dict[str, list[_TopomationAutomation]] = {}
+        for automation in automations:
+            automations_by_location.setdefault(automation.location_id, []).append(automation)
 
-    async def _async_reapply_location(self, location_id: str) -> None:
+        for location in self._loc_mgr.all_locations():
+            location_automations = automations_by_location.get(location.id, [])
+            if not any(
+                automation.run_on_startup is True for automation in location_automations
+            ):
+                continue
+            await self._async_reapply_location(
+                location.id,
+                automations=location_automations,
+            )
+
+    async def _async_reapply_location(
+        self,
+        location_id: str,
+        *,
+        automations: list[_TopomationAutomation] | None = None,
+    ) -> None:
         """Reapply automations for one location based on current occupancy state."""
         start = monotonic()
         occupancy_entity_id = self._find_occupancy_entity(location_id)
@@ -194,15 +187,19 @@ class TopomationActionsRuntime:
             )
             return
 
-        trigger_type: ActionTriggerType = (
+        trigger_type: OccupancyActionTriggerType = (
             "on_occupied" if occupancy_state.state == "on" else "on_vacant"
         )
         transition_label = "occupied" if trigger_type == "on_occupied" else "vacant"
-        automations = self._automations_for(location_id, trigger_type)
+        matched_automations = self._startup_automations_for(
+            location_id,
+            trigger_type=trigger_type,
+            automations=automations,
+        )
         failures: list[dict[str, str]] = []
         triggered = 0
 
-        for automation_entity_id in automations:
+        for automation_entity_id in matched_automations:
             try:
                 await self.hass.services.async_call(
                     "automation",
@@ -234,7 +231,7 @@ class TopomationActionsRuntime:
             "location_id": location_id,
             "transition": transition_label,
             "occupancy_entity_id": occupancy_entity_id,
-            "total_automations": len(automations),
+            "total_automations": len(matched_automations),
             "triggered_automations": triggered,
             "failed_automations": len(failures),
             "duration_ms": duration_ms,
@@ -250,7 +247,7 @@ class TopomationActionsRuntime:
             ),
             location_id,
             transition_label,
-            len(automations),
+            len(matched_automations),
             triggered,
             len(failures),
             duration_ms,
@@ -264,7 +261,7 @@ class TopomationActionsRuntime:
         if not isinstance(location_id, str) or not isinstance(occupied, bool):
             return
 
-        trigger_type: ActionTriggerType = "on_occupied" if occupied else "on_vacant"
+        trigger_type: OccupancyActionTriggerType = "on_occupied" if occupied else "on_vacant"
         transition_label = "occupied" if trigger_type == "on_occupied" else "vacant"
         automations = self._automations_for(location_id, trigger_type)
         summary = {
@@ -287,14 +284,11 @@ class TopomationActionsRuntime:
         self.hass.bus.async_fire(EVENT_TOPOMATION_ACTIONS_SUMMARY, payload)
 
     def _has_startup_reapply_enabled(self) -> bool:
-        """Return True when at least one location opts into startup reapply."""
-        for location in self._loc_mgr.all_locations():
-            config = self._loc_mgr.get_module_config(location.id, "automation")
-            if not isinstance(config, dict):
-                continue
-            if bool(config.get(AUTOMATION_REAPPLY_CONFIG_KEY, False)):
-                return True
-        return False
+        """Return True when at least one rule opts into startup reapply."""
+        return any(
+            automation.run_on_startup is True
+            for automation in self._iter_topomation_automations()
+        )
 
     def _find_occupancy_entity(self, location_id: str) -> str | None:
         """Resolve the occupancy binary sensor entity for a location."""
@@ -311,7 +305,7 @@ class TopomationActionsRuntime:
     def _automations_for(
         self,
         location_id: str,
-        trigger_type: ActionTriggerType,
+        trigger_type: OccupancyActionTriggerType,
     ) -> list[str]:
         """Collect enabled Topomation automation entity IDs for a location/trigger."""
         matched: list[str] = []
@@ -323,14 +317,45 @@ class TopomationActionsRuntime:
             matched.append(automation.entity_id)
         return matched
 
+    def _startup_automations_for(
+        self,
+        location_id: str,
+        *,
+        trigger_type: OccupancyActionTriggerType,
+        automations: list[_TopomationAutomation] | None = None,
+    ) -> list[str]:
+        """Collect startup-eligible automations for a location/current occupancy state."""
+        matched: list[str] = []
+        source_automations = (
+            automations if automations is not None else self._iter_topomation_automations()
+        )
+        for automation in source_automations:
+            if automation.location_id != location_id:
+                continue
+            if automation.run_on_startup is False:
+                continue
+            if automation.trigger_type == "on_occupied" and trigger_type != "on_occupied":
+                continue
+            if automation.trigger_type == "on_vacant" and trigger_type != "on_vacant":
+                continue
+            if automation.run_on_startup is True:
+                matched.append(automation.entity_id)
+        return matched
+
     def _iter_topomation_automations(self) -> list[_TopomationAutomation]:
         """Parse Topomation-managed automation entities from HA automation component."""
         component = self.hass.data.get(AUTOMATION_DATA_COMPONENT)
         if component is None:
             return []
 
+        raw_entities = getattr(component, "entities", [])
+        automation_entities = (
+            list(raw_entities.values())
+            if isinstance(raw_entities, Mapping)
+            else list(raw_entities)
+        )
         parsed: list[_TopomationAutomation] = []
-        for automation_entity in getattr(component, "entities", []):
+        for automation_entity in automation_entities:
             entity_id = getattr(automation_entity, "entity_id", None)
             raw_config = getattr(automation_entity, "raw_config", None)
             if not isinstance(entity_id, str) or not entity_id:
@@ -348,6 +373,7 @@ class TopomationActionsRuntime:
                     entity_id=entity_id,
                     location_id=metadata.location_id,
                     trigger_type=metadata.trigger_type,
+                    run_on_startup=metadata.run_on_startup,
                 )
             )
         return parsed
@@ -394,12 +420,18 @@ class TopomationActionsRuntime:
                 normalized_trigger_type = "on_occupied"
             elif normalized_trigger_type == "vacant":
                 normalized_trigger_type = "on_vacant"
-            if normalized_trigger_type not in ("on_occupied", "on_vacant"):
-                # Runtime summary/reapply only tracks occupancy-driven automations.
+            if normalized_trigger_type not in (
+                "on_occupied",
+                "on_vacant",
+                "on_dark",
+                "on_bright",
+            ):
                 continue
+            run_on_startup = parsed.get("run_on_startup")
             return _TopomationMetadata(
                 location_id=location_id,
-                trigger_type=cast(ActionTriggerType, normalized_trigger_type),
+                trigger_type=cast(ManagedActionTriggerType, normalized_trigger_type),
+                run_on_startup=run_on_startup if isinstance(run_on_startup, bool) else None,
             )
 
         return None

@@ -91,8 +91,28 @@ check_matches \
   "Reapply lighting rules on startup" \
   "${POLICY_DOCS[@]}"
 
+check_matches \
+  "No legacy Media/HVAC global startup reapply controls in active policy docs" \
+  "Reapply media rules on startup|Reapply HVAC rules on startup|startup reapply setting is rendered per automation tab" \
+  "${POLICY_DOCS[@]}"
+
+check_matches \
+  "No legacy startup fallback wording in active policy docs" \
+  "compatibility fallback.*run_on_startup|Legacy location-global startup config|legacy location-global startup bit|older occupied/vacant rules until they are re-saved" \
+  "${POLICY_DOCS[@]}"
+
+require_match \
+  "Active policy docs describe per-rule startup controls" \
+  'Run on startup|per-rule `Run on startup`|run_on_startup' \
+  "docs/contracts.md" "docs/automation-ui-guide.md" "docs/architecture.md"
+
+check_matches \
+  "No legacy dusk_dawn migration wording in active policy docs" \
+  "migration compatibility.*dusk_dawn|may be present during migration|Target-state Lighting rule persistence is HA automation entities" \
+  "docs/contracts.md" "docs/automation-ui-guide.md" "docs/architecture.md"
+
 legacy_automation_tabs_output="$(
-  rg -n -e 'Lighting`, `Appliances`, `Media`, and `HVAC`|Detection`, `Ambient`, `Lighting`, `Appliances`, `Media`, `HVAC`|`Appliances` -> `switch\\.\\*`|/topomation-appliances.*defaults inspector to `Appliances`' \
+  rg -n -e 'Lighting`, `Appliances`, `Media`, and `HVAC`|Detection`, `Ambient`, `Lighting`, `Appliances`, `Media`, `HVAC`|`Appliances` -> `switch\\.\\*`|/topomation-appliances' \
     "${POLICY_DOCS[@]}" || true
 )"
 if [[ -n "$legacy_automation_tabs_output" ]]; then
@@ -103,6 +123,11 @@ if [[ -n "$legacy_automation_tabs_output" ]]; then
 else
   echo "[PASS] No legacy Appliances-first automation IA in active policy docs"
 fi
+
+check_matches \
+  "Docs index does not list dusk-dawn lighting spec as active" \
+  '^\| `docs/dusk-dawn-lighting-ui-spec\.md` \|.*\| Active' \
+  "docs/index.md"
 
 require_match \
   "Docs index defines delivery status vocabulary" \

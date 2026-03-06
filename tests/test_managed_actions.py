@@ -30,6 +30,7 @@ async def test_async_list_rules_filters_to_location_and_extracts_summary(
         "time_condition_enabled": False,
         "start_time": "18:00",
         "end_time": "23:59",
+        "run_on_startup": True,
     }
     description = f"Managed by Topomation.\n{TOPOMATION_AUTOMATION_METADATA_PREFIX} {json.dumps(metadata)}"
 
@@ -90,6 +91,7 @@ async def test_async_list_rules_filters_to_location_and_extracts_summary(
     assert rule["ambient_condition"] == "dark"
     assert rule["must_be_occupied"] is False
     assert rule["time_condition_enabled"] is False
+    assert rule["run_on_startup"] is True
     assert rule["require_dark"] is True
     assert rule["enabled"] is False
 
@@ -269,6 +271,7 @@ def test_private_helpers_parse_and_mutate_config() -> None:
             "time_condition_enabled": False,
             "start_time": "18:00",
             "end_time": "23:59",
+            "run_on_startup": True,
         }
     )
     parsed = manager._parse_metadata(f"Managed by Topomation.\n{metadata_line}")  # noqa: SLF001
@@ -277,6 +280,7 @@ def test_private_helpers_parse_and_mutate_config() -> None:
     assert parsed.trigger_type == "on_occupied"
     assert parsed.ambient_condition == "any"
     assert parsed.must_be_occupied is False
+    assert parsed.run_on_startup is True
     assert manager._parse_metadata("Managed by Topomation") is None  # noqa: SLF001
     assert parsed.rule_uuid == ""
 
@@ -423,10 +427,13 @@ async def test_async_create_rule_rolls_back_when_registration_does_not_converge(
             trigger_type="on_dark",
             action_entity_id="light.kitchen_ceiling",
             action_service="turn_on",
+            run_on_startup=True,
         )
 
     assert len(api_calls) == 2
     assert api_calls[0][0] == "POST"
+    assert api_calls[0][2] is not None
+    assert '"run_on_startup": true' in str(api_calls[0][2]["description"]).lower()
     assert api_calls[1] == ("DELETE", api_calls[0][1], None)
     assert manager._recent_rule_snapshots == {}  # noqa: SLF001
 

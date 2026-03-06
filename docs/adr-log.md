@@ -2703,6 +2703,121 @@ occupancy-driven presets/setbacks/modes.
 
 ---
 
+### ADR-HA-061: Startup Replay Moves to Rule Cards; Harness Must Cover Reactive HA Churn (2026-03-06)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+
+The repo had drift between the active UI contract and the shipped behavior in
+two ways:
+
+1. Startup replay was still described and partially implemented as a
+   tab-global toggle, while the real rule editor had moved to card-local
+   lifecycle controls.
+2. The `Add rule` path worked in the mock harness but failed in production
+   because the inspector treated every reactive `hass` object replacement as a
+   full reconnect, keeping rule reload state active under real Home Assistant
+   event churn.
+
+The result was a misleading startup UX and a production-only regression that
+the old harness did not simulate.
+
+**Decision**:
+
+1. Remove tab-global startup reapply controls from `Lighting`, `Media`, and
+   `HVAC`.
+2. Add a per-rule `Run on startup` toggle on rule cards.
+3. Persist startup opt-in in managed-rule metadata as `run_on_startup`.
+4. Keep `modules.automation.reapply_last_state_on_startup` only as a legacy
+   compatibility fallback for older occupied/vacant rules until those rules are
+   re-saved with explicit metadata.
+5. Frontend regression coverage must include same-connection reactive `hass`
+   churn so UI controls are validated under Home Assistant-like update
+   frequency, not just static mock snapshots.
+
+**Rationale**:
+
+1. Startup behavior belongs with the rule it affects, not as a disconnected
+   tab-level strip.
+2. Explicit metadata is easier to reason about than a shared location-global
+   bit when rules span Lighting, Media, and HVAC.
+3. The fallback path preserves existing occupancy startup behavior while the UI
+   migrates saved rules to the explicit per-rule model.
+4. The production regression was caused by harness realism, not just missing
+   assertions, so the harness contract needed to change too.
+
+**Consequences**:
+
+- ✅ Startup replay is now authored and reviewed at the same scope as other
+  rule conditions.
+- ✅ Lighting, Media, and HVAC all share one coherent startup model.
+- ✅ Mock-browser coverage now exercises the Add Rule path under HA-like
+  reactive update churn.
+- ⚠️ Older rules may still honor the legacy location-global startup flag until
+  they are re-saved.
+- ⚠️ Historical ADRs that mention per-tab startup toggles remain archival only.
+
+---
+
+### ADR-HA-062: Active Automation Development Runs Without Legacy Compatibility Paths (2026-03-06)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+
+The active automation branch was still carrying three kinds of compatibility
+behavior after the HA-canonical rule migration:
+
+1. Lighting editor startup/runtime behavior still mentioned or partially honored
+   a location-global startup fallback.
+2. The active Lighting editor still imported legacy `modules.dusk_dawn`
+   payloads into current rule cards.
+3. The frontend and panel surface still kept old alias/fallback behavior
+   (`/topomation-appliances`, browser-side managed-rule fallback code) that no
+   longer matched how we are developing and testing this feature.
+
+That created repeated documentation drift and made production problems harder to
+reason about because the active branch was not following a single source of
+truth.
+
+**Decision**:
+
+1. The active automation development branch is dev-mode only and does not keep
+   legacy compatibility behavior by default.
+2. Startup replay in the active automation workflow only honors explicit
+   per-rule managed metadata (`run_on_startup`).
+3. The active Lighting editor ignores legacy `modules.dusk_dawn` payloads
+   rather than migrating them into current rule cards.
+4. Frontend managed-rule operations fail explicitly when the backend websocket
+   contract is unavailable; no browser-side fallback path remains.
+5. Remove legacy automation route aliases from the active panel surface when
+   they no longer represent a contracted product workflow.
+6. If compatibility or migration support is needed later, it must be added
+   deliberately with a new ADR and explicit test/docs coverage.
+
+**Rationale**:
+
+1. One active behavior model is easier to implement, test, and debug than a
+   dev branch that keeps transitional shims alive.
+2. Explicit failure is better than silent fallback when the goal is contract
+   hardening.
+3. Removing compatibility paths eliminates a major source of contradictory docs
+   and ambiguous expectations during iteration.
+
+**Consequences**:
+
+- ✅ The active automation UI/runtime now reflects only the current HA-canonical
+  rule model.
+- ✅ Test coverage can focus on the shipped dev path instead of migration logic.
+- ✅ Docs can state the current workflow directly without compatibility caveats.
+- ⚠️ Older saved payloads and old deep links are not part of the active dev
+  branch contract.
+- ⚠️ A fresh live HA rerun is required after this cleanup before restoring any
+  `Live-validated` claim for the automation UX branch state.
+
+---
+
 ## How to Use This Log
 
 ### When to Create an ADR

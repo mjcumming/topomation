@@ -5,13 +5,6 @@ import type {
   AdjacencyEdge,
   AmbientConfig,
   AmbientLightReading,
-  AutomationConfig,
-  DuskDawnAmbientCondition,
-  DuskDawnAlreadyOnBehavior,
-  DuskDawnConfig,
-  DuskDawnLightTarget,
-  DuskDawnScheduleBlock,
-  DuskDawnTriggerMode,
   HandoffTrace,
   HomeAssistant,
   Location,
@@ -45,13 +38,8 @@ type InspectorTab =
   | "lighting"
   | "media"
   | "hvac";
-type InspectorTabRequest =
-  | InspectorTab
-  | "appliances"
-  | "occupancy"
-  | "dusk_dawn";
+type InspectorTabRequest = InspectorTab | "occupancy";
 type DeviceAutomationTab = "lighting" | "media" | "hvac";
-type StartupAutomationTab = Exclude<DeviceAutomationTab, "lighting">;
 type OccupancyLockDirective = {
   sourceId: string;
   mode: string;
@@ -174,6 +162,7 @@ export class HtLocationInspector extends LitElement {
   private _ambientReadingReloadTimer?: number;
   private _clockTimer?: number;
   private _unsubAutomationStateChanged?: () => void;
+  private _automationStateSubscriptionConnection?: unknown;
   private _actionRulesReloadTimer?: number;
   private _beforeUnloadHandler = (event: BeforeUnloadEvent) => {
     if (!this._hasUnsavedDrafts()) return;
@@ -2007,13 +1996,24 @@ export class HtLocationInspector extends LitElement {
 
   protected willUpdate(changedProps: Map<string, unknown>): void {
     if (changedProps.has("hass")) {
-      this._entityAreaById = {};
-      this._entityAreaLoadPromise = undefined;
-      this._liveOccupancyStateByLocation = {};
-      if (this.hass) {
-        void this._loadEntityAreaAssignments();
-        void this._loadActionRules();
-        void this._subscribeAutomationStateChanged();
+      const previousHass = changedProps.get("hass") as HomeAssistant | undefined;
+      const previousConnection = previousHass?.connection;
+      const nextConnection = this.hass?.connection;
+      if (previousConnection !== nextConnection) {
+        this._entityAreaById = {};
+        this._entityAreaLoadPromise = undefined;
+        this._liveOccupancyStateByLocation = {};
+        if (!this.hass) {
+          if (this._unsubAutomationStateChanged) {
+            this._unsubAutomationStateChanged();
+            this._unsubAutomationStateChanged = undefined;
+          }
+          this._automationStateSubscriptionConnection = undefined;
+        } else {
+          void this._loadEntityAreaAssignments();
+          void this._loadActionRules();
+          void this._subscribeAutomationStateChanged();
+        }
       }
     }
 
@@ -2541,271 +2541,6 @@ export class HtLocationInspector extends LitElement {
     return normalized.includes("lux") || normalized.includes("illuminance") || normalized.includes("light_level");
   }
 
-  private _duskDawnDefaults(): DuskDawnConfig {
-    return {
-      version: 3,
-      blocks: [],
-    };
-  }
-
-  private _normalizeDuskDawnTriggerMode(value: unknown): DuskDawnTriggerMode {
-    if (value === "on_occupied") return "on_occupied";
-    if (value === "on_vacant") return "on_vacant";
-    if (value === "on_dark") return "on_dark";
-    if (value === "on_bright") return "on_bright";
-    // Legacy v3 values from earlier drafts.
-    if (value === "while_dark_on_occupancy") return "on_occupied";
-    if (value === "at_dark_if_occupied") return "on_dark";
-    return "on_dark";
-  }
-
-  private _defaultAmbientConditionForTrigger(triggerMode: DuskDawnTriggerMode): DuskDawnAmbientCondition {
-    if (triggerMode === "on_dark") return "any";
-    if (triggerMode === "on_bright") return "any";
-    return "any";
-  }
-
-  private _lockedAmbientConditionForTrigger(
-    triggerMode: DuskDawnTriggerMode
-  ): DuskDawnAmbientCondition | undefined {
-    if (triggerMode === "on_dark") return "dark";
-    if (triggerMode === "on_bright") return "bright";
-    return undefined;
-  }
-
-  private _isAmbientConditionLockedByTrigger(triggerMode: DuskDawnTriggerMode): boolean {
-    return this._lockedAmbientConditionForTrigger(triggerMode) !== undefined;
-  }
-
-  private _lockedMustBeOccupiedForTrigger(triggerMode: DuskDawnTriggerMode): boolean | undefined {
-    if (triggerMode === "on_occupied") return true;
-    if (triggerMode === "on_vacant") return false;
-    return undefined;
-  }
-
-  private _isMustBeOccupiedLockedByTrigger(triggerMode: DuskDawnTriggerMode): boolean {
-    return this._lockedMustBeOccupiedForTrigger(triggerMode) !== undefined;
-  }
-
-  private _applyTriggerDerivedBlockConstraints(block: DuskDawnScheduleBlock): DuskDawnScheduleBlock {
-    const triggerMode = this._normalizeDuskDawnTriggerMode(block.trigger_mode);
-    const next: DuskDawnScheduleBlock = { ...block };
-    const lockedAmbient = this._lockedAmbientConditionForTrigger(triggerMode);
-    if (lockedAmbient !== undefined) {
-      next.ambient_condition = lockedAmbient;
-    }
-    const lockedMustBeOccupied = this._lockedMustBeOccupiedForTrigger(triggerMode);
-    if (lockedMustBeOccupied !== undefined) {
-      next.must_be_occupied = lockedMustBeOccupied;
-    }
-    return next;
-  }
-
-  private _normalizeDuskDawnAmbientCondition(
-    value: unknown,
-    triggerMode: DuskDawnTriggerMode
-  ): DuskDawnAmbientCondition {
-    const lockedAmbient = this._lockedAmbientConditionForTrigger(triggerMode);
-    if (lockedAmbient !== undefined) return lockedAmbient;
-    if (value === "dark") return "dark";
-    if (value === "bright") return "bright";
-    if (value === "any") return "any";
-    return this._defaultAmbientConditionForTrigger(triggerMode);
-  }
-
-  private _normalizeDuskDawnMustBeOccupied(value: unknown, legacyTriggerMode: unknown): boolean {
-    const normalizedTrigger = this._normalizeDuskDawnTriggerMode(legacyTriggerMode);
-    const lockedMustBeOccupied = this._lockedMustBeOccupiedForTrigger(normalizedTrigger);
-    if (lockedMustBeOccupied !== undefined) return lockedMustBeOccupied;
-    if (typeof value === "boolean") return value;
-    return legacyTriggerMode === "at_dark_if_occupied";
-  }
-
-  private _normalizeDuskDawnAlreadyOnBehavior(value: unknown): DuskDawnAlreadyOnBehavior {
-    if (value === "set_target") return "set_target";
-    return "set_target";
-  }
-
-  private _timeToMinutes(raw: string): number | undefined {
-    const normalized = String(raw || "").trim();
-    const match = normalized.match(/^([01]\d|2[0-3]):([0-5]\d)$/);
-    if (!match) return undefined;
-    return Number(match[1]) * 60 + Number(match[2]);
-  }
-
-  private _normalizeDuskDawnStartTime(value: unknown, fallback: string): string {
-    const raw = typeof value === "string" ? value.trim() : "";
-    if (this._timeToMinutes(raw) !== undefined) return raw;
-    return fallback;
-  }
-
-  private _clampBrightnessPct(value: unknown, fallback = 30): number {
-    const parsed = Number(value);
-    if (!Number.isFinite(parsed)) return Math.max(1, Math.min(100, fallback));
-    return Math.max(1, Math.min(100, Math.round(parsed)));
-  }
-
-  private _normalizeColorHex(value: unknown, fallback?: string): string | undefined {
-    const raw = typeof value === "string" ? value.trim() : "";
-    const normalized = raw.startsWith("#") ? raw : raw ? `#${raw}` : "";
-    if (/^#[0-9a-fA-F]{6}$/.test(normalized)) {
-      return normalized.toLowerCase();
-    }
-    return fallback;
-  }
-
-  private _normalizeDuskDawnBlockId(value: unknown, fallback: string): string {
-    const raw = typeof value === "string" ? value.trim() : "";
-    return raw || fallback;
-  }
-
-  private _normalizeLegacyDuskDawnRuleName(value: unknown, fallbackIndex: number): string {
-    const raw = typeof value === "string" ? value.trim() : "";
-    if (!raw) return `Rule ${fallbackIndex + 1}`;
-    const legacyBlockMatch = raw.match(/^block\s+(\d+)$/i);
-    if (legacyBlockMatch) {
-      return `Rule ${legacyBlockMatch[1]}`;
-    }
-    return raw;
-  }
-
-  private _isPlaceholderRuleName(value: unknown): boolean {
-    const raw = typeof value === "string" ? value.trim() : "";
-    if (!raw) return true;
-    return /^rule\s+\d+$/i.test(raw) || /^block\s+\d+$/i.test(raw);
-  }
-
-  private _humanizeEntityId(entityId: string): string {
-    const raw = String(entityId || "").trim();
-    if (!raw) return "Device";
-    const [, objectId = raw] = raw.split(".", 2);
-    const normalized = objectId
-      .replace(/[_\s]+/g, " ")
-      .trim()
-      .replace(/\b\w/g, (char) => char.toUpperCase());
-    return normalized || raw;
-  }
-
-  private _lightingTriggerLabel(triggerMode: DuskDawnTriggerMode): string {
-    if (triggerMode === "on_occupied") return "On occupied";
-    if (triggerMode === "on_vacant") return "On vacant";
-    if (triggerMode === "on_bright") return "On bright";
-    return "On dark";
-  }
-
-  private _autoLightingRuleName(block: DuskDawnScheduleBlock, index: number): string {
-    const triggerMode = this._normalizeDuskDawnTriggerMode(block.trigger_mode);
-    let name = this._lightingTriggerLabel(triggerMode);
-    const targets = this._sanitizeDuskDawnLightTargets(block.light_targets);
-    if (targets.length > 0) {
-      const firstTargetLabel = this._humanizeEntityId(targets[0].entity_id);
-      const suffix = targets.length > 1 ? ` +${targets.length - 1}` : "";
-      name = `${name}: ${firstTargetLabel}${suffix}`;
-    }
-    if (block.time_condition_enabled) {
-      const begin = this._normalizeDuskDawnStartTime(block.start_time, "18:00");
-      const end = this._normalizeDuskDawnStartTime(block.end_time, "23:59");
-      name = `${name} (${begin}-${end})`;
-    }
-    if (name === this._lightingTriggerLabel(triggerMode)) {
-      return `${name} (${index + 1})`;
-    }
-    return name;
-  }
-
-  private _resolveLightingRuleName(block: DuskDawnScheduleBlock, index: number): string {
-    const explicitName = String(block.name || "").trim();
-    if (!this._isPlaceholderRuleName(explicitName)) return explicitName;
-    return this._autoLightingRuleName(block, index);
-  }
-
-  private _sanitizeDuskDawnLightTargets(raw: unknown): DuskDawnLightTarget[] {
-    const normalized: DuskDawnLightTarget[] = [];
-    const seen = new Set<string>();
-    if (Array.isArray(raw)) {
-      for (const item of raw) {
-        if (!item || typeof item !== "object") continue;
-        const target = item as DuskDawnLightTarget;
-        const entityId = typeof target.entity_id === "string" ? target.entity_id.trim() : "";
-        if (!entityId || !entityId.startsWith("light.") || seen.has(entityId)) continue;
-        seen.add(entityId);
-        const power: "on" | "off" = target.power === "off" ? "off" : "on";
-        const normalizedTarget: DuskDawnLightTarget = {
-          entity_id: entityId,
-          power,
-        };
-        const rawAlreadyOn =
-          typeof target.already_on_behavior === "string" ? target.already_on_behavior.trim() : "";
-        if (rawAlreadyOn) {
-          normalizedTarget.already_on_behavior = this._normalizeDuskDawnAlreadyOnBehavior(rawAlreadyOn);
-        }
-        if (power === "on") {
-          if (this._isDimmableEntity(entityId) && target.brightness_pct !== null && target.brightness_pct !== undefined) {
-            normalizedTarget.brightness_pct = this._clampBrightnessPct(target.brightness_pct, 30);
-          }
-          const colorHex = this._normalizeColorHex(target.color_hex);
-          if (colorHex && this._isColorCapableEntity(entityId)) {
-            normalizedTarget.color_hex = colorHex;
-          }
-        }
-        normalized.push(normalizedTarget);
-      }
-    }
-
-    return normalized;
-  }
-
-  private _sanitizeDuskDawnBlock(raw: unknown, fallbackId: string, fallbackIndex: number): DuskDawnScheduleBlock {
-    const block = raw && typeof raw === "object" ? (raw as DuskDawnScheduleBlock) : {};
-    const rawTriggerMode = (block as Record<string, unknown>).trigger_mode;
-    const triggerMode = this._normalizeDuskDawnTriggerMode(rawTriggerMode);
-    const id = this._normalizeDuskDawnBlockId(block.id, fallbackId);
-    const name = this._normalizeLegacyDuskDawnRuleName(block.name, fallbackIndex);
-    const startTime = this._normalizeDuskDawnStartTime(block.start_time, "18:00");
-    const endTime = this._normalizeDuskDawnStartTime(block.end_time, "23:59");
-    const sanitized: DuskDawnScheduleBlock = {
-      id,
-      name,
-      start_time: startTime,
-      end_time: endTime,
-      time_condition_enabled: Boolean(block.time_condition_enabled),
-      trigger_mode: triggerMode,
-      ambient_condition: this._normalizeDuskDawnAmbientCondition(block.ambient_condition, triggerMode),
-      must_be_occupied: this._normalizeDuskDawnMustBeOccupied(block.must_be_occupied, rawTriggerMode),
-      already_on_behavior: this._normalizeDuskDawnAlreadyOnBehavior(block.already_on_behavior),
-      light_targets: this._sanitizeDuskDawnLightTargets(block.light_targets),
-    };
-    return this._applyTriggerDerivedBlockConstraints(sanitized);
-  }
-
-  private _sanitizeDuskDawnBlocks(raw: unknown): DuskDawnScheduleBlock[] {
-    if (!Array.isArray(raw)) return [];
-    const sanitized: DuskDawnScheduleBlock[] = [];
-    const seenIds = new Set<string>();
-    for (let index = 0; index < raw.length; index += 1) {
-      const item = raw[index];
-      if (!item || typeof item !== "object") continue;
-      const block = item as DuskDawnScheduleBlock;
-      const id = this._normalizeDuskDawnBlockId(block.id, `rule_${index + 1}`);
-      if (seenIds.has(id)) continue;
-      seenIds.add(id);
-      sanitized.push(this._sanitizeDuskDawnBlock(block, id, sanitized.length));
-    }
-    return sanitized;
-  }
-
-  private _getDuskDawnConfig(): DuskDawnConfig {
-    const defaults = this._duskDawnDefaults();
-    const raw = ((this.location?.modules?.dusk_dawn || {}) as DuskDawnConfig) || {};
-    if (Number(raw.version) !== 3) {
-      return defaults;
-    }
-    return {
-      version: 3,
-      blocks: this._sanitizeDuskDawnBlocks(raw.blocks),
-    };
-  }
-
   private async _loadEntityAreaAssignments(): Promise<void> {
     if (this._entityAreaLoadPromise || !this.hass?.callWS) return;
 
@@ -3035,10 +2770,8 @@ export class HtLocationInspector extends LitElement {
     if (requested === "detection") return "detection";
     if (requested === "ambient") return "ambient";
     if (requested === "lighting") return "lighting";
-    if (requested === "appliances") return "hvac";
     if (requested === "media") return "media";
     if (requested === "hvac") return "hvac";
-    if (requested === "dusk_dawn") return "lighting";
     if (requested === "occupancy") return "detection";
     return undefined;
   }
@@ -3067,6 +2800,7 @@ export class HtLocationInspector extends LitElement {
       this._unsubAutomationStateChanged();
       this._unsubAutomationStateChanged = undefined;
     }
+    this._automationStateSubscriptionConnection = undefined;
   }
 
   private _scheduleActionRulesReload(delayMs = 250): void {
@@ -3093,14 +2827,28 @@ export class HtLocationInspector extends LitElement {
   }
 
   private async _subscribeAutomationStateChanged(): Promise<void> {
+    const connection = this.hass?.connection;
+    if (!connection?.subscribeEvents) {
+      if (this._unsubAutomationStateChanged) {
+        this._unsubAutomationStateChanged();
+        this._unsubAutomationStateChanged = undefined;
+      }
+      this._automationStateSubscriptionConnection = undefined;
+      return;
+    }
+    if (
+      this._unsubAutomationStateChanged &&
+      this._automationStateSubscriptionConnection === connection
+    ) {
+      return;
+    }
     if (this._unsubAutomationStateChanged) {
       this._unsubAutomationStateChanged();
       this._unsubAutomationStateChanged = undefined;
     }
-    if (!this.hass?.connection?.subscribeEvents) return;
 
     try {
-      this._unsubAutomationStateChanged = await this.hass.connection.subscribeEvents(
+      this._unsubAutomationStateChanged = await connection.subscribeEvents(
         (event: any) => {
           const entityId = event?.data?.entity_id;
           const newStateObj = event?.data?.new_state;
@@ -3148,8 +2896,10 @@ export class HtLocationInspector extends LitElement {
         },
         "state_changed"
       );
+      this._automationStateSubscriptionConnection = connection;
     } catch (err) {
       // ignore subscribe failures in restricted/test contexts
+      this._automationStateSubscriptionConnection = undefined;
     }
   }
 
@@ -5948,6 +5698,14 @@ export class HtLocationInspector extends LitElement {
     return name;
   }
 
+  private _isPlaceholderRuleName(name: string): boolean {
+    const trimmed = String(name || "").trim();
+    if (!trimmed) {
+      return true;
+    }
+    return /^Rule \d+$/i.test(trimmed);
+  }
+
   private _resolveActionRuleName(rule: TopomationActionRule, index: number): string {
     const explicitName = String(rule.name || "").trim();
     if (!this._isPlaceholderRuleName(explicitName)) return explicitName;
@@ -5980,6 +5738,21 @@ export class HtLocationInspector extends LitElement {
       return lockedMustBeOccupied;
     }
     return Boolean(value);
+  }
+
+  private _normalizeActionRunOnStartup(value: unknown): boolean | undefined {
+    return typeof value === "boolean" ? value : undefined;
+  }
+
+  private _defaultActionRunOnStartup(): boolean {
+    return false;
+  }
+
+  private _resolvedActionRunOnStartup(rule: Partial<TopomationActionRule>): boolean {
+    if (typeof rule.run_on_startup === "boolean") {
+      return rule.run_on_startup;
+    }
+    return this._defaultActionRunOnStartup();
   }
 
   private _normalizeActionTargets(
@@ -6285,6 +6058,7 @@ export class HtLocationInspector extends LitElement {
       time_condition_enabled: Boolean(rule.time_condition_enabled),
       start_time: this._normalizeActionTime(rule.start_time, "18:00"),
       end_time: this._normalizeActionTime(rule.end_time, "23:59"),
+      run_on_startup: this._normalizeActionRunOnStartup(rule.run_on_startup),
       enabled: rule.enabled !== false,
       require_dark: this._normalizeActionAmbientCondition(rule.ambient_condition, triggerType) === "dark",
     };
@@ -6307,112 +6081,10 @@ export class HtLocationInspector extends LitElement {
     });
   }
 
-  private _legacyLightingRulesFromDuskDawn(seedIndex = 0): TopomationActionRule[] {
-    const legacyConfig = this._getDuskDawnConfig();
-    const blocks = this._sanitizeDuskDawnBlocks(legacyConfig.blocks);
-    if (blocks.length === 0) return [];
-
-    const migrated: TopomationActionRule[] = [];
-    blocks.forEach((block, blockIndex) => {
-      const triggerType = this._normalizeDuskDawnTriggerMode(block.trigger_mode);
-      const ambientCondition = this._normalizeDuskDawnAmbientCondition(
-        block.ambient_condition,
-        triggerType
-      );
-      const blockId = this._normalizeDuskDawnBlockId(block.id, `rule_${blockIndex + 1}`);
-      const targets = this._sanitizeDuskDawnLightTargets(block.light_targets);
-      const baseName = this._resolveLightingRuleName(block, blockIndex);
-
-      if (targets.length === 0) {
-        const legacyId = `legacy_lighting_${blockId}`;
-        migrated.push(
-          this._normalizeActionRule(
-            {
-              id: legacyId,
-              entity_id: `automation.${legacyId}`,
-              name: baseName,
-              rule_uuid: this._normalizeRuleUuid(`legacy_${blockId}`),
-              trigger_type: triggerType,
-              ambient_condition: ambientCondition,
-              must_be_occupied: Boolean(block.must_be_occupied),
-              time_condition_enabled: Boolean(block.time_condition_enabled),
-              start_time: this._normalizeActionTime(block.start_time, "18:00"),
-              end_time: this._normalizeActionTime(block.end_time, "23:59"),
-              enabled: true,
-            },
-            seedIndex + migrated.length
-          )
-        );
-        return;
-      }
-
-      const legacyId = `legacy_lighting_${blockId}`;
-      const migratedActions: RuleActionTarget[] = targets
-        .map((target) => {
-          const entityId = String(target.entity_id || "").trim();
-          if (!entityId) return undefined;
-          const service = target.power === "off" ? "turn_off" : "turn_on";
-          const normalizedData =
-            service === "turn_on"
-              ? this._normalizeActionDataForRule(
-                  {
-                    ...(target.brightness_pct ? { brightness_pct: target.brightness_pct } : {}),
-                    ...(target.color_hex ? { color_hex: target.color_hex } : {}),
-                  },
-                  entityId,
-                  service
-                )
-              : undefined;
-          return {
-            entity_id: entityId,
-            service,
-            ...(normalizedData ? { data: normalizedData } : {}),
-          } satisfies RuleActionTarget;
-        })
-        .filter((action): action is RuleActionTarget => !!action);
-
-      migrated.push(
-        this._normalizeActionRule(
-          {
-            id: legacyId,
-            entity_id: `automation.${legacyId}`,
-            name: baseName,
-            rule_uuid: this._normalizeRuleUuid(`legacy_${blockId}`),
-            trigger_type: triggerType,
-            actions: migratedActions,
-            ambient_condition: ambientCondition,
-            must_be_occupied: Boolean(block.must_be_occupied),
-            time_condition_enabled: Boolean(block.time_condition_enabled),
-            start_time: this._normalizeActionTime(block.start_time, "18:00"),
-            end_time: this._normalizeActionTime(block.end_time, "23:59"),
-            enabled: true,
-          },
-          seedIndex + migrated.length
-        )
-      );
-    });
-
-    return migrated;
-  }
-
   private _resetActionRulesDraftFromLoaded(): void {
-    let normalizedRules = this._actionRules.map((rule, index) =>
+    const normalizedRules = this._actionRules.map((rule, index) =>
       this._normalizeActionRule(rule, index)
     );
-    const hasPersistedLightingRules = normalizedRules.some(
-      (rule) => this._tabForActionEntity(String(rule.action_entity_id || "").trim()) === "lighting"
-    );
-    const legacyLightingRuleIds = new Set<string>();
-    if (!hasPersistedLightingRules) {
-      const migratedLegacyRules = this._legacyLightingRulesFromDuskDawn(normalizedRules.length);
-      if (migratedLegacyRules.length > 0) {
-        for (const rule of migratedLegacyRules) {
-          legacyLightingRuleIds.add(String(rule.id || ""));
-        }
-        normalizedRules = [...normalizedRules, ...migratedLegacyRules];
-      }
-    }
-
     this._actionRulesDraft = normalizedRules;
     this._actionRulesDraftDirty = false;
     this._actionRulesSaveError = undefined;
@@ -6421,10 +6093,7 @@ export class HtLocationInspector extends LitElement {
     this._actionRuleTabById = {};
     for (const rule of normalizedRules) {
       const ruleId = String(rule.id || "");
-      let tab = this._tabForActionEntity(String(rule.action_entity_id || "").trim());
-      if (!tab && legacyLightingRuleIds.has(ruleId)) {
-        tab = "lighting";
-      }
+      const tab = this._tabForActionEntity(String(rule.action_entity_id || "").trim());
       if (ruleId && tab) {
         this._actionRuleTabById[ruleId] = tab;
       }
@@ -6509,6 +6178,7 @@ export class HtLocationInspector extends LitElement {
       time_condition_enabled: Boolean(rule.time_condition_enabled),
       start_time: this._normalizeActionTime(rule.start_time, "18:00"),
       end_time: this._normalizeActionTime(rule.end_time, "23:59"),
+      run_on_startup: this._resolvedActionRunOnStartup(rule),
       enabled: rule.enabled !== false,
     });
   }
@@ -6640,6 +6310,7 @@ export class HtLocationInspector extends LitElement {
       time_condition_enabled: false,
       start_time: "18:00",
       end_time: "23:59",
+      run_on_startup: this._defaultActionRunOnStartup(),
       enabled: true,
     };
     this._setActionRulesDraft([...rules, nextRule]);
@@ -7000,6 +6671,7 @@ export class HtLocationInspector extends LitElement {
           time_condition_enabled: Boolean(rule.time_condition_enabled),
           start_time: rule.start_time,
           end_time: rule.end_time,
+          run_on_startup: this._resolvedActionRunOnStartup(rule),
           require_dark: rule.ambient_condition === "dark",
         },
         this.entryId
@@ -7289,7 +6961,6 @@ export class HtLocationInspector extends LitElement {
           : "HVAC or ventilation";
 
     return html`
-      ${tab === "lighting" ? "" : this._renderActionStartupConfig(tab)}
       <div class="card-section" data-testid="actions-rules-section">
         <div class="section-title-row">
           <div class="section-title">
@@ -7342,6 +7013,7 @@ export class HtLocationInspector extends LitElement {
                   rule.must_be_occupied,
                   triggerType
                 );
+                const runOnStartup = this._resolvedActionRunOnStartup(rule);
                 const occupancyConditionLabel = mustBeOccupied ? "Must be occupied" : "Must be vacant";
                 const persistedRule = this._persistedActionRuleForDraft(rule);
                 const isPersisted = Boolean(persistedRule);
@@ -7503,6 +7175,28 @@ export class HtLocationInspector extends LitElement {
                             @change=${(ev: Event) =>
                               this._updateActionRule(ruleId, {
                                 time_condition_enabled: (ev.target as HTMLInputElement).checked,
+                              })}
+                          />
+                        </div>
+                      </div>
+
+                      <div class="config-row">
+                        <div>
+                          <div class="config-label">Run on startup</div>
+                          <div class="config-help">
+                            Re-evaluate this rule after Home Assistant starts.
+                          </div>
+                        </div>
+                        <div class="config-value">
+                          <input
+                            type="checkbox"
+                            class="switch-input"
+                            .checked=${runOnStartup}
+                            data-testid=${`action-rule-${ruleId}-run-on-startup`}
+                            ?disabled=${busy}
+                            @change=${(ev: Event) =>
+                              this._updateActionRule(ruleId, {
+                                run_on_startup: (ev.target as HTMLInputElement).checked,
                               })}
                           />
                         </div>
@@ -7699,37 +7393,6 @@ export class HtLocationInspector extends LitElement {
     `;
   }
 
-  private _renderActionStartupConfig(tab: StartupAutomationTab) {
-    const config = this._getAutomationConfig();
-    const reapplyOnStartup = Boolean(config.reapply_last_state_on_startup);
-    const tabLabel = tab === "media" ? "media" : "HVAC";
-    const heading = tab === "media" ? "Reapply media rules on startup" : "Reapply HVAC rules on startup";
-
-    return html`
-      <div class="startup-inline">
-        <label class="startup-inline-toggle">
-          <input
-            type="checkbox"
-            class="switch-input"
-            .checked=${reapplyOnStartup}
-            data-testid=${`startup-reapply-${tab}`}
-            @change=${(ev: Event) => {
-              const checked = (ev.target as HTMLInputElement).checked;
-              this._updateAutomationConfig({
-                ...config,
-                reapply_last_state_on_startup: checked,
-              });
-            }}
-          />
-          ${heading}
-        </label>
-        <div class="startup-inline-help">
-          Re-runs matching ${tabLabel} rules for this location after Home Assistant starts.
-        </div>
-      </div>
-    `;
-  }
-
   private _workingSources(config: OccupancyConfig): OccupancySource[] {
     return [...(config.occupancy_sources || [])];
   }
@@ -7874,14 +7537,6 @@ export class HtLocationInspector extends LitElement {
       return this._sanitizeOccupancyConfig(this._occupancyDefaults());
     }
     return this._sanitizeOccupancyConfig(this._occupancyDraft || this._persistedOccupancyConfig(), this.location.id);
-  }
-
-  private _getAutomationConfig(): AutomationConfig {
-    return ((this.location?.modules?.automation || {}) as AutomationConfig) || {};
-  }
-
-  private async _updateAutomationConfig(config: AutomationConfig): Promise<void> {
-    await this._updateModuleConfig("automation", config);
   }
 
   private _availableSourceAreas(): Array<{ area_id: string; name: string }> {

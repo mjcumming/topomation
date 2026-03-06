@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -13,7 +14,6 @@ from pytest_homeassistant_custom_component.common import async_capture_events
 
 from custom_components.topomation.actions_runtime import TopomationActionsRuntime
 from custom_components.topomation.const import (
-    AUTOMATION_REAPPLY_CONFIG_KEY,
     EVENT_TOPOMATION_ACTIONS_SUMMARY,
     TOPOMATION_AUTOMATION_METADATA_PREFIX,
 )
@@ -56,18 +56,29 @@ class _AutomationEntity:
     raw_config: dict[str, object]
 
 
-def _metadata_line(location_id: str, trigger_type: str) -> str:
+def _metadata_line(
+    location_id: str,
+    trigger_type: str,
+    *,
+    run_on_startup: bool | None = None,
+) -> str:
+    payload: dict[str, object] = {
+        "version": 1,
+        "location_id": location_id,
+        "trigger_type": trigger_type,
+    }
+    if isinstance(run_on_startup, bool):
+        payload["run_on_startup"] = run_on_startup
     return (
         f"Managed by Topomation\n"
-        f"{TOPOMATION_AUTOMATION_METADATA_PREFIX} "
-        f'{{"version":1,"location_id":"{location_id}","trigger_type":"{trigger_type}"}}'
+        f"{TOPOMATION_AUTOMATION_METADATA_PREFIX} {json.dumps(payload)}"
     )
 
 
 async def test_occupancy_transition_emits_summary_event(hass: HomeAssistant) -> None:
     """Occupancy transitions should emit action summary events scoped by trigger type."""
     location_id = "area_kitchen"
-    location_manager = _LocationManager({location_id: {AUTOMATION_REAPPLY_CONFIG_KEY: False}})
+    location_manager = _LocationManager({location_id: {}})
     event_bus = EventBus()
     runtime = TopomationActionsRuntime(hass, location_manager, event_bus)
 
@@ -113,7 +124,7 @@ async def test_occupancy_transition_emits_summary_event(hass: HomeAssistant) -> 
 async def test_startup_reapply_reports_failures(hass: HomeAssistant) -> None:
     """Startup reapply should summarize totals and include failure details."""
     location_id = "area_kitchen"
-    location_manager = _LocationManager({location_id: {AUTOMATION_REAPPLY_CONFIG_KEY: True}})
+    location_manager = _LocationManager({location_id: {}})
     event_bus = EventBus()
     runtime = TopomationActionsRuntime(hass, location_manager, event_bus, startup_delay_seconds=0)
 
@@ -121,11 +132,23 @@ async def test_startup_reapply_reports_failures(hass: HomeAssistant) -> None:
         entities=[
             _AutomationEntity(
                 entity_id="automation.kitchen_primary",
-                raw_config={"description": _metadata_line(location_id, "occupied")},
+                raw_config={
+                    "description": _metadata_line(
+                        location_id,
+                        "occupied",
+                        run_on_startup=True,
+                    )
+                },
             ),
             _AutomationEntity(
                 entity_id="automation.kitchen_secondary",
-                raw_config={"description": _metadata_line(location_id, "occupied")},
+                raw_config={
+                    "description": _metadata_line(
+                        location_id,
+                        "occupied",
+                        run_on_startup=True,
+                    )
+                },
             ),
         ]
     )
@@ -167,3 +190,52 @@ async def test_startup_reapply_reports_failures(hass: HomeAssistant) -> None:
     assert summary["triggered_automations"] == 1
     assert summary["failed_automations"] == 1
     assert len(summary["failure_details"]) == 1
+
+
+async def test_startup_reapply_honors_per_rule_run_on_startup_without_global_flag(
+    hass: HomeAssistant,
+) -> None:
+    """Explicit per-rule startup opt-in should work without a location-global flag."""
+    location_id = "area_kitchen"
+    location_manager = _LocationManager({location_id: {}})
+    event_bus = EventBus()
+    runtime = TopomationActionsRuntime(hass, location_manager, event_bus, startup_delay_seconds=0)
+
+    hass.data[AUTOMATION_DATA_COMPONENT] = SimpleNamespace(
+        entities=[
+            _AutomationEntity(
+                entity_id="automation.kitchen_dark",
+                raw_config={
+                    "description": _metadata_line(
+                        location_id,
+                        "on_dark",
+                        run_on_startup=True,
+                    )
+                },
+            ),
+            _AutomationEntity(
+                entity_id="automation.kitchen_occupied",
+                raw_config={"description": _metadata_line(location_id, "occupied")},
+            ),
+        ]
+    )
+    hass.states.async_set("automation.kitchen_dark", "on")
+    hass.states.async_set("automation.kitchen_occupied", "on")
+    hass.states.async_set(
+        "binary_sensor.kitchen_occupancy",
+        "on",
+        {"device_class": "occupancy", "location_id": location_id},
+    )
+
+    mock_async_call = AsyncMock(return_value=None)
+
+    with patch("homeassistant.core.ServiceRegistry.async_call", new=mock_async_call):
+        await runtime.async_reapply_startup_actions()
+        await hass.async_block_till_done()
+
+    mock_async_call.assert_awaited_once_with(
+        "automation",
+        "trigger",
+        {"entity_id": "automation.kitchen_dark", "skip_condition": False},
+        blocking=True,
+    )

@@ -368,8 +368,11 @@ Additional save points:
 - Ownership constraint:
   - hard-block `light.*` overlap between Lighting-policy targets and managed-action targets in `Media` / `HVAC` for the same location.
 - Startup behavior contract:
-  - Lighting tab does not expose a Topomation-specific startup reapply toggle.
-  - startup behavior follows native HA automation semantics.
+  - `Lighting`, `Media`, and `HVAC` do not expose tab-global startup reapply
+    toggles.
+  - rule cards expose a per-rule `Run on startup` toggle.
+  - startup replay only honors explicit managed-rule metadata
+    (`run_on_startup`).
 - Lighting trigger-derived condition contract:
   - `on_dark` and `on_bright` lock ambient condition to the matching value and
     render ambient condition as derived/read-only.
@@ -383,10 +386,12 @@ Additional save points:
   - response/list payloads include full action target list (`actions[]`) plus
     first-action summary fields for compatibility (`action_entity_id`,
     `action_service`, `action_data`).
-- Legacy migration compatibility:
-  - existing `modules.dusk_dawn` payloads may be present during migration.
-  - migration logic must preserve behavior while converging persisted Lighting
-    state to HA-managed automation records.
+- Dev-mode no-legacy rule:
+  - the active automation editor/runtime does not import legacy
+    `modules.dusk_dawn` payloads into Lighting rules.
+  - compatibility fallbacks like
+    `modules.automation.reapply_last_state_on_startup` are not part of the
+    active automation contract.
 - Lighting UI contract is locked by `docs/automation-ui-guide.md` (Section 10)
   and must be updated with any lighting-tab UX change.
 

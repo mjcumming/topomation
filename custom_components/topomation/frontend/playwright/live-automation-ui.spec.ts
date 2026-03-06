@@ -220,6 +220,7 @@ test("live automation lighting workflow matches contracted lifecycle controls", 
     await inspector.getByRole("button", { name: "Add rule" }).click();
     const draftRule = inspector.locator(".dusk-block-row[data-testid^='action-rule-']").last();
     await expect(draftRule).toBeVisible();
+    await expect(draftRule.locator("[data-testid$='-run-on-startup']")).toBeVisible();
     await expect(draftRule.getByRole("button", { name: "Save rule" })).toBeVisible();
     await expect(draftRule.getByRole("button", { name: "Remove rule" })).toBeVisible();
     await expect(draftRule.getByRole("button", { name: "Delete rule" })).toHaveCount(0);

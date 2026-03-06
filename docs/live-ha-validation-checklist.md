@@ -134,10 +134,10 @@ The primary flow: motion sensor triggers → occupancy entity ON → timeout exp
 
 Current evidence state for Section 5 / 5.1 (2026-03-06):
 
-- Delivery status: `Live-validated`
+- Delivery status: `Implemented`
 - Automated validation: passed in targeted backend/frontend/Playwright suites
 - Live managed-actions backend contract: passed on 2026-03-06 (`tests/test-live-managed-actions-contract.py`, 2 passed)
-- Live UI delta rerun: passed on 2026-03-06 (`npx playwright test --config playwright.live.config.ts playwright/live-automation-ui.spec.ts`, 1 passed)
+- Live UI delta rerun: previous pass recorded on 2026-03-06; rerun required after the no-legacy dev cleanup
 
 - [x] In `On Occupied`, enable a light action row and confirm checkbox remains checked after save.
 - [x] Reload panel/browser and confirm managed action row remains enabled.
@@ -147,9 +147,9 @@ Current evidence state for Section 5 / 5.1 (2026-03-06):
 - [x] Run optional live contract test:
   - `pytest tests/test-live-managed-actions-contract.py -v --live-ha`
 
-**Result**: [x] PASS / [ ] FAIL — Notes: Live managed-actions contract rerun passed on 2026-03-06 (`tests/test-live-managed-actions-contract.py`, 2 passed). Section 5.1 live UI delta rerun also passed on 2026-03-06 (`npx playwright test --config playwright.live.config.ts playwright/live-automation-ui.spec.ts`, 1 passed).
+**Result**: [x] PASS / [ ] FAIL — Notes: Live managed-actions contract rerun passed on 2026-03-06 (`tests/test-live-managed-actions-contract.py`, 2 passed). Section 5.1 live UI delta rerun also passed on 2026-03-06 (`npx playwright test --config playwright.live.config.ts playwright/live-automation-ui.spec.ts`, 1 passed), but that predates the active no-legacy cleanup.
 
-### 5.1 Automation UX Reset Deltas (ISSUE-058 / ADR-HA-054/055/056/057/060)
+### 5.1 Automation UX Reset Deltas (ISSUE-058 / ADR-HA-054/055/056/057/060/061/062)
 
 Do not mark the delta section `PASS` until the unchecked items below are
 executed on a running HA instance, even if automated coverage passes locally.
@@ -157,7 +157,8 @@ executed on a running HA instance, even if automated coverage passes locally.
 - [x] Detection edits require explicit `Save changes`; direct control edits no longer auto-persist.
 - [x] Detection `Discard` restores persisted state and clears dirty indicator.
 - [x] Configure inspector tabs are `Detection`, `Ambient`, `Lighting`, `Media`, and `HVAC` (no `Appliances` tab).
-- [x] Lighting tab has no Topomation startup reapply toggle.
+- [x] `Lighting`, `Media`, and `HVAC` tabs have no Topomation tab-global startup reapply toggle.
+- [x] Rule cards expose `Run on startup` and persist it as managed-rule metadata.
 - [x] Lighting unsaved draft rows show `Save rule` + `Remove rule` and hide `Delete rule`.
 - [x] Lighting persisted edited rows show `Update rule` + `Discard edits` + `Delete rule`.
 - [x] Lighting persisted clean rows show `Delete rule` only.
@@ -169,9 +170,9 @@ executed on a running HA instance, even if automated coverage passes locally.
 - [x] `Sync Locations` eligibility is sibling-scoped with:
   - `area` siblings under parent `area|floor|building`
   - `floor` siblings under parent `building`.
-- [x] Repeat these checks on a live HA runtime (outside mock harness) and record outcome.
+- [ ] Repeat these checks on a live HA runtime (outside mock harness) and record outcome.
 
-**Delta result**: [x] PASS / [ ] FAIL — Notes: Live HA delta rerun for the narrowed Lighting/Media/HVAC IA passed on 2026-03-06 against local HA 2026.2.3. Validation commands: `HA_URL=http://127.0.0.1:8123 HA_TOKEN=... TEST_MODE=live pytest -q tests/test-live-managed-actions-contract.py --live-ha --no-cov` (`2 passed`) and `HA_URL=http://127.0.0.1:8123 HA_TOKEN=... npx playwright test --config playwright.live.config.ts playwright/live-automation-ui.spec.ts` (`1 passed`). The live browser rerun now asserts the narrowed tab set directly (`Detection`/`Ambient`/`Lighting`/`Media`/`HVAC`, no `Appliances`).
+**Delta result**: [ ] PASS / [ ] FAIL — Notes: A prior live HA delta rerun for the narrowed Lighting/Media/HVAC IA passed on 2026-03-06 against local HA 2026.2.3, but the active dev branch has since removed remaining automation legacy fallbacks and route aliases. Rerun the live browser delta against this exact branch state before restoring `Live-validated`.
 
 ---
 

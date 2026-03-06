@@ -49,6 +49,24 @@ describe("ha-automation-rules websocket path", () => {
     expect(callApi).not.toHaveBeenCalled();
   });
 
+  it("fails fast when list ws command is unavailable", async () => {
+    const callWS = vi.fn(async (request: Record<string, unknown>) => {
+      if (request.type === "topomation/actions/rules/list") {
+        throw new Error("unknown_command: unsupported");
+      }
+      return {};
+    });
+    const hass = {
+      callWS,
+      callApi: vi.fn(),
+      states: {},
+    } as any;
+
+    await expect(listTopomationActionRules(hass, "kitchen")).rejects.toThrow(
+      "managed-action backend is unavailable"
+    );
+  });
+
   it("creates managed rules through backend websocket contract", async () => {
     const createdRule: TopomationActionRule = {
       id: "rule_created",

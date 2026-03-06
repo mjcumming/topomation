@@ -983,7 +983,6 @@ export class TopomationPanel extends LitElement {
 
   private _managerViewFromPath(path: string): ManagerView {
     if (path.startsWith("/topomation-occupancy")) return "occupancy";
-    if (path.startsWith("/topomation-appliances")) return "hvac";
     if (path.startsWith("/topomation-media")) return "media";
     if (path.startsWith("/topomation-hvac")) return "hvac";
     return "location";

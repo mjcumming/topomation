@@ -41,6 +41,17 @@ async function listLocations(page: any): Promise<any[]> {
   });
 }
 
+async function kitchenManagedRules(page: any): Promise<any[]> {
+  return await page.evaluate(async () => {
+    const mock = (window as any).mockHass;
+    const result = await mock.hass.callWS({
+      type: "topomation/actions/rules/list",
+      location_id: "kitchen",
+    });
+    return result.rules || [];
+  });
+}
+
 async function configureLocationDialog(
   page: any,
   patch: { name?: string; type?: string; parent_id?: string | null }
@@ -204,24 +215,127 @@ test("detection workflow persists occupancy source configuration", async ({ page
     .toBe(true);
 });
 
-test("lighting tab omits startup toggle and media tab persists startup reapply", async ({ page }) => {
+test("automation tabs use per-rule startup checkboxes", async ({ page }) => {
   await page.goto("/mock-harness.html");
 
   await selectKitchen(page);
   await openLightingTab(page);
-  const lightingStartupToggle = page.getByTestId("startup-reapply-lighting");
-  await expect(lightingStartupToggle).toHaveCount(0);
+  await expect(page.getByTestId("startup-reapply-lighting")).toHaveCount(0);
 
   await openActionsTab(page);
-  const startupToggle = page.getByTestId("startup-reapply-media");
+  await expect(page.getByTestId("startup-reapply-media")).toHaveCount(0);
+  await page.locator("ht-location-inspector").getByRole("button", { name: "HVAC" }).click();
+  await expect(page.getByTestId("startup-reapply-hvac")).toHaveCount(0);
+
+  await openActionsTab(page);
+  await page.getByRole("button", { name: "Add rule" }).click();
+  const rule = page
+    .locator("ht-location-inspector .dusk-block-row[data-testid^='action-rule-']")
+    .first();
+  await expect(rule).toBeVisible();
+  const startupToggle = rule.locator("[data-testid$='-run-on-startup']");
   await expect(startupToggle).toBeVisible();
   await startupToggle.check();
+  await expect(startupToggle).toBeChecked();
+});
 
+test("lighting media and hvac tabs each save managed rules", async ({ page }) => {
+  await page.goto("/mock-harness.html");
+
+  await page.evaluate(async () => {
+    const mock = (window as any).mockHass;
+    Object.assign(mock.hass.states, {
+      "fan.kitchen_bathroom_exhaust": {
+        entity_id: "fan.kitchen_bathroom_exhaust",
+        state: "off",
+        attributes: {
+          friendly_name: "Kitchen Bathroom Exhaust",
+          area_id: "kitchen",
+        },
+      },
+    });
+    await mock.hass.callWS({
+      type: "topomation/locations/assign_entity",
+      target_location_id: "kitchen",
+      entity_id: "fan.kitchen_bathroom_exhaust",
+    });
+
+    const panel = document.querySelector("topomation-panel") as any;
+    panel.hass = mock.getReactiveHass();
+    panel.requestUpdate?.();
+  });
+
+  await selectKitchen(page);
+
+  const inspector = page.locator("ht-location-inspector");
+
+  await openLightingTab(page);
+  await inspector.getByRole("button", { name: "Add rule" }).click();
+  const lightingRule = inspector.locator(".dusk-block-row[data-testid^='action-rule-']").last();
+  await expect(lightingRule).toBeVisible();
+  await lightingRule.locator("[data-testid$='-run-on-startup']").check();
+  await lightingRule.getByRole("button", { name: "Save rule" }).click();
   await expect
     .poll(async () => {
-      const locations = await listLocations(page);
-      const kitchen = locations.find((location) => location.id === "kitchen");
-      return Boolean(kitchen?.modules?.automation?.reapply_last_state_on_startup);
+      const rules = await kitchenManagedRules(page);
+      return rules.some(
+        (rule) =>
+          typeof rule?.action_entity_id === "string" &&
+          rule.action_entity_id.startsWith("light.") &&
+          rule.run_on_startup === true
+      );
+    })
+    .toBe(true);
+
+  await openActionsTab(page);
+  await inspector.getByRole("button", { name: "Add rule" }).click();
+  const mediaRule = inspector.locator(".dusk-block-row[data-testid^='action-rule-']").last();
+  await expect(mediaRule).toBeVisible();
+  await mediaRule
+    .locator(".dusk-rule-row", { hasText: "Device" })
+    .locator("select")
+    .selectOption("media_player.kitchen_speaker");
+  await mediaRule
+    .locator(".dusk-rule-row", { hasText: "Action" })
+    .locator("select")
+    .selectOption("media_pause");
+  await mediaRule.locator("[data-testid$='-run-on-startup']").check();
+  await mediaRule.getByRole("button", { name: "Save rule" }).click();
+  await expect
+    .poll(async () => {
+      const rules = await kitchenManagedRules(page);
+      return rules.some(
+        (rule) =>
+          rule?.action_entity_id === "media_player.kitchen_speaker" &&
+          rule?.action_service === "media_pause" &&
+          rule?.run_on_startup === true
+      );
+    })
+    .toBe(true);
+
+  await inspector.getByRole("button", { name: "HVAC" }).click();
+  await inspector.getByRole("button", { name: "Add rule" }).click();
+  const hvacRule = inspector.locator(".dusk-block-row[data-testid^='action-rule-']").last();
+  await expect(hvacRule).toBeVisible();
+  await hvacRule
+    .locator(".dusk-rule-row", { hasText: "Device" })
+    .locator("select")
+    .selectOption("fan.kitchen_bathroom_exhaust");
+  await hvacRule
+    .locator(".dusk-rule-row", { hasText: "Action" })
+    .locator("select")
+    .selectOption("turn_on");
+  await hvacRule.locator("[data-testid$='-run-on-startup']").check();
+  await hvacRule.getByRole("button", { name: "Save rule" }).click();
+  await expect
+    .poll(async () => {
+      const rules = await kitchenManagedRules(page);
+      return rules.some(
+        (rule) =>
+          rule?.action_entity_id === "fan.kitchen_bathroom_exhaust" &&
+          rule?.action_service === "turn_on" &&
+          rule?.run_on_startup === true
+      );
     })
     .toBe(true);
 });

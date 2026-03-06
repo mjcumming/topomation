@@ -31,8 +31,13 @@ If a file is not listed as active below, treat it as reference-only.
 | `docs/cursor-guide.md` | Agent reference and repository operating notes | Active (Reference) |
 | `docs/tree-dnd-stabilization-plan.md` | Tree DnD explicit drop targets — implementation plan (C-011, ADR-HA-039) | Active (Operational) |
 | `docs/ambient-light-v1-design.md` | Ambient light v1 design scope, UX, and phased implementation plan | Active (Operational) |
-| `docs/dusk-dawn-lighting-ui-spec.md` | Historical lighting-model exploration (pre-HA-canonical migration notes) | Active (Reference) |
 | `docs/lighting-ui-contract.md` | Compatibility pointer to canonical Lighting contract in `docs/automation-ui-guide.md` | Active (Reference) |
+
+## Historical References
+
+| File | Purpose | Status |
+| --- | --- | --- |
+| `docs/dusk-dawn-lighting-ui-spec.md` | Historical lighting-model exploration from the pre-HA-canonical Lighting phase | Historical (Reference) |
 
 ## Project Docs Scope (`/project`)
 

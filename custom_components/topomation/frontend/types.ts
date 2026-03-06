@@ -103,10 +103,6 @@ export interface WaspInBoxConfig {
   release_timeout_sec?: number;
 }
 
-export interface AutomationConfig extends ModuleConfig {
-  reapply_last_state_on_startup?: boolean;
-}
-
 export interface AmbientConfig extends ModuleConfig {
   lux_sensor?: string | null;
   auto_discover?: boolean;
@@ -128,40 +124,6 @@ export interface AmbientLightReading {
   bright_threshold?: number;
   fallback_method?: string | null;
   timestamp?: string;
-}
-
-export type DuskDawnTriggerMode =
-  | "on_occupied"
-  | "on_vacant"
-  | "on_dark"
-  | "on_bright";
-export type DuskDawnAmbientCondition = "any" | "dark" | "bright";
-
-export type DuskDawnAlreadyOnBehavior = "leave_unchanged" | "set_target";
-
-export interface DuskDawnLightTarget {
-  entity_id?: string;
-  power?: "on" | "off";
-  brightness_pct?: number | null;
-  color_hex?: string | null;
-  already_on_behavior?: DuskDawnAlreadyOnBehavior;
-}
-
-export interface DuskDawnScheduleBlock {
-  id?: string;
-  name?: string;
-  start_time?: string;
-  end_time?: string;
-  time_condition_enabled?: boolean;
-  trigger_mode?: DuskDawnTriggerMode;
-  ambient_condition?: DuskDawnAmbientCondition;
-  must_be_occupied?: boolean;
-  already_on_behavior?: DuskDawnAlreadyOnBehavior;
-  light_targets?: DuskDawnLightTarget[];
-}
-
-export interface DuskDawnConfig extends ModuleConfig {
-  blocks?: DuskDawnScheduleBlock[];
 }
 
 export interface OccupancySource {
@@ -197,6 +159,7 @@ export interface TopomationActionRule {
   time_condition_enabled?: boolean;
   start_time?: string;
   end_time?: string;
+  run_on_startup?: boolean;
   // Legacy compatibility (older backend/frontend payloads)
   require_dark?: boolean;
   enabled: boolean;

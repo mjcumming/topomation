@@ -24,47 +24,12 @@ export interface TopomationActionRule {
   time_condition_enabled?: boolean;
   start_time?: string;
   end_time?: string;
-  // Legacy compatibility
+  run_on_startup?: boolean;
+  // Compatibility field retained for payload normalization.
   require_dark?: boolean;
   enabled: boolean;
 }
 
-interface TopomationRuleMetadata {
-  version: number;
-  location_id: string;
-  trigger_type: ActionTriggerType;
-  rule_uuid?: string;
-  ambient_condition?: ActionAmbientCondition;
-  must_be_occupied?: boolean;
-  time_condition_enabled?: boolean;
-  start_time?: string;
-  end_time?: string;
-  require_dark?: boolean;
-}
-
-interface AutomationRegistryEntry {
-  entity_id: string;
-  unique_id?: string;
-  domain?: string;
-  platform?: string;
-  labels?: string[];
-  categories?: Record<string, string>;
-}
-
-interface AutomationRegistryListResult {
-  entries: AutomationRegistryEntry[];
-  usedStateFallback: boolean;
-}
-
-const TOPOMATION_AUTOMATION_ID_PREFIX = "topomation_";
-const TOPOMATION_METADATA_PREFIX = "[topomation]";
-
-const TOPOMATION_LABEL_NAME = "Topomation";
-const TOPOMATION_OCCUPIED_LABEL_NAME = "Topomation - On Occupied";
-const TOPOMATION_VACANT_LABEL_NAME = "Topomation - On Vacant";
-const TOPOMATION_DARK_LABEL_NAME = "Topomation - On Dark";
-const TOPOMATION_BRIGHT_LABEL_NAME = "Topomation - On Bright";
-const TOPOMATION_CATEGORY_NAME = "Topomation";
 const WS_TYPE_ACTION_RULES_LIST = "topomation/actions/rules/list";
 const WS_TYPE_ACTION_RULES_CREATE = "topomation/actions/rules/create";
 const WS_TYPE_ACTION_RULES_DELETE = "topomation/actions/rules/delete";
@@ -106,19 +71,6 @@ function wsUnavailableError(operation: string): Error {
   );
 }
 
-function slugify(value: string): string {
-  const slug = value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");
-  return slug || "location";
-}
-
-function automationConfigEndpoint(automationId: string): string {
-  return `config/automation/config/${encodeURIComponent(automationId)}`;
-}
-
 function normalizeTriggerType(raw: unknown): ActionTriggerType | null {
   const normalized = String(raw || "")
     .trim()
@@ -152,96 +104,6 @@ function normalizeAmbientCondition(
   return defaultAmbientCondition(triggerType);
 }
 
-async function callAutomationConfigApi<T>(
-  hass: HomeAssistant,
-  method: "post" | "delete",
-  automationId: string,
-  body?: Record<string, unknown>
-): Promise<T> {
-  if (typeof hass.callApi === "function") {
-    return hass.callApi<T>(method, automationConfigEndpoint(automationId), body);
-  }
-
-  const response = await fetch(`/api/${automationConfigEndpoint(automationId)}`, {
-    method: method.toUpperCase(),
-    credentials: "same-origin",
-    headers:
-      body !== undefined
-        ? {
-            "Content-Type": "application/json",
-          }
-        : undefined,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
-
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(
-      (payload && typeof payload.message === "string" && payload.message) ||
-        `Home Assistant automation API error (${response.status})`
-    );
-  }
-  return payload as T;
-}
-
-function parseRuleMetadata(description: unknown): TopomationRuleMetadata | null {
-  if (typeof description !== "string" || !description.includes(TOPOMATION_METADATA_PREFIX)) {
-    return null;
-  }
-
-  const lines = description
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  for (const line of lines) {
-    if (!line.startsWith(TOPOMATION_METADATA_PREFIX)) continue;
-
-    const jsonPayload = line.slice(TOPOMATION_METADATA_PREFIX.length).trim();
-    if (!jsonPayload) return null;
-
-    try {
-      const parsed = JSON.parse(jsonPayload) as TopomationRuleMetadata;
-      const triggerType = normalizeTriggerType(parsed?.trigger_type);
-      if (typeof parsed?.location_id === "string" && triggerType) {
-        return {
-          version: Number(parsed.version) || 1,
-          location_id: parsed.location_id,
-          trigger_type: triggerType,
-          rule_uuid:
-            typeof parsed.rule_uuid === "string" && parsed.rule_uuid.trim().length > 0
-              ? parsed.rule_uuid.trim()
-              : undefined,
-          ambient_condition: normalizeAmbientCondition(
-            triggerType,
-            parsed.ambient_condition,
-            Boolean(parsed.require_dark)
-          ),
-          must_be_occupied: Boolean(parsed.must_be_occupied),
-          time_condition_enabled: Boolean(parsed.time_condition_enabled),
-          start_time:
-            typeof parsed.start_time === "string" && parsed.start_time.trim().length > 0
-              ? parsed.start_time.trim()
-              : undefined,
-          end_time:
-            typeof parsed.end_time === "string" && parsed.end_time.trim().length > 0
-              ? parsed.end_time.trim()
-              : undefined,
-          require_dark: typeof parsed.require_dark === "boolean" ? parsed.require_dark : undefined,
-        };
-      }
-    } catch {
-      return null;
-    }
-  }
-
-  return null;
-}
-
-function metadataLine(metadata: TopomationRuleMetadata): string {
-  return `${TOPOMATION_METADATA_PREFIX} ${JSON.stringify(metadata)}`;
-}
-
 function normalizeActionData(raw: unknown): Record<string, unknown> | undefined {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
   const data = { ...(raw as Record<string, unknown>) };
@@ -262,75 +124,6 @@ function normalizeActionData(raw: unknown): Record<string, unknown> | undefined 
     }
   }
   return Object.keys(data).length > 0 ? data : undefined;
-}
-
-function normalizeRuleAction(rawAction: unknown): TopomationRuleAction | undefined {
-  if (!rawAction || typeof rawAction !== "object" || Array.isArray(rawAction)) {
-    return undefined;
-  }
-  const action = rawAction as Record<string, any>;
-  const rawService = typeof action.action === "string" ? action.action : "";
-  const actionService = rawService.includes(".") ? rawService.split(".").slice(1).join(".") : rawService;
-  const normalizedService = String(actionService || "").trim();
-  if (!normalizedService) {
-    return undefined;
-  }
-  const actionData = normalizeActionData(action?.data);
-  const targetEntity = action?.target?.entity_id;
-  if (typeof targetEntity === "string" && targetEntity.trim().length > 0) {
-    return {
-      entity_id: targetEntity.trim(),
-      service: normalizedService,
-      ...(actionData ? { data: actionData } : {}),
-    };
-  }
-  if (Array.isArray(targetEntity)) {
-    const firstTarget = targetEntity.find((candidate) => typeof candidate === "string" && candidate.trim().length > 0);
-    if (typeof firstTarget === "string") {
-      return {
-        entity_id: firstTarget.trim(),
-        service: normalizedService,
-        ...(actionData ? { data: actionData } : {}),
-      };
-    }
-  }
-  const dataEntity = action?.data?.entity_id;
-  if (typeof dataEntity === "string" && dataEntity.trim().length > 0) {
-    return {
-      entity_id: dataEntity.trim(),
-      service: normalizedService,
-      ...(actionData ? { data: actionData } : {}),
-    };
-  }
-  return undefined;
-}
-
-function extractRuleActions(config: Record<string, any>): TopomationRuleAction[] {
-  const actionBlock = config?.actions ?? config?.action;
-  const actionEntries = Array.isArray(actionBlock) ? actionBlock : actionBlock ? [actionBlock] : [];
-  const normalized = actionEntries
-    .map((entry) => normalizeRuleAction(entry))
-    .filter((entry): entry is TopomationRuleAction => !!entry);
-  return normalized;
-}
-
-function extractActionSummary(config: Record<string, any>): {
-  actions?: TopomationRuleAction[];
-  action_entity_id?: string;
-  action_service?: string;
-  action_data?: Record<string, unknown>;
-} {
-  const actions = extractRuleActions(config);
-  if (actions.length === 0) {
-    return {};
-  }
-  const firstAction = actions[0];
-  return {
-    actions,
-    action_entity_id: firstAction.entity_id,
-    action_service: firstAction.service,
-    action_data: firstAction.data,
-  };
 }
 
 function normalizeRuleActionsFromPayload(
@@ -370,160 +163,6 @@ function normalizeRuleActionsFromPayload(
   ];
 }
 
-function hasSunDarkCondition(config: Record<string, any>): boolean {
-  const root = config?.conditions ?? config?.condition;
-  const stack = Array.isArray(root) ? [...root] : root ? [root] : [];
-
-  while (stack.length > 0) {
-    const condition = stack.pop();
-    if (!condition || typeof condition !== "object") continue;
-
-    if (
-      condition.condition === "state" &&
-      condition.entity_id === "sun.sun" &&
-      condition.state === "below_horizon"
-    ) {
-      return true;
-    }
-
-    const nested = condition.conditions;
-    if (Array.isArray(nested)) {
-      stack.push(...nested);
-    }
-  }
-
-  return false;
-}
-
-function findOccupancyEntityId(hass: HomeAssistant, locationId: string): string | undefined {
-  const states = hass.states || {};
-  for (const [entityId, stateObj] of Object.entries(states)) {
-    if (!entityId.startsWith("binary_sensor.")) continue;
-    const attrs = stateObj?.attributes || {};
-    if (attrs.device_class !== "occupancy") continue;
-    if (attrs.location_id !== locationId) continue;
-    return entityId;
-  }
-  return undefined;
-}
-
-async function listAutomationRegistryEntries(
-  hass: HomeAssistant
-): Promise<AutomationRegistryListResult> {
-  try {
-    const entries = await hass.callWS<any[]>({ type: "config/entity_registry/list" });
-    if (!Array.isArray(entries)) {
-      return {
-        entries: [],
-        usedStateFallback: false,
-      };
-    }
-
-    return {
-      entries: entries.filter((entry) => {
-        if (!entry || typeof entry.entity_id !== "string") return false;
-        const domain =
-          typeof entry.domain === "string"
-            ? entry.domain
-            : String(entry.entity_id).split(".", 1)[0];
-        return domain === "automation";
-      }) as AutomationRegistryEntry[],
-      usedStateFallback: false,
-    };
-  } catch (err) {
-    // Some installs/users cannot access entity registry commands from custom panels.
-    // Fall back to automation entities currently in hass.states so managed actions still work.
-    console.debug("[ha-automation-rules] entity_registry list unavailable; falling back to hass.states", err);
-    return {
-      entries: Object.keys(hass.states || {})
-        .filter((entityId) => entityId.startsWith("automation."))
-        .map((entity_id) => ({ entity_id })),
-      usedStateFallback: true,
-    };
-  }
-}
-
-async function waitForAutomationRegistryEntry(
-  hass: HomeAssistant,
-  automationId: string,
-  maxAttempts = 20,
-  waitMs = 250
-): Promise<AutomationRegistryEntry | undefined> {
-  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-    const registryResult = await listAutomationRegistryEntries(hass);
-    const entries = registryResult.entries;
-    const entry = entries.find((candidate) => candidate.unique_id === automationId);
-    if (entry) {
-      return entry;
-    }
-
-    if (attempt === maxAttempts - 1) {
-      const resolved = await findAutomationRegistryEntryByConfigId(hass, entries, automationId);
-      if (resolved) {
-        return resolved;
-      }
-    }
-
-    await new Promise((resolve) => window.setTimeout(resolve, waitMs));
-  }
-  return undefined;
-}
-
-function resolveAutomationConfigId(
-  entry: AutomationRegistryEntry,
-  config: Record<string, any>
-): string | undefined {
-  const configId = typeof config?.id === "string" ? config.id.trim() : "";
-  if (configId) return configId;
-
-  const uniqueId = typeof entry.unique_id === "string" ? entry.unique_id.trim() : "";
-  if (uniqueId) return uniqueId;
-
-  return undefined;
-}
-
-function looksLikeTopomationAutomationEntry(entry: AutomationRegistryEntry): boolean {
-  const uniqueId = typeof entry.unique_id === "string" ? entry.unique_id.trim().toLowerCase() : "";
-  if (uniqueId.startsWith(TOPOMATION_AUTOMATION_ID_PREFIX)) {
-    return true;
-  }
-
-  const labels = Array.isArray(entry.labels) ? entry.labels : [];
-  if (
-    labels.some(
-      (label) =>
-        typeof label === "string" &&
-        label.toLowerCase().includes("topomation")
-    )
-  ) {
-    return true;
-  }
-
-  const categoryValues = Object.values(entry.categories || {});
-  if (
-    categoryValues.some(
-      (value) =>
-        typeof value === "string" &&
-        value.toLowerCase().includes("topomation")
-    )
-  ) {
-    return true;
-  }
-
-  return false;
-}
-
-function hasTopomationAutomationState(hass: HomeAssistant): boolean {
-  return Object.entries(hass.states || {}).some(([entityId, stateObj]) => {
-    if (!entityId.startsWith("automation.")) return false;
-    const rawId = stateObj?.attributes?.id;
-    return (
-      typeof rawId === "string" &&
-      rawId.trim().toLowerCase().startsWith(TOPOMATION_AUTOMATION_ID_PREFIX)
-    );
-  });
-}
-
 function readErrorMessage(err: unknown): string {
   if (typeof err === "string" && err.trim()) return err.trim();
   if (err instanceof Error && err.message.trim()) return err.message.trim();
@@ -534,251 +173,6 @@ function readErrorMessage(err: unknown): string {
     }
   }
   return "unknown automation/config error";
-}
-
-async function findAutomationRegistryEntryByConfigId(
-  hass: HomeAssistant,
-  entries: AutomationRegistryEntry[],
-  automationId: string
-): Promise<AutomationRegistryEntry | undefined> {
-  const normalizedId = String(automationId || "").trim();
-  if (!normalizedId) return undefined;
-
-  const loaded = await Promise.all(
-    entries
-      .filter((entry) => typeof entry.entity_id === "string" && entry.entity_id.length > 0)
-      .map(async (entry) => {
-        try {
-          const response = await hass.callWS<{ config?: Record<string, any> }>({
-            type: "automation/config",
-            entity_id: entry.entity_id,
-          });
-          const config = response?.config;
-          if (!config || typeof config !== "object") {
-            return undefined;
-          }
-
-          const configId = resolveAutomationConfigId(entry, config);
-          if (configId !== normalizedId) {
-            return undefined;
-          }
-          return entry;
-        } catch {
-          return undefined;
-        }
-      })
-  );
-
-  return loaded.find((entry): entry is AutomationRegistryEntry => !!entry);
-}
-
-async function ensureLabelId(hass: HomeAssistant, labelName: string): Promise<string | undefined> {
-  const labels = await hass.callWS<any[]>({ type: "config/label_registry/list" });
-  const existing = Array.isArray(labels)
-    ? labels.find((label) => label?.name === labelName && typeof label?.label_id === "string")
-    : undefined;
-  if (existing) {
-    return existing.label_id;
-  }
-
-  try {
-    const created = await hass.callWS<any>({
-      type: "config/label_registry/create",
-      name: labelName,
-    });
-    if (typeof created?.label_id === "string") {
-      return created.label_id;
-    }
-  } catch (err) {
-    console.debug("[ha-automation-rules] failed to create label", labelName, err);
-  }
-
-  return undefined;
-}
-
-async function ensureAutomationCategoryId(hass: HomeAssistant): Promise<string | undefined> {
-  const categories = await hass.callWS<any[]>({
-    type: "config/category_registry/list",
-    scope: "automation",
-  });
-
-  const existing = Array.isArray(categories)
-    ? categories.find(
-        (category) =>
-          category?.name === TOPOMATION_CATEGORY_NAME && typeof category?.category_id === "string"
-      )
-    : undefined;
-
-  if (existing) {
-    return existing.category_id;
-  }
-
-  try {
-    const created = await hass.callWS<any>({
-      type: "config/category_registry/create",
-      scope: "automation",
-      name: TOPOMATION_CATEGORY_NAME,
-      icon: "mdi:home-automation",
-    });
-    if (typeof created?.category_id === "string") {
-      return created.category_id;
-    }
-  } catch (err) {
-    console.debug("[ha-automation-rules] failed to create automation category", err);
-  }
-
-  return undefined;
-}
-
-async function applyTopomationGrouping(
-  hass: HomeAssistant,
-  registryEntry: AutomationRegistryEntry,
-  triggerType: ActionTriggerType
-): Promise<void> {
-  if (!registryEntry.entity_id) return;
-
-  const primaryLabelId = await ensureLabelId(hass, TOPOMATION_LABEL_NAME);
-  const triggerLabelName =
-    triggerType === "on_occupied"
-      ? TOPOMATION_OCCUPIED_LABEL_NAME
-      : triggerType === "on_vacant"
-        ? TOPOMATION_VACANT_LABEL_NAME
-        : triggerType === "on_dark"
-          ? TOPOMATION_DARK_LABEL_NAME
-          : TOPOMATION_BRIGHT_LABEL_NAME;
-  const triggerLabelId = await ensureLabelId(hass, triggerLabelName);
-  const categoryId = await ensureAutomationCategoryId(hass);
-
-  const nextLabels = new Set<string>(Array.isArray(registryEntry.labels) ? registryEntry.labels : []);
-  if (primaryLabelId) nextLabels.add(primaryLabelId);
-  if (triggerLabelId) nextLabels.add(triggerLabelId);
-
-  const categories = {
-    ...(registryEntry.categories || {}),
-  } as Record<string, string>;
-  if (categoryId) {
-    categories.automation = categoryId;
-  }
-
-  try {
-    await hass.callWS({
-      type: "config/entity_registry/update",
-      entity_id: registryEntry.entity_id,
-      labels: Array.from(nextLabels),
-      categories,
-    });
-  } catch (err) {
-    console.debug("[ha-automation-rules] failed to assign labels/category", err);
-  }
-}
-
-function buildAutomationId(location: Location, triggerType: ActionTriggerType): string {
-  const timestamp = Date.now();
-  const randomSuffix = Math.floor(Math.random() * 1_000_000)
-    .toString(36)
-    .padStart(4, "0");
-  return `${TOPOMATION_AUTOMATION_ID_PREFIX}${slugify(location.id)}_${triggerType}_${timestamp}_${randomSuffix}`;
-}
-
-async function listTopomationActionRulesLegacy(
-  hass: HomeAssistant,
-  locationId: string
-): Promise<TopomationActionRule[]> {
-  const registryResult = await listAutomationRegistryEntries(hass);
-  const registryEntries = registryResult.entries;
-  const likelyTopomationEntries = registryEntries.filter(looksLikeTopomationAutomationEntry);
-  const candidates =
-    likelyTopomationEntries.length > 0 ? likelyTopomationEntries : registryEntries;
-  const failedAutomationConfigReads: Array<{ entity_id: string; error: unknown }> = [];
-
-  const loaded = await Promise.all(
-    candidates.map(async (entry) => {
-      if (!entry.entity_id) return undefined;
-
-      try {
-        const response = await hass.callWS<{ config?: Record<string, any> }>({
-          type: "automation/config",
-          entity_id: entry.entity_id,
-        });
-
-        const config = response?.config;
-        if (!config || typeof config !== "object") {
-          return undefined;
-        }
-
-        const metadata = parseRuleMetadata(config.description);
-        if (!metadata || metadata.location_id !== locationId) {
-          return undefined;
-        }
-
-        const configId = resolveAutomationConfigId(entry, config);
-        const summary = extractActionSummary(config);
-        const stateObj = hass.states?.[entry.entity_id];
-        const enabled = stateObj ? stateObj.state !== "off" : true;
-        const name =
-          (typeof config.alias === "string" && config.alias.trim()) ||
-          stateObj?.attributes?.friendly_name ||
-          entry.entity_id;
-
-        return {
-          id: configId || entry.entity_id,
-          entity_id: entry.entity_id,
-          name,
-          trigger_type: metadata.trigger_type,
-          rule_uuid: metadata.rule_uuid,
-          actions: summary.actions,
-          action_entity_id: summary.action_entity_id,
-          action_service: summary.action_service,
-          action_data: summary.action_data,
-          ambient_condition: normalizeAmbientCondition(
-            metadata.trigger_type,
-            metadata.ambient_condition,
-            typeof metadata.require_dark === "boolean"
-              ? metadata.require_dark
-              : hasSunDarkCondition(config)
-          ),
-          must_be_occupied: Boolean(metadata.must_be_occupied),
-          time_condition_enabled: Boolean(metadata.time_condition_enabled),
-          start_time: metadata.start_time,
-          end_time: metadata.end_time,
-          require_dark:
-            typeof metadata.require_dark === "boolean"
-              ? metadata.require_dark
-              : hasSunDarkCondition(config),
-          enabled,
-        } satisfies TopomationActionRule;
-      } catch (err) {
-        failedAutomationConfigReads.push({
-          entity_id: entry.entity_id,
-          error: err,
-        });
-        console.debug("[ha-automation-rules] failed to read automation config", entry.entity_id, err);
-        return undefined;
-      }
-    })
-  );
-
-  const resolvedRules = loaded
-    .filter((rule): rule is TopomationActionRule => !!rule)
-    .sort((a, b) => a.name.localeCompare(b.name));
-
-  const allCandidateReadsFailed =
-    candidates.length > 0 &&
-    failedAutomationConfigReads.length === candidates.length;
-  const hasTopomationHint =
-    likelyTopomationEntries.length > 0 || hasTopomationAutomationState(hass);
-
-  if (
-    resolvedRules.length === 0 &&
-    allCandidateReadsFailed &&
-    hasTopomationHint
-  ) {
-    const firstFailure = failedAutomationConfigReads[0];
-    const reason = firstFailure ? readErrorMessage(firstFailure.error) : "unknown reason";
-    throw new Error(`Unable to read Topomation automation configs: ${reason}`);
-  }
-
-  return resolvedRules;
 }
 
 export async function listTopomationActionRules(
@@ -820,6 +214,8 @@ export async function listTopomationActionRules(
               typeof rule.end_time === "string" && rule.end_time.length > 0
                 ? rule.end_time
                 : undefined,
+            run_on_startup:
+              typeof rule.run_on_startup === "boolean" ? rule.run_on_startup : undefined,
             require_dark: requireDark || ambientCondition === "dark",
             action_entity_id: primaryAction?.entity_id,
             action_service: primaryAction?.service,
@@ -830,139 +226,13 @@ export async function listTopomationActionRules(
         .sort((a, b) => a.name.localeCompare(b.name));
     }
   } catch (err) {
-    if (!isWsCommandUnavailable(err)) {
-      throw err;
+    if (isWsCommandUnavailable(err)) {
+      throw wsUnavailableError("rule listing");
     }
+    throw err;
   }
 
-  return listTopomationActionRulesLegacy(hass, locationId);
-}
-
-async function createTopomationActionRuleLegacy(
-  hass: HomeAssistant,
-  args: {
-    location: Location;
-    name: string;
-    trigger_type: ActionTriggerType;
-    action_entity_id: string;
-    action_service: string;
-    action_data?: Record<string, unknown>;
-    ambient_condition?: ActionAmbientCondition;
-    must_be_occupied?: boolean;
-    time_condition_enabled?: boolean;
-    start_time?: string;
-    end_time?: string;
-    require_dark?: boolean;
-    automation_id?: string;
-    rule_uuid?: string;
-  }
-): Promise<TopomationActionRule> {
-  if (args.trigger_type === "on_dark" || args.trigger_type === "on_bright") {
-    throw new Error("Legacy action-rule fallback does not support dark/bright triggers");
-  }
-
-  const automationId = buildAutomationId(args.location, args.trigger_type);
-  const occupancyEntityId = findOccupancyEntityId(hass, args.location.id);
-  if (!occupancyEntityId) {
-    throw new Error(
-      `No occupancy binary sensor found for location \"${args.location.name}\" (${args.location.id})`
-    );
-  }
-  const triggerState = args.trigger_type === "on_occupied" ? "on" : "off";
-  const actionDomain = args.action_entity_id.includes(".")
-    ? args.action_entity_id.split(".", 1)[0]
-    : "homeassistant";
-  const ambientCondition = normalizeAmbientCondition(
-    args.trigger_type,
-    args.ambient_condition,
-    Boolean(args.require_dark)
-  );
-
-  const metadata: TopomationRuleMetadata = {
-    version: 3,
-    location_id: args.location.id,
-    trigger_type: args.trigger_type,
-    ambient_condition: ambientCondition,
-    must_be_occupied: Boolean(args.must_be_occupied),
-    time_condition_enabled: Boolean(args.time_condition_enabled),
-    start_time: args.start_time || "18:00",
-    end_time: args.end_time || "23:59",
-    require_dark: ambientCondition === "dark",
-  };
-
-  const conditions: Array<Record<string, unknown>> = [];
-  if (ambientCondition === "dark") {
-    conditions.push({
-      condition: "state",
-      entity_id: "sun.sun",
-      state: "below_horizon",
-    });
-  } else if (ambientCondition === "bright") {
-    conditions.push({
-      condition: "state",
-      entity_id: "sun.sun",
-      state: "above_horizon",
-    });
-  }
-  if (args.must_be_occupied) {
-    conditions.push({
-      condition: "state",
-      entity_id: occupancyEntityId,
-      state: "on",
-    });
-  }
-  if (args.time_condition_enabled) {
-    conditions.push({
-      condition: "time",
-      after: args.start_time || "18:00",
-      before: args.end_time || "23:59",
-    });
-  }
-
-  await callAutomationConfigApi<{ result: string }>(hass, "post", automationId, {
-    alias: args.name,
-    description: `Managed by Topomation.\n${metadataLine(metadata)}`,
-    triggers: [
-      {
-        trigger: "state",
-        entity_id: occupancyEntityId,
-        to: triggerState,
-      },
-    ],
-    conditions,
-    actions: [
-      {
-        action: `${actionDomain}.${args.action_service}`,
-        target: {
-          entity_id: args.action_entity_id,
-        },
-        ...(normalizeActionData(args.action_data) ? { data: normalizeActionData(args.action_data) } : {}),
-      },
-    ],
-    mode: "single",
-  });
-
-  const entry = await waitForAutomationRegistryEntry(hass, automationId);
-  if (entry) {
-    await applyTopomationGrouping(hass, entry, args.trigger_type);
-  }
-
-  return {
-    id: automationId,
-    entity_id: entry?.entity_id || `automation.${automationId}`,
-    name: args.name,
-    trigger_type: args.trigger_type,
-    action_entity_id: args.action_entity_id,
-    action_service: args.action_service,
-    action_data: normalizeActionData(args.action_data),
-    ambient_condition: ambientCondition,
-    must_be_occupied: Boolean(args.must_be_occupied),
-    time_condition_enabled: Boolean(args.time_condition_enabled),
-    start_time: args.start_time || "18:00",
-    end_time: args.end_time || "23:59",
-    require_dark: ambientCondition === "dark",
-    enabled: true,
-  };
+  throw wsUnavailableError("rule listing");
 }
 
 export async function createTopomationActionRule(
@@ -980,6 +250,7 @@ export async function createTopomationActionRule(
     time_condition_enabled?: boolean;
     start_time?: string;
     end_time?: string;
+    run_on_startup?: boolean;
     require_dark?: boolean;
     automation_id?: string;
     rule_uuid?: string;
@@ -999,6 +270,8 @@ export async function createTopomationActionRule(
   if (!primaryAction) {
     throw new Error("At least one action target is required");
   }
+  const runOnStartup =
+    typeof args.run_on_startup === "boolean" ? args.run_on_startup : undefined;
 
   try {
     const response = await hass.callWS<{ rule?: TopomationActionRule }>({
@@ -1015,6 +288,7 @@ export async function createTopomationActionRule(
       time_condition_enabled: Boolean(args.time_condition_enabled),
       start_time: args.start_time,
       end_time: args.end_time,
+      ...(typeof runOnStartup === "boolean" ? { run_on_startup: runOnStartup } : {}),
       require_dark: Boolean(args.require_dark),
       ...(args.automation_id ? { automation_id: args.automation_id } : {}),
       ...(args.rule_uuid ? { rule_uuid: args.rule_uuid } : {}),
@@ -1053,6 +327,10 @@ export async function createTopomationActionRule(
           typeof response.rule.end_time === "string" && response.rule.end_time.length > 0
             ? response.rule.end_time
             : undefined,
+        run_on_startup:
+          typeof response.rule.run_on_startup === "boolean"
+            ? response.rule.run_on_startup
+            : runOnStartup,
         require_dark: requireDark || ambientCondition === "dark",
       };
     }
@@ -1064,46 +342,6 @@ export async function createTopomationActionRule(
   }
 
   throw wsUnavailableError("rule creation");
-}
-
-async function deleteTopomationActionRuleLegacy(
-  hass: HomeAssistant,
-  ruleOrAutomationId: string | Pick<TopomationActionRule, "id" | "entity_id">
-): Promise<void> {
-  const automationId =
-    typeof ruleOrAutomationId === "string" ? ruleOrAutomationId : ruleOrAutomationId.id;
-  try {
-    await callAutomationConfigApi<{ result: string }>(hass, "delete", automationId);
-    return;
-  } catch (err) {
-    if (typeof ruleOrAutomationId === "string") {
-      throw err;
-    }
-
-    try {
-      const response = await hass.callWS<{ config?: Record<string, any> }>({
-        type: "automation/config",
-        entity_id: ruleOrAutomationId.entity_id,
-      });
-      const config = response?.config;
-      if (!config || typeof config !== "object") {
-        throw err;
-      }
-      const fallbackId = resolveAutomationConfigId(
-        {
-          entity_id: ruleOrAutomationId.entity_id,
-        },
-        config
-      );
-      if (!fallbackId || fallbackId === automationId) {
-        throw err;
-      }
-
-      await callAutomationConfigApi<{ result: string }>(hass, "delete", fallbackId);
-    } catch {
-      throw err;
-    }
-  }
 }
 
 export async function deleteTopomationActionRule(
@@ -1135,21 +373,6 @@ export async function deleteTopomationActionRule(
   }
 
   throw wsUnavailableError("rule deletion");
-}
-
-async function setTopomationActionRuleEnabledLegacy(
-  hass: HomeAssistant,
-  rule: TopomationActionRule,
-  enabled: boolean
-): Promise<void> {
-  await hass.callWS({
-    type: "call_service",
-    domain: "automation",
-    service: enabled ? "turn_on" : "turn_off",
-    service_data: {
-      entity_id: rule.entity_id,
-    },
-  });
 }
 
 export async function setTopomationActionRuleEnabled(

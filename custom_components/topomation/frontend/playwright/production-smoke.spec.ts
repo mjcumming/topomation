@@ -49,7 +49,10 @@ async function openLightingTab(page: any): Promise<void> {
   await inspector.getByRole("button", { name: "Lighting" }).click();
 }
 
-async function addBasicKitchenActionRule(page: any): Promise<void> {
+async function addBasicKitchenActionRule(
+  page: any,
+  options: { runOnStartup?: boolean } = {}
+): Promise<void> {
   const inspector = page.locator("ht-location-inspector");
   await expect(inspector).toBeVisible();
   await inspector.getByRole("button", { name: "Add rule" }).click();
@@ -57,6 +60,9 @@ async function addBasicKitchenActionRule(page: any): Promise<void> {
     .locator(".dusk-block-row[data-testid^='action-rule-']")
     .first();
   await expect(rule).toBeVisible();
+  if (options.runOnStartup) {
+    await rule.locator("[data-testid$='-run-on-startup']").check();
+  }
   await rule.locator(".dusk-rule-row", { hasText: "Trigger" }).locator("select").selectOption("on_occupied");
   await rule
     .locator(".dusk-rule-row", { hasText: "Device" })
@@ -64,15 +70,6 @@ async function addBasicKitchenActionRule(page: any): Promise<void> {
     .selectOption("media_player.kitchen_speaker");
   await rule.locator(".dusk-rule-row", { hasText: "Action" }).locator("select").selectOption("media_pause");
   await rule.getByRole("button", { name: "Save rule" }).click();
-}
-
-async function kitchenReapplyFlag(page: any): Promise<boolean> {
-  return await page.evaluate(async () => {
-    const mock = (window as any).mockHass;
-    const response = await mock.hass.callWS({ type: "topomation/locations/list" });
-    const kitchen = response.locations.find((location: any) => location.id === "kitchen");
-    return Boolean(kitchen?.modules?.automation?.reapply_last_state_on_startup);
-  });
 }
 
 async function kitchenManagedRuleCount(page: any): Promise<number> {
@@ -99,30 +96,55 @@ async function kitchenActionRuleCount(page: any): Promise<number> {
   });
 }
 
+async function kitchenActionRules(page: any): Promise<any[]> {
+  return await page.evaluate(async () => {
+    const mock = (window as any).mockHass;
+    const response = await mock.hass.callWS({
+      type: "topomation/actions/rules/list",
+      location_id: "kitchen",
+    });
+    return Array.isArray(response?.rules) ? response.rules : [];
+  });
+}
+
 test.describe("Production profile smoke", () => {
   test.beforeEach(async ({ page }) => {
     await openProductionProfile(page);
   });
 
-  test("lighting omits startup toggle and media startup toggle persists through reload", async ({ page }) => {
+  test("automation tabs use per-rule startup and media add-rule survives reactive hass churn", async ({ page }) => {
     await selectKitchen(page);
     await openLightingTab(page);
     await expect(page.getByTestId("startup-reapply-lighting")).toHaveCount(0);
 
     await openActionsTab(page);
-    const toggle = page.getByTestId("startup-reapply-media");
-    await expect(toggle).toBeVisible();
-    await toggle.check();
-
-    await expect.poll(async () => await kitchenReapplyFlag(page)).toBe(true);
-
-    await page.reload();
-    await expect(page.locator("topomation-panel")).toBeVisible();
-    await selectKitchen(page);
+    await expect(page.getByTestId("startup-reapply-media")).toHaveCount(0);
+    await page.locator("ht-location-inspector").getByRole("button", { name: "HVAC" }).click();
+    await expect(page.getByTestId("startup-reapply-hvac")).toHaveCount(0);
     await openActionsTab(page);
 
-    const toggleAfterReload = page.getByTestId("startup-reapply-media");
-    await expect(toggleAfterReload).toBeChecked();
+    await page.evaluate(async () => {
+      const panel = document.querySelector("topomation-panel") as any;
+      const mock = (window as any).mockHass;
+      for (let iteration = 0; iteration < 5; iteration += 1) {
+        panel.hass = mock.getReactiveHass();
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      }
+    });
+
+    await addBasicKitchenActionRule(page, { runOnStartup: true });
+
+    await expect
+      .poll(async () => {
+        const rules = await kitchenActionRules(page);
+        return rules.some(
+          (rule) =>
+            rule?.action_entity_id === "media_player.kitchen_speaker" &&
+            rule?.action_service === "media_pause" &&
+            rule?.run_on_startup === true
+        );
+      })
+      .toBe(true);
   });
 
   test("occupancy source update survives production-profile stale reloads", async ({ page }) => {

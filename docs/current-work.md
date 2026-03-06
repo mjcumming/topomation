@@ -11,7 +11,7 @@ Status markers:
 
 - Active focus: managed shadow area contract + implementation checklist (ADR-HA-049 / ISSUE-057).
 - Active focus: HA-canonical managed-rule sync (ADR-HA-053) with stable rule identity and in-place upserts.
-- Active focus: automation UX + persistence realignment (ADR-HA-054/055/056/060): the active rule UI is now scoped to Lighting/Media/HVAC, with HVAC covering fan entities plus switch-controlled ventilation. Live HA rerun for the narrowed IA passed on 2026-03-06.
+- Active focus: automation UX + persistence realignment (ADR-HA-054/055/056/060/061/062): the active rule UI is scoped to Lighting/Media/HVAC, runs dev-mode without legacy migration fallbacks, and needs a fresh live HA rerun after the 2026-03-06 no-legacy cleanup.
 - Active execution checklist: `project/issues/issue-058-automation-ui-contract-implementation.md`.
 - New planning track: ambient light v1 design baseline captured in `docs/ambient-light-v1-design.md` before dusk/dawn coupling work.
 - Recently completed: Tree DnD now uses explicit drop targets (before/inside/after/outdent) from pointer Y and optional outdent strip; zone-only resolver; heuristic x-offset logic removed. User order preserved by existing backend (`manual_order` + A-Z until first reorder).
@@ -22,8 +22,8 @@ Status markers:
 | Item | Owner | Execution | Delivery | Notes |
 | --- | --- | --- | --- | --- |
 | Managed shadow areas + assignment remap | active | In progress | Target | ADR-HA-049 approved; ISSUE-057 tracks backend/UI/test checklist. |
-| Automation UX + contracts reset | active | Done | Live-validated | ADR-HA-054/055/056/060 are implemented and live-validated for the narrowed Lighting/Media/HVAC scope on 2026-03-06. |
-| Automation UX implementation checklist (ISSUE-058) | active | Done | Live-validated | Detection/Ambient draft flow, HA-canonical/card-local Lighting workflow, and the scope narrowing to Lighting/Media/HVAC passed the refreshed live rerun on 2026-03-06. |
+| Automation UX + contracts reset | active | Done | Implemented | ADR-HA-054/055/056/060/061 are implemented; ADR-HA-062 removes remaining legacy automation fallbacks in the active dev branch. Fresh live HA rerun is pending after the no-legacy cleanup. |
+| Automation UX implementation checklist (ISSUE-058) | active | In progress | Implemented | Detection/Ambient draft flow, HA-canonical/card-local Lighting workflow, and the dev-mode no-legacy cleanup are in repo. Fresh live HA rerun is pending before promoting delivery again. |
 | Ambient light v1 design + implementation sequencing | active | In progress | Target | Design guide added; next step is phase-A inspector read path and config UX. |
 | Parallel branch updates | multiple | In progress | n/a | Verify `git status` before editing overlapping files. |
 | Managed action rule resilience | active | Done | Live-validated | Added fallback/reconciliation contracts + production smoke coverage; live managed-actions contract rerun passed on 2026-03-06. |

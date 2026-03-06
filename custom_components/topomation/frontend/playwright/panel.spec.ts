@@ -298,6 +298,7 @@ test("lighting tab contract: clickable rule title, footer delete, add-rule butto
   await expect(firstRule.locator(".dusk-block-footer").getByRole("button", { name: "Delete rule" })).toHaveCount(0);
   await expect(inspector.getByTestId("action-rule-add")).toBeVisible();
   await expect(inspector.getByTestId("startup-reapply-lighting")).toHaveCount(0);
+  await expect(firstRule.locator("[data-testid$='-run-on-startup']")).toBeVisible();
 });
 
 test("lighting tab contract: trigger options include dark/bright and time window reveals begin/end", async ({

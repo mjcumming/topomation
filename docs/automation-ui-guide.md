@@ -97,10 +97,10 @@ Top-to-bottom layout order:
 
 1. Lighting rules follow HA-canonical managed automation ownership.
 2. Stable metadata identity (`rule_uuid`) is required for create/update tracking.
-3. `modules.dusk_dawn` is legacy migration compatibility, not long-term source
-   of truth.
-4. Lighting-specific startup reapply controls are removed in favor of native HA
-   automation behavior.
+3. The active Lighting editor ignores legacy `modules.dusk_dawn` payloads.
+4. Startup replay is authored per rule through rule-card `Run on startup`,
+   persisted as managed-rule metadata (`run_on_startup`).
+5. Startup replay only honors explicit per-rule metadata in the active UI/runtime.
 
 ## 9. Home Assistant UX Alignment Rule
 
@@ -125,7 +125,8 @@ Deviation policy:
 2. Do not render a duplicate nested `Rules` section title directly under
    `Lighting rules`.
 3. `Add rule` is rendered once as a footer action.
-4. Lighting tab does not expose a Topomation-specific startup reapply toggle.
+4. Lighting tab does not expose a Topomation-specific tab-global startup
+   reapply toggle.
 
 Rule-card requirements:
 
@@ -139,6 +140,7 @@ Rule-card requirements:
    - ambient filter (`Ignore ambient`, `Must be dark`, `Must be bright`)
    - `Must be occupied` toggle
    - `Use time window` toggle
+   - `Run on startup` toggle
 4. Trigger-derived behavior:
    - `On dark` enforces ambient condition `dark` and renders ambient as derived/read-only.
    - `On bright` enforces ambient condition `bright` and renders ambient as derived/read-only.
@@ -166,8 +168,10 @@ Acceptance checks:
 1. Single top `Lighting rules` header.
 2. Inline rule rename behavior works.
 3. `Use time window` reveals `Begin` and `End`.
-4. `On dark` / `On bright` enforce matching ambient condition semantics.
-5. `On occupied` / `On vacant` enforce matching occupancy condition semantics.
+4. `Run on startup` is available on the rule card; no tab-global startup
+   toggle is rendered.
+5. `On dark` / `On bright` enforce matching ambient condition semantics.
+6. `On occupied` / `On vacant` enforce matching occupancy condition semantics.
 6. Unsaved draft rule hides `Delete rule`.
 7. Persisted edited rule shows `Update rule`, `Discard edits`, and `Delete rule`.
 8. Persisted clean rule shows `Delete rule`.

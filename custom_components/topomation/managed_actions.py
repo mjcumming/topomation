@@ -66,6 +66,7 @@ class _TopomationMetadata:
     time_condition_enabled: bool
     start_time: str
     end_time: str
+    run_on_startup: bool | None
     rule_uuid: str
 
 
@@ -82,6 +83,7 @@ class _RecentRuleSnapshot:
     time_condition_enabled: bool
     start_time: str
     end_time: str
+    run_on_startup: bool | None
     rule_uuid: str
     actions: list[dict[str, Any]]
     action_entity_id: str | None
@@ -204,6 +206,7 @@ class TopomationManagedActions:
                         "time_condition_enabled": recent_snapshot.time_condition_enabled,
                         "start_time": recent_snapshot.start_time,
                         "end_time": recent_snapshot.end_time,
+                        "run_on_startup": recent_snapshot.run_on_startup,
                         "rule_uuid": recent_snapshot.rule_uuid,
                         # Legacy compatibility for older frontends.
                         "require_dark": recent_snapshot.ambient_condition == "dark",
@@ -261,6 +264,7 @@ class TopomationManagedActions:
                     "time_condition_enabled": metadata.time_condition_enabled,
                     "start_time": metadata.start_time,
                     "end_time": metadata.end_time,
+                    "run_on_startup": metadata.run_on_startup,
                     "rule_uuid": metadata.rule_uuid or self._rule_uuid_from_automation_id(automation_id or entity_id),
                     # Legacy compatibility for older frontends.
                     "require_dark": metadata.ambient_condition == "dark",
@@ -287,6 +291,7 @@ class TopomationManagedActions:
         time_condition_enabled: bool = False,
         start_time: str | None = None,
         end_time: str | None = None,
+        run_on_startup: bool | None = None,
         automation_id: str | None = None,
         rule_uuid: str | None = None,
     ) -> dict[str, Any]:
@@ -366,7 +371,7 @@ class TopomationManagedActions:
         )
 
         metadata_payload = {
-            "version": 3,
+            "version": 4,
             "location_id": location_id,
             "trigger_type": normalized_trigger,
             "ambient_condition": normalized_ambient_condition,
@@ -374,6 +379,11 @@ class TopomationManagedActions:
             "time_condition_enabled": bool(time_condition_enabled),
             "start_time": normalized_start_time,
             "end_time": normalized_end_time,
+            **(
+                {"run_on_startup": bool(run_on_startup)}
+                if isinstance(run_on_startup, bool)
+                else {}
+            ),
             "rule_uuid": normalized_rule_uuid,
         }
         description = "Managed by Topomation.\n" + self._metadata_line(metadata_payload)
@@ -430,6 +440,7 @@ class TopomationManagedActions:
             time_condition_enabled=bool(time_condition_enabled),
             start_time=normalized_start_time,
             end_time=normalized_end_time,
+            run_on_startup=run_on_startup if isinstance(run_on_startup, bool) else None,
             rule_uuid=normalized_rule_uuid,
             actions=normalized_actions,
             action_entity_id=primary_action_entity_id,
@@ -501,6 +512,7 @@ class TopomationManagedActions:
             "time_condition_enabled": bool(time_condition_enabled),
             "start_time": normalized_start_time,
             "end_time": normalized_end_time,
+            "run_on_startup": run_on_startup if isinstance(run_on_startup, bool) else None,
             "rule_uuid": normalized_rule_uuid,
             # Legacy compatibility for older frontends.
             "require_dark": normalized_ambient_condition == "dark",
@@ -659,6 +671,7 @@ class TopomationManagedActions:
         time_condition_enabled: bool,
         start_time: str,
         end_time: str,
+        run_on_startup: bool | None,
         rule_uuid: str,
         actions: list[dict[str, Any]],
         action_entity_id: str | None,
@@ -690,6 +703,7 @@ class TopomationManagedActions:
             time_condition_enabled=time_condition_enabled,
             start_time=start_time,
             end_time=end_time,
+            run_on_startup=run_on_startup if isinstance(run_on_startup, bool) else None,
             rule_uuid=rule_uuid,
             actions=normalized_actions,
             action_entity_id=action_entity_id,
@@ -1025,6 +1039,11 @@ class TopomationManagedActions:
                 parsed.get("end_time") if isinstance(parsed, Mapping) else None,
                 "23:59",
             )
+            run_on_startup = (
+                parsed.get("run_on_startup")
+                if isinstance(parsed, Mapping)
+                else None
+            )
             rule_uuid = self._normalize_rule_uuid(
                 parsed.get("rule_uuid") if isinstance(parsed, Mapping) else None
             )
@@ -1041,6 +1060,7 @@ class TopomationManagedActions:
                 time_condition_enabled=time_condition_enabled,
                 start_time=start_time,
                 end_time=end_time,
+                run_on_startup=run_on_startup if isinstance(run_on_startup, bool) else None,
                 rule_uuid=rule_uuid,
             )
         return None

@@ -278,12 +278,10 @@ def handle_locations_list(hass, connection, msg):
 **Panel Routing**:
 
 - `Location Manager` (`/topomation`) is the single visible sidebar entry.
-- Alias routes are retained for deep linking and default-focus behavior:
+- Additional routes are explicit current views:
   - `/topomation-occupancy` (defaults inspector to `Detection`)
   - `/topomation-media` (defaults inspector to `Media`)
   - `/topomation-hvac` (defaults inspector to `HVAC`)
-  - `/topomation-appliances` remains a legacy compatibility alias and now opens
-    the HVAC-focused inspector path.
 
 All routes use the same underlying `topomation-panel` frontend module and
 shared location tree selection context.
@@ -317,8 +315,7 @@ shared location tree selection context.
 - Ambiguity escalation gate:
   - if contracts, design guide, issue requirements, or live behavior conflict,
     implementation must stop and request user decision before coding that area.
-- `Lighting` rules follow HA-canonical managed automation ownership
-  (legacy `modules.dusk_dawn` is migration compatibility only).
+- `Lighting` rules follow HA-canonical managed automation ownership.
 - `Media` / `HVAC` rules are authored as native Home Assistant automations via
   `topomation/actions/rules/*`.
 - Topomation tags those automations with panel metadata + labels/category so each location tab can filter only its own rules.
@@ -337,9 +334,10 @@ shared location tree selection context.
   write and returns an actionable error.
 - Reconciliation is event-driven (startup load + `automation.*` state_changed
   subscription while inspector is open); no periodic polling loop in v1.
-- Non-light startup reapply controls remain domain-specific where supported.
-- Lighting does not expose a Topomation-specific startup reapply toggle and
-  should align with native HA automation behavior.
+- Startup replay is authored per rule through rule-card `Run on startup`.
+- Managed rules persist explicit startup opt-in in automation metadata
+  (`run_on_startup`); the active runtime does not use a location-global
+  startup fallback.
 - Built-in non-light action domains in this phase are constrained to:
   - `media_player.*` (Media)
   - `fan.*` (HVAC)
@@ -488,8 +486,9 @@ Broken/invalid persisted payloads are ignored and do not block startup.
 
 **Store Key / File**: `topomation.config` -> `.storage/topomation.config`
 
-Note: example includes legacy `modules.dusk_dawn` payload for migration
-compatibility. Target-state Lighting rule persistence is HA automation entities.
+Note: managed Lighting/Media/HVAC rules are not duplicated in
+`topomation.config`; those rules live as native HA automation entities with
+Topomation metadata.
 
 **Contents**:
 
@@ -509,23 +508,6 @@ compatibility. Target-state Lighting rule persistence is HA automation entities.
           "inherit_from_parent": true,
           "dark_threshold": 50,
           "bright_threshold": 500
-        },
-        "dusk_dawn": {
-          "version": 3,
-          "blocks": [
-            {
-              "id": "evening",
-              "name": "Evening",
-              "start_time": "16:00",
-              "end_time": "23:59",
-              "time_condition_enabled": true,
-              "trigger_mode": "on_dark",
-              "ambient_condition": "dark",
-              "must_be_occupied": false,
-              "already_on_behavior": "leave_unchanged",
-              "light_targets": []
-            }
-          ]
         }
       }
     }

@@ -2195,181 +2195,6 @@ async def test_set_module_config_rejects_sync_rooms_with_managed_shadow_area_tar
 
 
 @pytest.mark.asyncio
-async def test_set_module_config_accepts_dusk_dawn_config_and_normalizes_blocks(
-    hass: HomeAssistant,
-) -> None:
-    """Lighting config writes are accepted and normalized to v3 block shape."""
-    area_registry = ar.async_get(hass)
-    kitchen = area_registry.async_create("Kitchen")
-
-    entry = MockConfigEntry(domain=DOMAIN, data={}, entry_id="test_entry")
-    entry.add_to_hass(hass)
-
-    with patch("custom_components.topomation.async_register_panel", AsyncMock()):
-        assert await hass.config_entries.async_setup(entry.entry_id)
-        await hass.async_block_till_done()
-
-    connection = _fake_connection()
-    handle_locations_set_module_config(
-        hass,
-        connection,
-        {
-            "id": 310,
-            "type": WS_TYPE_LOCATIONS_SET_MODULE_CONFIG,
-            "location_id": f"area_{kitchen.id}",
-            "module_id": "dusk_dawn",
-            "config": {
-                "blocks": [
-                    {
-                        "id": "late",
-                        "name": "Block 4",
-                        "start_time": "22:00",
-                        "end_time": "01:30",
-                        "time_condition_enabled": True,
-                        "trigger_mode": "on_dark",
-                        "ambient_condition": "dark",
-                        "must_be_occupied": True,
-                        "already_on_behavior": "set_target",
-                        "light_targets": [
-                            {
-                                "entity_id": "light.kitchen_main",
-                                "power": "on",
-                                "brightness_pct": 18,
-                                "color_hex": "#FFAA00",
-                                "already_on_behavior": "set_target",
-                            },
-                            {
-                                "entity_id": "light.kitchen_main",
-                                "power": "on",
-                                "brightness_pct": 25,
-                            },
-                            {
-                                "entity_id": "light.kitchen_island",
-                                "power": "off",
-                                "brightness_pct": 80,
-                                "already_on_behavior": "leave_unchanged",
-                            },
-                        ],
-                    },
-                    {
-                        "id": "dinner",
-                        "name": "Dinner",
-                        "start_time": "16:00",
-                        "trigger_mode": "on_dark",
-                        "ambient_condition": "dark",
-                        "must_be_occupied": False,
-                        "already_on_behavior": "leave_unchanged",
-                        "light_targets": [
-                            {
-                                "entity_id": "light.kitchen_main",
-                                "power": "on",
-                                "brightness_pct": 120,
-                            }
-                        ],
-                    },
-                ],
-            },
-            "entry_id": entry.entry_id,
-        },
-    )
-
-    assert connection.send_error.call_count == 0
-    connection.send_result.assert_called_once()
-
-    loc_mgr = hass.data[DOMAIN][entry.entry_id]["location_manager"]
-    stored = loc_mgr.get_module_config(f"area_{kitchen.id}", "dusk_dawn")
-    assert stored["version"] == 3
-    assert stored["blocks"][0]["id"] == "late"
-    assert stored["blocks"][0]["start_time"] == "22:00"
-    assert stored["blocks"][0]["end_time"] == "01:30"
-    assert stored["blocks"][0]["time_condition_enabled"] is True
-    assert stored["blocks"][0]["trigger_mode"] == "on_dark"
-    assert stored["blocks"][0]["ambient_condition"] == "dark"
-    assert stored["blocks"][0]["must_be_occupied"] is True
-    assert stored["blocks"][0]["already_on_behavior"] == "set_target"
-    assert stored["blocks"][0]["name"] == "Rule 4"
-    assert stored["blocks"][0]["light_targets"][0] == {
-        "entity_id": "light.kitchen_main",
-        "power": "on",
-        "brightness_pct": 18,
-        "color_hex": "#ffaa00",
-        "already_on_behavior": "set_target",
-    }
-    assert stored["blocks"][0]["light_targets"][1] == {
-        "entity_id": "light.kitchen_island",
-        "power": "off",
-        "already_on_behavior": "leave_unchanged",
-    }
-    assert stored["blocks"][1]["id"] == "dinner"
-    assert stored["blocks"][1]["trigger_mode"] == "on_dark"
-    assert stored["blocks"][1]["ambient_condition"] == "dark"
-    assert stored["blocks"][1]["must_be_occupied"] is False
-    assert stored["blocks"][1]["already_on_behavior"] == "leave_unchanged"
-    assert stored["blocks"][1]["time_condition_enabled"] is False
-    assert stored["blocks"][1]["end_time"] == "23:59"
-    assert stored["blocks"][1]["light_targets"][0]["brightness_pct"] == 100
-
-
-@pytest.mark.asyncio
-async def test_set_module_config_accepts_dusk_dawn_duplicate_start_times(
-    hass: HomeAssistant,
-) -> None:
-    """Lighting blocks may share start times in v3 dev schema."""
-    area_registry = ar.async_get(hass)
-    kitchen = area_registry.async_create("Kitchen")
-
-    entry = MockConfigEntry(domain=DOMAIN, data={}, entry_id="test_entry")
-    entry.add_to_hass(hass)
-
-    with patch("custom_components.topomation.async_register_panel", AsyncMock()):
-        assert await hass.config_entries.async_setup(entry.entry_id)
-        await hass.async_block_till_done()
-
-    connection = _fake_connection()
-    handle_locations_set_module_config(
-        hass,
-        connection,
-        {
-            "id": 311,
-            "type": WS_TYPE_LOCATIONS_SET_MODULE_CONFIG,
-            "location_id": f"area_{kitchen.id}",
-            "module_id": "dusk_dawn",
-            "config": {
-                "blocks": [
-                    {
-                        "id": "evening",
-                        "name": "Evening",
-                        "start_time": "16:00",
-                        "trigger_mode": "on_dark",
-                        "already_on_behavior": "leave_unchanged",
-                        "light_targets": [],
-                    },
-                    {
-                        "id": "late",
-                        "name": "Late",
-                        "start_time": "16:00",
-                        "trigger_mode": "on_dark",
-                        "already_on_behavior": "leave_unchanged",
-                        "light_targets": [],
-                    },
-                ],
-            },
-            "entry_id": entry.entry_id,
-        },
-    )
-
-    assert connection.send_error.call_count == 0
-    connection.send_result.assert_called_once()
-
-    loc_mgr = hass.data[DOMAIN][entry.entry_id]["location_manager"]
-    stored = loc_mgr.get_module_config(f"area_{kitchen.id}", "dusk_dawn")
-    assert stored["version"] == 3
-    assert len(stored["blocks"]) == 2
-    assert stored["blocks"][0]["id"] == "evening"
-    assert stored["blocks"][1]["id"] == "late"
-
-
-@pytest.mark.asyncio
 async def test_set_module_config_schedules_persist(hass: HomeAssistant) -> None:
     """Successful module config updates should schedule debounced persistence."""
     area_registry = ar.async_get(hass)
@@ -2916,6 +2741,7 @@ async def test_action_rules_create_uses_managed_runtime(hass: HomeAssistant) -> 
         action_data=None,
         automation_id=None,
         rule_uuid=None,
+        run_on_startup=None,
     )
     schedule_persist.assert_called_once_with("actions/rules/create")
     connection.send_error.assert_not_called()
@@ -2969,6 +2795,7 @@ async def test_action_rules_create_forwards_rule_conditions(hass: HomeAssistant)
             "time_condition_enabled": True,
             "start_time": "22:00",
             "end_time": "05:30",
+            "run_on_startup": True,
             "automation_id": "topomation_kitchen_on_dark_fan_kitchen_hood_rule_abc123",
             "rule_uuid": "rule_abc123",
         },
@@ -2988,6 +2815,7 @@ async def test_action_rules_create_forwards_rule_conditions(hass: HomeAssistant)
         time_condition_enabled=True,
         start_time="22:00",
         end_time="05:30",
+        run_on_startup=True,
         action_data=None,
         automation_id="topomation_kitchen_on_dark_fan_kitchen_hood_rule_abc123",
         rule_uuid="rule_abc123",
@@ -3073,6 +2901,7 @@ async def test_action_rules_create_forwards_action_data_and_normalizes_brightnes
         action_data={"brightness_pct": 55, "transition": 1},
         automation_id=None,
         rule_uuid=None,
+        run_on_startup=None,
     )
     connection.send_error.assert_not_called()
     connection.send_result.assert_called_once()
@@ -3162,6 +2991,7 @@ async def test_action_rules_create_forwards_multi_actions_payload(
         action_data=None,
         automation_id=None,
         rule_uuid=None,
+        run_on_startup=None,
     )
     connection.send_error.assert_not_called()
     connection.send_result.assert_called_once()
@@ -3217,67 +3047,6 @@ async def test_action_rules_create_returns_create_failed_on_registration_timeout
     assert err_args[0] == 915
     assert err_args[1] == "create_failed"
     assert "Topomation rolled back the attempted write" in err_args[2]
-
-
-@pytest.mark.asyncio
-async def test_action_rules_create_rejects_light_owned_by_lighting_policy(
-    hass: HomeAssistant,
-) -> None:
-    """actions/rules/create blocks light targets already owned by lighting policy."""
-    location = type("Location", (), {"id": "kitchen", "name": "Kitchen"})()
-    loc_mgr = Mock()
-    loc_mgr.get_location.return_value = location
-    loc_mgr.get_module_config.return_value = {
-        "version": 3,
-        "blocks": [
-            {
-                "id": "evening",
-                "name": "Evening",
-                "start_time": "16:00",
-                "trigger_mode": "on_dark",
-                "already_on_behavior": "leave_unchanged",
-                "light_targets": [
-                    {"entity_id": "light.kitchen_ceiling", "power": "on", "brightness_pct": 40}
-                ],
-            }
-        ],
-    }
-    schedule_persist = Mock()
-    managed_action_rules = AsyncMock()
-    managed_action_rules.async_create_rule = AsyncMock()
-    hass.data[DOMAIN] = {
-        "entry_1": {
-            "location_manager": loc_mgr,
-            "managed_action_rules": managed_action_rules,
-            "schedule_persist": schedule_persist,
-        }
-    }
-
-    connection = _fake_connection()
-    handle_action_rules_create(
-        hass,
-        connection,
-        {
-            "id": 911,
-            "type": WS_TYPE_ACTION_RULES_CREATE,
-            "location_id": "kitchen",
-            "name": "Kitchen Occupied: Ceiling on",
-            "trigger_type": "occupied",
-            "action_entity_id": "light.kitchen_ceiling",
-            "action_service": "turn_on",
-            "require_dark": False,
-        },
-    )
-    await hass.async_block_till_done()
-
-    managed_action_rules.async_create_rule.assert_not_called()
-    schedule_persist.assert_not_called()
-    connection.send_result.assert_not_called()
-    connection.send_error.assert_called_once()
-    err_args = connection.send_error.call_args[0]
-    assert err_args[0] == 911
-    assert err_args[1] == "create_failed"
-    assert "owned by Lighting policy" in err_args[2]
 
 
 @pytest.mark.asyncio

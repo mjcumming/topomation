@@ -17,10 +17,6 @@ PANEL_ICON = "mdi:floor-plan"
 PANEL_OCCUPANCY_URL = "/topomation-occupancy"
 PANEL_OCCUPANCY_TITLE = "Occupancy Manager"
 PANEL_OCCUPANCY_ICON = "mdi:home-account"
-# Legacy deep-link alias retained for one-release compatibility. It now opens
-# the HVAC-focused workspace since switch-based exhaust/ventilation controls
-# moved under HVAC.
-PANEL_APPLIANCES_URL = "/topomation-appliances"
 PANEL_MEDIA_URL = "/topomation-media"
 PANEL_HVAC_URL = "/topomation-hvac"
 
@@ -35,13 +31,6 @@ PANEL_DEFINITIONS = (
     {
         "view": "occupancy",
         "url": PANEL_OCCUPANCY_URL,
-        "title": None,
-        "icon": None,
-        "sidebar_visible": False,
-    },
-    {
-        "view": "hvac",
-        "url": PANEL_APPLIANCES_URL,
         "title": None,
         "icon": None,
         "sidebar_visible": False,
@@ -93,7 +82,6 @@ WS_TYPE_ACTION_RULES_SET_ENABLED = f"{DOMAIN}/actions/rules/set_enabled"
 
 # Actions automation metadata/logging
 TOPOMATION_AUTOMATION_METADATA_PREFIX = "[topomation]"
-AUTOMATION_REAPPLY_CONFIG_KEY = "reapply_last_state_on_startup"
 AUTOMATION_STARTUP_BUFFER_SECONDS = 20
 EVENT_TOPOMATION_ACTIONS_SUMMARY = f"{DOMAIN}_actions_summary"
 EVENT_TOPOMATION_OCCUPANCY_CHANGED = f"{DOMAIN}_occupancy_changed"

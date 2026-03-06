@@ -65,17 +65,7 @@ _MANAGED_SHADOW_ROLE = "managed_shadow"
 _SHADOW_HOST_TYPES = frozenset({"floor", "building", "grounds"})
 _OCCUPANCY_LINKED_LOCATIONS_KEY = "linked_locations"
 _OCCUPANCY_SYNC_LOCATIONS_KEY = "sync_locations"
-_DUSK_DAWN_TRIGGER_MODES = frozenset({"on_occupied", "on_vacant", "on_dark", "on_bright"})
-_DUSK_DAWN_LEGACY_TRIGGER_MODE_MAP: dict[str, str] = {
-    "at_dark": "on_dark",
-    "at_dark_if_occupied": "on_dark",
-    "while_dark_on_occupancy": "on_occupied",
-}
-_DUSK_DAWN_AMBIENT_CONDITIONS = frozenset({"any", "dark", "bright"})
-_DUSK_DAWN_ALREADY_ON_BEHAVIORS = frozenset({"leave_unchanged", "set_target"})
 _DUSK_DAWN_TIME_PATTERN = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
-_DUSK_DAWN_COLOR_HEX_PATTERN = re.compile(r"^#[0-9a-fA-F]{6}$")
-_DUSK_DAWN_LEGACY_BLOCK_NAME_PATTERN = re.compile(r"^block\s+(\d+)$", re.IGNORECASE)
 _ACTION_TRIGGER_TYPES = frozenset({"on_occupied", "on_vacant", "on_dark", "on_bright"})
 _ACTION_LEGACY_TRIGGER_MAP: dict[str, str] = {
     "occupied": "on_occupied",
@@ -453,267 +443,13 @@ def _allowed_sync_location_neighbors(
     return allowed
 
 
-def _default_dusk_dawn_blocks() -> list[dict[str, Any]]:
-    """Return default dusk/dawn schedule blocks."""
-    return []
-
-
-def _default_dusk_dawn_config() -> dict[str, Any]:
-    """Return default dusk/dawn module config."""
-    return {
-        "version": 3,
-        "blocks": _default_dusk_dawn_blocks(),
-    }
-
-
-def _normalize_dusk_dawn_time(raw_value: Any) -> str | None:
-    """Validate HH:MM local time format."""
-    if not isinstance(raw_value, str):
-        return None
-    value = raw_value.strip()
-    if not value:
-        return None
-    if _DUSK_DAWN_TIME_PATTERN.match(value):
-        return value
-    return None
-
-
-def _normalize_dusk_dawn_brightness(raw_value: Any, default_value: int) -> int:
+def _normalize_action_brightness_pct(raw_value: Any, default_value: int) -> int:
     """Normalize brightness to an integer range of 1..100."""
     try:
         value = round(float(raw_value))
     except (TypeError, ValueError):
         value = default_value
     return max(1, min(100, value))
-
-
-def _normalize_dusk_dawn_color_hex(raw_value: Any) -> str | None:
-    """Normalize optional hex color strings to lowercase #RRGGBB."""
-    if raw_value is None:
-        return None
-    if not isinstance(raw_value, str):
-        return None
-    value = raw_value.strip()
-    if not value:
-        return None
-    if not value.startswith("#"):
-        value = f"#{value}"
-    if not _DUSK_DAWN_COLOR_HEX_PATTERN.match(value):
-        return None
-    return value.lower()
-
-
-def _normalize_dusk_dawn_rule_name(raw_value: Any, default_name: str) -> str:
-    """Normalize rule names and migrate legacy Block N labels to Rule N."""
-    value = str(raw_value).strip() if isinstance(raw_value, str) else ""
-    if not value:
-        return default_name
-    legacy_match = _DUSK_DAWN_LEGACY_BLOCK_NAME_PATTERN.match(value)
-    if legacy_match:
-        return f"Rule {legacy_match.group(1)}"
-    return value
-
-
-def _default_dusk_dawn_ambient_condition(trigger_mode: str) -> str:
-    """Return default ambient condition for a trigger mode."""
-    if trigger_mode == "on_dark":
-        return "dark"
-    if trigger_mode == "on_bright":
-        return "bright"
-    return "any"
-
-
-def _normalize_dusk_dawn_light_targets(
-    raw_targets: Any,
-) -> tuple[list[dict[str, Any]] | None, str | None]:
-    """Normalize per-block light target actions."""
-    targets_input = raw_targets
-    if targets_input is None:
-        targets_input = []
-    if not isinstance(targets_input, list):
-        return None, "light_targets must be a list."
-
-    normalized: list[dict[str, Any]] = []
-    seen_entities: set[str] = set()
-    for raw_target in targets_input:
-        if not isinstance(raw_target, dict):
-            return None, "light_targets must contain objects."
-
-        raw_entity = raw_target.get("entity_id")
-        entity_id = str(raw_entity).strip() if isinstance(raw_entity, str) else ""
-        if not entity_id:
-            return None, "light_targets.entity_id is required."
-        if not entity_id.startswith("light."):
-            return None, "light_targets.entity_id must use light.* entities."
-        if entity_id in seen_entities:
-            continue
-        seen_entities.add(entity_id)
-
-        raw_power = str(raw_target.get("power", "on")).strip().lower()
-        power = "off" if raw_power == "off" else "on"
-        target: dict[str, Any] = {
-            "entity_id": entity_id,
-            "power": power,
-        }
-        raw_target_already_on = raw_target.get("already_on_behavior")
-        if raw_target_already_on is not None:
-            target_already_on = str(raw_target_already_on).strip()
-            if target_already_on not in _DUSK_DAWN_ALREADY_ON_BEHAVIORS:
-                return None, (
-                    "light_targets.already_on_behavior must be "
-                    "leave_unchanged or set_target."
-                )
-            target["already_on_behavior"] = target_already_on
-
-        if power == "on":
-            if raw_target.get("brightness_pct") is not None:
-                target["brightness_pct"] = _normalize_dusk_dawn_brightness(
-                    raw_target.get("brightness_pct"),
-                    30,
-                )
-            color_hex = _normalize_dusk_dawn_color_hex(raw_target.get("color_hex"))
-            if color_hex is not None:
-                target["color_hex"] = color_hex
-
-        normalized.append(target)
-
-    return normalized, None
-
-
-def _normalize_dusk_dawn_block(
-    raw_block: Any,
-    index: int,
-) -> tuple[dict[str, Any] | None, str | None]:
-    """Normalize one schedule block."""
-    if not isinstance(raw_block, dict):
-        return None, "blocks must contain objects."
-    raw_id = raw_block.get("id")
-    block_id = str(raw_id).strip() if isinstance(raw_id, str) else ""
-    if not block_id:
-        block_id = f"rule_{index + 1}"
-
-    raw_start_time = raw_block.get("start_time", "18:00")
-    start_time = _normalize_dusk_dawn_time(raw_start_time)
-    if start_time is None:
-        return None, f"Invalid start_time for block '{block_id}'."
-
-    time_condition_enabled = bool(raw_block.get("time_condition_enabled", False))
-    raw_end_time = raw_block.get("end_time", "23:59")
-    end_time = _normalize_dusk_dawn_time(raw_end_time)
-    if end_time is None:
-        return None, f"Invalid end_time for block '{block_id}'."
-
-    raw_name = raw_block.get("name")
-    default_name = f"Rule {index + 1}"
-    name = _normalize_dusk_dawn_rule_name(raw_name, default_name)
-    raw_trigger_mode = str(raw_block.get("trigger_mode", "on_dark")).strip()
-    trigger_mode = _DUSK_DAWN_LEGACY_TRIGGER_MODE_MAP.get(raw_trigger_mode, raw_trigger_mode)
-    if trigger_mode not in _DUSK_DAWN_TRIGGER_MODES:
-        return None, f"Invalid trigger_mode for block '{block_id}'."
-    raw_ambient_condition = str(raw_block.get("ambient_condition", "")).strip()
-    if raw_ambient_condition and raw_ambient_condition not in _DUSK_DAWN_AMBIENT_CONDITIONS:
-        return None, f"Invalid ambient_condition for block '{block_id}'."
-    ambient_condition = (
-        raw_ambient_condition
-        if raw_ambient_condition in _DUSK_DAWN_AMBIENT_CONDITIONS
-        else _default_dusk_dawn_ambient_condition(trigger_mode)
-    )
-    must_be_occupied_raw = raw_block.get("must_be_occupied")
-    must_be_occupied = (
-        bool(must_be_occupied_raw)
-        if isinstance(must_be_occupied_raw, bool)
-        else raw_trigger_mode == "at_dark_if_occupied"
-    )
-
-    already_on_behavior = str(
-        raw_block.get("already_on_behavior", "leave_unchanged")
-    ).strip()
-    if already_on_behavior not in _DUSK_DAWN_ALREADY_ON_BEHAVIORS:
-        return None, f"Invalid already_on_behavior for block '{block_id}'."
-
-    light_targets, target_error = _normalize_dusk_dawn_light_targets(
-        raw_block.get("light_targets"),
-    )
-    if target_error:
-        return None, f"Invalid light_targets for block '{block_id}': {target_error}"
-
-    return (
-        {
-            "id": block_id,
-            "name": name,
-            "start_time": start_time,
-            "end_time": end_time,
-            "time_condition_enabled": time_condition_enabled,
-            "trigger_mode": trigger_mode,
-            "ambient_condition": ambient_condition,
-            "must_be_occupied": must_be_occupied,
-            "already_on_behavior": already_on_behavior,
-            "light_targets": light_targets or [],
-        },
-        None,
-    )
-
-
-def _normalize_dusk_dawn_blocks(
-    raw_blocks: Any,
-) -> tuple[list[dict[str, Any]] | None, str | None]:
-    """Normalize schedule blocks list."""
-    if raw_blocks is None:
-        return [], None
-    if not isinstance(raw_blocks, list):
-        return None, "blocks must be a list."
-
-    normalized: list[dict[str, Any]] = []
-    seen_ids: set[str] = set()
-    for index, raw_block in enumerate(raw_blocks):
-        normalized_block, block_error = _normalize_dusk_dawn_block(raw_block, index)
-        if block_error:
-            return None, block_error
-        if normalized_block is None:
-            return None, "Invalid block."
-        block_id = str(normalized_block.get("id", "")).strip()
-        if block_id in seen_ids:
-            return None, f"Duplicate block id '{block_id}'."
-        seen_ids.add(block_id)
-        normalized.append(normalized_block)
-
-    return normalized, None
-
-
-def _normalize_dusk_dawn_config(config: dict[str, Any]) -> tuple[dict[str, Any] | None, str | None]:
-    """Validate and normalize dusk/dawn config writes."""
-    if not isinstance(config, dict):
-        return None, "dusk_dawn config must be an object."
-
-    defaults = _default_dusk_dawn_config()
-    blocks, blocks_error = _normalize_dusk_dawn_blocks(config.get("blocks", defaults["blocks"]))
-    if blocks_error:
-        return None, blocks_error
-    if blocks is None:
-        return None, "Invalid blocks."
-
-    return (
-        {
-            "version": 3,
-            "blocks": blocks,
-        },
-        None,
-    )
-
-
-def _dusk_dawn_owned_light_entities(config: dict[str, Any]) -> set[str]:
-    """Collect light entity ids explicitly targeted by dusk/dawn blocks."""
-    owned: set[str] = set()
-    for block in config.get("blocks", []):
-        if not isinstance(block, dict):
-            continue
-        for target in block.get("light_targets", []):
-            if not isinstance(target, dict):
-                continue
-            entity_id = str(target.get("entity_id", "")).strip()
-            if entity_id.startswith("light."):
-                owned.add(entity_id)
-    return owned
 
 
 def _location_meta(location: object) -> dict[str, Any]:
@@ -2077,15 +1813,6 @@ def handle_locations_set_module_config(
                 config["linked_locations"] = normalized_linked
             if normalized_sync is not None:
                 config["sync_locations"] = normalized_sync
-        elif module_id == "dusk_dawn":
-            normalized_dusk_dawn, dusk_dawn_error = _normalize_dusk_dawn_config(config)
-            if dusk_dawn_error:
-                connection.send_error(msg["id"], "invalid_config", dusk_dawn_error)
-                return
-            if normalized_dusk_dawn is None:
-                connection.send_error(msg["id"], "invalid_config", "Invalid dusk_dawn config")
-                return
-            config = normalized_dusk_dawn
         elif module_id == "_meta":
             normalized_meta, meta_error = _normalize_meta_config(loc_mgr, location, config)
             if meta_error:
@@ -2286,6 +2013,7 @@ async def handle_action_rules_list(
         vol.Optional("time_condition_enabled", default=False): bool,
         vol.Optional("start_time"): str,
         vol.Optional("end_time"): str,
+        vol.Optional("run_on_startup"): bool,
         vol.Optional("require_dark", default=False): bool,
         vol.Optional("automation_id"): str,
         vol.Optional("rule_uuid"): str,
@@ -2353,7 +2081,7 @@ async def handle_action_rules_create(
         brightness_pct_raw = action_data_raw.get("brightness_pct")
         if brightness_pct_raw is not None:
             try:
-                normalized_action_data["brightness_pct"] = _normalize_dusk_dawn_brightness(
+                normalized_action_data["brightness_pct"] = _normalize_action_brightness_pct(
                     brightness_pct_raw,
                     30,
                 )
@@ -2393,7 +2121,7 @@ async def handle_action_rules_create(
                 brightness_pct_raw = data_raw.get("brightness_pct")
                 if brightness_pct_raw is not None:
                     try:
-                        cleaned_data["brightness_pct"] = _normalize_dusk_dawn_brightness(
+                        cleaned_data["brightness_pct"] = _normalize_action_brightness_pct(
                             brightness_pct_raw,
                             30,
                         )
@@ -2432,32 +2160,6 @@ async def handle_action_rules_create(
         connection.send_error(msg["id"], "invalid_payload", "At least one action target is required")
         return
 
-    if any(str(action.get("entity_id", "")).startswith("light.") for action in actions):
-        get_module_config = getattr(loc_mgr, "get_module_config", None)
-        existing_dusk_dawn = (
-            get_module_config(location.id, "dusk_dawn")
-            if callable(get_module_config)
-            else {}
-        )
-        normalized_dusk_dawn, _ = _normalize_dusk_dawn_config(
-            existing_dusk_dawn if isinstance(existing_dusk_dawn, dict) else {}
-        )
-        if normalized_dusk_dawn is None:
-            normalized_dusk_dawn = _default_dusk_dawn_config()
-        owned_lights = _dusk_dawn_owned_light_entities(normalized_dusk_dawn)
-        for action in actions:
-            target_entity_id = str(action.get("entity_id", "")).strip()
-            if target_entity_id in owned_lights:
-                connection.send_error(
-                    msg["id"],
-                    "create_failed",
-                    (
-                        f"{target_entity_id} is owned by Lighting policy for this location. "
-                        "Remove it from Lighting before adding it to an Actions rule."
-                    ),
-                )
-                return
-
     try:
         rule = await managed_action_rules.async_create_rule(
             location=location,
@@ -2472,6 +2174,7 @@ async def handle_action_rules_create(
             time_condition_enabled=time_condition_enabled,
             start_time=start_time.strip() if isinstance(start_time, str) else None,
             end_time=end_time.strip() if isinstance(end_time, str) else None,
+            run_on_startup=msg.get("run_on_startup") if isinstance(msg.get("run_on_startup"), bool) else None,
             action_data=action_data,
             automation_id=str(msg.get("automation_id", "")).strip() or None,
             rule_uuid=str(msg.get("rule_uuid", "")).strip() or None,

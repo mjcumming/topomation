@@ -2690,6 +2690,7 @@ describe("HtLocationInspector occupancy source composer", () => {
       '[data-testid="action-rule-add"]'
     ) as HTMLButtonElement | null;
     expect(addRuleButton).to.exist;
+    expect(element.shadowRoot?.querySelector('[data-testid="startup-reapply-hvac"]')).to.equal(null);
     expect((element.shadowRoot?.textContent || "")).to.include("No HVAC rules configured yet.");
   });
 
@@ -2829,13 +2830,21 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect((row!.textContent || "")).to.include("Ambient must be");
     expect((row!.textContent || "")).to.include("Must be occupied");
     expect((row!.textContent || "")).to.include("Use time window");
+    expect((row!.textContent || "")).to.include("Run on startup");
 
     expect(row!.querySelectorAll('input[type="time"]').length).to.equal(0);
-    const conditionToggles = Array.from(
-      row!.querySelectorAll(".dusk-conditions .config-row input.switch-input")
-    ) as HTMLInputElement[];
-    expect(conditionToggles.length).to.equal(1);
-    conditionToggles[0].click();
+    const timeToggle = Array.from(
+      row!.querySelectorAll(".dusk-conditions .config-row")
+    ).find((candidate) => (candidate.textContent || "").includes("Use time window"))?.querySelector(
+      "input.switch-input"
+    ) as HTMLInputElement | null;
+    const startupToggle = row!.querySelector(
+      '[data-testid^="action-rule-"][data-testid$="-run-on-startup"]'
+    ) as HTMLInputElement | null;
+    expect(timeToggle).to.exist;
+    expect(startupToggle).to.exist;
+    expect(startupToggle?.checked).to.equal(false);
+    timeToggle!.click();
     await element.updateComplete;
 
     await waitUntil(
@@ -3036,11 +3045,19 @@ describe("HtLocationInspector occupancy source composer", () => {
     selects[3].dispatchEvent(new Event("change", { bubbles: true, composed: true }));
     await element.updateComplete;
 
-    const conditionToggles = Array.from(
-      row!.querySelectorAll(".dusk-conditions .config-row input.switch-input")
-    ) as HTMLInputElement[];
-    expect(conditionToggles.length).to.equal(1);
-    conditionToggles[0].click();
+    const timeToggle = Array.from(
+      row!.querySelectorAll(".dusk-conditions .config-row")
+    ).find((candidate) => (candidate.textContent || "").includes("Use time window"))?.querySelector(
+      "input.switch-input"
+    ) as HTMLInputElement | null;
+    const startupToggle = row!.querySelector(
+      '[data-testid="action-rule-rule_existing-run-on-startup"]'
+    ) as HTMLInputElement | null;
+    expect(timeToggle).to.exist;
+    expect(startupToggle).to.exist;
+    startupToggle!.checked = true;
+    startupToggle!.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+    timeToggle!.click();
     await element.updateComplete;
 
     await waitUntil(
@@ -3075,6 +3092,7 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(payload.time_condition_enabled).to.equal(true);
     expect(payload.start_time).to.equal("19:15");
     expect(payload.end_time).to.equal("23:30");
+    expect(payload.run_on_startup).to.equal(true);
     expect(payload.action_entity_id).to.equal("fan.kitchen_hood");
     expect(payload.action_service).to.equal("turn_off");
     expect(payload.require_dark).to.equal(false);
@@ -3178,6 +3196,80 @@ describe("HtLocationInspector occupancy source composer", () => {
       "expected draft to reload from Home Assistant after external rule removal"
     );
     expect(element.shadowRoot?.textContent || "").to.include("No HVAC rules configured yet.");
+  });
+
+  it("does not reload rules on same-connection hass churn and still adds a draft rule", async () => {
+    let listCalls = 0;
+    const connection = {
+      subscribeEvents: async () => () => {},
+    } as any;
+
+    const buildHass = (): HomeAssistant => ({
+      callWS: async <T>(request: Record<string, any>) => {
+        if (request.type === "topomation/actions/rules/list") {
+          listCalls += 1;
+          return { rules: [] } as T;
+        }
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        return [] as T;
+      },
+      connection,
+      states: {
+        "fan.kitchen_hood": {
+          entity_id: "fan.kitchen_hood",
+          state: "off",
+          attributes: {
+            friendly_name: "Kitchen Hood",
+            area_id: "kitchen",
+          },
+        },
+      },
+      areas: {},
+      floors: {},
+      localize: (key: string) => key,
+    });
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_kitchen";
+    location.ha_area_id = "kitchen";
+    location.modules._meta = { type: "area" };
+    location.entity_ids = ["fan.kitchen_hood"];
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${buildHass()}
+        .location=${location}
+        .forcedTab=${"hvac"}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    await waitUntil(
+      () => !!element.shadowRoot?.querySelector('[data-testid="action-rule-add"]'),
+      "expected add-rule button to render"
+    );
+    const baselineListCalls = listCalls;
+
+    for (let iteration = 0; iteration < 5; iteration += 1) {
+      element.hass = buildHass();
+      await element.updateComplete;
+    }
+
+    const addRuleButton = element.shadowRoot?.querySelector(
+      '[data-testid="action-rule-add"]'
+    ) as HTMLButtonElement | null;
+    expect(addRuleButton).to.exist;
+    expect(addRuleButton?.disabled).to.equal(false);
+    expect(listCalls).to.equal(baselineListCalls);
+
+    addRuleButton!.click();
+    await element.updateComplete;
+
+    await waitUntil(
+      () => (element.shadowRoot?.querySelectorAll(".dusk-block-row").length || 0) === 1,
+      "expected draft rule row after same-connection hass churn"
+    );
   });
 });
 describe("HtLocationInspector WIAB configuration", () => {
@@ -3816,15 +3908,14 @@ describe("HtLocationInspector WIAB configuration", () => {
     );
   });
 
-  it("migrates legacy dusk/dawn lighting blocks to managed action rules on save", async () => {
+  it("ignores legacy dusk/dawn payloads in the active lighting editor", async () => {
     const createCalls: Array<Record<string, any>> = [];
     const setConfigCalls: Array<Record<string, any>> = [];
-    let persistedRules: Array<Record<string, any>> = [];
 
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>): Promise<T> => {
         if (request.type === "topomation/actions/rules/list") {
-          return { rules: persistedRules } as T;
+          return { rules: [] } as T;
         }
         if (request.type === "topomation/actions/rules/create") {
           createCalls.push(request);
@@ -3844,7 +3935,6 @@ describe("HtLocationInspector WIAB configuration", () => {
             end_time: request.end_time,
             enabled: true,
           };
-          persistedRules = [createdRule];
           return { rule: createdRule } as T;
         }
         if (request.type === "topomation/actions/rules/delete") {
@@ -3921,47 +4011,24 @@ describe("HtLocationInspector WIAB configuration", () => {
     `);
     await element.updateComplete;
 
-    await waitUntil(
-      () => (element.shadowRoot?.querySelectorAll(".dusk-block-row").length || 0) === 1,
-      "expected migrated legacy lighting draft rule to render"
-    );
+    expect((element.shadowRoot?.querySelectorAll(".dusk-block-row").length || 0)).to.equal(0);
+    expect(element.shadowRoot?.textContent || "").to.include("No lighting rules configured yet.");
 
     expect(element.shadowRoot?.querySelector('[data-testid="lighting-rules-save"]')).to.equal(null);
     expect(element.shadowRoot?.querySelector('[data-testid="startup-reapply-lighting"]')).to.equal(null);
+    expect(createCalls.length).to.equal(0);
 
-    const removeRuleButtons = Array.from(
-      element.shadowRoot?.querySelectorAll(".dusk-block-footer button") || []
-    ).filter((button) => (button.textContent || "").trim() === "Remove rule");
-    expect(removeRuleButtons.length).to.equal(1);
-    const saveRuleButtons = Array.from(
-      element.shadowRoot?.querySelectorAll(".dusk-block-footer button") || []
-    ).filter((button) => (button.textContent || "").trim() === "Save rule");
-    expect(saveRuleButtons.length).to.equal(1);
-    const lightingDeviceRows = element.shadowRoot?.querySelectorAll(
-      '[data-testid^="action-rule-legacy_lighting_evening-device-row-"]'
+    const addRuleButton = element.shadowRoot?.querySelector(
+      '[data-testid="action-rule-add"]'
+    ) as HTMLButtonElement | null;
+    expect(addRuleButton).to.exist;
+    addRuleButton!.click();
+    await element.updateComplete;
+
+    await waitUntil(
+      () => (element.shadowRoot?.querySelectorAll(".dusk-block-row").length || 0) === 1,
+      "expected fresh lighting draft rule to render"
     );
-    expect(lightingDeviceRows?.length || 0).to.equal(1);
-    const lightingIncludeToggle = element.shadowRoot?.querySelector(
-      '[data-testid="action-rule-legacy_lighting_evening-device-include-0"]'
-    ) as HTMLInputElement | null;
-    expect(lightingIncludeToggle).to.exist;
-    expect(lightingIncludeToggle?.checked).to.equal(true);
-    expect(
-      element.shadowRoot?.querySelector(
-        '[data-testid="action-rule-legacy_lighting_evening-device-level-0"]'
-      )
-    ).to.exist;
-    const actionEditorLabels = Array.from(
-      element.shadowRoot?.querySelectorAll(".dusk-rule-row .config-label") || []
-    ).map((node) => (node.textContent || "").trim());
-    expect(actionEditorLabels.includes("Device")).to.equal(false);
-    expect(actionEditorLabels.includes("Action")).to.equal(false);
-    const ambientConditionRows = Array.from(
-      element.shadowRoot?.querySelectorAll(".dusk-conditions .config-row") || []
-    ).filter((row) => (row.textContent || "").includes("Ambient must be"));
-    expect(ambientConditionRows.length).to.equal(1);
-    expect(ambientConditionRows[0].querySelector("select")).to.equal(null);
-    expect((ambientConditionRows[0].textContent || "").includes("Set by trigger")).to.equal(true);
 
     const triggerSelect = element.shadowRoot?.querySelector(
       ".dusk-block-row select.dusk-wide-select"
@@ -3972,7 +4039,7 @@ describe("HtLocationInspector WIAB configuration", () => {
     await element.updateComplete;
 
     const saveButton = element.shadowRoot?.querySelector(
-      '[data-testid="action-rule-legacy_lighting_evening-save"]'
+      '[data-testid^="action-rule-"][data-testid$="-save"]'
     ) as HTMLButtonElement | null;
     expect(saveButton).to.exist;
     expect(saveButton!.disabled).to.equal(false);
@@ -4068,10 +4135,6 @@ describe("HtLocationInspector WIAB configuration", () => {
     location.ha_area_id = "kitchen";
     location.entity_ids = ["light.kitchen_ceiling", "light.kitchen_island"];
     location.modules._meta = { type: "area" };
-    location.modules.dusk_dawn = {
-      version: 3,
-      blocks: [],
-    };
 
     const element = await fixture<HtLocationInspector>(html`
       <ht-location-inspector

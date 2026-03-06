@@ -277,7 +277,7 @@ async def test_setup_entry_propagates_linked_location_trigger(
                 "linked_locations": [],
             }
         if module_id == "automation":
-            return {"enabled": False, "reapply_last_state_on_startup": False}
+            return {"enabled": False}
         if module_id == "ambient":
             return {"enabled": False}
         return None
@@ -381,7 +381,7 @@ async def test_setup_entry_propagates_linked_location_clear(
                 "linked_locations": [],
             }
         if module_id == "automation":
-            return {"enabled": False, "reapply_last_state_on_startup": False}
+            return {"enabled": False}
         if module_id == "ambient":
             return {"enabled": False}
         return None
@@ -501,7 +501,7 @@ async def test_setup_entry_linked_propagation_drains_reentrant_events_without_re
                 "sync_locations": [],
             }
         if module_id == "automation":
-            return {"enabled": False, "reapply_last_state_on_startup": False}
+            return {"enabled": False}
         if module_id == "ambient":
             return {"enabled": False}
         return None
@@ -635,7 +635,7 @@ async def test_setup_entry_propagates_sync_location_trigger(
                 "occupancy_sources": [],
             }
         if module_id == "automation":
-            return {"enabled": False, "reapply_last_state_on_startup": False}
+            return {"enabled": False}
         if module_id == "ambient":
             return {"enabled": False}
         return None
@@ -751,7 +751,7 @@ async def test_setup_entry_propagates_sync_location_clear(
                 "occupancy_sources": [],
             }
         if module_id == "automation":
-            return {"enabled": False, "reapply_last_state_on_startup": False}
+            return {"enabled": False}
         if module_id == "ambient":
             return {"enabled": False}
         return None
@@ -866,7 +866,7 @@ async def test_setup_entry_ignores_managed_shadow_areas_for_sync_peers(
                 "sync_locations": [],
             }
         if module_id == "automation":
-            return {"enabled": False, "reapply_last_state_on_startup": False}
+            return {"enabled": False}
         if module_id == "ambient":
             return {"enabled": False}
         return None
@@ -973,7 +973,7 @@ async def test_setup_entry_skips_linked_feedback_loops(
                 "linked_locations": [],
             }
         if module_id == "automation":
-            return {"enabled": False, "reapply_last_state_on_startup": False}
+            return {"enabled": False}
         if module_id == "ambient":
             return {"enabled": False}
         return None
@@ -1062,7 +1062,7 @@ async def test_setup_entry_ignores_linked_locations_when_target_not_area_under_f
                 "linked_locations": [],
             }
         if module_id == "automation":
-            return {"enabled": False, "reapply_last_state_on_startup": False}
+            return {"enabled": False}
         if module_id == "ambient":
             return {"enabled": False}
         return None

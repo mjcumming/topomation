@@ -13,8 +13,9 @@ Status markers:
   explicit save/discard for Detection/Ambient, HA-canonical/card-local Lighting
   rules, narrowed Lighting/Media/HVAC scope, and backend create rollback when
   HA registration does not converge.
-- Delivery status is now `Live-validated` after the 2026-03-06 live HA
-  automation delta rerun and backend contract rerun both passed.
+- The later 2026-03-06 dev-mode cleanup removed remaining automation legacy
+  fallbacks, so delivery status is back to `Implemented` until the live HA
+  delta gate is rerun on that exact branch state.
 
 Canonical separation:
 - Strategy and release sequencing: `project/roadmap.md`
@@ -25,8 +26,8 @@ Canonical separation:
 
 **Name**: Automation UX contract alignment + live HA delta gate  
 **Dates**: 2026-03-05 onward  
-**Execution Status**: Done
-**Delivery Status**: Live-validated
+**Execution Status**: In Progress
+**Delivery Status**: Implemented
 
 ### Sprint Goal
 
@@ -38,7 +39,7 @@ complete the live HA delta gate before any release/live claim.
 
 1. [x] Remove the legacy Lighting editor save path from the active inspector workflow.  
    Source: `project/issues/issue-058-automation-ui-contract-implementation.md`
-2. [x] Keep legacy `modules.dusk_dawn` only as migration compatibility input.  
+2. [x] Remove active automation migration/fallback behavior (`modules.dusk_dawn`, location-global startup fallback, legacy route alias).  
    Source: `project/issues/issue-058-automation-ui-contract-implementation.md`
 3. [x] Harden managed-rule creation to fail and roll back when HA registration does not converge.  
    Source: implementation hardening (2026-03-06)
@@ -46,9 +47,9 @@ complete the live HA delta gate before any release/live claim.
    Source: ADR-HA-054/055/056/057/058/060
 5. [x] Add/refresh automated backend, frontend, and Playwright coverage for automation UX deltas.  
    Source: `project/issues/issue-058-automation-ui-contract-implementation.md`
-6. [x] Execute the live HA automation delta checklist for the narrowed Lighting/Media/HVAC IA and record the outcome.  
+6. [ ] Execute the live HA automation delta checklist for the narrowed Lighting/Media/HVAC IA on the no-legacy dev branch and record the outcome.  
    Source: `docs/live-ha-validation-checklist.md`, `project/issues/issue-058-automation-ui-contract-implementation.md`
-7. [x] Promote delivery status from `Implemented` to `Live-validated` only after the live HA rerun passes.  
+7. [ ] Promote delivery status from `Implemented` to `Live-validated` only after the live HA rerun passes.  
    Source: ADR-HA-059 / `docs/contracts.md`
 
 ### Current Release/Validation Gate
@@ -56,7 +57,7 @@ complete the live HA delta gate before any release/live claim.
 - [x] Targeted backend/frontend/browser automation UX checks pass in local tooling.
 - [x] Docs and issue status reflect `Implemented`, not `Live-validated`.
 - [x] Live managed-actions backend contract rerun passed on 2026-03-06.
-- [x] Live HA automation delta checklist rerun is recorded for the narrowed IA.
+- [ ] Live HA automation delta checklist rerun is recorded for the current no-legacy branch state.
 - [x] Release/live claim remains blocked until the live HA rerun passes.
 
 ## Previous Sprint Summary

@@ -1,8 +1,8 @@
 # Issue [ISSUE-058]: Automation UX + Lighting Contract Implementation Checklist
 
 **Epic**: [EPIC-001] Backend Integration  
-**Execution Status**: Done  
-**Delivery Status**: Live-validated  
+**Execution Status**: In Progress  
+**Delivery Status**: Implemented  
 **Created**: 2026-03-05  
 **Priority**: High
 
@@ -10,7 +10,7 @@
 
 ## Objective
 
-Implement the approved automation UX reset (ADR-HA-054/055/056) end-to-end so
+Implement the approved automation UX reset (ADR-HA-054/055/056/060/061/062) end-to-end so
 panel behavior, backend persistence, and test coverage all match the current
 contract set.
 
@@ -49,7 +49,7 @@ contract set.
     - `on_dark`/`on_bright` ambient is derived/read-only.
     - `on_occupied`/`on_vacant` occupancy condition is derived/read-only.
   - Remove Topomation-specific Lighting startup reapply toggle.
-  - Keep legacy `modules.dusk_dawn` only as migration compatibility input.
+  - Ignore legacy `modules.dusk_dawn` payloads in the active Lighting editor.
 - Non-light scope:
   - Visible top-level tabs are `Lighting`, `Media`, `HVAC`.
   - `HVAC` covers `fan.*` plus switch-controlled exhaust/ventilation devices via `switch.*`.
@@ -66,7 +66,7 @@ contract set.
 - Persisted rule deleted in HA while local draft still exists.
 - Sync candidate list includes excluded/system-owned nodes.
 - Managed system area mapping points to missing or mismatched HA area.
-- Migration payload exists in `modules.dusk_dawn` with partial/legacy shape.
+- Legacy automation payloads/aliases exist in persisted data or old links but are not imported by the active dev-mode editor.
 
 ---
 
@@ -78,6 +78,8 @@ contract set.
 - ADR-HA-056: Lighting Rules Move to HA-Canonical Managed Automation Ownership
 - ADR-HA-057: Rule-Card Lifecycle Colocation + Mandatory User Decision Gate for Ambiguity
 - ADR-HA-060: Automation Scope Narrows to Lighting / Media / HVAC; HVAC v1 Is Fans-First
+- ADR-HA-061: Startup Replay Moves to Rule Cards; Harness Must Cover Reactive HA Churn
+- ADR-HA-062: Active Automation Development Runs Without Legacy Compatibility Paths
 
 **Dependencies**:
 - ISSUE-057: Managed shadow areas (for detection/system-area messaging alignment)
@@ -124,7 +126,7 @@ contract set.
 - [x] Support multi-target Lighting action payloads (`actions[]`) end-to-end (UI + WS + runtime + list/reconcile).
 - [x] Ensure save path uses `rule_uuid` upsert+diff and in-place update.
 - [x] Ensure delete path is persisted-only and reconciliation-safe.
-- [x] Keep migration fallback from legacy `modules.dusk_dawn` payloads.
+- [x] Remove active migration/fallback behavior from the automation UI/runtime.
 
 ### Phase 4: Tests + Validation
 - [x] Add/adjust frontend tests for tab IA, save/discard workflow, and rule lifecycle controls.
@@ -134,7 +136,7 @@ contract set.
 - [x] Run `scripts/check-docs-consistency.sh`.
 - [x] Run targeted backend tests (`pytest` for websocket/sync/managed rules paths).
 - [x] Run frontend unit + Playwright checks.
-- [x] Execute live HA checklist deltas for the narrowed Lighting/Media/HVAC IA and document results.
+- [ ] Execute live HA checklist deltas for the narrowed Lighting/Media/HVAC IA and document results.
 
 ### Phase 5: Documentation Closeout
 - [x] Keep `docs/contracts.md`, `docs/automation-ui-guide.md`, and `docs/architecture.md` aligned.
@@ -152,7 +154,7 @@ contract set.
 - [x] No tab silently persists user-authored policy edits without explicit save.
 - [x] Rule-card delete controls correctly gate by persisted state.
 - [x] Managed system area messaging is explicit and operator-actionable.
-- [x] Required tests and live validation checks pass.
+- [ ] Required live validation checks pass on the no-legacy branch state.
 - [x] Active docs are consistent with implemented behavior and explicitly call out remaining release/live gaps.
 
 ---
@@ -173,4 +175,4 @@ contract set.
 - Live HA backend contract rerun passed on 2026-03-06 via `tests/test-live-managed-actions-contract.py` (`2 passed`).
 - Live HA UI delta rerun passed on 2026-03-06 via `npx playwright test --config playwright.live.config.ts playwright/live-automation-ui.spec.ts` (`1 passed`).
 - The live rerun exposed a managed-rule list race (`dictionary changed size during iteration`) in `managed_actions.async_list_rules`; the backend now snapshots automation entities before awaiting config reads, and regression coverage was added in `tests/test_managed_actions.py`.
-- ADR-HA-060 narrowed the visible automation IA after the earlier 2026-03-06 rerun. A fresh live UI delta rerun for the narrowed Lighting/Media/HVAC scope passed later the same day with the updated tab-scope assertion (`Detection`/`Ambient`/`Lighting`/`Media`/`HVAC`, no `Appliances`).
+- The active dev branch later removed remaining automation legacy fallbacks/aliases, so the 2026-03-06 live UI rerun is no longer sufficient evidence for the current branch state. Repeat the delta rerun before restoring `Live-validated`.

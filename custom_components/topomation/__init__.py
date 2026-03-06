@@ -22,10 +22,8 @@ from homeassistant.util import dt as dt_util
 
 from .actions_runtime import (
     TopomationActionsRuntime,
-    ensure_automation_config_defaults,
 )
 from .const import (
-    AUTOMATION_REAPPLY_CONFIG_KEY,
     AUTOSAVE_DEBOUNCE_SECONDS,
     DOMAIN,
     EVENT_TOPOMATION_HANDOFF_TRACE,
@@ -54,14 +52,6 @@ _OCCUPANCY_SYNC_LOCATIONS_KEY = "sync_locations"
 _META_ROLE_KEY = "role"
 _MANAGED_SHADOW_ROLE = "managed_shadow"
 _MAX_PROPAGATION_EVENTS_PER_DRAIN = 4096
-
-
-def _default_dusk_dawn_config() -> dict[str, Any]:
-    """Return canonical default dusk/dawn module config."""
-    return {
-        "version": 3,
-        "blocks": [],
-    }
 
 PLATFORMS: list[Platform] = [
     Platform.BINARY_SENSOR,  # Occupancy binary sensors
@@ -510,7 +500,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     wrappers_normalized = _normalize_root_only_structural_wrappers(loc_mgr)
     if wrappers_normalized:
         _setup_default_configs(loc_mgr, modules)
-    automation_defaults_updated = ensure_automation_config_defaults(loc_mgr)
 
     # 9. Set up event bridge (HA → kernel)
     event_bridge = EventBridge(hass, bus, loc_mgr, modules.get("occupancy"))
@@ -610,8 +599,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _schedule_persist("upgrade/ensure_home_root")
     if wrappers_normalized and has_saved_configuration:
         _schedule_persist("upgrade/root_only_wrappers")
-    if automation_defaults_updated and has_saved_configuration:
-        _schedule_persist("upgrade/automation_defaults")
 
     # 12. Store kernel in hass.data
     hass.data[DOMAIN][entry.entry_id] = {
@@ -725,8 +712,6 @@ def _setup_default_configs(loc_mgr: LocationManager, modules: dict[str, Any]) ->
             # Get default config from module
             default_config = module.default_config()
             default_config["version"] = module.CURRENT_CONFIG_VERSION
-            if module_id == "automation":
-                default_config.setdefault(AUTOMATION_REAPPLY_CONFIG_KEY, False)
             if module_id == "occupancy":
                 default_config.setdefault(_OCCUPANCY_LINKED_LOCATIONS_KEY, [])
             if module_id == "ambient":
@@ -737,35 +722,6 @@ def _setup_default_configs(loc_mgr: LocationManager, modules: dict[str, Any]) ->
                 location_id=location.id,
                 module_id=module_id,
                 config=default_config,
-            )
-
-        # Dusk/dawn is config-only in v1 and does not have a kernel module object.
-        existing_dusk_dawn = loc_mgr.get_module_config(location.id, "dusk_dawn")
-        dusk_defaults = _default_dusk_dawn_config()
-        if isinstance(existing_dusk_dawn, dict):
-            # Dev-phase contract migration policy:
-            # pre-v3 shapes are reset to v3 defaults (no compatibility shim).
-            if (
-                int(existing_dusk_dawn.get("version", 0)) == 3
-                and isinstance(existing_dusk_dawn.get("blocks"), list)
-            ):
-                normalized_dusk_dawn = {
-                    "version": 3,
-                    "blocks": existing_dusk_dawn.get("blocks", []),
-                }
-            else:
-                normalized_dusk_dawn = dusk_defaults
-            if normalized_dusk_dawn != existing_dusk_dawn:
-                loc_mgr.set_module_config(
-                    location_id=location.id,
-                    module_id="dusk_dawn",
-                    config=normalized_dusk_dawn,
-                )
-        elif not existing_dusk_dawn:
-            loc_mgr.set_module_config(
-                location_id=location.id,
-                module_id="dusk_dawn",
-                config=dusk_defaults,
             )
 
 
