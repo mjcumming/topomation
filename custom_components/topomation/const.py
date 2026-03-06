@@ -2,7 +2,7 @@
 
 DOMAIN = "topomation"
 NAME = "Topomation"
-VERSION = "0.2.25"
+VERSION = "0.2.26"
 
 # Storage
 STORAGE_VERSION = 1
@@ -17,6 +17,9 @@ PANEL_ICON = "mdi:floor-plan"
 PANEL_OCCUPANCY_URL = "/topomation-occupancy"
 PANEL_OCCUPANCY_TITLE = "Occupancy Manager"
 PANEL_OCCUPANCY_ICON = "mdi:home-account"
+# Legacy deep-link alias retained for one-release compatibility. It now opens
+# the HVAC-focused workspace since switch-based exhaust/ventilation controls
+# moved under HVAC.
 PANEL_APPLIANCES_URL = "/topomation-appliances"
 PANEL_MEDIA_URL = "/topomation-media"
 PANEL_HVAC_URL = "/topomation-hvac"
@@ -37,7 +40,7 @@ PANEL_DEFINITIONS = (
         "sidebar_visible": False,
     },
     {
-        "view": "appliances",
+        "view": "hvac",
         "url": PANEL_APPLIANCES_URL,
         "title": None,
         "icon": None,

@@ -27,6 +27,12 @@ async function openLightingTab(page: any): Promise<void> {
   await inspector.getByRole("button", { name: "Lighting" }).click();
 }
 
+async function openActionsTab(page: any): Promise<void> {
+  const inspector = page.locator("ht-location-inspector");
+  await expect(inspector).toBeVisible();
+  await inspector.getByRole("button", { name: "Media" }).click();
+}
+
 async function listLocations(page: any): Promise<any[]> {
   return await page.evaluate(async () => {
     const mock = (window as any).mockHass;
@@ -186,6 +192,7 @@ test("detection workflow persists occupancy source configuration", async ({ page
   await expect(motionSourceRow).toBeVisible();
 
   await motionSourceRow.locator("input.source-enable-input").check();
+  await page.getByTestId("detection-save-button").click();
 
   await expect
     .poll(async () => {
@@ -197,15 +204,16 @@ test("detection workflow persists occupancy source configuration", async ({ page
     .toBe(true);
 });
 
-test("startup reapply toggle saves automation module config", async ({ page }) => {
+test("lighting tab omits startup toggle and media tab persists startup reapply", async ({ page }) => {
   await page.goto("/mock-harness.html");
 
   await selectKitchen(page);
   await openLightingTab(page);
-  const startupToggle = page.locator(
-    "ht-location-inspector .startup-inline-toggle input[type='checkbox']"
-  );
+  const lightingStartupToggle = page.getByTestId("startup-reapply-lighting");
+  await expect(lightingStartupToggle).toHaveCount(0);
 
+  await openActionsTab(page);
+  const startupToggle = page.getByTestId("startup-reapply-media");
   await expect(startupToggle).toBeVisible();
   await startupToggle.check();
 

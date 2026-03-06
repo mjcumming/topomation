@@ -1,10 +1,14 @@
 # Lighting Automation UI Spec (Draft v4 - Rules Model)
 
 **Last reviewed**: 2026-03-03  
-**Status**: Draft for design alignment (dev phase; breaking changes allowed)  
+**Status**: Reference (pre-HA-canonical lighting migration)  
 **Purpose**: define a practical lighting UX that combines time, ambient, and occupancy using explicit triggers + conditions + actions.
 
-Implementation note: for current UI behavior and acceptance criteria, `docs/lighting-ui-contract.md` is authoritative.
+Implementation note:
+
+1. `docs/lighting-ui-contract.md` is authoritative for current Lighting UX.
+2. ADR-HA-056 supersedes this document's persistence assumptions where they
+   conflict (Lighting ownership now targets HA-canonical managed automations).
 
 ## 1. Why v4
 

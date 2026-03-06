@@ -11,7 +11,7 @@
 
 **Whole-home occupancy automation for Home Assistant — without the spaghetti.**
 
-TopoMation replaces dozens of per-room automations with a single, visual approach: model your home as a tree, assign sensors and devices, then author rules in focused tabs for `Lighting`, `Appliances`, `Media`, and `HVAC`. Every rule becomes a native Home Assistant automation, fully visible in traces and logs. No black box. No YAML. No hunting for entity IDs.
+TopoMation replaces dozens of per-room automations with a single, visual approach: model your home as a tree, assign sensors and devices, then author rules in focused tabs for `Lighting`, `Media`, and `HVAC`. Managed rules are authored as native Home Assistant automations, fully visible in traces and logs. No black box. No YAML. No hunting for entity IDs.
 
 ---
 
@@ -50,8 +50,8 @@ Ambient status (`dark` / `bright`) is first-class. You can assign a lux sensor p
 ### Subareas for Micro-Zones
 Give the closet, pantry, or reading nook its own occupancy and its own timeout — scoped independently from the parent room. A 5-minute closet timer doesn't affect the kitchen it's inside.
 
-### Sync Rooms for Open Plans
-In open-concept spaces, you can sync rooms so they share the same occupancy state and timeout. Activity in either room keeps both occupied, and vacancy clears together. Directional contributors are still available under advanced controls for niche one-way influence patterns.
+### Sync Locations for Open Plans
+In open-concept spaces, you can sync sibling locations so they share the same occupancy state and timeout. Activity in either location keeps both occupied, and vacancy clears together. Directional contributors are still available under advanced controls for niche one-way influence patterns.
 
 ### Occupancy Propagation
 Occupancy flows up the tree automatically. When the kitchen is occupied, the first floor knows. When the first floor has activity, the building knows. You get a live, hierarchical picture of where people are — not just per-room, but per-floor and per-structure. A single glance at the top of the tree tells you whether anyone is home. Drill down to see exactly where.
@@ -66,12 +66,13 @@ You can also lock a single room with `self` scope — useful for movie night (lo
 Locks are stackable and source-tagged, so multiple locks can coexist and each one unlocks independently. Lock from the UI, from a service call, or from your own automations — it's just `topomation.lock` and `topomation.unlock`.
 
 ### Full Transparency — No Black Box
-Every rule TopoMation creates is a native Home Assistant automation. You'll find them in **Settings → Automations & Scenes**. They appear in traces. They show up in logs. If something unexpected happens, you trace it the same way you'd trace any other HA automation.
+Managed automation rules are native Home Assistant automations. You'll find them in **Settings → Automations & Scenes**. They appear in traces. They show up in logs. If something unexpected happens, you trace it the same way you'd trace any other HA automation.
 
 Managed-rule sync is Home Assistant–canonical: TopoMation reloads from HA at startup,
 listens for `automation.*` changes while the inspector is open, and applies saves as
 in-place upserts (plus delete removed rules only). Rule identity is tracked with
 stable metadata (`rule_uuid`) so edits do not require delete/recreate churn.
+Lighting follows this same HA-canonical model.
 
 ### Runtime Controls
 Manually trigger, clear, or vacate any location. Lock or unlock from the tree UI or via service calls. Everything is accessible for manual overrides, testing, and advanced workflows.
@@ -80,9 +81,12 @@ Manually trigger, clear, or vacate any location. Lock or unlock from the tree UI
 - `Detection`: source selection, timeout behavior, linked/sync relationships.
 - `Ambient`: lux source assignment, thresholds, sun fallback, live ambient diagnostics.
 - `Lighting`: rule cards for `light.*` with trigger/condition/action editing.
-- `Appliances`: rule cards for `switch.*`.
 - `Media`: rule cards for `media_player.*`.
-- `HVAC`: rule cards for `fan.*`.
+- `HVAC`: rule cards for `fan.*` plus switch-controlled ventilation/exhaust devices.
+
+Thermostat/climate presets are intentionally deferred. If you need richer
+`climate.*` behavior today, use TopoMation's occupancy entities/events as the
+trigger source for native HA automations.
 
 ---
 
@@ -135,6 +139,10 @@ Ceiling fans, exhaust fans, space heaters — anything that should run while som
 1. **Detection:** use whatever sources make sense (motion, a light switch, a door sensor).
 2. **HVAC:** add a rule with trigger **On occupied** to turn on the fan.
 3. **HVAC:** add a rule with trigger **On vacant** to turn off the fan.
+
+If the fan is exposed in Home Assistant as a `switch.*` instead of `fan.*`,
+use the same HVAC workflow. TopoMation's HVAC v1 path intentionally accepts
+switch-controlled exhaust and ventilation devices.
 
 Pair it with a timeout and the fan shuts off automatically after the room empties. Combine it with ambient/time conditions and a lighting rule, and you get arrival/departure behavior that still respects time-of-day and darkness.
 
@@ -209,7 +217,7 @@ Full guide: [Installation Guide](docs/installation.md)
 4. Configure `Detection` sources and timeouts.
 5. Configure `Ambient` defaults (lux sensor assignment, thresholds, sun fallback).
 6. Add `Lighting` rules (`On occupied`, `On vacant`, `On dark`, `On bright`) with conditions/actions.
-7. Add `Appliances`, `Media`, and `HVAC` rules as needed.
+7. Add `Media` and `HVAC` rules as needed.
 8. Validate with occupancy entities, rule traces, and manual controls.
 
 ---

@@ -63,7 +63,7 @@ async function addBasicKitchenActionRule(page: any): Promise<void> {
     .locator("select")
     .selectOption("media_player.kitchen_speaker");
   await rule.locator(".dusk-rule-row", { hasText: "Action" }).locator("select").selectOption("media_pause");
-  await inspector.getByRole("button", { name: "Save changes" }).click();
+  await rule.getByRole("button", { name: "Save rule" }).click();
 }
 
 async function kitchenReapplyFlag(page: any): Promise<boolean> {
@@ -104,13 +104,13 @@ test.describe("Production profile smoke", () => {
     await openProductionProfile(page);
   });
 
-  test("startup toggle persists through eventual consistency and full reload", async ({ page }) => {
+  test("lighting omits startup toggle and media startup toggle persists through reload", async ({ page }) => {
     await selectKitchen(page);
     await openLightingTab(page);
+    await expect(page.getByTestId("startup-reapply-lighting")).toHaveCount(0);
 
-    const toggle = page.locator(
-      "ht-location-inspector .startup-inline-toggle input[type='checkbox']"
-    );
+    await openActionsTab(page);
+    const toggle = page.getByTestId("startup-reapply-media");
     await expect(toggle).toBeVisible();
     await toggle.check();
 
@@ -119,11 +119,9 @@ test.describe("Production profile smoke", () => {
     await page.reload();
     await expect(page.locator("topomation-panel")).toBeVisible();
     await selectKitchen(page);
-    await openLightingTab(page);
+    await openActionsTab(page);
 
-    const toggleAfterReload = page.locator(
-      "ht-location-inspector .startup-inline-toggle input[type='checkbox']"
-    );
+    const toggleAfterReload = page.getByTestId("startup-reapply-media");
     await expect(toggleAfterReload).toBeChecked();
   });
 
@@ -137,6 +135,7 @@ test.describe("Production profile smoke", () => {
 
     await expect(sourceRow).toBeVisible();
     await sourceToggle.check();
+    await page.getByTestId("detection-save-button").click();
 
     await expect
       .poll(async () => {

@@ -78,6 +78,140 @@ def _normalize_entry_id(value: Any) -> str:
     return "" if text.lower() == "none" else text
 
 
+async def _resolve_live_rule_context(
+    session: aiohttp.ClientSession,
+    ws_url: str,
+    token: str,
+) -> dict[str, str]:
+    """Resolve one valid Topomation location + entry + light target for live tests."""
+    states_resp = await session.get("/api/states")
+    assert states_resp.status == 200
+    states = await states_resp.json()
+    assert isinstance(states, list)
+
+    occupancy_candidates = [
+        state
+        for state in states
+        if isinstance(state, dict)
+        and str(state.get("entity_id", "")).startswith("binary_sensor.")
+        and state.get("attributes", {}).get("device_class") == "occupancy"
+        and state.get("attributes", {}).get("location_id")
+    ]
+    if not occupancy_candidates:
+        pytest.skip("No occupancy binary sensor with location_id found in live HA")
+
+    light_target = next(
+        (
+            state
+            for state in states
+            if isinstance(state, dict) and str(state.get("entity_id", "")).startswith("light.")
+        ),
+        None,
+    )
+    if light_target is None:
+        pytest.skip("No light.* entity available for lighting live contract test")
+
+    occupancy_entity_id = str(occupancy_candidates[0].get("entity_id", ""))
+    registry_entries = await _ws_command(
+        session,
+        ws_url,
+        token,
+        {"type": "config/entity_registry/list"},
+        msg_id=901,
+    )
+    if not isinstance(registry_entries, list):
+        pytest.skip("Entity registry unavailable; cannot resolve Topomation entry_id")
+
+    occupancy_registry_entry = next(
+        (
+            entry
+            for entry in registry_entries
+            if isinstance(entry, dict) and entry.get("entity_id") == occupancy_entity_id
+        ),
+        None,
+    )
+    entry_id = (
+        _normalize_entry_id(occupancy_registry_entry.get("config_entry_id"))
+        if isinstance(occupancy_registry_entry, dict)
+        else ""
+    )
+    if not entry_id:
+        config_entries = await _ws_command(
+            session,
+            ws_url,
+            token,
+            {"type": "config_entries/get"},
+            msg_id=902,
+        )
+        if isinstance(config_entries, list):
+            topomation_entry = next(
+                (
+                    entry
+                    for entry in config_entries
+                    if isinstance(entry, dict)
+                    and str(entry.get("domain", "")).strip() == "topomation"
+                    and str(entry.get("state", "")).strip().lower() == "loaded"
+                ),
+                None,
+            )
+            if topomation_entry is None:
+                topomation_entry = next(
+                    (
+                        entry
+                        for entry in config_entries
+                        if isinstance(entry, dict) and str(entry.get("domain", "")).strip() == "topomation"
+                    ),
+                    None,
+                )
+            if isinstance(topomation_entry, dict):
+                entry_id = _normalize_entry_id(topomation_entry.get("entry_id"))
+    if not entry_id:
+        pytest.skip(
+            f"Could not resolve config entry for occupancy entity {occupancy_entity_id}"
+        )
+
+    locations_payload = await _ws_command(
+        session,
+        ws_url,
+        token,
+        {
+            "type": "topomation/locations/list",
+            "entry_id": entry_id,
+        },
+        msg_id=903,
+    )
+    location_items = (
+        locations_payload.get("locations", [])
+        if isinstance(locations_payload, dict)
+        else []
+    )
+    valid_location_ids = {
+        str(item.get("id", "")).strip()
+        for item in location_items
+        if isinstance(item, dict) and str(item.get("id", "")).strip()
+    }
+    matching_occupancy = next(
+        (
+            state
+            for state in occupancy_candidates
+            if str(state.get("attributes", {}).get("location_id", "")).strip()
+            in valid_location_ids
+        ),
+        None,
+    )
+    if matching_occupancy is None:
+        pytest.skip(
+            "No occupancy entity location_id matched current Topomation topology "
+            f"for entry {entry_id}"
+        )
+
+    return {
+        "entry_id": entry_id,
+        "location_id": str(matching_occupancy["attributes"]["location_id"]),
+        "light_entity_id": str(light_target["entity_id"]),
+    }
+
+
 @pytest.mark.asyncio
 async def test_managed_action_rule_registers_and_enumerates_in_live_ha(
     live_ha_config,
@@ -401,3 +535,162 @@ async def test_managed_action_rule_registers_and_enumerates_in_live_ha(
 
         removed = await _wait_for(_state_removed, timeout_seconds=30)
         assert removed, "Automation entity did not disappear after delete"
+
+
+@pytest.mark.asyncio
+async def test_lighting_rule_uuid_upsert_and_delete_in_live_ha(
+    live_ha_config,
+    live_ha_socket_enabled,
+):
+    """Validate ISSUE-058 live contract: lighting trigger + stable UUID upsert."""
+    if live_ha_config["mode"] != "live":
+        pytest.skip("Live HA test requires TEST_MODE=live")
+
+    ha_url = live_ha_config["url"].rstrip("/")
+    token = live_ha_config["token"]
+    if not token:
+        pytest.skip("Live HA test requires HA_TOKEN")
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
+
+    automation_id = ""
+    automation_entity_id = ""
+    entry_id = ""
+
+    async with aiohttp.ClientSession(base_url=ha_url, headers=headers) as session:
+        ws_url = _ws_url_from_http(ha_url)
+        context = await _resolve_live_rule_context(session, ws_url, token)
+        entry_id = context["entry_id"]
+        location_id = context["location_id"]
+        light_entity_id = context["light_entity_id"]
+        nonce = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
+        rule_uuid = f"issue058-live-{nonce}"
+
+        try:
+            create_dark = await _ws_command(
+                session,
+                ws_url,
+                token,
+                {
+                    "type": "topomation/actions/rules/create",
+                    "location_id": location_id,
+                    "name": f"Topomation Live ISSUE-058 ({location_id}) {nonce}",
+                    "trigger_type": "on_dark",
+                    "ambient_condition": "dark",
+                    "action_entity_id": light_entity_id,
+                    "action_service": "turn_on",
+                    "rule_uuid": rule_uuid,
+                    "entry_id": entry_id,
+                },
+                msg_id=910,
+                expect_success=False,
+            )
+            if create_dark.get("success") is not True:
+                raise AssertionError(
+                    "Expected topomation/actions/rules/create success for on_dark, "
+                    f"got: {create_dark.get('error', {})}"
+                )
+
+            dark_result = create_dark.get("result")
+            assert isinstance(dark_result, dict)
+            dark_rule = dark_result.get("rule")
+            assert isinstance(dark_rule, dict)
+            automation_id = str(dark_rule.get("id", ""))
+            assert automation_id
+            automation_entity_id = str(dark_rule.get("entity_id", ""))
+            assert automation_entity_id.startswith("automation.")
+            assert str(dark_rule.get("rule_uuid", "")) == rule_uuid
+
+            update_bright = await _ws_command(
+                session,
+                ws_url,
+                token,
+                {
+                    "type": "topomation/actions/rules/create",
+                    "location_id": location_id,
+                    "automation_id": automation_id,
+                    "rule_uuid": rule_uuid,
+                    "name": f"Topomation Live ISSUE-058 ({location_id}) {nonce}",
+                    "trigger_type": "on_bright",
+                    "ambient_condition": "bright",
+                    "action_entity_id": light_entity_id,
+                    "action_service": "turn_off",
+                    "entry_id": entry_id,
+                },
+                msg_id=911,
+                expect_success=False,
+            )
+            if update_bright.get("success") is not True:
+                raise AssertionError(
+                    "Expected topomation/actions/rules/create success for in-place upsert, "
+                    f"got: {update_bright.get('error', {})}"
+                )
+
+            bright_result = update_bright.get("result")
+            assert isinstance(bright_result, dict)
+            bright_rule = bright_result.get("rule")
+            assert isinstance(bright_rule, dict)
+            assert str(bright_rule.get("id", "")) == automation_id
+            assert str(bright_rule.get("rule_uuid", "")) == rule_uuid
+            assert str(bright_rule.get("trigger_type", "")) == "on_bright"
+
+            listed_rules = await _ws_command(
+                session,
+                ws_url,
+                token,
+                {
+                    "type": "topomation/actions/rules/list",
+                    "location_id": location_id,
+                    "entry_id": entry_id,
+                },
+                msg_id=912,
+            )
+            assert isinstance(listed_rules, dict)
+            listed = listed_rules.get("rules")
+            assert isinstance(listed, list)
+            listed_item = next(
+                (
+                    item
+                    for item in listed
+                    if isinstance(item, dict) and str(item.get("id", "")) == automation_id
+                ),
+                None,
+            )
+            assert listed_item is not None
+            assert str(listed_item.get("rule_uuid", "")) == rule_uuid
+            assert str(listed_item.get("trigger_type", "")) == "on_bright"
+            assert str(listed_item.get("action_service", "")) == "turn_off"
+            assert str(listed_item.get("action_entity_id", "")) == light_entity_id
+
+            config_response = await _ws_command(
+                session,
+                ws_url,
+                token,
+                {"type": "automation/config", "entity_id": automation_entity_id},
+                msg_id=913,
+            )
+            assert isinstance(config_response, dict)
+            config = config_response.get("config")
+            assert isinstance(config, dict)
+            assert config.get("id") == automation_id
+            assert rule_uuid in str(config.get("description", ""))
+
+        finally:
+            if automation_id:
+                delete_result = await _ws_command(
+                    session,
+                    ws_url,
+                    token,
+                    {
+                        "type": "topomation/actions/rules/delete",
+                        "automation_id": automation_id,
+                        "entity_id": automation_entity_id or f"automation.{automation_id}",
+                        "entry_id": entry_id,
+                    },
+                    msg_id=914,
+                    expect_success=False,
+                )
+                assert delete_result.get("success") is True, delete_result

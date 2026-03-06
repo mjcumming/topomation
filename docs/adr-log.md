@@ -5,6 +5,15 @@
 
 **Purpose**: Track significant decisions for the HA integration.
 
+**Interpretation rule**:
+
+1. ADRs are historical records; older entries may intentionally describe behavior
+   that has since changed.
+2. When ADRs conflict on the same concern, the most recent approved ADR (or an
+   explicit lifecycle note such as "superseded by ...") wins.
+3. Current enforceable behavior remains `docs/contracts.md` and
+   `docs/architecture.md`, with ADRs providing the decision rationale/history.
+
 ---
 
 ## Active Decisions
@@ -2180,6 +2189,7 @@ API/auth startup from completing reliably.
 ### ADR-HA-052: Automation IA Splits by Domain Tabs; Startup Reapply Is Tab-Local UI (2026-03-04)
 
 **Status**: ✅ APPROVED
+**Lifecycle**: Partially superseded by ADR-HA-055 and ADR-HA-056.
 
 **Context**:
 
@@ -2244,6 +2254,7 @@ expanded, this created UX ambiguity:
 ### ADR-HA-053: Managed Rule Sync Is HA-Canonical with Stable Rule Identity (2026-03-05)
 
 **Status**: ✅ APPROVED
+**Lifecycle**: Extended by ADR-HA-056 to include Lighting-domain rule ownership.
 
 **Context**:
 
@@ -2298,6 +2309,397 @@ identity and predictable in-place updates.
 - Keep delete-all/recreate saves: rejected due ID churn and drift risk.
 - Add periodic full polling: deferred; event-driven sync is sufficient for v1.
 - Add local DB as source-of-truth: rejected; conflicts with HA-native automation model.
+
+---
+
+### ADR-HA-054: Sync Locations Uses Explicit Sibling Scope by Parent Type (2026-03-05)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+
+Detection currently presents room-sync as `Sync Rooms` with strict
+area-under-floor-only eligibility. That is too narrow for real topologies where
+areas may be grouped under a parent area or building, and it does not define
+how floor-level sync should work when floor siblings exist under one building.
+
+**Decision**:
+
+1. Rename the primary sync surface from `Sync Rooms` to `Sync Locations`.
+2. Sync candidate eligibility is sibling-scoped and explicit:
+   - `area` <-> `area` sync is allowed when both are immediate children of the
+     same parent and that parent type is one of:
+     - `area`
+     - `floor`
+     - `building`
+   - `floor` <-> `floor` sync is allowed only when both floors are immediate
+     children of the same `building`.
+3. Candidate set is strictly same-parent siblings (`parent_id` equality), with
+   non-eligible/system-owned nodes excluded from candidate lists.
+4. Reciprocal `sync_locations` write semantics remain unchanged
+   (`A` checked with `B` writes both directions).
+5. Directional linked contributors remain a separate advanced model and keep
+   their own constrained scope.
+
+**Rationale**:
+
+1. Preserves predictable behavior by keeping sync local to one explicit sibling
+   set.
+2. Supports broader but still explainable topologies without opening arbitrary
+   cross-structure coupling.
+3. Keeps floor sync possible where it is structurally meaningful (inside one
+   building) while avoiding global floor fan-out.
+
+**Consequences**:
+
+- ✅ Sync rules are now specific and testable across area/floor sibling sets.
+- ✅ Labeling matches behavior (`Sync Locations` instead of room-only wording).
+- ✅ Floor sync has a clear eligibility boundary.
+- ⚠️ Existing UI/runtime validation constrained to area-under-floor will require
+  migration to this broader sibling policy.
+
+**Alternatives Considered**:
+
+- Keep area-under-floor-only scope: rejected as unnecessarily restrictive.
+- Allow arbitrary non-sibling sync: rejected due to debugging and propagation ambiguity.
+
+---
+
+### ADR-HA-055: Automation Workspace Uses Tabbed Modes + Explicit Save/Update Commit (2026-03-05)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+
+The workspace currently mixes two paradigms:
+
+1. Right-panel mode controls (`Configure` / `Assign Devices`) rendered as
+   button toggles rather than top-level tabs.
+2. Mixed persistence behavior (auto-save in some tabs, explicit save in others).
+
+This creates avoidable operator confusion and drifts from expected Home
+Assistant interaction patterns.
+
+**Decision**:
+
+1. Render `Configure` and `Assign Devices` as top-level workspace tabs (same
+   affordance family as inspector tabs), not mode buttons.
+2. Standardize header status emphasis:
+   - occupancy, lock state, and ambient are peer status indicators
+   - lock state receives warning emphasis only when locked.
+3. Detection information architecture:
+   - keep source controls/config first
+   - keep logging-oriented `Recent Occupancy Events` at the bottom.
+4. Managed-system-area messaging must be actionable:
+   - no vague "next reconciliation" copy without an explicit operator path.
+5. Adopt one explicit commit model across editable inspector tabs
+   (`Detection`, `Ambient`, `Lighting`, and non-light automation tabs):
+   - edits create/modify local draft state
+   - users commit with `Save changes`
+   - users can discard draft state explicitly.
+6. Rule-card destructive controls follow persistence state:
+   - unsaved draft rule: `Discard draft` (no `Delete rule`)
+   - persisted rule: `Delete rule`.
+7. Home Assistant UI conventions are the baseline when designing control
+   placement and save/update affordances.
+   - deviations are permitted only when integration constraints or operator
+     clarity require them.
+   - deviations must be documented explicitly in active contracts/UI guide.
+
+**Rationale**:
+
+1. Reduces cross-tab behavior surprises.
+2. Improves operator trust by requiring explicit commit for policy changes.
+3. Keeps high-frequency configuration controls separated from diagnostics/logging.
+4. Aligns panel behavior to HA-native editing expectations.
+
+**Consequences**:
+
+- ✅ Predictable save/update workflow across tabs.
+- ✅ Cleaner IA between configuration and assignment workflows.
+- ✅ Draft-vs-persisted rule lifecycle becomes explicit.
+- ⚠️ Requires refactor of existing Detection/Ambient auto-save flows.
+- ⚠️ Existing tests/contracts/docs referencing mixed auto-save behavior must be updated.
+
+**Alternatives Considered**:
+
+- Keep mixed auto-save + explicit-save model: rejected for inconsistency.
+- Add per-control save prompts only: rejected as noisy and hard to reason about.
+
+---
+
+### ADR-HA-056: Lighting Rules Move to HA-Canonical Managed Automation Ownership (2026-03-05)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+
+Lighting rule editing currently uses local module config (`modules.dusk_dawn`)
+while non-light domains use native HA automation ownership. This split model
+conflicts with product direction and operator expectation that Topomation rules
+are first-class HA automations with canonical HA sync/reconciliation behavior.
+
+**Decision**:
+
+1. Lighting rules become HA-canonical managed automations, consistent with
+   managed non-light domains.
+2. Lighting rule identity uses stable metadata (`rule_uuid`) and follows
+   upsert+diff save behavior (update in place, create new, delete removed).
+3. Backend integration remains the only automation writer; browser clients do
+   not mutate HA automation config directly.
+4. Remove Topomation-specific Lighting startup reapply toggle from the editor
+   surface; startup behavior should rely on native HA automation semantics.
+5. `modules.dusk_dawn` transitions to legacy migration compatibility only and is
+   no longer the long-term source of truth for Lighting rule persistence.
+
+**Rationale**:
+
+1. Enforces one automation ownership model across domains.
+2. Improves interoperability with HA tooling (automations list, traces, labels).
+3. Eliminates contradictory rule-state expectations between tabs.
+4. Reduces bespoke policy runtime surfaces that duplicate HA behavior.
+
+**Consequences**:
+
+- ✅ Lighting and non-light rules share one canonical persistence strategy.
+- ✅ Rule tracking remains stable through `rule_uuid` metadata.
+- ✅ Startup behavior expectations align with HA-native automation operation.
+- ⚠️ Requires a migration path from existing `modules.dusk_dawn` data.
+- ⚠️ Requires updated UI contracts, copy, and test coverage for Lighting save/delete flow.
+
+**Alternatives Considered**:
+
+- Keep Lighting on `modules.dusk_dawn`: rejected due to ownership inconsistency.
+- Keep Lighting startup reapply toggle as Topomation-only control: rejected; duplicates native automation responsibility.
+
+---
+
+### ADR-HA-057: Rule-Card Lifecycle Colocation + Mandatory User Decision Gate for Ambiguity (2026-03-05)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+
+Recent automation UI iterations exposed two process failures:
+
+1. Rule lifecycle controls became split across tab-level and card-level actions,
+   creating unclear behavior (`Discard`/`Save changes` at tab level while
+   `Delete rule` lived on each card).
+2. When guide/contract language was ambiguous, implementation selected a pattern
+   without explicit user decision, causing repeated mismatch against expected UX.
+
+**Decision**:
+
+1. Rule lifecycle controls are card-local for rule-authoring tabs
+   (`Lighting`, `Appliances`, `Media`, `HVAC`):
+   - unsaved draft: `Save rule` + `Remove rule`
+   - persisted edited: `Update rule` + `Discard edits` + `Delete rule`
+   - persisted clean: `Delete rule`.
+2. Detection and Ambient remain tab-level draft-save workflows
+   (`Save changes` / `Discard changes`).
+3. For rule workflows, do not split lifecycle actions between tab-level save
+   controls and card-level delete controls.
+4. Ambiguity gate:
+   - if contracts/guide/issue requirements conflict, stop and ask user before
+     implementation
+   - if multiple plausible UX patterns exist without explicit contract choice,
+     stop and ask user
+   - do not mark work complete without explicit user sign-off on that area.
+
+**Rationale**:
+
+1. Co-located lifecycle controls improve predictability and reduce accidental
+   destructive actions.
+2. Hard stop-and-ask behavior prevents silent drift from user intent.
+3. Explicit sign-off gate makes "done" mean "implemented and aligned," not just
+   "code changed."
+
+**Consequences**:
+
+- ✅ Rule workflow control placement is now explicit and testable.
+- ✅ Ambiguity handling is explicit and enforceable in docs/contracts.
+- ✅ Reduces repeat churn caused by implicit design assumptions.
+- ⚠️ Existing rule-tab implementations may require refactor to fully match
+  card-local lifecycle controls.
+- ⚠️ Existing tests/checklists that assumed tab-level save for rule tabs must
+  be updated.
+
+**Alternatives Considered**:
+
+- Keep mixed tab-level/card-level lifecycle controls: rejected for clarity and
+  consistency risks.
+- Allow implementer choice when docs are close-but-not-identical: rejected;
+  this repeatedly produced misalignment.
+
+---
+
+### ADR-HA-058: Lighting Rules Support Multi-Target Actions + Trigger-Derived Locked Conditions (2026-03-05)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+
+Lighting rule editing regressed in two ways:
+
+1. Rules were effectively limited to a single action target, despite prior UX
+   supporting multi-target light actions on one rule card.
+2. Trigger-derived conditions remained editable, even when trigger semantics
+   already fixed the condition value (`on_dark`/`on_bright` ambient and
+   `on_occupied`/`on_vacant` occupancy condition).
+
+This caused UI ambiguity and behavior drift from agreed workflow.
+
+**Decision**:
+
+1. Lighting rules support multiple action targets per rule.
+   - Frontend sends ordered `actions[]` payload for each rule.
+   - Backend persists those as ordered HA automation action steps.
+2. Compatibility fields remain for existing clients/tests:
+   - `action_entity_id` / `action_service` / `action_data` mirror the first
+     action target.
+3. Trigger-derived conditions are locked and rendered read-only:
+   - `on_dark` -> ambient `dark` (derived)
+   - `on_bright` -> ambient `bright` (derived)
+   - `on_occupied` -> `must_be_occupied=true` (derived)
+   - `on_vacant` -> `must_be_occupied=false` (`Must be vacant`, derived)
+4. Contracts/docs must explicitly encode both behaviors.
+
+**Rationale**:
+
+1. Restores the original lighting authoring model (single rule, multiple light
+   actions).
+2. Prevents contradictory UI states for trigger-locked semantics.
+3. Keeps backend compatibility while enabling richer rule behavior.
+
+**Consequences**:
+
+- ✅ One lighting rule can drive multiple lights predictably.
+- ✅ Condition editing now matches trigger semantics and avoids invalid combos.
+- ✅ Existing integrations reading first-action summary fields keep working.
+- ⚠️ Adds payload/model complexity (`actions[]` + compatibility fields).
+- ⚠️ Requires regression tests across websocket, managed-actions runtime, and UI
+  draft/save flows.
+
+**Alternatives Considered**:
+
+- Keep single-action model and ask users to create many duplicate rules:
+  rejected due to UX friction and mismatch with established workflow.
+- Keep trigger-locked values editable but normalized on save:
+  rejected because UI still shows contradictory choices during editing.
+
+---
+
+### ADR-HA-059: Delivery Status Vocabulary + Live Validation Gate for Behavior Claims (2026-03-06)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+
+Recent automation/UI work exposed repeated confusion between four different
+states:
+
+1. what the docs/ADRs say the product should do,
+2. what is implemented in the current worktree,
+3. what is actually shipped in a built/released artifact, and
+4. what has been re-run against a live Home Assistant instance.
+
+This ambiguity allowed active docs to describe work as "complete" even while
+live HA validation remained open and production still reflected older behavior.
+
+**Decision**:
+
+1. Active status docs must distinguish execution status from delivery status.
+2. Delivery status vocabulary is:
+   - `Target`
+   - `Implemented`
+   - `Released`
+   - `Live-validated`
+3. For behavior-changing work, `Complete` / `Completed` is not an acceptable
+   standalone delivery claim in active docs.
+4. Behavior work is not `Live-validated` until the required live HA checklist or
+   release gate has run successfully against a real HA instance.
+5. Active docs and consistency checks must keep issue status, current-work
+   status, and live-validation state aligned.
+
+**Rationale**:
+
+1. Prevents target-state docs from being mistaken for shipped behavior.
+2. Makes release confidence and live-runtime evidence explicit.
+3. Turns status drift into a checkable repo policy instead of tribal memory.
+
+**Consequences**:
+
+- ✅ Status summaries become more precise and less misleading.
+- ✅ Live-validation gaps remain visible after implementation lands.
+- ✅ Doc consistency checks can block the exact contradiction pattern that
+  caused churn here.
+- ⚠️ Existing templates/status docs must be updated to use the new vocabulary.
+- ⚠️ Maintainers need to keep execution and delivery states current together.
+
+---
+
+### ADR-HA-060: Automation Scope Narrows to Lighting / Media / HVAC; HVAC v1 Is Fans-First (2026-03-06)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+
+The prior automation IA exposed four visible rule-authoring tabs:
+`Lighting`, `Appliances`, `Media`, and `HVAC`.
+
+That structure drifted away from the actual product goal:
+make common occupancy-driven actions easy without pretending to cover every Home
+Assistant device/workflow.
+
+Two practical issues drove the reset:
+
+1. `Appliances` was only a thin label over generic `switch.*`, which is not a
+   stable or meaningful Home Assistant product category.
+2. Users still need common bathroom/ventilation cases where the target device is
+   an exhaust fan exposed as either `fan.*` or `switch.*`.
+
+At the same time, true thermostat automation belongs to `climate.*`, not
+`fan.*`, and the repo does not yet have an agreed common-case contract for
+occupancy-driven presets/setbacks/modes.
+
+**Decision**:
+
+1. Visible automation tabs are narrowed to:
+   - `Lighting`
+   - `Media`
+   - `HVAC`
+2. Remove the dedicated `Appliances` top-level tab from the active UI and
+   policy docs.
+3. `HVAC` in v1 is a fans-first workflow:
+   - first-class `fan.*` support
+   - compatibility support for switch-controlled exhaust/ventilation devices via
+     `switch.*`
+4. Do not expose `climate.*` editing in v1.
+5. Existing legacy `/topomation-appliances` deep links may remain as a
+   compatibility alias, but they must resolve into the narrowed active IA
+   rather than resurrecting a separate product surface.
+
+**Rationale**:
+
+1. Keeps the visible IA aligned with real common user jobs.
+2. Preserves the important bathroom exhaust-fan use case even when the device is
+   modeled as a switch in Home Assistant.
+3. Avoids overselling thermostat/HVAC support before preset-oriented
+   `climate.*` semantics are defined.
+4. Simplifies release/testing scope while keeping advanced use cases available
+   through native HA automations triggered by Topomation occupancy state.
+
+**Consequences**:
+
+- ✅ The user-facing automation surface is smaller and clearer.
+- ✅ Existing switch-based ventilation rules remain editable under `HVAC`.
+- ✅ Docs can state the HVAC scope honestly: fans/ventilation now,
+  thermostat presets later.
+- ⚠️ Generic `switch.*` devices may still appear in the HVAC target list when
+  assigned to a location; this is an accepted v1 tradeoff to keep the
+  switch-controlled fan case simple.
+- ⚠️ Older ADRs/reference docs that mention `Appliances` remain historical and
+  should not be used as active policy.
 
 ---
 

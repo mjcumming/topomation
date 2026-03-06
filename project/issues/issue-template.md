@@ -1,7 +1,8 @@
 # Issue [ISSUE-XXX]: Title
 
 **Epic**: [EPIC-XXX] Epic Name
-**Status**: Pending | In Progress | Blocked | Complete
+**Execution Status**: Pending | In Progress | Blocked | Done
+**Delivery Status**: Target | Implemented | Released | Live-validated
 **Created**: YYYY-MM-DD
 **Priority**: High | Medium | Low
 
@@ -36,7 +37,7 @@ What will be different when this issue is complete?
 - ADR-HA-XXX: Title
 
 **Dependencies**:
-- ISSUE-XXX: Must be complete before this can start
+- ISSUE-XXX: Must be done before this can start
 - External: Any external dependencies
 
 **Affected Files**:
@@ -62,7 +63,7 @@ What will be different when this issue is complete?
 3. Implement incrementally
 4. Perform self-review per `/project/agent/review-protocol.md`
 5. Submit changes
-6. Update this issue status
+6. Update this issue execution/delivery status
 
 ---
 
@@ -70,3 +71,7 @@ What will be different when this issue is complete?
 
 Additional context, links, or implementation hints.
 
+Status note:
+- Use `Execution Status` for work progress.
+- Use `Delivery Status` for behavior confidence/shipping evidence.
+- Do not use `Done` to imply `Released` or `Live-validated`.

@@ -43,33 +43,15 @@ type InspectorTab =
   | "detection"
   | "ambient"
   | "lighting"
-  | "appliances"
   | "media"
   | "hvac";
 type InspectorTabRequest =
   | InspectorTab
+  | "appliances"
   | "occupancy"
   | "dusk_dawn";
-type DeviceAutomationTab = "appliances" | "media" | "hvac";
-type DuskDawnResolvedTarget = {
-  entity_id: string;
-  power: "on" | "off";
-  brightness_pct?: number;
-  color_hex?: string;
-  already_on_behavior?: DuskDawnAlreadyOnBehavior;
-};
-type DuskDawnResolvedBlock = {
-  id: string;
-  name: string;
-  start_time: string;
-  end_time: string;
-  time_condition_enabled: boolean;
-  trigger_mode: DuskDawnTriggerMode;
-  ambient_condition: DuskDawnAmbientCondition;
-  must_be_occupied: boolean;
-  already_on_behavior: DuskDawnAlreadyOnBehavior;
-  light_targets: DuskDawnResolvedTarget[];
-};
+type DeviceAutomationTab = "lighting" | "media" | "hvac";
+type StartupAutomationTab = Exclude<DeviceAutomationTab, "lighting">;
 type OccupancyLockDirective = {
   sourceId: string;
   mode: string;
@@ -91,6 +73,16 @@ type EntityRegistryMeta = {
   hiddenBy?: string | null;
   disabledBy?: string | null;
   entityCategory?: string | null;
+};
+type SyncLocationScope = {
+  candidateType: "area" | "floor";
+  parentId: string;
+  parentType: "area" | "floor" | "building";
+};
+type RuleActionTarget = {
+  entity_id: string;
+  service: string;
+  data?: Record<string, unknown>;
 };
 
 // Dev UX: custom elements cannot be hot-replaced. On HMR updates, force a quick reload.
@@ -133,8 +125,11 @@ export class HtLocationInspector extends LitElement {
   };
 
   @state() private _activeTab: InspectorTab = "detection";
-  @state() private _stagedSources?: OccupancySource[];
-  @state() private _savingSource = false;
+  @state() private _occupancyDraft?: OccupancyConfig;
+  @state() private _occupancyDraftDirty = false;
+  @state() private _occupancySaveError?: string;
+  @state() private _savingOccupancyDraft = false;
+  @state() private _pendingOccupancyByLocation: Record<string, OccupancyConfig> = {};
   @state() private _externalAreaId = "";
   @state() private _externalEntityId = "";
   @state() private _entityAreaById: Record<string, string | null> = {};
@@ -151,9 +146,7 @@ export class HtLocationInspector extends LitElement {
   @state() private _editingActionRuleNameId?: string;
   @state() private _editingActionRuleNameValue = "";
   private _actionRuleTabById: Record<string, DeviceAutomationTab> = {};
-  @state() private _savingLinkedLocations = false;
-  @state() private _stagedLinkedLocations?: string[];
-  @state() private _stagedSyncLocations?: string[];
+  @state() private _syncImportInProgress = false;
   @state() private _showAdvancedAdjacency = false;
   @state() private _showRecentOccupancyEvents = false;
   @state() private _adjacencyNeighborId = "";
@@ -168,15 +161,12 @@ export class HtLocationInspector extends LitElement {
   @state() private _wiabExteriorDoorEntityId = "";
   @state() private _wiabShowAllEntities = false;
   @state() private _ambientReading?: AmbientLightReading;
+  @state() private _ambientDraft?: AmbientConfig;
+  @state() private _ambientDraftDirty = false;
+  @state() private _ambientSaveError?: string;
   @state() private _loadingAmbientReading = false;
   @state() private _ambientReadingError?: string;
   @state() private _savingAmbientConfig = false;
-  @state() private _savingDuskDawnConfig = false;
-  @state() private _duskDawnDraft?: DuskDawnConfig;
-  @state() private _duskDawnDraftDirty = false;
-  @state() private _duskDawnSaveError?: string;
-  @state() private _editingLightingRuleNameId?: string;
-  @state() private _editingLightingRuleNameValue = "";
   private _onTimeoutMemory: Record<string, number> = {};
   private _entityAreaLoadPromise?: Promise<void>;
   private _actionRulesLoadSeq = 0;
@@ -185,11 +175,11 @@ export class HtLocationInspector extends LitElement {
   private _clockTimer?: number;
   private _unsubAutomationStateChanged?: () => void;
   private _actionRulesReloadTimer?: number;
-  private _sourcePersistTimer?: number;
-  private _sourcePersistInFlight = false;
-  private _sourcePersistQueued = false;
-  private _linkedPersistChain: Promise<void> = Promise.resolve();
-  private _linkedPersistQueueDepth = 0;
+  private _beforeUnloadHandler = (event: BeforeUnloadEvent) => {
+    if (!this._hasUnsavedDrafts()) return;
+    event.preventDefault();
+    event.returnValue = "";
+  };
 
   static styles = [
     sharedStyles,
@@ -263,6 +253,11 @@ export class HtLocationInspector extends LitElement {
         font-size: 12px;
         color: var(--text-secondary-color);
         font-family: var(--code-font-family, monospace);
+      }
+
+      .header-lock-state {
+        font-size: 12px;
+        color: var(--text-secondary-color);
       }
 
       .ambient-grid {
@@ -486,6 +481,8 @@ export class HtLocationInspector extends LitElement {
       .dusk-block-footer {
         display: flex;
         justify-content: flex-end;
+        gap: 8px;
+        flex-wrap: wrap;
         margin-top: 12px;
       }
 
@@ -619,6 +616,26 @@ export class HtLocationInspector extends LitElement {
       .dusk-save-button:disabled {
         opacity: 0.6;
         cursor: not-allowed;
+      }
+
+      .draft-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin: 0 0 10px;
+        max-width: 900px;
+      }
+
+      .draft-toolbar-note {
+        font-size: 12px;
+        color: var(--text-secondary-color);
+      }
+
+      .draft-toolbar-actions {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
       }
 
       .dusk-inline-actions {
@@ -2018,8 +2035,6 @@ export class HtLocationInspector extends LitElement {
           window.clearTimeout(this._ambientReadingReloadTimer);
           this._ambientReadingReloadTimer = undefined;
         }
-        this._resetSourceDraftState();
-        this._stagedLinkedLocations = undefined;
         this._externalAreaId = "";
         this._externalEntityId = "";
         this._wiabShowAllEntities = false;
@@ -2034,14 +2049,26 @@ export class HtLocationInspector extends LitElement {
         this._actionRuleTabById = {};
         this._ambientReading = undefined;
         this._ambientReadingError = undefined;
-        this._cancelLightingRuleNameEdit();
-        this._resetDuskDawnDraftFromLocation();
+        this._occupancyDraft = undefined;
+        this._occupancyDraftDirty = false;
+        this._occupancySaveError = undefined;
+        this._pendingOccupancyByLocation = {};
+        this._ambientDraft = undefined;
+        this._ambientDraftDirty = false;
+        this._ambientSaveError = undefined;
+        this._resetDetectionDraftFromLocation();
+        this._resetAmbientDraftFromLocation();
         if (this.hass) {
           void this._loadEntityAreaAssignments();
         }
         void this._loadAmbientReading();
-      } else if (!this._duskDawnDraftDirty) {
-        this._resetDuskDawnDraftFromLocation();
+      } else {
+        if (!this._occupancyDraftDirty) {
+          this._resetDetectionDraftFromLocation();
+        }
+        if (!this._ambientDraftDirty) {
+          this._resetAmbientDraftFromLocation();
+        }
       }
       void this._loadActionRules();
     }
@@ -2126,6 +2153,191 @@ export class HtLocationInspector extends LitElement {
     return JSON.stringify(normalized);
   }
 
+  private _occupancyDefaults(): OccupancyConfig {
+    return {
+      version: 1,
+      enabled: true,
+      default_timeout: 300,
+      default_trailing_timeout: 120,
+      occupancy_sources: [],
+      linked_locations: [],
+      sync_locations: [],
+      wiab: {
+        preset: "off",
+      },
+    };
+  }
+
+  private _sanitizeOccupancyConfig(
+    config: OccupancyConfig,
+    selfLocationId: string | undefined = this.location?.id
+  ): OccupancyConfig {
+    const defaults = this._occupancyDefaults();
+    const sourceCandidates = Array.isArray(config.occupancy_sources) ? config.occupancy_sources : [];
+    const occupancySources = sourceCandidates
+      .filter((source) => source && typeof source.entity_id === "string" && source.entity_id.trim().length > 0)
+      .map((source) => this._normalizeSource(source.entity_id.trim(), source));
+    const defaultTimeout = Math.max(1, Number(config.default_timeout) || defaults.default_timeout);
+    const defaultTrailingTimeout = Math.max(
+      0,
+      Number(config.default_trailing_timeout) || defaults.default_trailing_timeout || 0
+    );
+    const sanitized: OccupancyConfig = {
+      ...defaults,
+      ...config,
+      enabled: config.enabled !== false,
+      default_timeout: defaultTimeout,
+      default_trailing_timeout: defaultTrailingTimeout,
+      occupancy_sources: occupancySources,
+      linked_locations: this._normalizeLinkedLocationIds(config.linked_locations, undefined, selfLocationId),
+      sync_locations: this._normalizeLinkedLocationIds(config.sync_locations, undefined, selfLocationId),
+    };
+    sanitized.wiab = this._getWiabConfig(sanitized);
+    return sanitized;
+  }
+
+  private _persistedOccupancyConfig(): OccupancyConfig {
+    const raw = ((this.location?.modules?.occupancy || {}) as OccupancyConfig) || {};
+    return this._sanitizeOccupancyConfig(raw, this.location?.id);
+  }
+
+  private _resetDetectionDraftFromLocation(): void {
+    if (!this.location) {
+      this._occupancyDraft = undefined;
+      this._occupancyDraftDirty = false;
+      this._occupancySaveError = undefined;
+      this._pendingOccupancyByLocation = {};
+      return;
+    }
+    this._occupancyDraft = this._persistedOccupancyConfig();
+    this._occupancyDraftDirty = false;
+    this._occupancySaveError = undefined;
+    this._pendingOccupancyByLocation = {};
+  }
+
+  private _setOccupancyDraft(config: OccupancyConfig): void {
+    this._occupancyDraft = this._sanitizeOccupancyConfig(config, this.location?.id);
+    this._occupancyDraftDirty = true;
+    this._occupancySaveError = undefined;
+    this.requestUpdate();
+  }
+
+  private _occupancyConfigForLocation(location: Location): OccupancyConfig {
+    const pending = this._pendingOccupancyByLocation[location.id];
+    if (pending) {
+      return this._sanitizeOccupancyConfig(pending, location.id);
+    }
+    const raw = ((location.modules?.occupancy || {}) as OccupancyConfig) || {};
+    return this._sanitizeOccupancyConfig(raw, location.id);
+  }
+
+  private _setPendingOccupancyForLocation(locationId: string, config: OccupancyConfig): void {
+    const sanitized = this._sanitizeOccupancyConfig(config, locationId);
+    this._pendingOccupancyByLocation = {
+      ...this._pendingOccupancyByLocation,
+      [locationId]: sanitized,
+    };
+    this._occupancyDraftDirty = true;
+    this._occupancySaveError = undefined;
+    this.requestUpdate();
+  }
+
+  private _renderDetectionDraftToolbar() {
+    const hasUnsaved = this._occupancyDraftDirty;
+    const busy = this._savingOccupancyDraft;
+    return html`
+      <div class="draft-toolbar" data-testid="detection-draft-toolbar">
+        <div class="draft-toolbar-note">${hasUnsaved ? "Detection changes are not saved." : "Detection changes saved."}</div>
+        <div class="draft-toolbar-actions">
+          <button
+            class="button button-secondary"
+            type="button"
+            data-testid="detection-discard-button"
+            ?disabled=${busy || !hasUnsaved}
+            @click=${() => this._discardDetectionDraft()}
+          >
+            Discard
+          </button>
+          <button
+            class="dusk-save-button ${hasUnsaved ? "dirty" : ""}"
+            type="button"
+            data-testid="detection-save-button"
+            ?disabled=${busy || !hasUnsaved}
+            @click=${() => this._saveDetectionDraft()}
+          >
+            ${busy ? "Saving..." : "Save changes"}
+          </button>
+        </div>
+      </div>
+      ${this._occupancySaveError
+        ? html`<div class="policy-warning" data-testid="detection-save-error">${this._occupancySaveError}</div>`
+        : ""}
+    `;
+  }
+
+  private async _persistOccupancyConfigForLocation(locationId: string, config: OccupancyConfig): Promise<void> {
+    await this.hass.callWS(
+      this._withEntryId({
+        type: "topomation/locations/set_module_config",
+        location_id: locationId,
+        module_id: "occupancy",
+        config,
+      })
+    );
+  }
+
+  private async _saveDetectionDraft(): Promise<void> {
+    if (!this.location || !this.hass) return;
+    const sourceLocationId = this.location.id;
+    const sourceConfig = this._sanitizeOccupancyConfig(
+      this._occupancyDraft || this._persistedOccupancyConfig(),
+      sourceLocationId
+    );
+    const updates: Array<{ locationId: string; config: OccupancyConfig }> = [
+      { locationId: sourceLocationId, config: sourceConfig },
+      ...Object.entries(this._pendingOccupancyByLocation)
+        .filter(([locationId]) => locationId !== sourceLocationId)
+        .map(([locationId, config]) => ({
+          locationId,
+          config: this._sanitizeOccupancyConfig(config, locationId),
+        })),
+    ];
+
+    this._savingOccupancyDraft = true;
+    this._occupancySaveError = undefined;
+    this.requestUpdate();
+    try {
+      for (const update of updates) {
+        await this._persistOccupancyConfigForLocation(update.locationId, update.config);
+        if (update.locationId === sourceLocationId && this.location?.id === sourceLocationId) {
+          this.location.modules = this.location.modules || {};
+          this.location.modules.occupancy = update.config;
+          continue;
+        }
+        const candidate = (this.allLocations || []).find((location) => location.id === update.locationId);
+        if (!candidate) continue;
+        candidate.modules = candidate.modules || {};
+        candidate.modules.occupancy = update.config;
+      }
+      this._resetDetectionDraftFromLocation();
+      this._showToast("Detection settings updated", "success");
+    } catch (err: any) {
+      console.error("Failed to update detection settings", err);
+      this._occupancySaveError = err?.message || "Failed to update detection settings";
+      this._showToast(this._occupancySaveError, "error");
+    } finally {
+      this._savingOccupancyDraft = false;
+      this.requestUpdate();
+    }
+  }
+
+  private _discardDetectionDraft(showToast = true): void {
+    this._resetDetectionDraftFromLocation();
+    if (showToast) {
+      this._showToast("Discarded detection changes", "success");
+    }
+  }
+
   private _ambientDefaults(): AmbientConfig {
     return {
       version: 1,
@@ -2139,43 +2351,81 @@ export class HtLocationInspector extends LitElement {
     };
   }
 
-  private _getAmbientConfig(): AmbientConfig {
+  private _persistedAmbientConfig(): AmbientConfig {
     const raw = ((this.location?.modules?.ambient || {}) as AmbientConfig) || {};
+    return this._sanitizeAmbientConfig(raw);
+  }
+
+  private _sanitizeAmbientConfig(config: AmbientConfig): AmbientConfig {
     const defaults = this._ambientDefaults();
+    const darkThreshold = Math.max(0, Number(config.dark_threshold) || 0);
+    const brightThreshold = Math.max(
+      Math.max(1, darkThreshold) + 1,
+      Number(config.bright_threshold) || 0
+    );
     return {
       ...defaults,
-      ...raw,
+      ...config,
       auto_discover: false,
-      dark_threshold: Number.isFinite(Number(raw.dark_threshold))
-        ? Number(raw.dark_threshold)
-        : defaults.dark_threshold,
-      bright_threshold: Number.isFinite(Number(raw.bright_threshold))
-        ? Number(raw.bright_threshold)
-        : defaults.bright_threshold,
+      dark_threshold: darkThreshold,
+      bright_threshold: brightThreshold,
     };
   }
 
-  private async _updateAmbientConfig(config: AmbientConfig): Promise<void> {
+  private _resetAmbientDraftFromLocation(): void {
+    this._ambientDraft = this._persistedAmbientConfig();
+    this._ambientDraftDirty = false;
+    this._ambientSaveError = undefined;
+  }
+
+  private _getAmbientConfig(): AmbientConfig {
+    if (!this.location) {
+      return this._sanitizeAmbientConfig(this._ambientDefaults());
+    }
+    return this._sanitizeAmbientConfig(this._ambientDraft || this._persistedAmbientConfig());
+  }
+
+  private _setAmbientDraft(config: AmbientConfig): void {
+    this._ambientDraft = this._sanitizeAmbientConfig(config);
+    this._ambientDraftDirty = true;
+    this._ambientSaveError = undefined;
+    this.requestUpdate();
+  }
+
+  private async _saveAmbientDraft(): Promise<void> {
+    if (!this.location || !this.hass) return;
     this._savingAmbientConfig = true;
+    this._ambientSaveError = undefined;
+    const sanitized = this._sanitizeAmbientConfig(this._ambientDraft || this._persistedAmbientConfig());
     try {
-      const sanitized: AmbientConfig = {
-        ...this._ambientDefaults(),
-        ...config,
-        auto_discover: false,
-        dark_threshold: Math.max(0, Number(config.dark_threshold) || 0),
-        bright_threshold: Math.max(
-          Math.max(1, Number(config.dark_threshold) || 0) + 1,
-          Number(config.bright_threshold) || 0
-        ),
-      };
-      await this._updateModuleConfig("ambient", sanitized);
+      await this.hass.callWS(
+        this._withEntryId({
+          type: "topomation/locations/set_module_config",
+          location_id: this.location.id,
+          module_id: "ambient",
+          config: sanitized,
+        })
+      );
+      this.location.modules = this.location.modules || {};
+      this.location.modules.ambient = sanitized;
+      this._ambientDraft = sanitized;
+      this._ambientDraftDirty = false;
       await this._loadAmbientReading();
       this._showToast("Ambient settings updated", "success");
     } catch (err: any) {
       console.error("Failed to update ambient settings", err);
-      this._showToast(err?.message || "Failed to update ambient settings", "error");
+      this._ambientSaveError = err?.message || "Failed to update ambient settings";
+      this._showToast(this._ambientSaveError, "error");
     } finally {
       this._savingAmbientConfig = false;
+    }
+  }
+
+  private _discardAmbientDraft(showToast = true): void {
+    this._resetAmbientDraftFromLocation();
+    void this._loadAmbientReading();
+    if (showToast) {
+      this._showToast("Discarded ambient changes", "success");
     }
   }
 
@@ -2556,258 +2806,6 @@ export class HtLocationInspector extends LitElement {
     };
   }
 
-  private _resetDuskDawnDraftFromLocation(): void {
-    if (!this.location) {
-      this._duskDawnDraft = undefined;
-      this._duskDawnDraftDirty = false;
-      this._duskDawnSaveError = undefined;
-      this._cancelLightingRuleNameEdit();
-      return;
-    }
-    const source = this._getDuskDawnConfig();
-    this._duskDawnDraft = {
-      version: 3,
-      blocks: this._sanitizeDuskDawnBlocks(source.blocks),
-    };
-    this._duskDawnDraftDirty = false;
-    this._duskDawnSaveError = undefined;
-    this._cancelLightingRuleNameEdit();
-  }
-
-  private _workingDuskDawnConfig(): DuskDawnConfig {
-    return this._duskDawnDraft || this._getDuskDawnConfig();
-  }
-
-  private _setDuskDawnDraft(config: DuskDawnConfig): void {
-    this._duskDawnDraft = {
-      version: 3,
-      blocks: this._sanitizeDuskDawnBlocks(config.blocks),
-    };
-    this._duskDawnDraftDirty = true;
-    this._duskDawnSaveError = undefined;
-    this.requestUpdate();
-  }
-
-  private _duskDawnBlocks(config: DuskDawnConfig): DuskDawnResolvedBlock[] {
-    return this._sanitizeDuskDawnBlocks(config.blocks).map((block, index) => ({
-      id: String(block.id || `rule_${index + 1}`),
-      name: this._normalizeLegacyDuskDawnRuleName(block.name, index),
-      start_time: String(block.start_time || "18:00"),
-      end_time: String(block.end_time || "23:59"),
-      time_condition_enabled: Boolean(block.time_condition_enabled),
-      trigger_mode: this._normalizeDuskDawnTriggerMode(block.trigger_mode),
-      ambient_condition: this._normalizeDuskDawnAmbientCondition(block.ambient_condition, this._normalizeDuskDawnTriggerMode(block.trigger_mode)),
-      must_be_occupied: this._normalizeDuskDawnMustBeOccupied(block.must_be_occupied, block.trigger_mode),
-      already_on_behavior: this._normalizeDuskDawnAlreadyOnBehavior(block.already_on_behavior),
-      light_targets: this._sanitizeDuskDawnLightTargets(block.light_targets).map((target) => ({
-        entity_id: String(target.entity_id || ""),
-        power: target.power === "off" ? "off" : "on",
-        brightness_pct: typeof target.brightness_pct === "number" ? this._clampBrightnessPct(target.brightness_pct, 30) : undefined,
-        color_hex: this._normalizeColorHex(target.color_hex),
-        already_on_behavior:
-          typeof target.already_on_behavior === "string" && target.already_on_behavior.trim()
-            ? this._normalizeDuskDawnAlreadyOnBehavior(target.already_on_behavior)
-            : undefined,
-      })),
-    }));
-  }
-
-  private _duskDawnConfiguredActionCount(config: DuskDawnConfig): number {
-    return this._duskDawnBlocks(config).reduce((total, block) => total + block.light_targets.length, 0);
-  }
-
-  private _duskDawnValidationErrors(config: DuskDawnConfig): string[] {
-    const errors: string[] = [];
-    const blocks = this._duskDawnBlocks(config);
-    for (const block of blocks) {
-      if (!String(block.name || "").trim()) {
-        errors.push("Rule name is required.");
-      }
-      if (this._timeToMinutes(block.start_time) === undefined) {
-        errors.push(`Invalid start time for ${block.name}.`);
-      }
-      if (this._timeToMinutes(block.end_time) === undefined) {
-        errors.push(`Invalid end time for ${block.name}.`);
-      }
-      for (const target of block.light_targets) {
-        if (!target.entity_id || !target.entity_id.startsWith("light.")) {
-          errors.push(`Invalid light target in ${block.name}.`);
-          break;
-        }
-      }
-    }
-    return errors;
-  }
-
-  private async _updateDuskDawnConfig(config: DuskDawnConfig): Promise<boolean> {
-    if (!this.location) return false;
-    this._savingDuskDawnConfig = true;
-    try {
-      const sanitized: DuskDawnConfig = {
-        version: 3,
-        blocks: this._sanitizeDuskDawnBlocks(config.blocks),
-      };
-      await this.hass.callWS(
-        this._withEntryId({
-          type: "topomation/locations/set_module_config",
-          location_id: this.location.id,
-          module_id: "dusk_dawn",
-          config: sanitized,
-        })
-      );
-      this.location.modules.dusk_dawn = sanitized;
-      this.requestUpdate();
-      this._showToast("Lighting settings updated", "success");
-      return true;
-    } catch (err: any) {
-      console.error("Failed to update lighting settings", err);
-      this._showToast(err?.message || "Failed to update lighting settings", "error");
-      return false;
-    } finally {
-      this._savingDuskDawnConfig = false;
-    }
-  }
-
-  private _duskDawnTargetEntities(): string[] {
-    if (!this.location) return [];
-    const entities = new Set<string>();
-    for (const entityId of this.location.entity_ids || []) {
-      if (entityId.startsWith("light.")) entities.add(entityId);
-    }
-    if (this.location.ha_area_id) {
-      for (const entityId of this._entitiesForArea(this.location.ha_area_id)) {
-        if (entityId.startsWith("light.")) entities.add(entityId);
-      }
-    }
-    return [...entities].sort((left, right) => this._entityName(left).localeCompare(this._entityName(right)));
-  }
-
-  private _defaultDuskDawnLightTarget(entityId?: string): DuskDawnLightTarget {
-    const fallbackEntity = entityId || this._duskDawnTargetEntities()[0] || "";
-    const target: DuskDawnLightTarget = {
-      entity_id: fallbackEntity,
-      power: "on",
-      already_on_behavior: "set_target",
-    };
-    if (fallbackEntity && this._isDimmableEntity(fallbackEntity)) {
-      target.brightness_pct = 30;
-    }
-    if (fallbackEntity && this._isColorCapableEntity(fallbackEntity)) {
-      target.color_hex = "#ffffff";
-    }
-    return target;
-  }
-
-  private _updateDuskDawnBlockLightTargets(
-    config: DuskDawnConfig,
-    blockId: string,
-    nextTargets: DuskDawnLightTarget[]
-  ): void {
-    const blocks = this._sanitizeDuskDawnBlocks(config.blocks).map((block) =>
-      block.id === blockId
-        ? {
-            ...block,
-            light_targets: nextTargets,
-          }
-        : block
-    );
-    this._setDuskDawnDraft({
-      ...config,
-      blocks,
-    });
-  }
-
-  private _addDuskDawnBlock(config?: DuskDawnConfig): void {
-    const effectiveConfig = config || this._workingDuskDawnConfig();
-    const blocks = this._sanitizeDuskDawnBlocks(effectiveConfig.blocks);
-    const ruleIndex = blocks.length + 1;
-    blocks.push({
-      id: `rule_${Date.now()}_${ruleIndex}`,
-      name: `Rule ${ruleIndex}`,
-      start_time: "18:00",
-      end_time: "23:59",
-      time_condition_enabled: false,
-      trigger_mode: "on_dark",
-      ambient_condition: "any",
-      must_be_occupied: false,
-      already_on_behavior: "set_target",
-      light_targets: [],
-    });
-    this._setDuskDawnDraft({
-      ...effectiveConfig,
-      blocks,
-    });
-  }
-
-  private _removeDuskDawnBlock(config: DuskDawnConfig, blockId: string): void {
-    const blocks = this._sanitizeDuskDawnBlocks(config.blocks).filter((block) => block.id !== blockId);
-    this._setDuskDawnDraft({
-      ...config,
-      blocks,
-    });
-  }
-
-  private _updateDuskDawnBlock(
-    config: DuskDawnConfig,
-    blockId: string,
-    patch: Partial<DuskDawnScheduleBlock>
-  ): void {
-    const blocks = this._sanitizeDuskDawnBlocks(config.blocks).map((block) => {
-      if (block.id !== blockId) return block;
-      const merged = { ...block, ...patch };
-      return this._applyTriggerDerivedBlockConstraints(merged);
-    });
-    this._setDuskDawnDraft({
-      ...config,
-      blocks,
-    });
-  }
-
-  private _startLightingRuleNameEdit(blockId: string, currentName: string): void {
-    this._editingLightingRuleNameId = blockId;
-    this._editingLightingRuleNameValue = currentName;
-    this.requestUpdate();
-  }
-
-  private _cancelLightingRuleNameEdit(): void {
-    this._editingLightingRuleNameId = undefined;
-    this._editingLightingRuleNameValue = "";
-    this.requestUpdate();
-  }
-
-  private _commitLightingRuleNameEdit(
-    config: DuskDawnConfig,
-    blockId: string,
-    fallbackLabel: string
-  ): void {
-    if (this._editingLightingRuleNameId !== blockId) return;
-    const nextName = this._editingLightingRuleNameValue.trim() || fallbackLabel;
-    this._updateDuskDawnBlock(config, blockId, { name: nextName });
-    this._cancelLightingRuleNameEdit();
-  }
-
-  private async _saveDuskDawnDraft(): Promise<void> {
-    const draft = this._workingDuskDawnConfig();
-    const normalizedDraft: DuskDawnConfig = {
-      version: 3,
-      blocks: this._duskDawnBlocks(draft).map((block, index) => ({
-        ...block,
-        name: this._resolveLightingRuleName(block, index),
-      })),
-    };
-    const ok = await this._updateDuskDawnConfig(normalizedDraft);
-    if (ok) {
-      this._resetDuskDawnDraftFromLocation();
-    } else {
-      this._duskDawnSaveError = "Save failed. Review values and try again.";
-    }
-  }
-
-  private _resetDuskDawnDraft(): void {
-    this._resetDuskDawnDraftFromLocation();
-    this._showToast("Lighting changes reverted", "success");
-  }
-
   private async _loadEntityAreaAssignments(): Promise<void> {
     if (this._entityAreaLoadPromise || !this.hass?.callWS) return;
 
@@ -2907,12 +2905,13 @@ export class HtLocationInspector extends LitElement {
               >
                 ${occupancyLabel}
               </span>
-              <span
-                class="status-chip ${lockState.isLocked ? "locked" : ""}"
-                data-testid="header-lock-status"
-              >
-                ${lockState.isLocked ? "Locked" : "Unlocked"}
-              </span>
+              ${lockState.isLocked
+                ? html`
+                    <span class="status-chip locked" data-testid="header-lock-status">Locked</span>
+                  `
+                : html`
+                    <span class="header-lock-state" data-testid="header-lock-status">Unlocked</span>
+                  `}
               <span class="header-ambient" data-testid="header-ambient-lux">
                 ${ambientLuxHeader}
               </span>
@@ -2949,55 +2948,31 @@ export class HtLocationInspector extends LitElement {
       <div class="tabs">
         <button
           class="tab ${this._activeTab === "detection" ? "active" : ""}"
-          @click=${() => {
-            this._activeTab = "detection";
-            this.requestUpdate();
-          }}
+          @click=${() => this._handleTabChange("detection")}
         >
           Detection
         </button>
         <button
           class="tab ${this._activeTab === "ambient" ? "active" : ""}"
-          @click=${() => {
-            this._activeTab = "ambient";
-            this.requestUpdate();
-          }}
+          @click=${() => this._handleTabChange("ambient")}
         >
           Ambient
         </button>
         <button
           class="tab ${this._activeTab === "lighting" ? "active" : ""}"
-          @click=${() => {
-            this._activeTab = "lighting";
-            this.requestUpdate();
-          }}
+          @click=${() => this._handleTabChange("lighting")}
         >
           Lighting
         </button>
         <button
-          class="tab ${this._activeTab === "appliances" ? "active" : ""}"
-          @click=${() => {
-            this._activeTab = "appliances";
-            this.requestUpdate();
-          }}
-        >
-          Appliances
-        </button>
-        <button
           class="tab ${this._activeTab === "media" ? "active" : ""}"
-          @click=${() => {
-            this._activeTab = "media";
-            this.requestUpdate();
-          }}
+          @click=${() => this._handleTabChange("media")}
         >
           Media
         </button>
         <button
           class="tab ${this._activeTab === "hvac" ? "active" : ""}"
-          @click=${() => {
-            this._activeTab = "hvac";
-            this.requestUpdate();
-          }}
+          @click=${() => this._handleTabChange("hvac")}
         >
           HVAC
         </button>
@@ -3010,13 +2985,11 @@ export class HtLocationInspector extends LitElement {
     return html`
       <div class="tab-content">
         ${activeTab === "detection"
-          ? html`${this._renderOccupancyTab()} ${this._renderAdvancedTab()}`
+          ? html`${this._renderDetectionDraftToolbar()} ${this._renderOccupancyTab()} ${this._renderAdvancedTab()}`
           : activeTab === "ambient"
             ? this._renderAmbientTab()
           : activeTab === "lighting"
-              ? this._renderDuskDawnTab()
-            : activeTab === "appliances"
-              ? this._renderDeviceAutomationTab("appliances")
+              ? this._renderDeviceAutomationTab("lighting")
             : activeTab === "media"
               ? this._renderDeviceAutomationTab("media")
             : activeTab === "hvac"
@@ -3030,11 +3003,39 @@ export class HtLocationInspector extends LitElement {
     return this._activeTab;
   }
 
+  private _hasUnsavedDrafts(): boolean {
+    return Boolean(
+      this._occupancyDraftDirty ||
+      this._ambientDraftDirty ||
+      this._actionRulesDraftDirty
+    );
+  }
+
+  private _handleTabChange(nextTab: InspectorTab): void {
+    if (this._activeTab === nextTab) return;
+    if (this._activeTab === "detection" && this._occupancyDraftDirty) {
+      const discard = window.confirm(
+        "Detection changes are not saved. Discard changes and continue?"
+      );
+      if (!discard) return;
+      this._discardDetectionDraft(false);
+    }
+    if (this._activeTab === "ambient" && this._ambientDraftDirty) {
+      const discard = window.confirm(
+        "Ambient changes are not saved. Discard changes and continue?"
+      );
+      if (!discard) return;
+      this._discardAmbientDraft(false);
+    }
+    this._activeTab = nextTab;
+    this.requestUpdate();
+  }
+
   private _mapRequestedTab(requested?: InspectorTabRequest): InspectorTab | undefined {
     if (requested === "detection") return "detection";
     if (requested === "ambient") return "ambient";
     if (requested === "lighting") return "lighting";
-    if (requested === "appliances") return "appliances";
+    if (requested === "appliances") return "hvac";
     if (requested === "media") return "media";
     if (requested === "hvac") return "hvac";
     if (requested === "dusk_dawn") return "lighting";
@@ -3044,12 +3045,14 @@ export class HtLocationInspector extends LitElement {
 
   connectedCallback(): void {
     super.connectedCallback();
+    window.addEventListener("beforeunload", this._beforeUnloadHandler);
     this._startClockTicker();
     void this._subscribeAutomationStateChanged();
   }
 
   disconnectedCallback(): void {
     super.disconnectedCallback();
+    window.removeEventListener("beforeunload", this._beforeUnloadHandler);
     this._stopClockTicker();
     this._resetSourceDraftState();
     if (this._ambientReadingReloadTimer) {
@@ -3153,17 +3156,12 @@ export class HtLocationInspector extends LitElement {
   private _renderOccupancyTab() {
     if (!this.location) return "";
 
-    const config = (this.location.modules.occupancy || {}) as OccupancyConfig;
+    const config = this._getOccupancyConfig();
     const isFloor = this._isFloorLocation();
     const hasHaAreaLink = !!this.location.ha_area_id;
     const siblingAreaSourceScope = this._isSiblingAreaSourceScope();
     const floorSourceCount = (config.occupancy_sources || []).length;
     const lockState = this._getLockState();
-    const occupancyActivity = this._occupancyContributions(config);
-    const occupancyEventsToRender = this._showRecentOccupancyEvents
-      ? occupancyActivity
-      : occupancyActivity.slice(0, 1);
-
     if (isFloor) {
       return html`
         <div>
@@ -3185,6 +3183,7 @@ export class HtLocationInspector extends LitElement {
                 `
               : ""}
           </div>
+          ${this._renderSyncLocationsSection(config)}
         </div>
       `;
     }
@@ -3230,46 +3229,6 @@ export class HtLocationInspector extends LitElement {
                 : "Integration-owned location: choose sources from Home Assistant entities."}
             </div>
           </div>
-          ${occupancyActivity.length > 0
-            ? html`
-                <div class="card-section">
-                  <div class="section-title">
-                    <ha-icon .icon=${"mdi:clock-outline"}></ha-icon>
-                    Recent Occupancy Events
-                  </div>
-                  <div class="sources-inline-help" style="margin-bottom: 8px; display: flex; justify-content: space-between; align-items: baseline; gap: 8px;">
-                    Sources currently contributing to occupancy.
-                    ${occupancyActivity.length > 1
-                      ? html`
-                          <button
-                            class="button button-secondary"
-                            type="button"
-                            style="padding: 2px 8px; font-size: 11px;"
-                            data-testid="recent-events-toggle"
-                            @click=${() => {
-                              this._showRecentOccupancyEvents = !this._showRecentOccupancyEvents;
-                              this.requestUpdate();
-                            }}
-                          >
-                            ${this._showRecentOccupancyEvents ? "Show less" : "Show all"}
-                          </button>
-                        `
-                      : ""}
-                  </div>
-                  <div class="occupancy-events">
-                    ${occupancyEventsToRender.map(
-                      (item) => html`
-                        <div class="occupancy-event">
-                          <span class="occupancy-event-source">${item.sourceLabel}</span>
-                          <span class="occupancy-event-meta">${item.stateLabel}</span>
-                          ${item.relativeTime ? html`<span class="occupancy-event-meta">${item.relativeTime}</span>` : ""}
-                        </div>
-                      `
-                      )}
-                  </div>
-                </div>
-              `
-            : ""}
           ${hasHaAreaLink
             ? ""
             : html`
@@ -3302,502 +3261,62 @@ export class HtLocationInspector extends LitElement {
 
   private _renderAdvancedTab() {
     if (!this.location) return "";
-    const config = (this.location.modules.occupancy || {}) as OccupancyConfig;
+    const config = this._getOccupancyConfig();
     return html`
       <div>
         ${this._renderWiabSection(config)}
         ${this._renderAdjacencyAdvancedSection(config)}
         ${this._isManagedShadowHost() ? this._renderManagedShadowAreaSection() : ""}
+        ${this._renderRecentOccupancyEventsSection(config)}
       </div>
     `;
   }
 
-  private _renderDuskDawnTab() {
-    if (!this.location) return "";
-    const config = this._workingDuskDawnConfig();
-    const validationErrors = this._duskDawnValidationErrors(config);
-    const busy = this._savingDuskDawnConfig;
-    const hasUnsaved = this._duskDawnDraftDirty;
+  private _renderRecentOccupancyEventsSection(config: OccupancyConfig) {
+    const occupancyActivity = this._occupancyContributions(config);
+    if (occupancyActivity.length === 0) return "";
+    const occupancyEventsToRender = this._showRecentOccupancyEvents
+      ? occupancyActivity
+      : occupancyActivity.slice(0, 1);
 
     return html`
-      ${this._renderActionStartupConfig("lighting")}
-      <div class="card-section" data-testid="duskdawn-policy-section">
-        <div class="section-title-row">
-          <div class="section-title">
-            <ha-icon .icon=${"mdi:tune-variant"}></ha-icon>
-            Lighting rules
-          </div>
-          <div class="section-title-actions">
-            <button
-              class="dusk-save-button ${hasUnsaved ? "dirty" : ""}"
-              type="button"
-              data-testid="lighting-rules-save"
-              ?disabled=${busy || !hasUnsaved}
-              @click=${() => this._saveDuskDawnDraft()}
-            >
-              Save changes
-            </button>
-          </div>
+      <div class="card-section" data-testid="recent-occupancy-events-section">
+        <div class="section-title">
+          <ha-icon .icon=${"mdi:clock-outline"}></ha-icon>
+          Recent Occupancy Events
         </div>
-        ${this._duskDawnSaveError
-          ? html`<div class="policy-warning" data-testid="lighting-rules-save-error">${this._duskDawnSaveError}</div>`
-          : ""}
-        ${validationErrors.map(
-          (error) => html`<div class="policy-warning" data-testid="duskdawn-validation">${error}</div>`
-        )}
-        ${this._renderDuskDawnBlocks(config, busy)}
-      </div>
-    `;
-  }
-
-  private _renderDuskDawnBlockLightActions(
-    targetsRaw: DuskDawnLightTarget[] | undefined,
-    blockAlreadyOnBehavior: DuskDawnAlreadyOnBehavior,
-    busy: boolean,
-    onChange: (nextTargets: DuskDawnLightTarget[]) => void,
-    testIdPrefix: string
-  ) {
-    const candidates = this._duskDawnTargetEntities();
-    const targets = this._sanitizeDuskDawnLightTargets(targetsRaw);
-    const existingIds = targets.map((target) => String(target.entity_id || "").trim()).filter(Boolean);
-    const entityIds = [...candidates, ...existingIds.filter((entityId) => !candidates.includes(entityId))];
-    const targetByEntity = new Map(targets.map((target) => [String(target.entity_id || "").trim(), target]));
-
-    return html`
-      <div class="dusk-light-actions" data-testid=${`${testIdPrefix}-actions`}>
-        ${entityIds.length === 0 ? html`<div class="text-muted">No local lights found for this location.</div>` : ""}
-        ${entityIds.map((entityId, index) => {
-          const target = targetByEntity.get(entityId);
-          const included = Boolean(target);
-          const power: "on" | "off" = target?.power === "off" ? "off" : "on";
-          const dimmable = entityId ? this._isDimmableEntity(entityId) : false;
-          const colorCapable = entityId ? this._isColorCapableEntity(entityId) : false;
-          const brightness = this._clampBrightnessPct(target?.brightness_pct, 30);
-          const level = power === "off" ? 0 : brightness;
-          const colorHex = this._normalizeColorHex(target?.color_hex, "#ffffff") || "#ffffff";
-          const alreadyOnBehavior = this._normalizeDuskDawnAlreadyOnBehavior(
-            target?.already_on_behavior || blockAlreadyOnBehavior
-          );
-          const showOnlyIfOff = dimmable;
-          const onlyIfOff = alreadyOnBehavior === "leave_unchanged";
-
-          const upsertTarget = (patch: Partial<DuskDawnLightTarget>) => {
-            const nextTargets = targets.map((item) => ({ ...item }));
-            const targetIndex = nextTargets.findIndex((item) => item.entity_id === entityId);
-            const baseTarget =
-              targetIndex >= 0
-                ? { ...nextTargets[targetIndex] }
-                : this._defaultDuskDawnLightTarget(entityId);
-            const nextTarget: DuskDawnLightTarget = {
-              ...baseTarget,
-              ...patch,
-              entity_id: entityId,
-            };
-
-            if (nextTarget.power === "off") {
-              delete nextTarget.brightness_pct;
-              delete nextTarget.color_hex;
-            } else {
-              if (dimmable) {
-                nextTarget.brightness_pct = this._clampBrightnessPct(nextTarget.brightness_pct, 30);
-              } else {
-                delete nextTarget.brightness_pct;
-              }
-              if (colorCapable) {
-                nextTarget.color_hex = this._normalizeColorHex(nextTarget.color_hex, "#ffffff") || "#ffffff";
-              } else {
-                delete nextTarget.color_hex;
-              }
-            }
-
-            if (targetIndex >= 0) {
-              nextTargets[targetIndex] = nextTarget;
-            } else {
-              nextTargets.push(nextTarget);
-            }
-            onChange(nextTargets);
-          };
-
-          const removeTarget = () => {
-            onChange(targets.filter((item) => item.entity_id !== entityId));
-          };
-
-          return html`
-            <div class="dusk-light-action-row" data-testid=${`${testIdPrefix}-row-${index}`}>
-              <div class="dusk-light-action-grid ${included ? "" : "disabled"}">
-                <input
-                  type="checkbox"
-                  class="switch-input"
-                  .checked=${included}
-                  ?disabled=${busy}
-                  data-testid=${`${testIdPrefix}-include-${index}`}
-                  @change=${(ev: Event) => {
-                    const checked = (ev.target as HTMLInputElement).checked;
-                    if (checked) {
-                      upsertTarget({
-                        power: "on",
-                        already_on_behavior: showOnlyIfOff ? blockAlreadyOnBehavior : "set_target",
-                      });
-                    } else {
-                      removeTarget();
-                    }
+        <div
+          class="sources-inline-help"
+          style="margin-bottom: 8px; display: flex; justify-content: space-between; align-items: baseline; gap: 8px;"
+        >
+          Sources currently contributing to occupancy.
+          ${occupancyActivity.length > 1
+            ? html`
+                <button
+                  class="button button-secondary"
+                  type="button"
+                  style="padding: 2px 8px; font-size: 11px;"
+                  data-testid="recent-events-toggle"
+                  @click=${() => {
+                    this._showRecentOccupancyEvents = !this._showRecentOccupancyEvents;
+                    this.requestUpdate();
                   }}
-                />
-                <div class="dusk-light-entity-meta">
-                  <span>${this._entityName(entityId)}</span>
-                  <code>${entityId}</code>
-                </div>
-                ${dimmable
-                  ? html`
-                      <label class="dusk-level-control">
-                        <input
-                          type="range"
-                          min="0"
-                          max="100"
-                          step="1"
-                          class="dusk-level-slider"
-                          .value=${String(level)}
-                          ?disabled=${busy || !included}
-                          data-testid=${`${testIdPrefix}-level-${index}`}
-                          @input=${(ev: Event) => {
-                            const raw = Number((ev.target as HTMLInputElement).value);
-                            const nextLevel = Number.isFinite(raw)
-                              ? Math.max(0, Math.min(100, Math.round(raw)))
-                              : 0;
-                            if (nextLevel <= 0) {
-                              upsertTarget({ power: "off" });
-                            } else {
-                              upsertTarget({ power: "on", brightness_pct: nextLevel });
-                            }
-                          }}
-                        />
-                        <span class="dusk-level-value">${level}%</span>
-                      </label>
-                    `
-                  : html`
-                      <select
-                        .value=${power}
-                        ?disabled=${busy || !included}
-                        data-testid=${`${testIdPrefix}-power-${index}`}
-                        @change=${(ev: Event) => {
-                          const nextPower: "on" | "off" =
-                            (ev.target as HTMLSelectElement).value === "off" ? "off" : "on";
-                          upsertTarget({ power: nextPower });
-                        }}
-                      >
-                        <option value="on">On</option>
-                        <option value="off">Off</option>
-                      </select>
-                    `}
-                ${included && power === "on" && colorCapable
-                  ? html`
-                      <input
-                        type="color"
-                        class="input"
-                        .value=${colorHex}
-                        ?disabled=${busy}
-                        data-testid=${`${testIdPrefix}-color-${index}`}
-                        @change=${(ev: Event) => {
-                          upsertTarget({
-                            color_hex:
-                              this._normalizeColorHex((ev.target as HTMLInputElement).value, "#ffffff") || "#ffffff",
-                          });
-                        }}
-                      />
-                    `
-                  : html`<span class="text-muted">-</span>`}
-                ${showOnlyIfOff
-                  ? html`
-                      <label class="dusk-off-only-toggle">
-                        <input
-                          type="checkbox"
-                          .checked=${onlyIfOff}
-                          ?disabled=${busy || !included}
-                          data-testid=${`${testIdPrefix}-already-on-${index}`}
-                          @change=${(ev: Event) => {
-                            upsertTarget({
-                              already_on_behavior: (ev.target as HTMLInputElement).checked
-                                ? "leave_unchanged"
-                                : "set_target",
-                            });
-                          }}
-                        />
-                        <span>Only if off</span>
-                      </label>
-                    `
-                  : html`<span class="text-muted">-</span>`}
-              </div>
-            </div>
-          `;
-        })}
-      </div>
-    `;
-  }
-
-  private _renderDuskDawnBlocks(config: DuskDawnConfig, busy: boolean) {
-    const blocks = this._duskDawnBlocks(config);
-    return html`
-      <div data-testid="duskdawn-schedule">
-        <div class="dusk-block-list">
-          ${blocks.length === 0
-            ? html`<div class="text-muted">No lighting rules configured yet.</div>`
-            : blocks.map((block, index) => {
-                const label = block.name?.trim() || `Rule ${index + 1}`;
-                const blockId = String(block.id || "");
-                const editingName = this._editingLightingRuleNameId === blockId;
-                const triggerMode = this._normalizeDuskDawnTriggerMode(block.trigger_mode);
-                const ambientLocked = this._isAmbientConditionLockedByTrigger(triggerMode);
-                const ambientCondition = this._normalizeDuskDawnAmbientCondition(
-                  block.ambient_condition,
-                  triggerMode
-                );
-                const mustBeOccupiedLocked = this._isMustBeOccupiedLockedByTrigger(triggerMode);
-                const mustBeOccupied = this._normalizeDuskDawnMustBeOccupied(
-                  block.must_be_occupied,
-                  triggerMode
-                );
-                const ambientConditionLabel =
-                  ambientCondition === "dark"
-                    ? "Must be dark"
-                    : ambientCondition === "bright"
-                      ? "Must be bright"
-                      : "Ignore ambient";
-                const occupancyConditionLabel = mustBeOccupied ? "Must be occupied" : "Must be vacant";
-                return html`
-                  <div class="dusk-block-row" data-testid=${`duskdawn-block-${blockId}`}>
-                    <div class="dusk-block-head">
-                      ${editingName
-                        ? html`
-                            <input
-                              type="text"
-                              class="input dusk-block-title-input"
-                              .value=${this._editingLightingRuleNameValue}
-                              ?disabled=${busy}
-                              data-testid=${`duskdawn-block-${blockId}-name`}
-                              @input=${(ev: Event) => {
-                                this._editingLightingRuleNameValue = (ev.target as HTMLInputElement).value;
-                                this.requestUpdate();
-                              }}
-                              @blur=${() => this._commitLightingRuleNameEdit(config, blockId, `Rule ${index + 1}`)}
-                              @keydown=${(ev: KeyboardEvent) => {
-                                if (ev.key === "Enter") {
-                                  this._commitLightingRuleNameEdit(config, blockId, `Rule ${index + 1}`);
-                                } else if (ev.key === "Escape") {
-                                  this._cancelLightingRuleNameEdit();
-                                }
-                              }}
-                            />
-                          `
-                        : html`
-                            <button
-                              type="button"
-                              class="dusk-block-title-button"
-                              ?disabled=${busy}
-                              data-testid=${`duskdawn-block-${blockId}-name`}
-                              @click=${() => this._startLightingRuleNameEdit(blockId, label)}
-                            >
-                              ${label}
-                            </button>
-                          `}
-                    </div>
-                    <div class="dusk-rule-row">
-                      <span class="config-label">Trigger</span>
-                      <select
-                        class="dusk-wide-select"
-                        .value=${triggerMode}
-                        ?disabled=${busy}
-                        data-testid=${`duskdawn-block-${blockId}-trigger`}
-                        @change=${(ev: Event) => {
-                          const nextEvent = String((ev.target as HTMLSelectElement).value) as DuskDawnTriggerMode;
-                          this._updateDuskDawnBlock(config, blockId, {
-                            trigger_mode: nextEvent,
-                          });
-                        }}
-                      >
-                        <option value="on_occupied">On occupied</option>
-                        <option value="on_vacant">On vacant</option>
-                        <option value="on_dark">On dark</option>
-                        <option value="on_bright">On bright</option>
-                      </select>
-                    </div>
-                    <div class="dusk-rule-section-title dusk-section-heading">Conditions</div>
-                    <div class="dusk-conditions">
-                    <div class="config-row">
-                      <div>
-                        <div class="config-label">Ambient must be</div>
-                        <div class="config-help">
-                          ${ambientLocked
-                            ? "Derived from trigger."
-                            : "Optional ambient filter at trigger time."}
-                        </div>
-                      </div>
-                      <div class="config-value">
-                        ${ambientLocked
-                          ? html`
-                              <div
-                                class="dusk-condition-derived"
-                                data-testid=${`duskdawn-block-${blockId}-ambient-locked`}
-                              >
-                                <span>${ambientConditionLabel}</span>
-                                <span class="dusk-condition-derived-note">Set by trigger</span>
-                              </div>
-                            `
-                          : html`
-                              <select
-                                class="dusk-wide-select"
-                                .value=${ambientCondition}
-                                ?disabled=${busy}
-                                data-testid=${`duskdawn-block-${blockId}-ambient-condition`}
-                                @change=${(ev: Event) =>
-                                  this._updateDuskDawnBlock(config, blockId, {
-                                    ambient_condition: this._normalizeDuskDawnAmbientCondition(
-                                      (ev.target as HTMLSelectElement).value,
-                                      triggerMode
-                                    ),
-                                  })}
-                              >
-                                <option value="any">Ignore ambient</option>
-                                <option value="dark">Must be dark</option>
-                                <option value="bright">Must be bright</option>
-                              </select>
-                            `}
-                      </div>
-                    </div>
-                    <div class="config-row">
-                      <div>
-                        <div class="config-label">Must be occupied</div>
-                        <div class="config-help">
-                          ${mustBeOccupiedLocked
-                            ? "Derived from trigger."
-                            : "Apply this rule only when the location is occupied at trigger time."}
-                        </div>
-                      </div>
-                      <div class="config-value">
-                        ${mustBeOccupiedLocked
-                          ? html`
-                              <div
-                                class="dusk-condition-derived"
-                                data-testid=${`duskdawn-block-${blockId}-must-be-occupied-locked`}
-                              >
-                                <span>${occupancyConditionLabel}</span>
-                                <span class="dusk-condition-derived-note">Set by trigger</span>
-                              </div>
-                            `
-                          : html`
-                              <input
-                                type="checkbox"
-                                class="switch-input"
-                                .checked=${Boolean(mustBeOccupied)}
-                                ?disabled=${busy}
-                                data-testid=${`duskdawn-block-${blockId}-must-be-occupied`}
-                                @change=${(ev: Event) =>
-                                  this._updateDuskDawnBlock(config, blockId, {
-                                    must_be_occupied: (ev.target as HTMLInputElement).checked,
-                                  })}
-                              />
-                            `}
-                      </div>
-                    </div>
-                    <div class="config-row">
-                      <div>
-                        <div class="config-label">Use time window</div>
-                        <div class="config-help">
-                          Limit this rule to a time range. Crossing midnight is supported.
-                        </div>
-                      </div>
-                      <div class="config-value">
-                        <div class="dusk-time-inline">
-                          <input
-                            type="checkbox"
-                            class="switch-input"
-                            .checked=${Boolean(block.time_condition_enabled)}
-                            ?disabled=${busy}
-                            data-testid=${`duskdawn-block-${blockId}-time-window`}
-                            @change=${(ev: Event) =>
-                              this._updateDuskDawnBlock(config, blockId, {
-                                time_condition_enabled: (ev.target as HTMLInputElement).checked,
-                              })}
-                          />
-                          ${block.time_condition_enabled
-                            ? html`
-                                <div class="dusk-time-inline-fields">
-                                  <label class="dusk-time-field">
-                                    <span class="config-label">Begin</span>
-                                    <input
-                                      type="time"
-                                      class="input dusk-time-input"
-                                      step="60"
-                                      .value=${String(block.start_time || "18:00")}
-                                      ?disabled=${busy}
-                                      data-testid=${`duskdawn-block-${blockId}-start-time`}
-                                      @change=${(ev: Event) =>
-                                        this._updateDuskDawnBlock(config, blockId, {
-                                          start_time: this._normalizeDuskDawnStartTime(
-                                            (ev.target as HTMLInputElement).value,
-                                            String(block.start_time || "18:00")
-                                          ),
-                                        })}
-                                    />
-                                  </label>
-                                  <label class="dusk-time-field">
-                                    <span class="config-label">End</span>
-                                    <input
-                                      type="time"
-                                      class="input dusk-time-input"
-                                      step="60"
-                                      .value=${String(block.end_time || "23:59")}
-                                      ?disabled=${busy}
-                                      data-testid=${`duskdawn-block-${blockId}-end-time`}
-                                      @change=${(ev: Event) =>
-                                        this._updateDuskDawnBlock(config, blockId, {
-                                          end_time: this._normalizeDuskDawnStartTime(
-                                            (ev.target as HTMLInputElement).value,
-                                            String(block.end_time || "23:59")
-                                          ),
-                                        })}
-                                    />
-                                  </label>
-                                </div>
-                              `
-                            : ""}
-                        </div>
-                      </div>
-                    </div>
-                    </div>
-                    <div class="dusk-rule-section-title dusk-section-heading">Actions</div>
-                    ${this._renderDuskDawnBlockLightActions(
-                      block.light_targets,
-                      block.already_on_behavior,
-                      busy,
-                      (nextTargets) =>
-                        this._updateDuskDawnBlockLightTargets(config, blockId, nextTargets),
-                      `duskdawn-block-${blockId}`
-                    )}
-                    <div class="dusk-block-footer">
-                      <button
-                        class="button button-primary dusk-delete-rule-button"
-                        type="button"
-                        data-testid=${`duskdawn-block-${blockId}-delete`}
-                        ?disabled=${busy}
-                        @click=${() => this._removeDuskDawnBlock(config, blockId)}
-                      >
-                        Delete rule
-                      </button>
-                    </div>
-                  </div>
-                `;
-              })}
+                >
+                  ${this._showRecentOccupancyEvents ? "Show less" : "Show all"}
+                </button>
+              `
+            : ""}
         </div>
-        <div class="dusk-list-footer">
-          <button
-            class="button button-primary"
-            type="button"
-            data-testid="duskdawn-block-add-bottom"
-            ?disabled=${busy}
-            @click=${() => this._addDuskDawnBlock()}
-          >
-            Add rule
-          </button>
+        <div class="occupancy-events">
+          ${occupancyEventsToRender.map(
+            (item) => html`
+              <div class="occupancy-event">
+                <span class="occupancy-event-source">${item.sourceLabel}</span>
+                <span class="occupancy-event-meta">${item.stateLabel}</span>
+                ${item.relativeTime ? html`<span class="occupancy-event-meta">${item.relativeTime}</span>` : ""}
+              </div>
+            `
+          )}
         </div>
       </div>
     `;
@@ -3853,17 +3372,45 @@ export class HtLocationInspector extends LitElement {
     const selectedLuxSensor =
       typeof config.lux_sensor === "string" && config.lux_sensor.trim() ? config.lux_sensor.trim() : "";
     const busy = this._savingAmbientConfig;
+    const hasUnsaved = this._ambientDraftDirty;
 
     return html`
       <div class="card-section" data-testid="ambient-section">
-        <div class="section-title">
-          <ha-icon .icon=${"mdi:weather-sunny"}></ha-icon>
-          Ambient
+        <div class="section-title-row">
+          <div class="section-title">
+            <ha-icon .icon=${"mdi:weather-sunny"}></ha-icon>
+            Ambient
+          </div>
+          <div class="section-title-actions">
+            <button
+              class="button button-secondary"
+              type="button"
+              data-testid="ambient-discard-button"
+              ?disabled=${busy || !hasUnsaved}
+              @click=${() => this._discardAmbientDraft()}
+            >
+              Discard
+            </button>
+            <button
+              class="dusk-save-button ${hasUnsaved ? "dirty" : ""}"
+              type="button"
+              data-testid="ambient-save-button"
+              ?disabled=${busy || !hasUnsaved}
+              @click=${() => this._saveAmbientDraft()}
+            >
+              ${busy ? "Saving..." : "Save changes"}
+            </button>
+          </div>
         </div>
 
         ${this._ambientReadingError
           ? html`
               <div class="policy-warning" data-testid="ambient-error">${this._ambientReadingError}</div>
+            `
+          : ""}
+        ${this._ambientSaveError
+          ? html`
+              <div class="policy-warning" data-testid="ambient-save-error">${this._ambientSaveError}</div>
             `
           : ""}
 
@@ -3898,10 +3445,11 @@ export class HtLocationInspector extends LitElement {
               data-testid="ambient-lux-sensor-select"
               @change=${(ev: Event) => {
                 const value = (ev.target as HTMLSelectElement).value.trim();
-                void this._updateAmbientConfig({
+                this._setAmbientDraft({
                   ...config,
                   lux_sensor: value || null,
                 });
+                this._scheduleAmbientReadingReload();
               }}
             >
               <option value="">Use inherited/default sensor</option>
@@ -3922,11 +3470,13 @@ export class HtLocationInspector extends LitElement {
               .checked=${Boolean(config.inherit_from_parent)}
               ?disabled=${busy}
               data-testid="ambient-inherit-toggle"
-              @change=${(ev: Event) =>
-                void this._updateAmbientConfig({
+              @change=${(ev: Event) => {
+                this._setAmbientDraft({
                   ...config,
                   inherit_from_parent: (ev.target as HTMLInputElement).checked,
-                })}
+                });
+                this._scheduleAmbientReadingReload();
+              }}
             />
           </div>
         </div>
@@ -3947,11 +3497,12 @@ export class HtLocationInspector extends LitElement {
               data-testid="ambient-dark-threshold"
               @change=${(ev: Event) => {
                 const nextDark = Math.max(0, Number((ev.target as HTMLInputElement).value) || 0);
-                void this._updateAmbientConfig({
+                this._setAmbientDraft({
                   ...config,
                   dark_threshold: nextDark,
                   bright_threshold: Math.max(nextDark + 1, Number(config.bright_threshold) || nextDark + 1),
                 });
+                this._scheduleAmbientReadingReload();
               }}
             />
           </div>
@@ -3976,10 +3527,11 @@ export class HtLocationInspector extends LitElement {
                   darkThreshold + 1,
                   Number((ev.target as HTMLInputElement).value) || darkThreshold + 1
                 );
-                void this._updateAmbientConfig({
+                this._setAmbientDraft({
                   ...config,
                   bright_threshold: nextBright,
                 });
+                this._scheduleAmbientReadingReload();
               }}
             />
           </div>
@@ -3997,11 +3549,13 @@ export class HtLocationInspector extends LitElement {
               .checked=${Boolean(config.fallback_to_sun)}
               ?disabled=${busy}
               data-testid="ambient-fallback-to-sun-toggle"
-              @change=${(ev: Event) =>
-                void this._updateAmbientConfig({
+              @change=${(ev: Event) => {
+                this._setAmbientDraft({
                   ...config,
                   fallback_to_sun: (ev.target as HTMLInputElement).checked,
-                })}
+                });
+                this._scheduleAmbientReadingReload();
+              }}
             />
           </div>
         </div>
@@ -4018,11 +3572,13 @@ export class HtLocationInspector extends LitElement {
               .checked=${Boolean(config.assume_dark_on_error)}
               ?disabled=${busy}
               data-testid="ambient-assume-dark-on-error-toggle"
-              @change=${(ev: Event) =>
-                void this._updateAmbientConfig({
+              @change=${(ev: Event) => {
+                this._setAmbientDraft({
                   ...config,
                   assume_dark_on_error: (ev.target as HTMLInputElement).checked,
-                })}
+                });
+                this._scheduleAmbientReadingReload();
+              }}
             />
           </div>
         </div>
@@ -4069,6 +3625,28 @@ export class HtLocationInspector extends LitElement {
       mappedHostId === hostId
     );
     const currentLabel = shadowAreaId ? this._managedShadowAreaLabel(shadowAreaId) : "Not configured";
+    const mismatchReasons: string[] = [];
+    if (shadowAreaId && !shadowArea) {
+      mismatchReasons.push("configured system area was not found");
+    }
+    if (shadowArea && !shadowArea.ha_area_id) {
+      mismatchReasons.push("location is missing linked HA area id");
+    }
+    if (shadowArea && shadowArea.parent_id !== hostId) {
+      mismatchReasons.push(`parent mismatch (expected ${hostId}, got ${shadowArea.parent_id || "root"})`);
+    }
+    if (shadowArea && !hasExpectedRole) {
+      mismatchReasons.push('missing role tag "managed_shadow"');
+    }
+    if (shadowArea && mappedHostId !== hostId) {
+      mismatchReasons.push(
+        `shadow host mapping mismatch (expected ${hostId}, got ${mappedHostId || "unset"})`
+      );
+    }
+    const mismatchReasonText = mismatchReasons.length
+      ? mismatchReasons.join("; ")
+      : "metadata mismatch";
+    const needsRepair = !shadowAreaId || !isConsistent;
 
     return html`
       <div class="card-section" data-testid="managed-shadow-section">
@@ -4085,15 +3663,32 @@ export class HtLocationInspector extends LitElement {
         </div>
         ${!shadowAreaId
           ? html`
-              <div class="policy-warning">
-                Missing managed system area. It will be created automatically during sync/reconciliation.
+              <div class="policy-warning" data-testid="managed-shadow-warning">
+                Missing managed system area mapping for ${hostId}. Action: run Sync Import to create and
+                relink the managed system area.
               </div>
             `
           : ""}
         ${shadowAreaId && !isConsistent
           ? html`
-              <div class="policy-warning">
-                Managed system area metadata is inconsistent. Topomation will repair it on next reconciliation.
+              <div class="policy-warning" data-testid="managed-shadow-warning">
+                Managed system area mapping is inconsistent for ${hostId}: ${mismatchReasonText}. Action:
+                run Sync Import to reconcile metadata.
+              </div>
+            `
+          : ""}
+        ${needsRepair
+          ? html`
+              <div class="advanced-toggle-row">
+                <button
+                  class="button button-secondary"
+                  type="button"
+                  data-testid="managed-shadow-sync-import"
+                  ?disabled=${this._syncImportInProgress}
+                  @click=${() => void this._runSyncImport()}
+                >
+                  ${this._syncImportInProgress ? "Running Sync Import..." : "Run Sync Import"}
+                </button>
               </div>
             `
           : ""}
@@ -4124,6 +3719,59 @@ export class HtLocationInspector extends LitElement {
       .filter((loc) => (loc.parent_id ?? null) === floorParentId)
       .filter((loc) => getLocationType(loc) === "area")
       .filter((loc) => !this._isManagedShadowLocation(loc, managedShadowIds))
+      .sort((left, right) => left.name.localeCompare(right.name));
+  }
+
+  private _locationById(locationId: string | null | undefined): Location | undefined {
+    if (!locationId) return undefined;
+    return (this.allLocations || []).find((candidate) => candidate.id === locationId);
+  }
+
+  private _syncLocationScope(): SyncLocationScope | null {
+    if (!this.location) return null;
+    const currentType = getLocationType(this.location);
+    const parentId = this.location.parent_id ?? null;
+    const parent = this._locationById(parentId);
+    if (!parentId || !parent) return null;
+    const parentType = getLocationType(parent);
+
+    if (
+      currentType === "area" &&
+      (parentType === "area" || parentType === "floor" || parentType === "building")
+    ) {
+      return { candidateType: "area", parentId, parentType };
+    }
+    if (currentType === "floor" && parentType === "building") {
+      return { candidateType: "floor", parentId, parentType };
+    }
+    return null;
+  }
+
+  private _syncIneligibleMessage(): string {
+    if (!this.location) return "Sync Locations is unavailable for this selection.";
+    const currentType = getLocationType(this.location);
+    if (currentType === "area") {
+      return "Sync Locations is available for area locations whose parent is an area, floor, or building.";
+    }
+    if (currentType === "floor") {
+      return "Sync Locations is available for floor locations that are siblings under the same building.";
+    }
+    return "Sync Locations is available only for eligible area/floor sibling sets.";
+  }
+
+  private _syncLocationCandidates(): Location[] {
+    if (!this.location) return [];
+    const scope = this._syncLocationScope();
+    if (!scope) return [];
+    const managedShadowIds = this._managedShadowLocationIds();
+
+    return (this.allLocations || [])
+      .filter((loc) => loc.id !== this.location!.id)
+      .filter((loc) => (loc.parent_id ?? null) === scope.parentId)
+      .filter((loc) => getLocationType(loc) === scope.candidateType)
+      .filter(
+        (loc) => scope.candidateType !== "area" || !this._isManagedShadowLocation(loc, managedShadowIds)
+      )
       .sort((left, right) => left.name.localeCompare(right.name));
   }
 
@@ -4171,7 +3819,7 @@ export class HtLocationInspector extends LitElement {
       return [];
     }
 
-    const raw = this._stagedLinkedLocations ?? config.linked_locations;
+    const raw = config.linked_locations;
     return this._normalizeLinkedLocationIds(raw, allowedCandidates, this.location.id);
   }
 
@@ -4180,27 +3828,22 @@ export class HtLocationInspector extends LitElement {
       return [];
     }
 
-    const allowedCandidates = new Set(this._linkedLocationCandidates().map((candidate) => candidate.id));
+    const allowedCandidates = new Set(this._syncLocationCandidates().map((candidate) => candidate.id));
     if (allowedCandidates.size === 0) {
       return [];
     }
 
-    const raw = this._stagedSyncLocations ?? config.sync_locations;
+    const raw = config.sync_locations;
     return this._normalizeLinkedLocationIds(raw, allowedCandidates, this.location.id);
   }
 
-  private _linkedLocationArraysEqual(left: string[] | undefined, right: string[]): boolean {
-    if (!left || left.length !== right.length) return false;
-    return left.every((locationId, index) => locationId === right[index]);
-  }
-
   private _candidateLinkedLocationIds(candidate: Location): string[] {
-    const raw = ((candidate.modules?.occupancy || {}) as OccupancyConfig).linked_locations;
+    const raw = this._occupancyConfigForLocation(candidate).linked_locations;
     return this._normalizeLinkedLocationIds(raw, undefined, candidate.id);
   }
 
   private _candidateSyncLocationIds(candidate: Location): string[] {
-    const raw = ((candidate.modules?.occupancy || {}) as OccupancyConfig).sync_locations;
+    const raw = this._occupancyConfigForLocation(candidate).sync_locations;
     return this._normalizeLinkedLocationIds(raw, undefined, candidate.id);
   }
 
@@ -4210,76 +3853,8 @@ export class HtLocationInspector extends LitElement {
     return this._candidateLinkedLocationIds(candidate).includes(this.location.id);
   }
 
-  private _persistLinkedLocationsFor(location: Location, linkedLocationIds: string[]): Promise<void> {
-    const occupancy = ((location.modules?.occupancy || {}) as OccupancyConfig) || {};
-    const nextConfig: OccupancyConfig = {
-      ...occupancy,
-      linked_locations: linkedLocationIds,
-    };
-
-    return this.hass
-      .callWS(
-        this._withEntryId({
-          type: "topomation/locations/set_module_config",
-          location_id: location.id,
-          module_id: "occupancy",
-          config: nextConfig,
-        })
-      )
-      .then(() => {
-        location.modules = location.modules || {};
-        location.modules.occupancy = nextConfig;
-        this.requestUpdate();
-      });
-  }
-
-  private _persistSyncLocationsFor(location: Location, syncLocationIds: string[]): Promise<void> {
-    const occupancy = ((location.modules?.occupancy || {}) as OccupancyConfig) || {};
-    const nextConfig: OccupancyConfig = {
-      ...occupancy,
-      sync_locations: syncLocationIds,
-    };
-
-    return this.hass
-      .callWS(
-        this._withEntryId({
-          type: "topomation/locations/set_module_config",
-          location_id: location.id,
-          module_id: "occupancy",
-          config: nextConfig,
-        })
-      )
-      .then(() => {
-        location.modules = location.modules || {};
-        location.modules.occupancy = nextConfig;
-        this.requestUpdate();
-      });
-  }
-
-  private _enqueueLinkedPersist(operation: () => Promise<void>): void {
-    this._linkedPersistQueueDepth += 1;
-    this._savingLinkedLocations = true;
-    this._linkedPersistChain = this._linkedPersistChain
-      .then(operation)
-      .catch((err: any) => {
-        const message = err?.message || "Failed to save linked rooms";
-        console.error("Failed to persist linked room update", err);
-        this._showToast(message, "error");
-      })
-      .finally(() => {
-        this._linkedPersistQueueDepth = Math.max(0, this._linkedPersistQueueDepth - 1);
-        if (this._linkedPersistQueueDepth === 0) {
-          this._savingLinkedLocations = false;
-        }
-      });
-  }
-
   private _toggleLinkedLocation(linkedLocationId: string, enabled: boolean): void {
-    if (!this.location) return;
-    const sourceLocation = this.location;
-    const sourceLocationId = sourceLocation.id;
     const config = this._getOccupancyConfig();
-
     const next = new Set(this._linkedLocationIds(config));
     if (enabled) {
       next.add(linkedLocationId);
@@ -4290,24 +3865,15 @@ export class HtLocationInspector extends LitElement {
     const nextLinked = [...next].sort((left, right) =>
       this._locationName(left).localeCompare(this._locationName(right))
     );
-
-    this._stagedLinkedLocations = nextLinked;
-    this._enqueueLinkedPersist(async () => {
-      await this._persistLinkedLocationsFor(sourceLocation, nextLinked);
-      if (
-        this.location?.id === sourceLocationId &&
-        this._linkedLocationArraysEqual(this._stagedLinkedLocations, nextLinked)
-      ) {
-        this._stagedLinkedLocations = undefined;
-      }
-      this._showToast("Linked rooms updated", "success");
+    this._setOccupancyDraft({
+      ...config,
+      linked_locations: nextLinked,
     });
   }
 
   private _toggleSyncLocation(candidate: Location, enabled: boolean): void {
     if (!this.location) return;
-    const sourceLocation = this.location;
-    const sourceLocationId = sourceLocation.id;
+    const sourceLocationId = this.location.id;
     const sourceConfig = this._getOccupancyConfig();
     const sourceSyncSet = new Set(this._syncLocationIds(sourceConfig));
     const candidateSyncSet = new Set(this._candidateSyncLocationIds(candidate));
@@ -4327,89 +3893,67 @@ export class HtLocationInspector extends LitElement {
       this._locationName(left).localeCompare(this._locationName(right))
     );
 
-    this._stagedSyncLocations = nextSourceSynced;
-    this._enqueueLinkedPersist(async () => {
-      await this._persistSyncLocationsFor(sourceLocation, nextSourceSynced);
-      if (
-        this.location?.id === sourceLocationId &&
-        this._linkedLocationArraysEqual(this._stagedSyncLocations, nextSourceSynced)
-      ) {
-        this._stagedSyncLocations = undefined;
-      }
-      await this._persistSyncLocationsFor(candidate, nextCandidateSynced);
-      this._showToast(
-        enabled
-          ? `Synced occupancy with ${candidate.name}`
-          : `Removed occupancy sync with ${candidate.name}`,
-        "success"
-      );
+    this._setOccupancyDraft({
+      ...sourceConfig,
+      sync_locations: nextSourceSynced,
+    });
+    this._setPendingOccupancyForLocation(candidate.id, {
+      ...this._occupancyConfigForLocation(candidate),
+      sync_locations: nextCandidateSynced,
     });
   }
 
   private _toggleTwoWayLinkedLocation(candidate: Location, enabled: boolean): void {
     if (!this.location) return;
-    const sourceLocation = this.location;
-    const sourceLocationId = sourceLocation.id;
     const sourceConfig = this._getOccupancyConfig();
     const sourceLinkedSet = new Set(this._linkedLocationIds(sourceConfig));
-
-    let nextSourceLinked: string[] | undefined;
+    let nextSourceLinked = [...sourceLinkedSet].sort((left, right) =>
+      this._locationName(left).localeCompare(this._locationName(right))
+    );
     if (enabled && !sourceLinkedSet.has(candidate.id)) {
       sourceLinkedSet.add(candidate.id);
       nextSourceLinked = [...sourceLinkedSet].sort((left, right) =>
         this._locationName(left).localeCompare(this._locationName(right))
       );
-      this._stagedLinkedLocations = nextSourceLinked;
     }
 
     const candidateLinked = new Set(this._candidateLinkedLocationIds(candidate));
     if (enabled) {
-      candidateLinked.add(sourceLocationId);
+      candidateLinked.add(this.location.id);
     } else {
-      candidateLinked.delete(sourceLocationId);
+      candidateLinked.delete(this.location.id);
     }
     const nextCandidateLinked = [...candidateLinked].sort((left, right) =>
       this._locationName(left).localeCompare(this._locationName(right))
     );
-
-    this._enqueueLinkedPersist(async () => {
-      if (nextSourceLinked) {
-        await this._persistLinkedLocationsFor(sourceLocation, nextSourceLinked);
-        if (
-          this.location?.id === sourceLocationId &&
-          this._linkedLocationArraysEqual(this._stagedLinkedLocations, nextSourceLinked)
-        ) {
-          this._stagedLinkedLocations = undefined;
-        }
-      }
-      await this._persistLinkedLocationsFor(candidate, nextCandidateLinked);
-      this._showToast(
-        enabled
-          ? `Enabled two-way link with ${candidate.name}`
-          : `Disabled two-way link with ${candidate.name}`,
-        "success"
-      );
+    this._setOccupancyDraft({
+      ...sourceConfig,
+      linked_locations: nextSourceLinked,
+    });
+    this._setPendingOccupancyForLocation(candidate.id, {
+      ...this._occupancyConfigForLocation(candidate),
+      linked_locations: nextCandidateLinked,
     });
   }
 
   private _renderSyncLocationsSection(config: OccupancyConfig) {
     if (!this.location) return "";
-    const eligible = !!this._linkedLocationFloorParentId();
-    if (!eligible) {
+    const scope = this._syncLocationScope();
+    if (!scope) {
       return html`
         <div class="card-section">
           <div class="section-title">
             <ha-icon .icon=${"mdi:link-lock"}></ha-icon>
-            Sync Rooms
+            Sync Locations
           </div>
           <div class="subsection-help">
-            Sync Rooms is available only for area locations directly under a floor.
+            ${this._syncIneligibleMessage()}
           </div>
         </div>
       `;
     }
 
-    const candidates = this._linkedLocationCandidates();
+    const candidates = this._syncLocationCandidates();
     const synced = this._syncLocationIds(config);
     const syncedSet = new Set(synced);
     const syncedLabel = synced.length
@@ -4417,18 +3961,24 @@ export class HtLocationInspector extends LitElement {
       : "None";
 
     return html`
-      <div class="card-section" data-testid="sync-rooms-section">
+      <div class="card-section" data-testid="sync-locations-section">
         <div class="section-title">
           <ha-icon .icon=${"mdi:link-lock"}></ha-icon>
-          Sync Rooms
+          Sync Locations
         </div>
         <div class="subsection-help">
-          <strong>Recommended:</strong> synced rooms share the same occupancy state and timeout.
-          Any occupancy change in one synced room is mirrored to all others.
+          <strong>Recommended:</strong> synced locations share the same occupancy state and timeout.
+          Any occupancy change in one synced location is mirrored to all others.
         </div>
         <div class="linked-location-meta">Synced with: ${syncedLabel}</div>
         ${candidates.length === 0
-          ? html`<div class="adjacency-empty">No sibling area candidates available on this floor.</div>`
+          ? html`
+              <div class="adjacency-empty">
+                ${scope.candidateType === "floor"
+                  ? "No eligible sibling floors found under this building."
+                  : `No eligible sibling areas found under this ${scope.parentType}.`}
+              </div>
+            `
           : html`
               <div class="linked-location-list">
                 ${candidates.map((candidate) => {
@@ -4547,7 +4097,7 @@ export class HtLocationInspector extends LitElement {
         </div>
         <div class="subsection-help">
           Directional contributors and movement handoff are advanced tools.
-          Most homes should start with Sync Rooms.
+          Most homes should start with Sync Locations.
         </div>
         <div class="advanced-toggle-row">
           <button
@@ -4959,9 +4509,9 @@ export class HtLocationInspector extends LitElement {
       <div class="runtime-summary">
         <div class="runtime-summary-head">
           <span class="status-chip ${occupied ? "occupied" : "vacant"}">${occupancyLabel}</span>
-          <span class="status-chip ${lockState.isLocked ? "locked" : ""}">
-            ${lockState.isLocked ? "Locked" : "Unlocked"}
-          </span>
+          ${lockState.isLocked
+            ? html`<span class="status-chip locked">Locked</span>`
+            : html`<span class="header-lock-state">Unlocked</span>`}
         </div>
         <div class="runtime-summary-grid">
           <div class="runtime-summary-key">Vacant at</div>
@@ -5706,7 +5256,7 @@ export class HtLocationInspector extends LitElement {
         <button
           class="button button-secondary"
           data-testid="add-external-source-inline"
-          ?disabled=${this._savingSource || !entityId || (selectedKey ? existing.has(selectedKey) : false)}
+          ?disabled=${this._savingOccupancyDraft || !entityId || (selectedKey ? existing.has(selectedKey) : false)}
           @click=${() => {
             this._addSourceWithDefaults(entityId, config, {
               resetExternalPicker: true,
@@ -5762,7 +5312,7 @@ export class HtLocationInspector extends LitElement {
                   (ev.target as HTMLSelectElement).value
                 );
                 const defaults = this._defaultWiabTimeouts(nextPreset);
-                void this._updateConfig({
+                this._setOccupancyDraft({
                   ...config,
                   wiab: {
                     ...wiab,
@@ -6020,7 +5570,7 @@ export class HtLocationInspector extends LitElement {
     const wiab = this._getWiabConfig(config);
     const fallback = wiab[key] ?? this._defaultWiabTimeouts(wiab.preset || "off")[key];
     const nextValue = this._clampWiabSeconds(value, fallback);
-    void this._updateConfig({
+    this._setOccupancyDraft({
       ...config,
       wiab: {
         ...wiab,
@@ -6039,7 +5589,7 @@ export class HtLocationInspector extends LitElement {
     const wiab = this._getWiabConfig(config);
     const current = wiab[listKey] || [];
     if (current.includes(normalizedEntityId)) return false;
-    void this._updateConfig({
+    this._setOccupancyDraft({
       ...config,
       wiab: {
         ...wiab,
@@ -6058,7 +5608,7 @@ export class HtLocationInspector extends LitElement {
     const current = wiab[listKey] || [];
     const filtered = current.filter((candidate) => candidate !== entityId);
     if (filtered.length === current.length) return;
-    void this._updateConfig({
+    this._setOccupancyDraft({
       ...config,
       wiab: {
         ...wiab,
@@ -6313,16 +5863,49 @@ export class HtLocationInspector extends LitElement {
       .toLowerCase();
     if (normalized === "on_occupied") return "on_occupied";
     if (normalized === "on_vacant") return "on_vacant";
+    if (normalized === "on_dark") return "on_dark";
+    if (normalized === "on_bright") return "on_bright";
     if (normalized === "occupied") return "on_occupied";
     if (normalized === "vacant") return "on_vacant";
+    if (normalized === "dark") return "on_dark";
+    if (normalized === "bright") return "on_bright";
     return "on_occupied";
   }
 
   private _defaultActionAmbientConditionForTrigger(
     triggerType: TopomationActionRule["trigger_type"]
   ): "any" | "dark" | "bright" {
-    void triggerType;
+    if (triggerType === "on_dark") return "dark";
+    if (triggerType === "on_bright") return "bright";
     return "any";
+  }
+
+  private _lockedActionAmbientConditionForTrigger(
+    triggerType: TopomationActionRule["trigger_type"]
+  ): "dark" | "bright" | undefined {
+    if (triggerType === "on_dark") return "dark";
+    if (triggerType === "on_bright") return "bright";
+    return undefined;
+  }
+
+  private _isActionAmbientConditionLockedByTrigger(
+    triggerType: TopomationActionRule["trigger_type"]
+  ): boolean {
+    return this._lockedActionAmbientConditionForTrigger(triggerType) !== undefined;
+  }
+
+  private _lockedActionMustBeOccupiedForTrigger(
+    triggerType: TopomationActionRule["trigger_type"]
+  ): boolean | undefined {
+    if (triggerType === "on_occupied") return true;
+    if (triggerType === "on_vacant") return false;
+    return undefined;
+  }
+
+  private _isActionMustBeOccupiedLockedByTrigger(
+    triggerType: TopomationActionRule["trigger_type"]
+  ): boolean {
+    return this._lockedActionMustBeOccupiedForTrigger(triggerType) !== undefined;
   }
 
   private _actionTriggerLabel(triggerType: TopomationActionRule["trigger_type"]): string {
@@ -6341,11 +5924,16 @@ export class HtLocationInspector extends LitElement {
   private _autoActionRuleName(rule: TopomationActionRule, index: number): string {
     const triggerType = this._normalizeActionTriggerType(rule.trigger_type);
     let name = this._actionTriggerLabel(triggerType);
-    const entityId = String(rule.action_entity_id || "").trim();
+    const targets = this._actionTargetsForRule(rule);
+    const primaryAction = targets[0];
+    const entityId = String(primaryAction?.entity_id || rule.action_entity_id || "").trim();
     if (entityId) {
       name = `${name}: ${this._entityName(entityId)}`;
+      if (targets.length > 1) {
+        name = `${name} +${targets.length - 1}`;
+      }
     }
-    const service = this._serviceLabel(rule.action_service);
+    const service = this._serviceLabel(primaryAction?.service || rule.action_service);
     if (service) {
       name = `${name} (${service})`;
     }
@@ -6370,6 +5958,10 @@ export class HtLocationInspector extends LitElement {
     value: unknown,
     triggerType: TopomationActionRule["trigger_type"]
   ): "any" | "dark" | "bright" {
+    const lockedAmbient = this._lockedActionAmbientConditionForTrigger(triggerType);
+    if (lockedAmbient !== undefined) {
+      return lockedAmbient;
+    }
     const normalized = String(value || "")
       .trim()
       .toLowerCase();
@@ -6377,6 +5969,84 @@ export class HtLocationInspector extends LitElement {
       return normalized;
     }
     return this._defaultActionAmbientConditionForTrigger(triggerType);
+  }
+
+  private _normalizeActionMustBeOccupied(
+    value: unknown,
+    triggerType: TopomationActionRule["trigger_type"]
+  ): boolean {
+    const lockedMustBeOccupied = this._lockedActionMustBeOccupiedForTrigger(triggerType);
+    if (lockedMustBeOccupied !== undefined) {
+      return lockedMustBeOccupied;
+    }
+    return Boolean(value);
+  }
+
+  private _normalizeActionTargets(
+    rawTargets: unknown,
+    triggerType: TopomationActionRule["trigger_type"]
+  ): RuleActionTarget[] {
+    if (!Array.isArray(rawTargets)) return [];
+    const normalized: RuleActionTarget[] = [];
+    const seenEntityIds = new Set<string>();
+    for (const rawTarget of rawTargets) {
+      if (!rawTarget || typeof rawTarget !== "object" || Array.isArray(rawTarget)) continue;
+      const entityId = String((rawTarget as { entity_id?: unknown }).entity_id || "").trim();
+      if (!entityId || seenEntityIds.has(entityId)) continue;
+      const serviceRaw = String((rawTarget as { service?: unknown }).service || "").trim();
+      const service = serviceRaw || this._defaultActionServiceForTrigger(entityId, triggerType);
+      const data = this._normalizeActionDataForRule(
+        (rawTarget as { data?: unknown }).data,
+        entityId,
+        service
+      );
+      normalized.push({
+        entity_id: entityId,
+        service,
+        ...(data ? { data } : {}),
+      });
+      seenEntityIds.add(entityId);
+    }
+    return normalized;
+  }
+
+  private _actionTargetsForRule(rule: Partial<TopomationActionRule>): RuleActionTarget[] {
+    const triggerType = this._normalizeActionTriggerType(rule.trigger_type);
+    const normalizedTargets = this._normalizeActionTargets(
+      (rule as { actions?: unknown }).actions,
+      triggerType
+    );
+    if (normalizedTargets.length > 0) {
+      return normalizedTargets;
+    }
+
+    const entityId = String(rule.action_entity_id || "").trim();
+    if (!entityId) return [];
+    const serviceRaw = String(rule.action_service || "").trim();
+    const service = serviceRaw || this._defaultActionServiceForTrigger(entityId, triggerType);
+    const data = this._normalizeActionDataForRule(rule.action_data, entityId, service);
+    return [
+      {
+        entity_id: entityId,
+        service,
+        ...(data ? { data } : {}),
+      },
+    ];
+  }
+
+  private _setActionTargetsForRule(
+    rule: Partial<TopomationActionRule>,
+    nextTargetsRaw: RuleActionTarget[]
+  ): Pick<TopomationActionRule, "actions" | "action_entity_id" | "action_service" | "action_data"> {
+    const triggerType = this._normalizeActionTriggerType(rule.trigger_type);
+    const nextTargets = this._normalizeActionTargets(nextTargetsRaw, triggerType);
+    const primary = nextTargets[0];
+    return {
+      actions: nextTargets,
+      action_entity_id: primary?.entity_id,
+      action_service: primary?.service,
+      action_data: primary?.data,
+    };
   }
 
   private _normalizeActionTime(value: unknown, fallback: string): string {
@@ -6428,19 +6098,62 @@ export class HtLocationInspector extends LitElement {
     triggerType: TopomationActionRule["trigger_type"]
   ): string {
     const domain = String(entityId || "").split(".", 1)[0];
+    const prefersOff = triggerType === "on_vacant" || triggerType === "on_bright";
     if (domain === "media_player") {
-      if (triggerType === "on_vacant") {
-        return "media_stop";
-      }
-      return "media_play";
+      return prefersOff ? "media_stop" : "media_play";
     }
     if (domain === "switch") {
-      return triggerType === "on_vacant" ? "turn_off" : "turn_on";
+      return prefersOff ? "turn_off" : "turn_on";
     }
-    if (triggerType === "on_vacant") {
+    if (domain === "light") {
+      return prefersOff ? "turn_off" : "turn_on";
+    }
+    if (prefersOff) {
       return "turn_off";
     }
     return "turn_on";
+  }
+
+  private _normalizeActionBrightnessPct(rawValue: unknown, fallback = 30): number {
+    const numeric = Number(rawValue);
+    if (Number.isFinite(numeric) && numeric > 0) {
+      return Math.max(1, Math.min(100, Math.round(numeric)));
+    }
+    return Math.max(1, Math.min(100, Math.round(fallback)));
+  }
+
+  private _normalizeActionDataForRule(
+    rawData: unknown,
+    actionEntityId: string,
+    actionService: string
+  ): Record<string, unknown> | undefined {
+    if (!rawData || typeof rawData !== "object" || Array.isArray(rawData)) {
+      return undefined;
+    }
+    const normalizedEntityId = String(actionEntityId || "").trim();
+    const normalizedService = String(actionService || "").trim();
+    const data = { ...(rawData as Record<string, unknown>) };
+    delete data.entity_id;
+
+    const dimmableLightTurnOn =
+      normalizedEntityId.startsWith("light.") &&
+      this._isDimmableEntity(normalizedEntityId) &&
+      normalizedService === "turn_on";
+
+    if (Object.prototype.hasOwnProperty.call(data, "brightness_pct")) {
+      if (dimmableLightTurnOn) {
+        data.brightness_pct = this._normalizeActionBrightnessPct(data.brightness_pct, 30);
+      } else {
+        delete data.brightness_pct;
+      }
+    }
+
+    for (const [key, value] of Object.entries(data)) {
+      if (value === undefined || value === null || value === "") {
+        delete data[key];
+      }
+    }
+    return Object.keys(data).length > 0 ? data : undefined;
   }
 
   private _actionServiceOptionsForRule(
@@ -6475,6 +6188,13 @@ export class HtLocationInspector extends LitElement {
         { value: "toggle", label: "Toggle" },
       ];
     }
+    if (domain === "light") {
+      return [
+        { value: "turn_on", label: "Turn on" },
+        { value: "turn_off", label: "Turn off" },
+        { value: "toggle", label: "Toggle" },
+      ];
+    }
     const defaultService = this._defaultActionServiceForTrigger(normalizedEntityId, triggerType);
     return [
       { value: "turn_on", label: "Turn on" },
@@ -6483,15 +6203,16 @@ export class HtLocationInspector extends LitElement {
   }
 
   private _actionDomainsForTab(tab: DeviceAutomationTab): string[] {
-    if (tab === "appliances") return ["switch"];
+    if (tab === "lighting") return ["light"];
     if (tab === "media") return ["media_player"];
-    return ["fan"];
+    return ["fan", "switch"];
   }
 
   private _tabForActionEntity(entityId: string): DeviceAutomationTab | undefined {
     const domain = String(entityId || "").split(".", 1)[0];
-    if (domain === "switch") return "appliances";
+    if (domain === "light") return "lighting";
     if (domain === "media_player") return "media";
+    if (domain === "switch") return "hvac";
     if (domain === "fan") return "hvac";
     return undefined;
   }
@@ -6501,7 +6222,7 @@ export class HtLocationInspector extends LitElement {
     if (!stateObj) return false;
     const domain = entityId.split(".", 1)[0];
     if (!tab) {
-      return domain === "switch" || domain === "media_player" || domain === "fan";
+      return domain === "light" || domain === "switch" || domain === "media_player" || domain === "fan";
     }
     return this._actionDomainsForTab(tab).includes(domain);
   }
@@ -6529,20 +6250,16 @@ export class HtLocationInspector extends LitElement {
     index: number
   ): TopomationActionRule {
     const triggerType = this._normalizeActionTriggerType(rule.trigger_type);
-    const candidates = this._actionRuleTargetEntities();
-    const fallbackEntity = candidates[0] || "";
-    const actionEntityId =
-      typeof rule.action_entity_id === "string" && rule.action_entity_id.trim().length > 0
-        ? rule.action_entity_id
-        : fallbackEntity;
-    const actionService =
-      typeof rule.action_service === "string" && rule.action_service.trim().length > 0
-        ? rule.action_service
-        : this._defaultActionServiceForTrigger(actionEntityId, triggerType);
     const id =
       typeof rule.id === "string" && rule.id.trim().length > 0
         ? rule.id
         : `action_rule_${index + 1}`;
+    const explicitTargets = this._actionTargetsForRule(rule);
+    const actions = explicitTargets;
+    const primaryAction = actions[0];
+    const actionEntityId = primaryAction?.entity_id;
+    const actionService = primaryAction?.service;
+    const actionData = primaryAction?.data;
     const ruleUuid = this._normalizeRuleUuid(rule.rule_uuid, id);
     return {
       id,
@@ -6556,13 +6273,15 @@ export class HtLocationInspector extends LitElement {
           : `Rule ${index + 1}`,
       rule_uuid: ruleUuid,
       trigger_type: triggerType,
+      actions,
       action_entity_id: actionEntityId || undefined,
       action_service: actionService || undefined,
+      action_data: actionData,
       ambient_condition: this._normalizeActionAmbientCondition(
         rule.ambient_condition,
         triggerType
       ),
-      must_be_occupied: Boolean(rule.must_be_occupied),
+      must_be_occupied: this._normalizeActionMustBeOccupied(rule.must_be_occupied, triggerType),
       time_condition_enabled: Boolean(rule.time_condition_enabled),
       start_time: this._normalizeActionTime(rule.start_time, "18:00"),
       end_time: this._normalizeActionTime(rule.end_time, "23:59"),
@@ -6588,10 +6307,112 @@ export class HtLocationInspector extends LitElement {
     });
   }
 
+  private _legacyLightingRulesFromDuskDawn(seedIndex = 0): TopomationActionRule[] {
+    const legacyConfig = this._getDuskDawnConfig();
+    const blocks = this._sanitizeDuskDawnBlocks(legacyConfig.blocks);
+    if (blocks.length === 0) return [];
+
+    const migrated: TopomationActionRule[] = [];
+    blocks.forEach((block, blockIndex) => {
+      const triggerType = this._normalizeDuskDawnTriggerMode(block.trigger_mode);
+      const ambientCondition = this._normalizeDuskDawnAmbientCondition(
+        block.ambient_condition,
+        triggerType
+      );
+      const blockId = this._normalizeDuskDawnBlockId(block.id, `rule_${blockIndex + 1}`);
+      const targets = this._sanitizeDuskDawnLightTargets(block.light_targets);
+      const baseName = this._resolveLightingRuleName(block, blockIndex);
+
+      if (targets.length === 0) {
+        const legacyId = `legacy_lighting_${blockId}`;
+        migrated.push(
+          this._normalizeActionRule(
+            {
+              id: legacyId,
+              entity_id: `automation.${legacyId}`,
+              name: baseName,
+              rule_uuid: this._normalizeRuleUuid(`legacy_${blockId}`),
+              trigger_type: triggerType,
+              ambient_condition: ambientCondition,
+              must_be_occupied: Boolean(block.must_be_occupied),
+              time_condition_enabled: Boolean(block.time_condition_enabled),
+              start_time: this._normalizeActionTime(block.start_time, "18:00"),
+              end_time: this._normalizeActionTime(block.end_time, "23:59"),
+              enabled: true,
+            },
+            seedIndex + migrated.length
+          )
+        );
+        return;
+      }
+
+      const legacyId = `legacy_lighting_${blockId}`;
+      const migratedActions: RuleActionTarget[] = targets
+        .map((target) => {
+          const entityId = String(target.entity_id || "").trim();
+          if (!entityId) return undefined;
+          const service = target.power === "off" ? "turn_off" : "turn_on";
+          const normalizedData =
+            service === "turn_on"
+              ? this._normalizeActionDataForRule(
+                  {
+                    ...(target.brightness_pct ? { brightness_pct: target.brightness_pct } : {}),
+                    ...(target.color_hex ? { color_hex: target.color_hex } : {}),
+                  },
+                  entityId,
+                  service
+                )
+              : undefined;
+          return {
+            entity_id: entityId,
+            service,
+            ...(normalizedData ? { data: normalizedData } : {}),
+          } satisfies RuleActionTarget;
+        })
+        .filter((action): action is RuleActionTarget => !!action);
+
+      migrated.push(
+        this._normalizeActionRule(
+          {
+            id: legacyId,
+            entity_id: `automation.${legacyId}`,
+            name: baseName,
+            rule_uuid: this._normalizeRuleUuid(`legacy_${blockId}`),
+            trigger_type: triggerType,
+            actions: migratedActions,
+            ambient_condition: ambientCondition,
+            must_be_occupied: Boolean(block.must_be_occupied),
+            time_condition_enabled: Boolean(block.time_condition_enabled),
+            start_time: this._normalizeActionTime(block.start_time, "18:00"),
+            end_time: this._normalizeActionTime(block.end_time, "23:59"),
+            enabled: true,
+          },
+          seedIndex + migrated.length
+        )
+      );
+    });
+
+    return migrated;
+  }
+
   private _resetActionRulesDraftFromLoaded(): void {
-    const normalizedRules = this._actionRules.map((rule, index) =>
+    let normalizedRules = this._actionRules.map((rule, index) =>
       this._normalizeActionRule(rule, index)
     );
+    const hasPersistedLightingRules = normalizedRules.some(
+      (rule) => this._tabForActionEntity(String(rule.action_entity_id || "").trim()) === "lighting"
+    );
+    const legacyLightingRuleIds = new Set<string>();
+    if (!hasPersistedLightingRules) {
+      const migratedLegacyRules = this._legacyLightingRulesFromDuskDawn(normalizedRules.length);
+      if (migratedLegacyRules.length > 0) {
+        for (const rule of migratedLegacyRules) {
+          legacyLightingRuleIds.add(String(rule.id || ""));
+        }
+        normalizedRules = [...normalizedRules, ...migratedLegacyRules];
+      }
+    }
+
     this._actionRulesDraft = normalizedRules;
     this._actionRulesDraftDirty = false;
     this._actionRulesSaveError = undefined;
@@ -6600,7 +6421,10 @@ export class HtLocationInspector extends LitElement {
     this._actionRuleTabById = {};
     for (const rule of normalizedRules) {
       const ruleId = String(rule.id || "");
-      const tab = this._tabForActionEntity(String(rule.action_entity_id || "").trim());
+      let tab = this._tabForActionEntity(String(rule.action_entity_id || "").trim());
+      if (!tab && legacyLightingRuleIds.has(ruleId)) {
+        tab = "lighting";
+      }
       if (ruleId && tab) {
         this._actionRuleTabById[ruleId] = tab;
       }
@@ -6625,34 +6449,199 @@ export class HtLocationInspector extends LitElement {
     }
     this._actionRuleTabById = nextTabById;
     this._actionRulesDraft = normalizedRules;
-    this._actionRulesDraftDirty = true;
+    this._actionRulesDraftDirty = this._computeActionRulesDraftDirty(normalizedRules);
     this._actionRulesSaveError = undefined;
     this.requestUpdate();
+  }
+
+  private _actionRuleLookup(
+    sourceRules: TopomationActionRule[]
+  ): { byId: Map<string, TopomationActionRule>; byRuleUuid: Map<string, TopomationActionRule> } {
+    const byId = new Map<string, TopomationActionRule>();
+    const byRuleUuid = new Map<string, TopomationActionRule>();
+    sourceRules.forEach((rawRule, index) => {
+      const rule = this._normalizeActionRule(rawRule, index);
+      const ruleId = String(rule.id || "").trim();
+      if (ruleId) {
+        byId.set(ruleId, rule);
+      }
+      const ruleUuid = this._normalizeRuleUuid(rule.rule_uuid, ruleId);
+      if (ruleUuid) {
+        byRuleUuid.set(ruleUuid, rule);
+      }
+    });
+    return { byId, byRuleUuid };
+  }
+
+  private _persistedActionRuleForDraft(
+    draftRule: TopomationActionRule,
+    sourceRules?: TopomationActionRule[]
+  ): TopomationActionRule | undefined {
+    const rules = sourceRules ?? this._actionRules;
+    const lookup = this._actionRuleLookup(rules);
+    const draftId = String(draftRule.id || "").trim();
+    if (draftId && lookup.byId.has(draftId)) {
+      return lookup.byId.get(draftId);
+    }
+    const draftRuleUuid = this._normalizeRuleUuid(draftRule.rule_uuid, draftId);
+    if (draftRuleUuid && lookup.byRuleUuid.has(draftRuleUuid)) {
+      return lookup.byRuleUuid.get(draftRuleUuid);
+    }
+    return undefined;
+  }
+
+  private _actionRuleComparableSignature(
+    rawRule: TopomationActionRule,
+    index: number
+  ): string {
+    const rule = this._normalizeActionRule(rawRule, index);
+    const actions = this._actionTargetsForRule(rule).map((target) => ({
+      entity_id: target.entity_id,
+      service: target.service,
+      data: this._normalizeActionDataForRule(target.data, target.entity_id, target.service) || {},
+    }));
+    return JSON.stringify({
+      name: this._resolveActionRuleName(rule, index),
+      trigger_type: this._normalizeActionTriggerType(rule.trigger_type),
+      actions,
+      ambient_condition: this._normalizeActionAmbientCondition(rule.ambient_condition, rule.trigger_type),
+      must_be_occupied: Boolean(rule.must_be_occupied),
+      time_condition_enabled: Boolean(rule.time_condition_enabled),
+      start_time: this._normalizeActionTime(rule.start_time, "18:00"),
+      end_time: this._normalizeActionTime(rule.end_time, "23:59"),
+      enabled: rule.enabled !== false,
+    });
+  }
+
+  private _isActionRuleDirty(
+    draftRule: TopomationActionRule,
+    index: number,
+    persistedRule?: TopomationActionRule
+  ): boolean {
+    const baselineRule = persistedRule ?? this._persistedActionRuleForDraft(draftRule);
+    if (!baselineRule) {
+      return true;
+    }
+    const baselineRuleId = String(baselineRule.id || "").trim();
+    const normalizedDraftRule = this._normalizeActionRule(
+      {
+        ...draftRule,
+        ...(baselineRuleId ? { id: baselineRuleId } : {}),
+      },
+      index
+    );
+    return (
+      this._actionRuleComparableSignature(normalizedDraftRule, index) !==
+      this._actionRuleComparableSignature(baselineRule, index)
+    );
+  }
+
+  private _computeActionRulesDraftDirty(draftRules: TopomationActionRule[]): boolean {
+    const normalizedDraftRules = draftRules.map((rule, index) => this._normalizeActionRule(rule, index));
+    const normalizedPersistedRules = this._actionRules.map((rule, index) =>
+      this._normalizeActionRule(rule, index)
+    );
+
+    if (normalizedDraftRules.length !== normalizedPersistedRules.length) {
+      return true;
+    }
+
+    const persistedLookup = this._actionRuleLookup(normalizedPersistedRules);
+    const matchedPersistedRuleIds = new Set<string>();
+    for (const [index, draftRule] of normalizedDraftRules.entries()) {
+      const persistedRule = this._persistedActionRuleForDraft(draftRule, normalizedPersistedRules);
+      if (!persistedRule) {
+        return true;
+      }
+      matchedPersistedRuleIds.add(String(persistedRule.id || ""));
+      if (this._isActionRuleDirty(draftRule, index, persistedRule)) {
+        return true;
+      }
+      const draftRuleUuid = this._normalizeRuleUuid(draftRule.rule_uuid, draftRule.id);
+      if (draftRuleUuid && !persistedLookup.byRuleUuid.has(draftRuleUuid)) {
+        return true;
+      }
+    }
+    return matchedPersistedRuleIds.size !== normalizedPersistedRules.length;
+  }
+
+  private _rebuildActionRulesDraftAfterSync(
+    syncedRules: TopomationActionRule[],
+    previousDraftRules: TopomationActionRule[],
+    exclusions: { ruleIds?: Set<string>; ruleUuids?: Set<string> } = {}
+  ): void {
+    const normalizedSyncedRules = syncedRules.map((rule, index) => this._normalizeActionRule(rule, index));
+    const syncedLookup = this._actionRuleLookup(normalizedSyncedRules);
+    const mergedRules = [...normalizedSyncedRules];
+
+    const excludedIds = exclusions.ruleIds || new Set<string>();
+    const excludedRuleUuids = exclusions.ruleUuids || new Set<string>();
+    for (const [draftIndex, rawDraftRule] of previousDraftRules.entries()) {
+      const draftRule = this._normalizeActionRule(rawDraftRule, draftIndex);
+      const draftRuleId = String(draftRule.id || "").trim();
+      const draftRuleUuid = this._normalizeRuleUuid(draftRule.rule_uuid, draftRuleId);
+      if (excludedIds.has(draftRuleId) || excludedRuleUuids.has(draftRuleUuid)) {
+        continue;
+      }
+      const syncedRule =
+        (draftRuleId ? syncedLookup.byId.get(draftRuleId) : undefined) ||
+        (draftRuleUuid ? syncedLookup.byRuleUuid.get(draftRuleUuid) : undefined);
+      if (!syncedRule) {
+        mergedRules.push(draftRule);
+        continue;
+      }
+      const syncedIndex = mergedRules.findIndex((rule) => String(rule.id || "") === String(syncedRule.id || ""));
+      if (syncedIndex < 0) {
+        continue;
+      }
+      if (!this._isActionRuleDirty(draftRule, syncedIndex, syncedRule)) {
+        continue;
+      }
+      mergedRules[syncedIndex] = this._normalizeActionRule(
+        {
+          ...draftRule,
+          id: syncedRule.id,
+          entity_id: syncedRule.entity_id,
+          rule_uuid: syncedRule.rule_uuid,
+        },
+        syncedIndex
+      );
+    }
+
+    this._actionRules = normalizedSyncedRules;
+    this._setActionRulesDraft(mergedRules);
   }
 
   private _addActionRule(tab: DeviceAutomationTab): void {
     const rules = this._workingActionRules();
     const candidates = this._actionRuleTargetEntities(tab);
     const actionEntityId = candidates[0] || "";
-    const nextRule = this._normalizeActionRule(
-      {
-        id: `action_rule_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
-        entity_id: "",
-        name: `Rule ${rules.length + 1}`,
-        rule_uuid: this._generateRuleUuid(),
-        trigger_type: "on_occupied",
-        action_entity_id: actionEntityId,
-        action_service: this._defaultActionServiceForTrigger(actionEntityId, "on_occupied"),
-        ambient_condition: "any",
-        must_be_occupied: false,
-        time_condition_enabled: false,
-        start_time: "18:00",
-        end_time: "23:59",
-        enabled: true,
-      },
-      rules.length
-    );
-    this._actionRuleTabById[String(nextRule.id || "")] = tab;
+    const triggerType: TopomationActionRule["trigger_type"] = tab === "lighting" ? "on_dark" : "on_occupied";
+    const nextRuleId = `action_rule_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+    this._actionRuleTabById[nextRuleId] = tab;
+    const nextRule: TopomationActionRule = {
+      id: nextRuleId,
+      entity_id: "",
+      name: `Rule ${rules.length + 1}`,
+      rule_uuid: this._generateRuleUuid(),
+      trigger_type: triggerType,
+      actions: actionEntityId
+        ? [
+            {
+              entity_id: actionEntityId,
+              service: this._defaultActionServiceForTrigger(actionEntityId, triggerType),
+            },
+          ]
+        : [],
+      action_entity_id: actionEntityId || undefined,
+      action_service: this._defaultActionServiceForTrigger(actionEntityId, triggerType),
+      ambient_condition: this._defaultActionAmbientConditionForTrigger(triggerType),
+      must_be_occupied: this._normalizeActionMustBeOccupied(false, triggerType),
+      time_condition_enabled: false,
+      start_time: "18:00",
+      end_time: "23:59",
+      enabled: true,
+    };
     this._setActionRulesDraft([...rules, nextRule]);
   }
 
@@ -6666,33 +6655,137 @@ export class HtLocationInspector extends LitElement {
         ...rule,
         ...patch,
       };
+      let mergedTargets = this._actionTargetsForRule(merged);
       if (Object.prototype.hasOwnProperty.call(patch, "trigger_type")) {
         const triggerType = this._normalizeActionTriggerType(patch.trigger_type);
         merged.trigger_type = triggerType;
         if (!Object.prototype.hasOwnProperty.call(patch, "ambient_condition")) {
-          merged.ambient_condition = this._defaultActionAmbientConditionForTrigger(triggerType);
-        }
-        if (
-          !Object.prototype.hasOwnProperty.call(patch, "action_service") &&
-          typeof merged.action_entity_id === "string" &&
-          merged.action_entity_id
-        ) {
-          merged.action_service = this._defaultActionServiceForTrigger(
-            merged.action_entity_id,
+          merged.ambient_condition = this._normalizeActionAmbientCondition(
+            merged.ambient_condition,
             triggerType
           );
         }
+        if (!Object.prototype.hasOwnProperty.call(patch, "must_be_occupied")) {
+          merged.must_be_occupied = this._normalizeActionMustBeOccupied(
+            merged.must_be_occupied,
+            triggerType
+          );
+        }
+        if (
+          !Object.prototype.hasOwnProperty.call(patch, "action_service") &&
+          !Object.prototype.hasOwnProperty.call(patch, "actions")
+        ) {
+          mergedTargets = mergedTargets.map((target) => {
+            const nextService = this._defaultActionServiceForTrigger(target.entity_id, triggerType);
+            const nextData = this._normalizeActionDataForRule(
+              target.data,
+              target.entity_id,
+              nextService
+            );
+            return {
+              entity_id: target.entity_id,
+              service: nextService,
+              ...(nextData ? { data: nextData } : {}),
+            };
+          });
+        }
+      }
+      if (Object.prototype.hasOwnProperty.call(patch, "actions")) {
+        mergedTargets = this._normalizeActionTargets(
+          patch.actions as unknown,
+          this._normalizeActionTriggerType(merged.trigger_type)
+        );
       }
       if (Object.prototype.hasOwnProperty.call(patch, "action_entity_id")) {
         const entityId = String(patch.action_entity_id || "").trim();
-        merged.action_entity_id = entityId || undefined;
-        if (entityId && !Object.prototype.hasOwnProperty.call(patch, "action_service")) {
-          merged.action_service = this._defaultActionServiceForTrigger(
+        if (!entityId) {
+          mergedTargets = [];
+        } else if (mergedTargets.length === 0) {
+          const nextService = this._defaultActionServiceForTrigger(
             entityId,
             this._normalizeActionTriggerType(merged.trigger_type)
           );
+          mergedTargets = [{ entity_id: entityId, service: nextService }];
+        } else {
+          const firstTarget = { ...mergedTargets[0], entity_id: entityId };
+          if (!Object.prototype.hasOwnProperty.call(patch, "action_service")) {
+            firstTarget.service = this._defaultActionServiceForTrigger(
+              entityId,
+              this._normalizeActionTriggerType(merged.trigger_type)
+            );
+          }
+          firstTarget.data = this._normalizeActionDataForRule(
+            firstTarget.data,
+            firstTarget.entity_id,
+            firstTarget.service
+          );
+          mergedTargets = [
+            {
+              entity_id: firstTarget.entity_id,
+              service: firstTarget.service,
+              ...(firstTarget.data ? { data: firstTarget.data } : {}),
+            },
+            ...mergedTargets.slice(1),
+          ];
         }
       }
+      if (Object.prototype.hasOwnProperty.call(patch, "action_service")) {
+        const nextService = String(patch.action_service || "").trim();
+        if (mergedTargets.length === 0) {
+          const currentEntityId = String(merged.action_entity_id || "").trim();
+          if (currentEntityId && nextService) {
+            mergedTargets = [
+              {
+                entity_id: currentEntityId,
+                service: nextService,
+              },
+            ];
+          }
+        } else {
+          const firstTarget = mergedTargets[0];
+          const normalizedData = this._normalizeActionDataForRule(
+            Object.prototype.hasOwnProperty.call(patch, "action_data")
+              ? patch.action_data
+              : firstTarget.data,
+            firstTarget.entity_id,
+            nextService
+          );
+          mergedTargets = [
+            {
+              entity_id: firstTarget.entity_id,
+              service: nextService,
+              ...(normalizedData ? { data: normalizedData } : {}),
+            },
+            ...mergedTargets.slice(1),
+          ];
+        }
+      }
+      if (
+        Object.prototype.hasOwnProperty.call(patch, "action_data") &&
+        !Object.prototype.hasOwnProperty.call(patch, "action_service")
+      ) {
+        if (mergedTargets.length > 0) {
+          const firstTarget = mergedTargets[0];
+          const normalizedData = this._normalizeActionDataForRule(
+            patch.action_data,
+            firstTarget.entity_id,
+            firstTarget.service
+          );
+          mergedTargets = [
+            {
+              entity_id: firstTarget.entity_id,
+              service: firstTarget.service,
+              ...(normalizedData ? { data: normalizedData } : {}),
+            },
+            ...mergedTargets.slice(1),
+          ];
+        }
+      }
+      const targetFields = this._setActionTargetsForRule(merged, mergedTargets);
+      merged.actions = targetFields.actions;
+      merged.action_entity_id = targetFields.action_entity_id;
+      merged.action_service = targetFields.action_service;
+      merged.action_data = targetFields.action_data;
       return this._normalizeActionRule(merged, index);
     });
     this._setActionRulesDraft(rules);
@@ -6725,11 +6818,12 @@ export class HtLocationInspector extends LitElement {
     const hhmmPattern = /^([01]\d|2[0-3]):([0-5]\d)$/;
     rules.forEach((rule, index) => {
       const label = rule.name?.trim() || `Rule ${index + 1}`;
-      if (!rule.action_entity_id) {
-        errors.push(`${label}: select a target device.`);
+      const targets = this._actionTargetsForRule(rule);
+      if (targets.length === 0) {
+        errors.push(`${label}: select at least one target device.`);
       }
-      if (!rule.action_service) {
-        errors.push(`${label}: select an action service.`);
+      if (targets.some((target) => !target.service)) {
+        errors.push(`${label}: select an action service for each target.`);
       }
       if (rule.time_condition_enabled) {
         if (!hhmmPattern.test(String(rule.start_time || ""))) {
@@ -6767,11 +6861,28 @@ export class HtLocationInspector extends LitElement {
         this.entryId
       );
       const existingById = new Map(existingRules.map((rule) => [String(rule.id || ""), rule]));
+      const existingByRuleUuid = new Map(
+        existingRules
+          .map((rule) => {
+            const rawRuleUuid = String(rule.rule_uuid || "").trim();
+            if (!rawRuleUuid) {
+              return ["", rule] as const;
+            }
+            return [this._normalizeRuleUuid(rawRuleUuid, rule.id), rule] as const;
+          })
+          .filter(([ruleUuid]) => ruleUuid.length > 0)
+      );
       const retainedRuleIds = new Set<string>();
       for (const [index, rule] of rules.entries()) {
-        if (!rule.action_entity_id || !rule.action_service) continue;
         const normalizedRule = this._normalizeActionRule(rule, index);
-        const existing = existingById.get(String(normalizedRule.id || ""));
+        const ruleTargets = this._actionTargetsForRule(normalizedRule);
+        const primaryAction = ruleTargets[0];
+        if (!primaryAction) continue;
+        const existing =
+          existingById.get(String(normalizedRule.id || "")) ||
+          existingByRuleUuid.get(
+            this._normalizeRuleUuid(normalizedRule.rule_uuid, normalizedRule.id)
+          );
         const automationId = existing ? String(existing.id || "") : undefined;
         const createdRule = await createTopomationActionRule(
           this.hass,
@@ -6781,8 +6892,10 @@ export class HtLocationInspector extends LitElement {
             rule_uuid: normalizedRule.rule_uuid,
             automation_id: automationId || undefined,
             trigger_type: normalizedRule.trigger_type,
-            action_entity_id: normalizedRule.action_entity_id,
-            action_service: normalizedRule.action_service,
+            actions: ruleTargets,
+            action_entity_id: primaryAction.entity_id,
+            action_service: primaryAction.service,
+            action_data: primaryAction.data,
             ambient_condition: normalizedRule.ambient_condition,
             must_be_occupied: Boolean(normalizedRule.must_be_occupied),
             time_condition_enabled: Boolean(normalizedRule.time_condition_enabled),
@@ -6819,6 +6932,132 @@ export class HtLocationInspector extends LitElement {
     }
   }
 
+  private _discardActionRuleEdits(ruleId: string): void {
+    const currentRules = this._workingActionRules();
+    const nextRules: TopomationActionRule[] = [];
+    for (const [index, rawRule] of currentRules.entries()) {
+      const rule = this._normalizeActionRule(rawRule, index);
+      if (String(rule.id || "") !== ruleId) {
+        nextRules.push(rule);
+        continue;
+      }
+      const persistedRule = this._persistedActionRuleForDraft(rule);
+      if (persistedRule) {
+        nextRules.push(this._normalizeActionRule(persistedRule, index));
+      }
+    }
+    this._setActionRulesDraft(nextRules);
+    this._showToast("Rule edits discarded", "success");
+  }
+
+  private async _saveOrUpdateActionRule(ruleId: string): Promise<void> {
+    if (!this.location || !this.hass || this._savingActionRules) {
+      return;
+    }
+    const previousDraftRules = this._workingActionRules();
+    const ruleIndex = previousDraftRules.findIndex((rule) => String(rule.id || "") === ruleId);
+    if (ruleIndex < 0) {
+      return;
+    }
+    const rule = this._normalizeActionRule(previousDraftRules[ruleIndex], ruleIndex);
+    const validationErrors = this._actionRuleValidationErrors([
+      {
+        ...rule,
+        name: this._resolveActionRuleName(rule, ruleIndex),
+      },
+    ]);
+    if (validationErrors.length > 0) {
+      this._actionRulesSaveError = validationErrors[0];
+      this.requestUpdate();
+      return;
+    }
+
+    const persistedRule = this._persistedActionRuleForDraft(rule);
+    this._savingActionRules = true;
+    this._actionRulesSaveError = undefined;
+    this.requestUpdate();
+
+    try {
+      const ruleTargets = this._actionTargetsForRule(rule);
+      const primaryAction = ruleTargets[0];
+      if (!primaryAction) {
+        throw new Error("Select at least one target device before saving.");
+      }
+      await createTopomationActionRule(
+        this.hass,
+        {
+          location: this.location,
+          name: this._resolveActionRuleName(rule, ruleIndex),
+          rule_uuid: rule.rule_uuid,
+          automation_id: persistedRule ? String(persistedRule.id || "").trim() || undefined : undefined,
+          trigger_type: rule.trigger_type,
+          actions: ruleTargets,
+          action_entity_id: primaryAction.entity_id,
+          action_service: primaryAction.service,
+          action_data: primaryAction.data,
+          ambient_condition: rule.ambient_condition,
+          must_be_occupied: Boolean(rule.must_be_occupied),
+          time_condition_enabled: Boolean(rule.time_condition_enabled),
+          start_time: rule.start_time,
+          end_time: rule.end_time,
+          require_dark: rule.ambient_condition === "dark",
+        },
+        this.entryId
+      );
+
+      const syncedRules = await listTopomationActionRules(this.hass, this.location.id, this.entryId);
+      this._rebuildActionRulesDraftAfterSync(syncedRules, previousDraftRules, {
+        ruleIds: new Set([ruleId]),
+        ruleUuids: new Set([this._normalizeRuleUuid(rule.rule_uuid, ruleId)]),
+      });
+      this._showToast(persistedRule ? "Rule updated" : "Rule saved", "success");
+    } catch (err: any) {
+      this._actionRulesSaveError = err?.message || "Failed to save action rule";
+      this._showToast(this._actionRulesSaveError, "error");
+    } finally {
+      this._savingActionRules = false;
+      this.requestUpdate();
+    }
+  }
+
+  private async _deleteActionRule(ruleId: string): Promise<void> {
+    if (!this.location || !this.hass || this._savingActionRules) {
+      return;
+    }
+    const previousDraftRules = this._workingActionRules();
+    const draftRuleIndex = previousDraftRules.findIndex((rule) => String(rule.id || "") === ruleId);
+    if (draftRuleIndex < 0) {
+      return;
+    }
+    const draftRule = this._normalizeActionRule(previousDraftRules[draftRuleIndex], draftRuleIndex);
+    const persistedRule = this._persistedActionRuleForDraft(draftRule);
+    if (!persistedRule) {
+      this._removeActionRule(ruleId);
+      this._showToast("Rule removed", "success");
+      return;
+    }
+
+    this._savingActionRules = true;
+    this._actionRulesSaveError = undefined;
+    this.requestUpdate();
+
+    try {
+      await deleteTopomationActionRule(this.hass, persistedRule, this.entryId);
+      const syncedRules = await listTopomationActionRules(this.hass, this.location.id, this.entryId);
+      this._rebuildActionRulesDraftAfterSync(syncedRules, previousDraftRules, {
+        ruleIds: new Set([ruleId]),
+        ruleUuids: new Set([this._normalizeRuleUuid(draftRule.rule_uuid, ruleId)]),
+      });
+      this._showToast("Rule deleted", "success");
+    } catch (err: any) {
+      this._actionRulesSaveError = err?.message || "Failed to delete action rule";
+      this._showToast(this._actionRulesSaveError, "error");
+    } finally {
+      this._savingActionRules = false;
+      this.requestUpdate();
+    }
+  }
+
   private _resetActionRulesDraft(): void {
     this._resetActionRulesDraftFromLoaded();
     this._showToast("Action rule changes reverted", "success");
@@ -6827,11 +7066,11 @@ export class HtLocationInspector extends LitElement {
   private _deviceAutomationTabMeta(
     tab: DeviceAutomationTab
   ): { icon: string; label: string; emptyMessage: string } {
-    if (tab === "appliances") {
+    if (tab === "lighting") {
       return {
-        icon: "mdi:power-plug",
-        label: "Appliance Rules",
-        emptyMessage: "No appliance rules configured yet.",
+        icon: "mdi:lightbulb-group",
+        label: "Lighting Rules",
+        emptyMessage: "No lighting rules configured yet.",
       };
     }
     if (tab === "media") {
@@ -6848,33 +7087,214 @@ export class HtLocationInspector extends LitElement {
     };
   }
 
+  private _renderLightingRuleActionRows(
+    ruleId: string,
+    rule: TopomationActionRule,
+    busy: boolean,
+    entityOptions: string[]
+  ) {
+    const ruleTargets = this._actionTargetsForRule(rule);
+    const targetByEntity = new Map(ruleTargets.map((target) => [target.entity_id, target] as const));
+    const rowEntityIds = [...entityOptions];
+    for (const target of ruleTargets) {
+      if (!rowEntityIds.includes(target.entity_id)) {
+        rowEntityIds.unshift(target.entity_id);
+      }
+    }
+    if (rowEntityIds.length === 0) {
+      return html`<div class="text-muted">No local lights found for this location.</div>`;
+    }
+
+    return html`
+      <div class="dusk-light-actions" data-testid=${`action-rule-${ruleId}-actions`}>
+        ${rowEntityIds.map((entityId, index) => {
+          const target = targetByEntity.get(entityId);
+          const included = Boolean(target);
+          const dimmable = this._isDimmableEntity(entityId);
+          const defaultService = this._defaultActionServiceForTrigger(entityId, rule.trigger_type);
+          const activeService = String(target?.service || defaultService);
+          const targetData = this._normalizeActionDataForRule(target?.data, entityId, activeService);
+          const brightnessPct = this._normalizeActionBrightnessPct(
+            (targetData as { brightness_pct?: unknown } | undefined)?.brightness_pct,
+            30
+          );
+          const modeValue = included
+            ? activeService === "turn_off"
+              ? "off"
+              : activeService === "toggle"
+                ? "toggle"
+                : "on"
+            : defaultService === "turn_off"
+              ? "off"
+              : "on";
+          const level = included && activeService === "turn_off" ? 0 : brightnessPct;
+
+          const upsertTarget = (patch: Partial<RuleActionTarget>) => {
+            const nextTargets = ruleTargets.map((item) => ({ ...item }));
+            const targetIndex = nextTargets.findIndex((item) => item.entity_id === entityId);
+            const baseTarget =
+              targetIndex >= 0
+                ? { ...nextTargets[targetIndex] }
+                : {
+                    entity_id: entityId,
+                    service: defaultService,
+                  };
+            const nextServiceRaw = String(patch.service ?? baseTarget.service ?? "").trim();
+            const nextService = nextServiceRaw || defaultService;
+            const nextData = this._normalizeActionDataForRule(
+              patch.data ?? baseTarget.data,
+              entityId,
+              nextService
+            );
+            const nextTarget: RuleActionTarget = {
+              entity_id: entityId,
+              service: nextService,
+              ...(nextData ? { data: nextData } : {}),
+            };
+            if (targetIndex >= 0) {
+              nextTargets[targetIndex] = nextTarget;
+            } else {
+              nextTargets.push(nextTarget);
+            }
+            this._updateActionRule(ruleId, { actions: nextTargets });
+          };
+
+          const removeTarget = () => {
+            this._updateActionRule(ruleId, {
+              actions: ruleTargets.filter((item) => item.entity_id !== entityId),
+            });
+          };
+
+          return html`
+            <div class="dusk-light-action-row" data-testid=${`action-rule-${ruleId}-device-row-${index}`}>
+              <div class="dusk-light-action-grid ${included ? "" : "disabled"}">
+                <input
+                  type="checkbox"
+                  class="switch-input"
+                  .checked=${included}
+                  ?disabled=${busy}
+                  data-testid=${`action-rule-${ruleId}-device-include-${index}`}
+                  @change=${(ev: Event) => {
+                    const checked = (ev.target as HTMLInputElement).checked;
+                    if (!checked) {
+                      if (!included) return;
+                      removeTarget();
+                      return;
+                    }
+                    const nextActionData =
+                      dimmable && defaultService === "turn_on"
+                        ? {
+                            brightness_pct: brightnessPct,
+                          }
+                        : {};
+                    upsertTarget({
+                      service: defaultService,
+                      data: nextActionData,
+                    });
+                  }}
+                />
+                <div class="dusk-light-entity-meta">
+                  <span>${this._entityName(entityId)}</span>
+                  <code>${entityId}</code>
+                </div>
+                ${dimmable
+                  ? html`
+                      <label class="dusk-level-control">
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          step="1"
+                          class="dusk-level-slider"
+                          .value=${String(level)}
+                          ?disabled=${busy || !included}
+                          data-testid=${`action-rule-${ruleId}-device-level-${index}`}
+                          @input=${(ev: Event) => {
+                            const rawLevel = Number((ev.target as HTMLInputElement).value);
+                            const nextLevel = Number.isFinite(rawLevel)
+                              ? Math.max(0, Math.min(100, Math.round(rawLevel)))
+                              : brightnessPct;
+                            if (nextLevel <= 0) {
+                              upsertTarget({
+                                service: "turn_off",
+                                data: {},
+                              });
+                              return;
+                            }
+                            upsertTarget({
+                              service: "turn_on",
+                              data: {
+                                ...((targetData as Record<string, unknown>) || {}),
+                                brightness_pct: nextLevel,
+                              },
+                            });
+                          }}
+                        />
+                        <span class="dusk-level-value">${level}%</span>
+                      </label>
+                    `
+                  : html`
+                      <select
+                        .value=${modeValue}
+                        ?disabled=${busy || !included}
+                        data-testid=${`action-rule-${ruleId}-device-action-${index}`}
+                        @change=${(ev: Event) => {
+                          const mode = String((ev.target as HTMLSelectElement).value || "on");
+                          const service =
+                            mode === "off" ? "turn_off" : mode === "toggle" ? "toggle" : "turn_on";
+                          upsertTarget({
+                            service,
+                            data: {},
+                          });
+                        }}
+                      >
+                        <option value="on">Turn on</option>
+                        <option value="off">Turn off</option>
+                        <option value="toggle">Toggle</option>
+                      </select>
+                    `}
+                <span class="text-muted">-</span>
+                <span class="text-muted">-</span>
+              </div>
+            </div>
+          `;
+        })}
+      </div>
+    `;
+  }
+
   private _renderDeviceAutomationTab(tab: DeviceAutomationTab) {
     if (!this.location) return "";
     const busy = this._savingActionRules || this._loadingActionRules;
     const meta = this._deviceAutomationTabMeta(tab);
     const rules = this._rulesForDeviceAutomationTab(tab);
-    const validationErrors = this._actionRuleValidationErrors(rules);
-    const hasUnsaved = this._actionRulesDraftDirty;
     const entityOptions = this._actionRuleTargetEntities(tab);
+    const triggerOptions =
+      tab === "lighting"
+        ? [
+            { value: "on_dark", label: "On dark" },
+            { value: "on_bright", label: "On bright" },
+            { value: "on_occupied", label: "On occupied" },
+            { value: "on_vacant", label: "On vacant" },
+          ]
+        : [
+            { value: "on_occupied", label: "On occupied" },
+            { value: "on_vacant", label: "On vacant" },
+          ];
+    const compatibleDeviceLabel =
+      tab === "lighting"
+        ? "light"
+        : tab === "media"
+          ? "media"
+          : "HVAC or ventilation";
 
     return html`
-      ${this._renderActionStartupConfig(tab)}
+      ${tab === "lighting" ? "" : this._renderActionStartupConfig(tab)}
       <div class="card-section" data-testid="actions-rules-section">
         <div class="section-title-row">
           <div class="section-title">
             <ha-icon .icon=${meta.icon}></ha-icon>
             ${meta.label}
-          </div>
-          <div class="section-title-actions">
-            <button
-              class="dusk-save-button ${hasUnsaved ? "dirty" : ""}"
-              type="button"
-              data-testid="actions-rules-save"
-              ?disabled=${busy || !hasUnsaved}
-              @click=${() => this._saveActionRulesDraft()}
-            >
-              Save changes
-            </button>
           </div>
         </div>
         ${this._actionRulesError
@@ -6883,7 +7303,6 @@ export class HtLocationInspector extends LitElement {
         ${this._actionRulesSaveError
           ? html`<div class="policy-warning">${this._actionRulesSaveError}</div>`
           : ""}
-        ${validationErrors.map((error) => html`<div class="policy-warning">${error}</div>`)}
 
         <div class="dusk-block-list">
           ${rules.length === 0
@@ -6891,19 +7310,48 @@ export class HtLocationInspector extends LitElement {
                 <div class="text-muted">
                   ${meta.emptyMessage}
                   ${entityOptions.length === 0
-                    ? html`No compatible ${tab} devices found in this location.`
+                    ? html`No compatible ${compatibleDeviceLabel} devices found in this location.`
                     : ""}
                 </div>
               `
             : rules.map((rule, index) => {
-                const editingName = this._editingActionRuleNameId === String(rule.id || "");
+                const ruleId = String(rule.id || "");
+                const editingName = this._editingActionRuleNameId === ruleId;
                 const label = rule.name?.trim() || `Rule ${index + 1}`;
+                const triggerType = this._normalizeActionTriggerType(rule.trigger_type);
+                const selectedActionEntityId = String(rule.action_entity_id || "").trim();
+                const normalizedActionData = this._normalizeActionDataForRule(
+                  rule.action_data,
+                  selectedActionEntityId,
+                  String(rule.action_service || "")
+                );
+                const ambientLocked = this._isActionAmbientConditionLockedByTrigger(triggerType);
+                const ambientCondition = this._normalizeActionAmbientCondition(
+                  rule.ambient_condition,
+                  triggerType
+                );
+                const ambientConditionLabel =
+                  ambientCondition === "dark"
+                    ? "Must be dark"
+                    : ambientCondition === "bright"
+                      ? "Must be bright"
+                      : "Ignore ambient";
+                const mustBeOccupiedLocked =
+                  this._isActionMustBeOccupiedLockedByTrigger(triggerType);
+                const mustBeOccupied = this._normalizeActionMustBeOccupied(
+                  rule.must_be_occupied,
+                  triggerType
+                );
+                const occupancyConditionLabel = mustBeOccupied ? "Must be occupied" : "Must be vacant";
+                const persistedRule = this._persistedActionRuleForDraft(rule);
+                const isPersisted = Boolean(persistedRule);
+                const hasRuleEdits = this._isActionRuleDirty(rule, index, persistedRule);
                 const serviceOptions = this._actionServiceOptionsForRule(
-                  rule.action_entity_id || "",
-                  rule.trigger_type
+                  selectedActionEntityId,
+                  triggerType
                 );
                 return html`
-                  <div class="dusk-block-row" data-testid=${`action-rule-${rule.id}`}>
+                  <div class="dusk-block-row" data-testid=${`action-rule-${ruleId}`}>
                     <div class="dusk-block-head">
                       ${editingName
                         ? html`
@@ -6917,13 +7365,13 @@ export class HtLocationInspector extends LitElement {
                               }}
                               @blur=${() =>
                                 this._commitActionRuleNameEdit(
-                                  String(rule.id || ""),
+                                  ruleId,
                                   `Rule ${index + 1}`
                                 )}
                               @keydown=${(ev: KeyboardEvent) => {
                                 if (ev.key === "Enter") {
                                   this._commitActionRuleNameEdit(
-                                    String(rule.id || ""),
+                                    ruleId,
                                     `Rule ${index + 1}`
                                   );
                                 } else if (ev.key === "Escape") {
@@ -6939,7 +7387,7 @@ export class HtLocationInspector extends LitElement {
                               ?disabled=${busy}
                               @click=${() =>
                                 this._startActionRuleNameEdit(
-                                  String(rule.id || ""),
+                                  ruleId,
                                   label
                                 )}
                             >
@@ -6955,14 +7403,15 @@ export class HtLocationInspector extends LitElement {
                         .value=${rule.trigger_type}
                         ?disabled=${busy}
                         @change=${(ev: Event) =>
-                          this._updateActionRule(String(rule.id || ""), {
+                          this._updateActionRule(ruleId, {
                             trigger_type: this._normalizeActionTriggerType(
                               (ev.target as HTMLSelectElement).value
                             ),
                           })}
                       >
-                        <option value="on_occupied">On occupied</option>
-                        <option value="on_vacant">On vacant</option>
+                        ${triggerOptions.map(
+                          (option) => html`<option value=${option.value}>${option.label}</option>`
+                        )}
                       </select>
                     </div>
 
@@ -6972,27 +7421,37 @@ export class HtLocationInspector extends LitElement {
                         <div>
                           <div class="config-label">Ambient must be</div>
                           <div class="config-help">
-                            Optional ambient filter at trigger time.
+                            ${ambientLocked
+                              ? "Derived from trigger."
+                              : "Optional ambient filter at trigger time."}
                           </div>
                         </div>
                         <div class="config-value">
-                          <select
-                            class="dusk-wide-select"
-                            .value=${rule.ambient_condition ||
-                            this._defaultActionAmbientConditionForTrigger(rule.trigger_type)}
-                            ?disabled=${busy}
-                            @change=${(ev: Event) =>
-                              this._updateActionRule(String(rule.id || ""), {
-                                ambient_condition: this._normalizeActionAmbientCondition(
-                                  (ev.target as HTMLSelectElement).value,
-                                  rule.trigger_type
-                                ),
-                              })}
-                          >
-                            <option value="any">Ignore ambient</option>
-                            <option value="dark">Must be dark</option>
-                            <option value="bright">Must be bright</option>
-                          </select>
+                          ${ambientLocked
+                            ? html`
+                                <div class="dusk-condition-derived">
+                                  <span>${ambientConditionLabel}</span>
+                                  <span class="dusk-condition-derived-note">Set by trigger</span>
+                                </div>
+                              `
+                            : html`
+                                <select
+                                  class="dusk-wide-select"
+                                  .value=${ambientCondition}
+                                  ?disabled=${busy}
+                                  @change=${(ev: Event) =>
+                                    this._updateActionRule(ruleId, {
+                                      ambient_condition: this._normalizeActionAmbientCondition(
+                                        (ev.target as HTMLSelectElement).value,
+                                        triggerType
+                                      ),
+                                    })}
+                                >
+                                  <option value="any">Ignore ambient</option>
+                                  <option value="dark">Must be dark</option>
+                                  <option value="bright">Must be bright</option>
+                                </select>
+                              `}
                         </div>
                       </div>
 
@@ -7000,20 +7459,31 @@ export class HtLocationInspector extends LitElement {
                         <div>
                           <div class="config-label">Must be occupied</div>
                           <div class="config-help">
-                            Apply this rule only when the location is occupied at trigger time.
+                            ${mustBeOccupiedLocked
+                              ? "Derived from trigger."
+                              : "Apply this rule only when the location is occupied at trigger time."}
                           </div>
                         </div>
                         <div class="config-value">
-                          <input
-                            type="checkbox"
-                            class="switch-input"
-                            .checked=${Boolean(rule.must_be_occupied)}
-                            ?disabled=${busy}
-                            @change=${(ev: Event) =>
-                              this._updateActionRule(String(rule.id || ""), {
-                                must_be_occupied: (ev.target as HTMLInputElement).checked,
-                              })}
-                          />
+                          ${mustBeOccupiedLocked
+                            ? html`
+                                <div class="dusk-condition-derived">
+                                  <span>${occupancyConditionLabel}</span>
+                                  <span class="dusk-condition-derived-note">Set by trigger</span>
+                                </div>
+                              `
+                            : html`
+                                <input
+                                  type="checkbox"
+                                  class="switch-input"
+                                  .checked=${Boolean(mustBeOccupied)}
+                                  ?disabled=${busy}
+                                  @change=${(ev: Event) =>
+                                    this._updateActionRule(ruleId, {
+                                      must_be_occupied: (ev.target as HTMLInputElement).checked,
+                                    })}
+                                />
+                              `}
                         </div>
                       </div>
 
@@ -7031,7 +7501,7 @@ export class HtLocationInspector extends LitElement {
                             .checked=${Boolean(rule.time_condition_enabled)}
                             ?disabled=${busy}
                             @change=${(ev: Event) =>
-                              this._updateActionRule(String(rule.id || ""), {
+                              this._updateActionRule(ruleId, {
                                 time_condition_enabled: (ev.target as HTMLInputElement).checked,
                               })}
                           />
@@ -7049,7 +7519,7 @@ export class HtLocationInspector extends LitElement {
                                   .value=${String(rule.start_time || "18:00")}
                                   ?disabled=${busy}
                                   @change=${(ev: Event) =>
-                                    this._updateActionRule(String(rule.id || ""), {
+                                    this._updateActionRule(ruleId, {
                                       start_time: this._normalizeActionTime(
                                         (ev.target as HTMLInputElement).value,
                                         "18:00"
@@ -7065,7 +7535,7 @@ export class HtLocationInspector extends LitElement {
                                   .value=${String(rule.end_time || "23:59")}
                                   ?disabled=${busy}
                                   @change=${(ev: Event) =>
-                                    this._updateActionRule(String(rule.id || ""), {
+                                    this._updateActionRule(ruleId, {
                                       end_time: this._normalizeActionTime(
                                         (ev.target as HTMLInputElement).value,
                                         "23:59"
@@ -7079,53 +7549,136 @@ export class HtLocationInspector extends LitElement {
                     </div>
 
                     <div class="dusk-rule-section-title">Actions</div>
-                    <div class="dusk-rule-row">
-                      <span class="config-label">Device</span>
-                      <select
-                        class="dusk-wide-select"
-                        .value=${rule.action_entity_id || ""}
-                        ?disabled=${busy}
-                        @change=${(ev: Event) =>
-                          this._updateActionRule(String(rule.id || ""), {
-                            action_entity_id: (ev.target as HTMLSelectElement).value,
-                          })}
-                      >
-                        <option value="">Select device...</option>
-                        ${entityOptions.map((entityId) => html`
-                          <option value=${entityId}>
-                            ${this._entityName(entityId)} (${entityId})
-                          </option>
-                        `)}
-                      </select>
-                    </div>
-                    <div class="dusk-rule-row">
-                      <span class="config-label">Action</span>
-                      <select
-                        class="dusk-wide-select"
-                        .value=${rule.action_service || ""}
-                        ?disabled=${busy || !rule.action_entity_id}
-                        @change=${(ev: Event) =>
-                          this._updateActionRule(String(rule.id || ""), {
-                            action_service: (ev.target as HTMLSelectElement).value,
-                          })}
-                      >
-                        ${!rule.action_entity_id
-                          ? html`<option value="">Select device first...</option>`
-                          : serviceOptions.map(
-                              (option) => html`<option value=${option.value}>${option.label}</option>`
-                            )}
-                      </select>
-                    </div>
+                    ${tab === "lighting"
+                      ? this._renderLightingRuleActionRows(
+                          ruleId,
+                          rule,
+                          busy,
+                          entityOptions
+                        )
+                      : html`
+                          <div class="dusk-rule-row">
+                            <span class="config-label">Device</span>
+                            <select
+                              class="dusk-wide-select"
+                              .value=${selectedActionEntityId}
+                              ?disabled=${busy}
+                              @change=${(ev: Event) => {
+                                const entityId = String((ev.target as HTMLSelectElement).value || "").trim();
+                                if (!entityId) {
+                                  this._updateActionRule(ruleId, {
+                                    action_entity_id: undefined,
+                                    action_service: undefined,
+                                    action_data: {},
+                                  });
+                                  return;
+                                }
+                                const nextService = this._defaultActionServiceForTrigger(
+                                  entityId,
+                                  rule.trigger_type
+                                );
+                                this._updateActionRule(ruleId, {
+                                  action_entity_id: entityId,
+                                  action_service: nextService,
+                                  action_data: {},
+                                });
+                              }}
+                            >
+                              <option value="">Select device...</option>
+                              ${entityOptions.map((entityId) => html`
+                                <option value=${entityId}>
+                                  ${this._entityName(entityId)} (${entityId})
+                                </option>
+                              `)}
+                            </select>
+                          </div>
+                          <div class="dusk-rule-row">
+                            <span class="config-label">Action</span>
+                            <select
+                              class="dusk-wide-select"
+                              .value=${rule.action_service || ""}
+                              ?disabled=${busy || !selectedActionEntityId}
+                              @change=${(ev: Event) => {
+                                const nextService = String(
+                                  (ev.target as HTMLSelectElement).value || ""
+                                ).trim();
+                                this._updateActionRule(ruleId, {
+                                  action_service: nextService,
+                                  action_data: {},
+                                });
+                              }}
+                            >
+                              ${!selectedActionEntityId
+                                ? html`<option value="">Select device first...</option>`
+                                : serviceOptions.map(
+                                    (option) => html`<option value=${option.value}>${option.label}</option>`
+                                  )}
+                            </select>
+                          </div>
+                        `}
                     <div class="dusk-block-footer">
-                      <button
-                        class="button button-primary dusk-delete-rule-button"
-                        type="button"
-                        data-testid=${`action-rule-${rule.id}-delete`}
-                        ?disabled=${busy}
-                        @click=${() => this._removeActionRule(String(rule.id || ""))}
-                      >
-                        Delete rule
-                      </button>
+                      ${!isPersisted
+                        ? html`
+                            <button
+                              class="button button-primary"
+                              type="button"
+                              data-testid=${`action-rule-${ruleId}-save`}
+                              ?disabled=${busy}
+                              @click=${() => this._saveOrUpdateActionRule(ruleId)}
+                            >
+                              Save rule
+                            </button>
+                            <button
+                              class="button button-secondary"
+                              type="button"
+                              data-testid=${`action-rule-${ruleId}-remove`}
+                              ?disabled=${busy}
+                              @click=${() => this._removeActionRule(ruleId)}
+                            >
+                              Remove rule
+                            </button>
+                          `
+                        : hasRuleEdits
+                          ? html`
+                              <button
+                                class="button button-primary"
+                                type="button"
+                                data-testid=${`action-rule-${ruleId}-update`}
+                                ?disabled=${busy}
+                                @click=${() => this._saveOrUpdateActionRule(ruleId)}
+                              >
+                                Update rule
+                              </button>
+                              <button
+                                class="button button-secondary"
+                                type="button"
+                                data-testid=${`action-rule-${ruleId}-discard-edits`}
+                                ?disabled=${busy}
+                                @click=${() => this._discardActionRuleEdits(ruleId)}
+                              >
+                                Discard edits
+                              </button>
+                              <button
+                                class="button button-secondary dusk-delete-rule-button"
+                                type="button"
+                                data-testid=${`action-rule-${ruleId}-delete`}
+                                ?disabled=${busy}
+                                @click=${() => this._deleteActionRule(ruleId)}
+                              >
+                                Delete rule
+                              </button>
+                            `
+                          : html`
+                              <button
+                                class="button button-secondary dusk-delete-rule-button"
+                                type="button"
+                                data-testid=${`action-rule-${ruleId}-delete`}
+                                ?disabled=${busy}
+                                @click=${() => this._deleteActionRule(ruleId)}
+                              >
+                                Delete rule
+                              </button>
+                            `}
                     </div>
                   </div>
                 `;
@@ -7146,25 +7699,11 @@ export class HtLocationInspector extends LitElement {
     `;
   }
 
-  private _renderActionStartupConfig(tab: "lighting" | DeviceAutomationTab) {
+  private _renderActionStartupConfig(tab: StartupAutomationTab) {
     const config = this._getAutomationConfig();
     const reapplyOnStartup = Boolean(config.reapply_last_state_on_startup);
-    const tabLabel =
-      tab === "lighting"
-        ? "lighting"
-        : tab === "appliances"
-          ? "appliance"
-          : tab === "media"
-            ? "media"
-            : "HVAC";
-    const heading =
-      tab === "lighting"
-        ? "Reapply lighting rules on startup"
-        : tab === "appliances"
-          ? "Reapply appliance rules on startup"
-          : tab === "media"
-            ? "Reapply media rules on startup"
-            : "Reapply HVAC rules on startup";
+    const tabLabel = tab === "media" ? "media" : "HVAC";
+    const heading = tab === "media" ? "Reapply media rules on startup" : "Reapply HVAC rules on startup";
 
     return html`
       <div class="startup-inline">
@@ -7192,10 +7731,10 @@ export class HtLocationInspector extends LitElement {
   }
 
   private _workingSources(config: OccupancyConfig): OccupancySource[] {
-    return this._stagedSources ? [...this._stagedSources] : [...(config.occupancy_sources || [])];
+    return [...(config.occupancy_sources || [])];
   }
 
-  private _setWorkingSources(sources: OccupancySource[]): void {
+  private _setWorkingSources(config: OccupancyConfig, sources: OccupancySource[]): void {
     const normalized = sources.map((source) => this._normalizeSource(source.entity_id, source));
     const nextMemory = { ...this._onTimeoutMemory };
     for (const source of normalized) {
@@ -7204,9 +7743,10 @@ export class HtLocationInspector extends LitElement {
       }
     }
     this._onTimeoutMemory = nextMemory;
-    this._stagedSources = normalized;
-    this._scheduleSourcePersist();
-    this.requestUpdate();
+    this._setOccupancyDraft({
+      ...config,
+      occupancy_sources: normalized,
+    });
   }
 
   private _updateSourceDraft(config: OccupancyConfig, sourceIndex: number, draft: OccupancySource): void {
@@ -7222,7 +7762,7 @@ export class HtLocationInspector extends LitElement {
       }
     );
     sources[sourceIndex] = normalizedDraft;
-    this._setWorkingSources(sources);
+    this._setWorkingSources(config, sources);
   }
 
   private _removeSource(sourceIndex: number, config: OccupancyConfig): void {
@@ -7233,7 +7773,7 @@ export class HtLocationInspector extends LitElement {
     const nextMemory = { ...this._onTimeoutMemory };
     delete nextMemory[this._sourceKeyFromSource(removed)];
     this._onTimeoutMemory = nextMemory;
-    this._setWorkingSources(sources);
+    this._setWorkingSources(config, sources);
   }
 
   private _removeSourcesByKey(keys: string[], config: OccupancyConfig): void {
@@ -7251,7 +7791,7 @@ export class HtLocationInspector extends LitElement {
       }
     }
     this._onTimeoutMemory = nextMemory;
-    this._setWorkingSources(retained);
+    this._setWorkingSources(config, retained);
   }
 
   private _addSourceWithDefaults(
@@ -7284,7 +7824,7 @@ export class HtLocationInspector extends LitElement {
       signalDefaults = this._lightSignalDefaults(entityId, options.signalKey);
     }
     const source = this._normalizeSource(entityId, signalDefaults);
-    this._setWorkingSources([...existing, source]);
+    this._setWorkingSources(config, [...existing, source]);
 
     if (options?.resetExternalPicker) {
       this._externalAreaId = "";
@@ -7295,71 +7835,7 @@ export class HtLocationInspector extends LitElement {
   }
 
   private _resetSourceDraftState(): void {
-    if (this._sourcePersistTimer) {
-      window.clearTimeout(this._sourcePersistTimer);
-      this._sourcePersistTimer = undefined;
-    }
-    this._sourcePersistQueued = false;
-    this._stagedSources = undefined;
-  }
-
-  private _scheduleSourcePersist(delayMs = 250): void {
-    if (this._sourcePersistTimer) {
-      window.clearTimeout(this._sourcePersistTimer);
-      this._sourcePersistTimer = undefined;
-    }
-    this._sourcePersistTimer = window.setTimeout(() => {
-      this._sourcePersistTimer = undefined;
-      void this._flushSourcePersist();
-    }, delayMs);
-  }
-
-  private async _flushSourcePersist(): Promise<void> {
-    if (!this.location || !this._stagedSources) return;
-    if (this._sourcePersistInFlight) {
-      this._sourcePersistQueued = true;
-      return;
-    }
-
-    const pending = this._stagedSources.map((source) => ({ ...source }));
-    this._sourcePersistInFlight = true;
-    this._savingSource = true;
-    this.requestUpdate();
-
-    try {
-      await this._persistOccupancySources(pending);
-      if (this._sourcesEqual(this._stagedSources, pending)) {
-        this._stagedSources = undefined;
-      }
-    } catch (err: any) {
-      console.error("Failed to persist occupancy source changes", {
-        locationId: this.location?.id,
-        error: err,
-      });
-      this._showToast(err?.message || "Failed to save source changes", "error");
-    } finally {
-      this._sourcePersistInFlight = false;
-      this._savingSource = false;
-      this.requestUpdate();
-      if (this._sourcePersistQueued) {
-        this._sourcePersistQueued = false;
-        void this._flushSourcePersist();
-      }
-    }
-  }
-
-  private _sourcesEqual(left: OccupancySource[] | undefined, right: OccupancySource[]): boolean {
-    if (!left || left.length !== right.length) return false;
-    return left.every((source, index) => JSON.stringify(source) === JSON.stringify(right[index]));
-  }
-
-  private async _persistOccupancySources(sources: OccupancySource[]): Promise<void> {
-    if (!this.location) return;
-    const config = this._getOccupancyConfig();
-    await this._updateConfig({
-      ...config,
-      occupancy_sources: sources,
-    });
+    // Detection edits are staged in the occupancy draft and committed via Save.
   }
 
   private _normalizeSource(entityId: string, partial: Partial<OccupancySource>): OccupancySource {
@@ -7394,7 +7870,10 @@ export class HtLocationInspector extends LitElement {
   }
 
   private _getOccupancyConfig(): OccupancyConfig {
-    return ((this.location?.modules?.occupancy || {}) as OccupancyConfig) || {};
+    if (!this.location) {
+      return this._sanitizeOccupancyConfig(this._occupancyDefaults());
+    }
+    return this._sanitizeOccupancyConfig(this._occupancyDraft || this._persistedOccupancyConfig(), this.location.id);
   }
 
   private _getAutomationConfig(): AutomationConfig {
@@ -8124,7 +8603,7 @@ export class HtLocationInspector extends LitElement {
 
     try {
       if (action === "trigger") {
-        const fallback = ((this.location.modules.occupancy || {}) as OccupancyConfig).default_timeout || 300;
+        const fallback = this._getOccupancyConfig().default_timeout || 300;
         const timeout = source.on_timeout === null ? fallback : (source.on_timeout ?? fallback);
         const sourceId = source.source_id || source.entity_id;
         await this.hass.callWS({
@@ -8211,6 +8690,29 @@ export class HtLocationInspector extends LitElement {
     );
   }
 
+  private async _runSyncImport(): Promise<void> {
+    if (this._syncImportInProgress) return;
+    this._syncImportInProgress = true;
+    try {
+      const response = await this.hass.callWS(
+        this._withEntryId({
+          type: "topomation/sync/import",
+          force: true,
+        })
+      );
+      const message =
+        typeof (response as Record<string, unknown>)?.message === "string"
+          ? String((response as Record<string, unknown>).message)
+          : "Sync import completed";
+      this._showToast(message, "success");
+    } catch (err: any) {
+      console.error("Failed to run sync import:", err);
+      this._showToast(err?.message || "Failed to run sync import", "error");
+    } finally {
+      this._syncImportInProgress = false;
+    }
+  }
+
   private async _updateModuleConfig(moduleId: string, config: any): Promise<void> {
     if (!this.location) return;
 
@@ -8236,10 +8738,10 @@ export class HtLocationInspector extends LitElement {
   private _toggleEnabled(_e?: Event): void {
     if (!this.location || this._isFloorLocation()) return;
 
-    const config = (this.location.modules.occupancy || {}) as OccupancyConfig;
+    const config = this._getOccupancyConfig();
     const newEnabled = !(config.enabled ?? true);
 
-    this._updateConfig({ ...config, enabled: newEnabled });
+    this._setOccupancyDraft({ ...config, enabled: newEnabled });
   }
 
   private _withEntryId<T extends Record<string, any>>(payload: T): T {
@@ -8292,12 +8794,8 @@ export class HtLocationInspector extends LitElement {
 
     if (!this.location || this._isFloorLocation()) return;
 
-    const config = (this.location.modules.occupancy || {}) as OccupancyConfig;
-    this._updateConfig({ ...config, default_timeout: seconds });
-  }
-
-  private async _updateConfig(config: OccupancyConfig): Promise<void> {
-    await this._updateModuleConfig("occupancy", config);
+    const config = this._getOccupancyConfig();
+    this._setOccupancyDraft({ ...config, default_timeout: seconds });
   }
 
   private _isFloorLocation(): boolean {

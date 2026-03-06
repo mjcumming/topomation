@@ -1,80 +1,74 @@
 # Work Tracking - topomation
 
-**Last Updated**: 2026-02-28
+**Last Updated**: 2026-03-06
 **Purpose**: operational execution tracker for the active sprint.
 
-### v0.1.20 (2026-02-28) — Tree DnD stabilization
+Status markers:
+- Execution: `Pending`, `In Progress`, `Blocked`, `Done`
+- Delivery: `Target`, `Implemented`, `Released`, `Live-validated`
 
-- Tree drag-and-drop now uses explicit drop zones (C-011, ADR-HA-039): before/inside/after/outdent by zone only; no x-offset heuristics. E2E and unit tests added; contract and plan documented.
+### v0.2.25 (2026-03-06) — Automation UX realignment + validation gate
+
+- Automation workspace realignment is implemented in repo:
+  explicit save/discard for Detection/Ambient, HA-canonical/card-local Lighting
+  rules, narrowed Lighting/Media/HVAC scope, and backend create rollback when
+  HA registration does not converge.
+- Delivery status is now `Live-validated` after the 2026-03-06 live HA
+  automation delta rerun and backend contract rerun both passed.
 
 Canonical separation:
 - Strategy and release sequencing: `project/roadmap.md`
 - Task-level scope and acceptance criteria: `project/issues/*.md`
-- Architecture/contracts: `docs/architecture.md`, `docs/bidirectional-sync-design.md`, `docs/adr-log.md`
+- Architecture/contracts: `docs/contracts.md`, `docs/automation-ui-guide.md`, `docs/architecture.md`, `docs/adr-log.md`
 
 ## Current Sprint
 
-**Name**: Live HA Validation + v0.1.0 Release Gate  
-**Dates**: 2026-02-24 onward  
-**Status**: Complete
+**Name**: Automation UX contract alignment + live HA delta gate  
+**Dates**: 2026-03-05 onward  
+**Execution Status**: Done
+**Delivery Status**: Live-validated
 
 ### Sprint Goal
 
-Stand up a live HA test environment and execute the end-to-end validation checklist to clear the v0.1.0 release blocker.
+Close the automation UX contract drift, keep docs/status aligned with the
+implemented state, narrow the visible automation IA to Lighting/Media/HVAC, and
+complete the live HA delta gate before any release/live claim.
 
 ### Active Work Items
 
-1. [x] Build `tests/test-ha-config/configuration.yaml` for simulated entities  
-   Source: `project/issues/issue-052-live-ha-test-environment.md`
-2. [x] Start HA dev runtime and complete onboarding (`hass -c /workspaces/core/config`)  
-   Source: `project/issues/issue-052-live-ha-test-environment.md`
-3. [x] Complete ISSUE-052 entity assignment set (motion/presence/lights/media player)  
-   Source: `project/issues/issue-052-live-ha-test-environment.md`
-4. [x] Execute API-assisted live validation checks and record results in ISSUE-051  
-   Source: `project/issues/issue-051-floor-area-sync-validation.md`
-5. [x] Final manual UI confirmation: topology panel opens and visual hierarchy matches imported floors/areas  
-   Source: `project/issues/issue-051-floor-area-sync-validation.md`
-6. [x] Add debounced persistence for topology/module-config edits (`reorder`, `set_module_config`)  
-   Source: implementation hardening (2026-02-24)
-7. [x] Enforce startup reconciliation (HA canonical for `floor_*` / `area_*` wrappers) and record ADR-HA-022  
-   Source: implementation hardening (2026-02-24)
+1. [x] Remove the legacy Lighting editor save path from the active inspector workflow.  
+   Source: `project/issues/issue-058-automation-ui-contract-implementation.md`
+2. [x] Keep legacy `modules.dusk_dawn` only as migration compatibility input.  
+   Source: `project/issues/issue-058-automation-ui-contract-implementation.md`
+3. [x] Harden managed-rule creation to fail and roll back when HA registration does not converge.  
+   Source: implementation hardening (2026-03-06)
+4. [x] Align contracts, UI guide, architecture, and active issue docs with implemented behavior.  
+   Source: ADR-HA-054/055/056/057/058/060
+5. [x] Add/refresh automated backend, frontend, and Playwright coverage for automation UX deltas.  
+   Source: `project/issues/issue-058-automation-ui-contract-implementation.md`
+6. [x] Execute the live HA automation delta checklist for the narrowed Lighting/Media/HVAC IA and record the outcome.  
+   Source: `docs/live-ha-validation-checklist.md`, `project/issues/issue-058-automation-ui-contract-implementation.md`
+7. [x] Promote delivery status from `Implemented` to `Live-validated` only after the live HA rerun passes.  
+   Source: ADR-HA-059 / `docs/contracts.md`
 
-### v0.1.0 Release Gate Checklist
+### Current Release/Validation Gate
 
-- [x] All sections of `docs/live-ha-validation-checklist.md` pass
-- [x] Results documented in `project/issues/issue-051-floor-area-sync-validation.md`
-- [x] No blocking errors in HA logs during validation
-- [x] `CHANGELOG.md` updated
-
-## Post-v0.1 Backlog (ADR-HA-020)
-
-1. [x] ISSUE-053: ADR-HA-020 Topology Model Foundation  
-   Source: `project/issues/issue-053-adr-ha-020-topology-model-foundation.md`
-2. [x] ISSUE-054: Scoped Policy Bindings for Global Devices (Security v1)  
-   Source: `project/issues/issue-054-scoped-policy-bindings-security-v1.md`
-3. [x] ISSUE-055: Frontend Support for Custom Structural Nodes + Explicit Sources  
-   Source: `project/issues/issue-055-frontend-support-custom-structural-nodes.md`
-4. [x] ISSUE-056: ADR-HA-020 Validation Matrix and Documentation Alignment  
-   Source: `project/issues/issue-056-adr-ha-020-validation-and-docs.md`
-5. [x] Building/grounds paradigm rollout in docs + frontend fixtures/tests  
-   Source: implementation follow-up (2026-02-25)
-6. [x] Inspector IA refinement: `Detection`, `On Occupied`, `On Vacant` tabs + route-default mapping  
-   Source: UX follow-up (2026-02-25)
-7. [x] Enable location lifecycle actions in panel: rename + delete (all non-root nodes), with root-only delete guardrail  
-   Source: implementation follow-up (2026-02-25)
-8. [x] Occupied/Vacant actions moved to native Home Assistant automations (with Topomation metadata labels/category + inspector integration)  
-   Source: implementation follow-up (2026-02-25)
+- [x] Targeted backend/frontend/browser automation UX checks pass in local tooling.
+- [x] Docs and issue status reflect `Implemented`, not `Live-validated`.
+- [x] Live managed-actions backend contract rerun passed on 2026-03-06.
+- [x] Live HA automation delta checklist rerun is recorded for the narrowed IA.
+- [x] Release/live claim remains blocked until the live HA rerun passes.
 
 ## Previous Sprint Summary
 
-**Name**: v3 Alignment + Documentation Hardening  
-**Window**: 2026-02-23 to 2026-02-24  
-**Result**: Completed
+**Name**: Tree DnD stabilization + release gate setup  
+**Window**: 2026-02-24 to 2026-02-28  
+**Result**: Done / Live-validated for the then-current checklist scope
 
-- Sync contract hardened (`docs/bidirectional-sync-design.md`)
-- Active docs map established (`docs/index.md`)
-- Legacy docs moved under `docs/history/`
-- Backend integration status: substantially complete pending live HA validation
+- Tree drag-and-drop moved to explicit drop zones (C-011, ADR-HA-039).
+- Live HA environment and validation workflow were established for managed actions.
+- That validation predates the 2026-03 automation UX delta and does not substitute
+  for the new delta rerun.
 
 ## Archive Policy
 

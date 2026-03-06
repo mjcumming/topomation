@@ -19,7 +19,6 @@ import "./ht-location-dialog";
 type ManagerView =
   | "location"
   | "occupancy"
-  | "appliances"
   | "media"
   | "hvac";
 type RightPanelMode = "inspector" | "assign";
@@ -444,7 +443,29 @@ export class TopomationPanel extends LitElement {
       .right-panel-modes {
         margin-top: var(--spacing-sm);
         display: flex;
-        gap: 8px;
+        gap: var(--spacing-sm);
+        border-bottom: 1px solid var(--divider-color);
+      }
+
+      .workspace-tab {
+        padding: var(--spacing-sm) var(--spacing-md);
+        background: transparent;
+        border: none;
+        border-bottom: 2px solid transparent;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 500;
+        color: var(--text-secondary-color);
+        transition: color var(--transition-speed), border-color var(--transition-speed);
+      }
+
+      .workspace-tab:hover {
+        color: var(--text-primary-color);
+      }
+
+      .workspace-tab.active {
+        color: var(--primary-color);
+        border-bottom-color: var(--primary-color);
       }
 
       .header-actions .button {
@@ -912,7 +933,7 @@ export class TopomationPanel extends LitElement {
             <div class="header-title">${rightHeaderTitle}</div>
             <div class="right-panel-modes" role="tablist" aria-label="Right panel mode">
               <button
-                class="button ${this._rightPanelMode === "inspector" ? "button-primary" : "button-secondary"}"
+                class="workspace-tab ${this._rightPanelMode === "inspector" ? "active" : ""}"
                 role="tab"
                 aria-selected=${this._rightPanelMode === "inspector"}
                 data-testid="right-mode-configure"
@@ -921,7 +942,7 @@ export class TopomationPanel extends LitElement {
                 Configure
               </button>
               <button
-                class="button ${this._rightPanelMode === "assign" ? "button-primary" : "button-secondary"}"
+                class="workspace-tab ${this._rightPanelMode === "assign" ? "active" : ""}"
                 role="tab"
                 aria-selected=${this._rightPanelMode === "assign"}
                 data-testid="right-mode-assign"
@@ -962,7 +983,7 @@ export class TopomationPanel extends LitElement {
 
   private _managerViewFromPath(path: string): ManagerView {
     if (path.startsWith("/topomation-occupancy")) return "occupancy";
-    if (path.startsWith("/topomation-appliances")) return "appliances";
+    if (path.startsWith("/topomation-appliances")) return "hvac";
     if (path.startsWith("/topomation-media")) return "media";
     if (path.startsWith("/topomation-hvac")) return "hvac";
     return "location";
@@ -973,7 +994,6 @@ export class TopomationPanel extends LitElement {
     if (
       configuredView === "location" ||
       configuredView === "occupancy" ||
-      configuredView === "appliances" ||
       configuredView === "media" ||
       configuredView === "hvac"
     ) {

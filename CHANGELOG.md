@@ -9,6 +9,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.26] - 2026-03-06
+
+### Added
+
+- Added a dedicated live Home Assistant browser release gate
+  (`playwright.live.config.ts` + `live-automation-ui.spec.ts`) so release
+  validation covers the real inspector workflow, not just mock Playwright
+  suites and backend live contract checks.
+
+### Changed
+
+- Narrowed the visible automation IA to `Lighting`, `Media`, and `HVAC`.
+  `HVAC` v1 now covers `fan.*` plus switch-controlled exhaust/ventilation
+  devices, while the old `/topomation-appliances` route remains as a
+  compatibility alias into `HVAC`.
+- Updated contracts, architecture, ADRs, and work-tracking docs to formalize
+  the narrowed automation scope and separate `Implemented`, `Released`, and
+  `Live-validated` delivery states.
+- Hardened release automation so the default Playwright matrix always excludes
+  `playwright/live-*`, while `make test-release-live` runs the explicit live
+  browser workflow and auto-targets the local dev Home Assistant instance in
+  dev-container release work.
+
+### Fixed
+
+- Managed action creation now rolls back and fails when Home Assistant does not
+  register the automation in time, instead of returning a false success.
+- Managed rule enumeration now snapshots automation entities before awaiting
+  config reads, preventing the post-create `dictionary changed size during
+  iteration` race.
+
 ## [0.2.25] - 2026-03-05
 
 ### Added

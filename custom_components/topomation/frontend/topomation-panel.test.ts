@@ -1434,6 +1434,9 @@ describe('TopomationPanel integration (fake hass)', () => {
     element.route = { path: "/topomation-occupancy" };
     expect(element._managerView()).to.equal("occupancy");
 
+    element.route = { path: "/topomation-appliances" };
+    expect(element._managerView()).to.equal("hvac");
+
     element.route = { path: "/topomation" };
     expect(element._managerView()).to.equal("location");
   });

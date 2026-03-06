@@ -12,7 +12,8 @@ import logging
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Literal
+from time import monotonic
+from typing import Any, Literal, cast
 
 from homeassistant.components.automation import (
     DATA_COMPONENT as AUTOMATION_DATA_COMPONENT,
@@ -49,6 +50,7 @@ _VALID_TRIGGER_TYPES = frozenset({"on_occupied", "on_vacant", "on_dark", "on_bri
 _VALID_AMBIENT_CONDITIONS = frozenset({"any", "dark", "bright"})
 _AUTOMATION_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_]+$")
 _RULE_UUID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{7,63}$")
+_RECENT_RULE_SNAPSHOT_TTL_SECONDS = 30.0
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -67,6 +69,26 @@ class _TopomationMetadata:
     rule_uuid: str
 
 
+@dataclass(slots=True)
+class _RecentRuleSnapshot:
+    """Short-lived snapshot for upsert/list consistency after API writes."""
+
+    saved_at_monotonic: float
+    location_id: str
+    name: str
+    trigger_type: ActionTriggerType
+    ambient_condition: ActionAmbientCondition
+    must_be_occupied: bool
+    time_condition_enabled: bool
+    start_time: str
+    end_time: str
+    rule_uuid: str
+    actions: list[dict[str, Any]]
+    action_entity_id: str | None
+    action_service: str | None
+    action_data: dict[str, Any] | None
+
+
 class TopomationManagedActions:
     """Create/list/update/delete Topomation managed automations via HA's config REST API."""
 
@@ -74,6 +96,7 @@ class TopomationManagedActions:
         """Initialize managed automation helper."""
         self.hass = hass
         self._token_lock = asyncio.Lock()
+        self._recent_rule_snapshots: dict[str, _RecentRuleSnapshot] = {}
 
     async def _ensure_automation_api_token(self) -> str:
         """Get or create a system user and return an access token for the config API."""
@@ -141,7 +164,8 @@ class TopomationManagedActions:
         rules: list[dict[str, Any]] = []
         entity_registry = er.async_get(self.hass)
         component = self.hass.data.get(AUTOMATION_DATA_COMPONENT)
-        entities = getattr(component, "entities", []) if component is not None else []
+        entities = self._snapshot_automation_entities(component)
+        self._prune_recent_rule_snapshots()
 
         for automation_entity in entities:
             entity_id = getattr(automation_entity, "entity_id", None)
@@ -152,15 +176,74 @@ class TopomationManagedActions:
             if not isinstance(raw_config, Mapping):
                 continue
 
-            metadata = self._parse_metadata(raw_config.get("description"))
-            if metadata is None or metadata.location_id != location_id:
-                continue
-
             automation_id = self._resolve_automation_id(
                 entity_registry, entity_id, raw_config, unique_id
             )
-            name = self._resolve_rule_name(entity_id, raw_config)
-            action_entity_id, action_service = self._extract_action_summary(raw_config)
+            recent_snapshot = self._get_recent_rule_snapshot(
+                automation_id or "",
+                location_id=location_id,
+            )
+            if recent_snapshot is not None:
+                enabled = self._is_automation_enabled(entity_id)
+                rules.append(
+                    {
+                        "id": automation_id or entity_id,
+                        "entity_id": entity_id,
+                        "name": recent_snapshot.name,
+                        "trigger_type": recent_snapshot.trigger_type,
+                        "actions": [dict(action) for action in recent_snapshot.actions],
+                        "action_entity_id": recent_snapshot.action_entity_id,
+                        "action_service": recent_snapshot.action_service,
+                        "action_data": (
+                            dict(recent_snapshot.action_data)
+                            if isinstance(recent_snapshot.action_data, Mapping)
+                            else None
+                        ),
+                        "ambient_condition": recent_snapshot.ambient_condition,
+                        "must_be_occupied": recent_snapshot.must_be_occupied,
+                        "time_condition_enabled": recent_snapshot.time_condition_enabled,
+                        "start_time": recent_snapshot.start_time,
+                        "end_time": recent_snapshot.end_time,
+                        "rule_uuid": recent_snapshot.rule_uuid,
+                        # Legacy compatibility for older frontends.
+                        "require_dark": recent_snapshot.ambient_condition == "dark",
+                        "enabled": enabled,
+                    }
+                )
+                continue
+
+            effective_config: Mapping[str, Any] = raw_config
+            if isinstance(automation_id, str) and automation_id:
+                try:
+                    latest_payload = await self._call_automation_config_api("GET", automation_id)
+                    if isinstance(latest_payload, Mapping):
+                        latest_config = latest_payload.get("config")
+                        if isinstance(latest_config, Mapping):
+                            effective_config = latest_config
+                        elif "description" in latest_payload and "triggers" in latest_payload:
+                            # Some HA builds may return the config object directly.
+                            effective_config = latest_payload
+                except Exception:
+                    _LOGGER.debug(
+                        "Falling back to runtime raw_config for managed rule list: %s",
+                        automation_id,
+                        exc_info=True,
+                    )
+
+            metadata = self._parse_metadata(effective_config.get("description"))
+            if metadata is None or metadata.location_id != location_id:
+                metadata = self._parse_metadata(raw_config.get("description"))
+                if metadata is None or metadata.location_id != location_id:
+                    continue
+
+            name = self._resolve_rule_name(entity_id, effective_config)
+            actions = self._extract_actions(effective_config)
+            if not actions:
+                actions = self._extract_actions(raw_config)
+            first_action = actions[0] if actions else None
+            action_entity_id = first_action.get("entity_id") if first_action else None
+            action_service = first_action.get("service") if first_action else None
+            action_data = first_action.get("data") if first_action else None
             enabled = self._is_automation_enabled(entity_id)
 
             rules.append(
@@ -169,8 +252,10 @@ class TopomationManagedActions:
                     "entity_id": entity_id,
                     "name": name,
                     "trigger_type": metadata.trigger_type,
+                    "actions": actions,
                     "action_entity_id": action_entity_id,
                     "action_service": action_service,
+                    "action_data": action_data,
                     "ambient_condition": metadata.ambient_condition,
                     "must_be_occupied": metadata.must_be_occupied,
                     "time_condition_enabled": metadata.time_condition_enabled,
@@ -192,8 +277,10 @@ class TopomationManagedActions:
         location: Any,
         name: str,
         trigger_type: str,
-        action_entity_id: str,
-        action_service: str,
+        action_entity_id: str | None = None,
+        action_service: str | None = None,
+        actions: list[Mapping[str, Any]] | None = None,
+        action_data: Mapping[str, Any] | None = None,
         require_dark: bool = False,
         ambient_condition: str | None = None,
         must_be_occupied: bool = False,
@@ -217,6 +304,21 @@ class TopomationManagedActions:
         )
         normalized_start_time = self._normalize_time_hhmm(start_time, "18:00")
         normalized_end_time = self._normalize_time_hhmm(end_time, "23:59")
+        normalized_actions = self._normalize_rule_actions(
+            actions=actions,
+            trigger_type=normalized_trigger,
+            fallback_entity_id=action_entity_id,
+            fallback_service=action_service,
+            fallback_data=action_data,
+        )
+        if not normalized_actions:
+            raise ValueError("At least one action target is required")
+        primary_action = normalized_actions[0]
+        primary_action_entity_id = str(primary_action["entity_id"])
+        primary_action_service = str(primary_action["service"])
+        primary_action_data = (
+            dict(primary_action["data"]) if isinstance(primary_action.get("data"), Mapping) else None
+        )
 
         occupancy_entity_id: str | None = None
         requires_occupancy_entity = normalized_trigger in {"on_occupied", "on_vacant"} or bool(
@@ -238,17 +340,12 @@ class TopomationManagedActions:
             automation_id = self._build_stable_automation_id(
                 location_id,
                 normalized_trigger,
-                action_entity_id,
+                primary_action_entity_id,
                 name,
                 normalized_rule_uuid,
             )
         if not normalized_rule_uuid:
             normalized_rule_uuid = self._rule_uuid_from_automation_id(automation_id)
-        action_domain = (
-            action_entity_id.split(".", 1)[0]
-            if "." in action_entity_id
-            else "homeassistant"
-        )
 
         triggers = self._build_trigger_definitions(
             trigger_type=normalized_trigger,
@@ -280,6 +377,23 @@ class TopomationManagedActions:
             "rule_uuid": normalized_rule_uuid,
         }
         description = "Managed by Topomation.\n" + self._metadata_line(metadata_payload)
+        config_actions: list[dict[str, Any]] = []
+        for action_target in normalized_actions:
+            action_entity = str(action_target["entity_id"])
+            action_service_name = str(action_target["service"])
+            action_domain = (
+                action_entity.split(".", 1)[0]
+                if "." in action_entity
+                else "homeassistant"
+            )
+            action_step: dict[str, Any] = {
+                "action": f"{action_domain}.{action_service_name}",
+                "target": {"entity_id": action_entity},
+            }
+            action_step_data = action_target.get("data")
+            if isinstance(action_step_data, Mapping) and action_step_data:
+                action_step["data"] = dict(action_step_data)
+            config_actions.append(action_step)
 
         config_payload: dict[str, Any] = {
             CONF_ID: automation_id,
@@ -287,12 +401,7 @@ class TopomationManagedActions:
             "description": description,
             "triggers": triggers,
             "conditions": conditions,
-            "actions": [
-                {
-                    "action": f"{action_domain}.{action_service}",
-                    "target": {"entity_id": action_entity_id},
-                }
-            ],
+            "actions": config_actions,
             "mode": "single",
         }
 
@@ -311,6 +420,22 @@ class TopomationManagedActions:
             )
             raise ValueError("Automation config validation returned no result")
         await self._call_automation_config_api("POST", automation_id, config_payload)
+        self._remember_recent_rule_snapshot(
+            automation_id=automation_id,
+            location_id=location_id,
+            name=name,
+            trigger_type=normalized_trigger,
+            ambient_condition=normalized_ambient_condition,
+            must_be_occupied=bool(must_be_occupied),
+            time_condition_enabled=bool(time_condition_enabled),
+            start_time=normalized_start_time,
+            end_time=normalized_end_time,
+            rule_uuid=normalized_rule_uuid,
+            actions=normalized_actions,
+            action_entity_id=primary_action_entity_id,
+            action_service=primary_action_service,
+            action_data=primary_action_data,
+        )
 
         entity_id = await self._resolve_created_entity_id(
             automation_id,
@@ -332,23 +457,45 @@ class TopomationManagedActions:
                 entity_id, normalized_trigger, area_id=ha_area_id
             )
         else:
+            timeout_seconds = _ENTITY_RESOLVE_MAX_ATTEMPTS * _ENTITY_RESOLVE_WAIT_SECONDS
+            self._recent_rule_snapshots.pop(automation_id, None)
             _LOGGER.warning(
                 "[managed_actions] Rule written via config API but entity did not appear after %.1fs. "
-                "Area/label/category grouping was skipped. "
+                "Rolling back attempted write. "
                 "The integration uses the same REST API as the HA automation UI (writes to automations.yaml). "
                 "Ensure configuration.yaml includes that file (e.g. automation: !include automations.yaml). "
                 "automation_id=%s",
-                _ENTITY_RESOLVE_MAX_ATTEMPTS * _ENTITY_RESOLVE_WAIT_SECONDS,
+                timeout_seconds,
                 automation_id,
             )
+            error_message = (
+                "Managed action rule was written but Home Assistant did not register it after "
+                f"{timeout_seconds:.1f}s. Ensure configuration.yaml includes automations.yaml "
+                "(for example: automation: !include automations.yaml)."
+            )
+            try:
+                await self.async_delete_rule(automation_id=automation_id)
+            except Exception as err:
+                _LOGGER.warning(
+                    "Failed rollback after managed rule registration timeout for %s",
+                    automation_id,
+                    exc_info=True,
+                )
+                raise ValueError(
+                    error_message
+                    + " Topomation could not roll back automatically; check automations.yaml for a stale entry."
+                ) from err
+            raise ValueError(error_message + " Topomation rolled back the attempted write.")
 
         return {
             "id": automation_id,
             "entity_id": entity_id or f"automation.{automation_id}",
             "name": name,
             "trigger_type": normalized_trigger,
-            "action_entity_id": action_entity_id,
-            "action_service": action_service,
+            "actions": normalized_actions,
+            "action_entity_id": primary_action_entity_id,
+            "action_service": primary_action_service,
+            "action_data": primary_action_data,
             "ambient_condition": normalized_ambient_condition,
             "must_be_occupied": bool(must_be_occupied),
             "time_condition_enabled": bool(time_condition_enabled),
@@ -375,6 +522,7 @@ class TopomationManagedActions:
             raise ValueError("Automation id is required")
 
         await self._call_automation_config_api("DELETE", config_id)
+        self._recent_rule_snapshots.pop(config_id, None)
 
     async def async_set_rule_enabled(self, *, entity_id: str, enabled: bool) -> None:
         """Enable or disable one automation entity."""
@@ -393,7 +541,7 @@ class TopomationManagedActions:
             return deleted_automation_ids
 
         component = self.hass.data.get(AUTOMATION_DATA_COMPONENT)
-        entities = getattr(component, "entities", []) if component is not None else []
+        entities = self._snapshot_automation_entities(component)
         entity_registry = er.async_get(self.hass)
 
         for automation_entity in entities:
@@ -439,6 +587,15 @@ class TopomationManagedActions:
 
         return deleted_automation_ids
 
+    def _snapshot_automation_entities(self, component: Any) -> list[Any]:
+        """Return a stable list of automation entities from HA's automation component."""
+        if component is None:
+            return []
+        raw_entities = getattr(component, "entities", [])
+        if isinstance(raw_entities, Mapping):
+            return list(raw_entities.values())
+        return list(raw_entities)
+
     def _find_occupancy_entity_id(self, location_id: str) -> str | None:
         """Resolve occupancy binary sensor entity_id for a location id."""
         for state in self.hass.states.async_all("binary_sensor"):
@@ -458,7 +615,88 @@ class TopomationManagedActions:
             normalized = "on_vacant"
         if normalized not in _VALID_TRIGGER_TYPES:
             raise ValueError(f"Invalid trigger_type '{trigger_type}'")
-        return normalized  # type: ignore[return-value]
+        return cast(ActionTriggerType, normalized)
+
+    def _prune_recent_rule_snapshots(self) -> None:
+        """Drop expired snapshot entries."""
+        now = monotonic()
+        expired_keys = [
+            automation_id
+            for automation_id, snapshot in self._recent_rule_snapshots.items()
+            if now - snapshot.saved_at_monotonic > _RECENT_RULE_SNAPSHOT_TTL_SECONDS
+        ]
+        for automation_id in expired_keys:
+            self._recent_rule_snapshots.pop(automation_id, None)
+
+    def _get_recent_rule_snapshot(
+        self,
+        automation_id: str,
+        *,
+        location_id: str,
+    ) -> _RecentRuleSnapshot | None:
+        """Return a non-expired snapshot for this automation/location pair."""
+        if not automation_id:
+            return None
+        snapshot = self._recent_rule_snapshots.get(automation_id)
+        if snapshot is None:
+            return None
+        if monotonic() - snapshot.saved_at_monotonic > _RECENT_RULE_SNAPSHOT_TTL_SECONDS:
+            self._recent_rule_snapshots.pop(automation_id, None)
+            return None
+        if snapshot.location_id != location_id:
+            return None
+        return snapshot
+
+    def _remember_recent_rule_snapshot(
+        self,
+        *,
+        automation_id: str,
+        location_id: str,
+        name: str,
+        trigger_type: ActionTriggerType,
+        ambient_condition: ActionAmbientCondition,
+        must_be_occupied: bool,
+        time_condition_enabled: bool,
+        start_time: str,
+        end_time: str,
+        rule_uuid: str,
+        actions: list[dict[str, Any]],
+        action_entity_id: str | None,
+        action_service: str | None,
+        action_data: Mapping[str, Any] | None,
+    ) -> None:
+        """Persist short-lived rule state after POST for immediate list consistency."""
+        if not automation_id:
+            return
+        normalized_actions: list[dict[str, Any]] = []
+        for action in actions:
+            entry: dict[str, Any] = {
+                "entity_id": str(action.get("entity_id", "")).strip(),
+                "service": str(action.get("service", "")).strip(),
+            }
+            raw_data = action.get("data")
+            if isinstance(raw_data, Mapping) and raw_data:
+                entry["data"] = dict(raw_data)
+            if entry["entity_id"] and entry["service"]:
+                normalized_actions.append(entry)
+
+        snapshot = _RecentRuleSnapshot(
+            saved_at_monotonic=monotonic(),
+            location_id=location_id,
+            name=name,
+            trigger_type=trigger_type,
+            ambient_condition=ambient_condition,
+            must_be_occupied=must_be_occupied,
+            time_condition_enabled=time_condition_enabled,
+            start_time=start_time,
+            end_time=end_time,
+            rule_uuid=rule_uuid,
+            actions=normalized_actions,
+            action_entity_id=action_entity_id,
+            action_service=action_service,
+            action_data=(dict(action_data) if isinstance(action_data, Mapping) else None),
+        )
+        self._recent_rule_snapshots[automation_id] = snapshot
 
     def _default_ambient_condition_for_trigger(
         self,
@@ -837,31 +1075,145 @@ class TopomationManagedActions:
                 return friendly_name.strip()
         return entity_id
 
-    def _extract_action_summary(self, raw_config: Mapping[str, Any]) -> tuple[str | None, str | None]:
-        """Extract action entity/service from raw automation config."""
+    def _extract_actions(
+        self,
+        raw_config: Mapping[str, Any],
+    ) -> list[dict[str, Any]]:
+        """Extract normalized action targets from raw automation config."""
         action_block = raw_config.get("actions", raw_config.get("action"))
-        first_action: Any = action_block[0] if isinstance(action_block, list) and action_block else action_block
-        if not isinstance(first_action, Mapping):
-            return None, None
-        action_service_name: str | None = None
-        raw_service = first_action.get("action") or first_action.get("service")
-        if isinstance(raw_service, str) and raw_service:
-            action_service_name = raw_service.split(".", 1)[1] if "." in raw_service else raw_service
-        target = first_action.get("target")
-        if isinstance(target, Mapping):
-            target_entity = target.get("entity_id")
-            if isinstance(target_entity, str) and target_entity:
-                return target_entity, action_service_name
-            if isinstance(target_entity, list) and target_entity:
-                first_target = target_entity[0]
-                if isinstance(first_target, str) and first_target:
-                    return first_target, action_service_name
-        data = first_action.get("data")
-        if isinstance(data, Mapping):
-            data_entity = data.get("entity_id")
-            if isinstance(data_entity, str) and data_entity:
-                return data_entity, action_service_name
-        return None, action_service_name
+        action_entries: list[Any]
+        if isinstance(action_block, list):
+            action_entries = action_block
+        elif action_block is None:
+            action_entries = []
+        else:
+            action_entries = [action_block]
+
+        normalized_actions: list[dict[str, Any]] = []
+        seen_entity_ids: set[str] = set()
+        for raw_action in action_entries:
+            if not isinstance(raw_action, Mapping):
+                continue
+            raw_service = raw_action.get("action") or raw_action.get("service")
+            if not isinstance(raw_service, str) or not raw_service.strip():
+                continue
+            action_service_name = (
+                raw_service.split(".", 1)[1] if "." in raw_service else raw_service
+            ).strip()
+            if not action_service_name:
+                continue
+
+            action_entity_id: str | None = None
+            target = raw_action.get("target")
+            if isinstance(target, Mapping):
+                target_entity = target.get("entity_id")
+                if isinstance(target_entity, str) and target_entity.strip():
+                    action_entity_id = target_entity.strip()
+                elif isinstance(target_entity, list):
+                    for candidate in target_entity:
+                        if isinstance(candidate, str) and candidate.strip():
+                            action_entity_id = candidate.strip()
+                            break
+            if not action_entity_id:
+                data = raw_action.get("data")
+                if isinstance(data, Mapping):
+                    data_entity = data.get("entity_id")
+                    if isinstance(data_entity, str) and data_entity.strip():
+                        action_entity_id = data_entity.strip()
+
+            if not action_entity_id or action_entity_id in seen_entity_ids:
+                continue
+            action_data = self._normalize_action_data(raw_action.get("data"))
+            normalized_actions.append(
+                {
+                    "entity_id": action_entity_id,
+                    "service": action_service_name,
+                    **({"data": action_data} if action_data else {}),
+                }
+            )
+            seen_entity_ids.add(action_entity_id)
+
+        return normalized_actions
+
+    def _default_action_service_for_trigger(self, entity_id: str, trigger_type: ActionTriggerType) -> str:
+        """Return default service for one entity+trigger pairing."""
+        domain = entity_id.split(".", 1)[0] if "." in entity_id else ""
+        prefers_off = trigger_type in {"on_vacant", "on_bright"}
+        if domain == "media_player":
+            return "media_stop" if prefers_off else "media_play"
+        if domain in {"switch", "fan", "light"}:
+            return "turn_off" if prefers_off else "turn_on"
+        return "turn_off" if prefers_off else "turn_on"
+
+    def _normalize_rule_actions(
+        self,
+        *,
+        actions: list[Mapping[str, Any]] | None,
+        trigger_type: ActionTriggerType,
+        fallback_entity_id: str | None,
+        fallback_service: str | None,
+        fallback_data: Mapping[str, Any] | None,
+    ) -> list[dict[str, Any]]:
+        """Normalize multi-target action payload."""
+        normalized: list[dict[str, Any]] = []
+        seen_entity_ids: set[str] = set()
+        for raw_action in actions or []:
+            if not isinstance(raw_action, Mapping):
+                continue
+            entity_id = str(raw_action.get("entity_id", "")).strip()
+            if not entity_id or entity_id in seen_entity_ids:
+                continue
+            raw_service = str(raw_action.get("service", "")).strip()
+            service = raw_service or self._default_action_service_for_trigger(entity_id, trigger_type)
+            data = self._normalize_action_data(raw_action.get("data"))
+            normalized.append(
+                {
+                    "entity_id": entity_id,
+                    "service": service,
+                    **({"data": data} if data else {}),
+                }
+            )
+            seen_entity_ids.add(entity_id)
+
+        fallback_entity = str(fallback_entity_id or "").strip()
+        if fallback_entity and fallback_entity not in seen_entity_ids:
+            fallback_service_name = str(fallback_service or "").strip() or self._default_action_service_for_trigger(
+                fallback_entity, trigger_type
+            )
+            fallback_data_normalized = self._normalize_action_data(fallback_data)
+            normalized.insert(
+                0,
+                {
+                    "entity_id": fallback_entity,
+                    "service": fallback_service_name,
+                    **({"data": fallback_data_normalized} if fallback_data_normalized else {}),
+                },
+            )
+
+        return normalized
+
+    def _normalize_action_data(self, raw_data: Any) -> dict[str, Any] | None:
+        """Normalize managed action data payload for service call compatibility."""
+        if not isinstance(raw_data, Mapping):
+            return None
+
+        action_data: dict[str, Any] = {}
+        brightness_raw = raw_data.get("brightness_pct")
+        if brightness_raw is not None:
+            try:
+                numeric = float(brightness_raw)
+            except (TypeError, ValueError):
+                numeric = 0.0
+            if numeric > 0:
+                action_data["brightness_pct"] = max(1, min(100, round(numeric)))
+
+        for key, value in raw_data.items():
+            if key in {"entity_id", "brightness_pct"}:
+                continue
+            if value is not None:
+                action_data[str(key)] = value
+
+        return action_data or None
 
     def _has_sun_dark_condition(self, raw_config: Mapping[str, Any]) -> bool:
         """Return True when automation config has sun below_horizon condition."""

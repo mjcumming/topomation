@@ -342,14 +342,115 @@ def _normalize_sync_locations_config(
     config: dict[str, Any],
 ) -> tuple[list[str] | None, str | None]:
     """Validate and normalize occupancy sync_locations against product policy."""
-    return _normalize_neighbor_location_ids(
-        location_manager=location_manager,
-        location=location,
-        config=config,
-        config_key=_OCCUPANCY_SYNC_LOCATIONS_KEY,
-        noun="Sync rooms",
-        empty_scope_message="Sync Rooms are only supported for area locations directly under a floor.",
-    )
+    raw_values = config.get(_OCCUPANCY_SYNC_LOCATIONS_KEY)
+    if raw_values is None:
+        return None, None
+    if not isinstance(raw_values, list):
+        return None, f"{_OCCUPANCY_SYNC_LOCATIONS_KEY} must be a list of location IDs."
+
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for item in raw_values:
+        if not isinstance(item, str):
+            return None, f"{_OCCUPANCY_SYNC_LOCATIONS_KEY} must contain string location IDs."
+        location_id = item.strip()
+        if not location_id or location_id in seen:
+            continue
+        seen.add(location_id)
+        normalized.append(location_id)
+
+    scope = _sync_location_scope(location_manager, location)
+    allowed = _allowed_sync_location_neighbors(location_manager, location, scope)
+    if not allowed:
+        if normalized:
+            if scope is None:
+                return (
+                    None,
+                    "Sync locations are available for area locations whose parent is an area, "
+                    "floor, or building, and for floor locations under the same building.",
+                )
+            candidate_type, _, parent_type = scope
+            return (
+                None,
+                f"Sync locations must be sibling {candidate_type} locations under the same {parent_type}.",
+            )
+        return [], None
+
+    invalid = [location_id for location_id in normalized if location_id not in allowed]
+    if invalid:
+        preview = ", ".join(invalid[:3])
+        if scope is None:
+            return None, f"Invalid sync location(s): {preview}"
+        candidate_type, _, parent_type = scope
+        return (
+            None,
+            f"Sync locations must be sibling {candidate_type} locations under the same {parent_type}. "
+            f"Invalid: {preview}",
+        )
+
+    return normalized, None
+
+
+def _sync_location_scope(location_manager: object, location: object) -> tuple[str, str, str] | None:
+    """Return sync candidate scope as (candidate_type, parent_id, parent_type)."""
+    if _is_managed_shadow_area(location):
+        return None
+
+    location_type = _location_type(location)
+    parent_id = getattr(location, "parent_id", None)
+    if not isinstance(parent_id, str) or not parent_id:
+        return None
+
+    get_location = getattr(location_manager, "get_location", None)
+    if not callable(get_location):
+        return None
+
+    try:
+        parent = get_location(parent_id)
+    except Exception:  # pragma: no cover - defensive lookup
+        return None
+    if parent is None:
+        return None
+
+    parent_type = _location_type(parent)
+    if location_type == "area" and parent_type in {"area", "floor", "building"}:
+        return ("area", parent_id, parent_type)
+    if location_type == "floor" and parent_type == "building":
+        return ("floor", parent_id, parent_type)
+    return None
+
+
+def _allowed_sync_location_neighbors(
+    location_manager: object,
+    location: object,
+    scope: tuple[str, str, str] | None,
+) -> set[str]:
+    """Return allowed sibling sync targets for one location."""
+    if scope is None:
+        return set()
+    candidate_type, parent_id, _ = scope
+
+    all_locations = getattr(location_manager, "all_locations", None)
+    if not callable(all_locations):
+        return set()
+
+    source_location_id = getattr(location, "id", None)
+    allowed: set[str] = set()
+    for candidate in all_locations():
+        candidate_id = getattr(candidate, "id", None)
+        if not isinstance(candidate_id, str) or not candidate_id:
+            continue
+        if candidate_id == source_location_id:
+            continue
+        if getattr(candidate, "parent_id", None) != parent_id:
+            continue
+        if _location_type(candidate) != candidate_type:
+            continue
+        if candidate_type == "area" and _is_managed_shadow_area(candidate):
+            continue
+        allowed.add(candidate_id)
+
+    return allowed
 
 
 def _default_dusk_dawn_blocks() -> list[dict[str, Any]]:
@@ -2176,8 +2277,10 @@ async def handle_action_rules_list(
                 "on_bright",
             )
         ),
-        vol.Required("action_entity_id"): str,
-        vol.Required("action_service"): str,
+        vol.Optional("action_entity_id"): str,
+        vol.Optional("action_service"): str,
+        vol.Optional("action_data"): dict,
+        vol.Optional("actions"): [dict],
         vol.Optional("ambient_condition"): vol.In(("any", "dark", "bright")),
         vol.Optional("must_be_occupied", default=False): bool,
         vol.Optional("time_condition_enabled", default=False): bool,
@@ -2239,7 +2342,97 @@ async def handle_action_rules_create(
             return
 
     action_entity_id = str(msg.get("action_entity_id", "")).strip()
-    if action_entity_id.startswith("light."):
+    action_service = str(msg.get("action_service", "")).strip()
+    action_data_raw = msg.get("action_data")
+    action_data: dict[str, Any] | None = None
+    if action_data_raw is not None:
+        if not isinstance(action_data_raw, dict):
+            connection.send_error(msg["id"], "invalid_payload", "action_data must be an object")
+            return
+        normalized_action_data: dict[str, Any] = {}
+        brightness_pct_raw = action_data_raw.get("brightness_pct")
+        if brightness_pct_raw is not None:
+            try:
+                normalized_action_data["brightness_pct"] = _normalize_dusk_dawn_brightness(
+                    brightness_pct_raw,
+                    30,
+                )
+            except ValueError:
+                connection.send_error(msg["id"], "invalid_payload", "brightness_pct must be between 1 and 100")
+                return
+        for key, value in action_data_raw.items():
+            if key in {"brightness_pct", "entity_id"}:
+                continue
+            if value is not None:
+                normalized_action_data[key] = value
+        if normalized_action_data:
+            action_data = normalized_action_data
+
+    actions_raw = msg.get("actions")
+    actions: list[dict[str, Any]] = []
+    if actions_raw is not None:
+        if not isinstance(actions_raw, list):
+            connection.send_error(msg["id"], "invalid_payload", "actions must be a list")
+            return
+        for index, raw_action in enumerate(actions_raw):
+            if not isinstance(raw_action, dict):
+                connection.send_error(msg["id"], "invalid_payload", f"actions[{index}] must be an object")
+                return
+            entity_id = str(raw_action.get("entity_id", "")).strip()
+            if not entity_id:
+                connection.send_error(msg["id"], "invalid_payload", f"actions[{index}].entity_id is required")
+                return
+            service = str(raw_action.get("service", "")).strip()
+            data_raw = raw_action.get("data")
+            normalized_data: dict[str, Any] | None = None
+            if data_raw is not None:
+                if not isinstance(data_raw, dict):
+                    connection.send_error(msg["id"], "invalid_payload", f"actions[{index}].data must be an object")
+                    return
+                cleaned_data: dict[str, Any] = {}
+                brightness_pct_raw = data_raw.get("brightness_pct")
+                if brightness_pct_raw is not None:
+                    try:
+                        cleaned_data["brightness_pct"] = _normalize_dusk_dawn_brightness(
+                            brightness_pct_raw,
+                            30,
+                        )
+                    except ValueError:
+                        connection.send_error(
+                            msg["id"],
+                            "invalid_payload",
+                            f"actions[{index}].brightness_pct must be between 1 and 100",
+                        )
+                        return
+                for key, value in data_raw.items():
+                    if key in {"brightness_pct", "entity_id"}:
+                        continue
+                    if value is not None:
+                        cleaned_data[key] = value
+                if cleaned_data:
+                    normalized_data = cleaned_data
+            actions.append(
+                {
+                    "entity_id": entity_id,
+                    "service": service,
+                    **({"data": normalized_data} if normalized_data else {}),
+                }
+            )
+
+    if not actions and action_entity_id:
+        actions.append(
+            {
+                "entity_id": action_entity_id,
+                "service": action_service,
+                **({"data": action_data} if action_data else {}),
+            }
+        )
+
+    if not actions:
+        connection.send_error(msg["id"], "invalid_payload", "At least one action target is required")
+        return
+
+    if any(str(action.get("entity_id", "")).startswith("light.") for action in actions):
         get_module_config = getattr(loc_mgr, "get_module_config", None)
         existing_dusk_dawn = (
             get_module_config(location.id, "dusk_dawn")
@@ -2252,30 +2445,34 @@ async def handle_action_rules_create(
         if normalized_dusk_dawn is None:
             normalized_dusk_dawn = _default_dusk_dawn_config()
         owned_lights = _dusk_dawn_owned_light_entities(normalized_dusk_dawn)
-        if action_entity_id in owned_lights:
-            connection.send_error(
-                msg["id"],
-                "create_failed",
-                (
-                    f"{action_entity_id} is owned by Lighting policy for this location. "
-                    "Remove it from Lighting before adding it to an Actions rule."
-                ),
-            )
-            return
+        for action in actions:
+            target_entity_id = str(action.get("entity_id", "")).strip()
+            if target_entity_id in owned_lights:
+                connection.send_error(
+                    msg["id"],
+                    "create_failed",
+                    (
+                        f"{target_entity_id} is owned by Lighting policy for this location. "
+                        "Remove it from Lighting before adding it to an Actions rule."
+                    ),
+                )
+                return
 
     try:
         rule = await managed_action_rules.async_create_rule(
             location=location,
             name=msg["name"],
             trigger_type=trigger_type,
-            action_entity_id=action_entity_id,
-            action_service=msg["action_service"],
+            action_entity_id=action_entity_id or None,
+            action_service=action_service or None,
+            actions=actions,
             require_dark=bool(msg.get("require_dark", False)),
             ambient_condition=ambient_condition,
             must_be_occupied=bool(msg.get("must_be_occupied", False)),
             time_condition_enabled=time_condition_enabled,
             start_time=start_time.strip() if isinstance(start_time, str) else None,
             end_time=end_time.strip() if isinstance(end_time, str) else None,
+            action_data=action_data,
             automation_id=str(msg.get("automation_id", "")).strip() or None,
             rule_uuid=str(msg.get("rule_uuid", "")).strip() or None,
         )

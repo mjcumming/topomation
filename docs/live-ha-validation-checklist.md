@@ -132,6 +132,13 @@ The primary flow: motion sensor triggers → occupancy entity ON → timeout exp
 
 ## 5. Managed Automation Rules (0.1.4+)
 
+Current evidence state for Section 5 / 5.1 (2026-03-06):
+
+- Delivery status: `Live-validated`
+- Automated validation: passed in targeted backend/frontend/Playwright suites
+- Live managed-actions backend contract: passed on 2026-03-06 (`tests/test-live-managed-actions-contract.py`, 2 passed)
+- Live UI delta rerun: passed on 2026-03-06 (`npx playwright test --config playwright.live.config.ts playwright/live-automation-ui.spec.ts`, 1 passed)
+
 - [x] In `On Occupied`, enable a light action row and confirm checkbox remains checked after save.
 - [x] Reload panel/browser and confirm managed action row remains enabled.
 - [x] Restart HA and confirm managed action row still reflects enabled state.
@@ -140,7 +147,31 @@ The primary flow: motion sensor triggers → occupancy entity ON → timeout exp
 - [x] Run optional live contract test:
   - `pytest tests/test-live-managed-actions-contract.py -v --live-ha`
 
-**Result**: [ ] PASS / [ ] FAIL — Notes:
+**Result**: [x] PASS / [ ] FAIL — Notes: Live managed-actions contract rerun passed on 2026-03-06 (`tests/test-live-managed-actions-contract.py`, 2 passed). Section 5.1 live UI delta rerun also passed on 2026-03-06 (`npx playwright test --config playwright.live.config.ts playwright/live-automation-ui.spec.ts`, 1 passed).
+
+### 5.1 Automation UX Reset Deltas (ISSUE-058 / ADR-HA-054/055/056/057/060)
+
+Do not mark the delta section `PASS` until the unchecked items below are
+executed on a running HA instance, even if automated coverage passes locally.
+
+- [x] Detection edits require explicit `Save changes`; direct control edits no longer auto-persist.
+- [x] Detection `Discard` restores persisted state and clears dirty indicator.
+- [x] Configure inspector tabs are `Detection`, `Ambient`, `Lighting`, `Media`, and `HVAC` (no `Appliances` tab).
+- [x] Lighting tab has no Topomation startup reapply toggle.
+- [x] Lighting unsaved draft rows show `Save rule` + `Remove rule` and hide `Delete rule`.
+- [x] Lighting persisted edited rows show `Update rule` + `Discard edits` + `Delete rule`.
+- [x] Lighting persisted clean rows show `Delete rule` only.
+- [x] Rule lifecycle controls are card-local (not split between tab-level save/discard and per-card delete).
+- [x] Lighting `On dark` / `On bright` render ambient condition as derived/read-only (`Set by trigger`).
+- [x] Lighting `On occupied` / `On vacant` render occupancy condition as derived/read-only (`Set by trigger`).
+- [x] One Lighting rule can save multiple selected light action targets and reconciles with all targets intact after reload.
+- [x] Save path preserves stable `rule_uuid` identity and updates in place (upsert+diff).
+- [x] `Sync Locations` eligibility is sibling-scoped with:
+  - `area` siblings under parent `area|floor|building`
+  - `floor` siblings under parent `building`.
+- [x] Repeat these checks on a live HA runtime (outside mock harness) and record outcome.
+
+**Delta result**: [x] PASS / [ ] FAIL — Notes: Live HA delta rerun for the narrowed Lighting/Media/HVAC IA passed on 2026-03-06 against local HA 2026.2.3. Validation commands: `HA_URL=http://127.0.0.1:8123 HA_TOKEN=... TEST_MODE=live pytest -q tests/test-live-managed-actions-contract.py --live-ha --no-cov` (`2 passed`) and `HA_URL=http://127.0.0.1:8123 HA_TOKEN=... npx playwright test --config playwright.live.config.ts playwright/live-automation-ui.spec.ts` (`1 passed`). The live browser rerun now asserts the narrowed tab set directly (`Detection`/`Ambient`/`Lighting`/`Media`/`HVAC`, no `Appliances`).
 
 ---
 
@@ -148,10 +179,10 @@ The primary flow: motion sensor triggers → occupancy entity ON → timeout exp
 
 | Field | Value |
 |-------|-------|
-| HA Version | 2025.11.0.dev0 |
+| HA Version | 2026.2.3 |
 | topomation version | 0.1.0 |
 | Topomation core version | 0.2.0-alpha |
-| Date | 2026-02-24 |
+| Date | 2026-03-06 |
 | Tester | Mike + Codex (API-assisted) |
 
 ---
@@ -160,6 +191,6 @@ The primary flow: motion sensor triggers → occupancy entity ON → timeout exp
 
 - [x] All critical flows (1.1–1.4, 2, 3.1–3.5, 4.1–4.2) passed
 - [x] No blocking errors in HA logs
-- [x] Ready to document in ISSUE-051
+- [x] Ready to document in ISSUE-058
 
-**Validation complete**: 2026-02-24
+**Validation complete**: 2026-03-06

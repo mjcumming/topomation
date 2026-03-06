@@ -3,14 +3,22 @@ import type { HomeAssistant, Location } from "./types";
 export type ActionTriggerType = "on_occupied" | "on_vacant" | "on_dark" | "on_bright";
 export type ActionAmbientCondition = "any" | "dark" | "bright";
 
+export interface TopomationRuleAction {
+  entity_id: string;
+  service: string;
+  data?: Record<string, unknown>;
+}
+
 export interface TopomationActionRule {
   id: string;
   entity_id: string;
   name: string;
   trigger_type: ActionTriggerType;
   rule_uuid?: string;
+  actions?: TopomationRuleAction[];
   action_entity_id?: string;
   action_service?: string;
+  action_data?: Record<string, unknown>;
   ambient_condition?: ActionAmbientCondition;
   must_be_occupied?: boolean;
   time_condition_enabled?: boolean;
@@ -234,45 +242,132 @@ function metadataLine(metadata: TopomationRuleMetadata): string {
   return `${TOPOMATION_METADATA_PREFIX} ${JSON.stringify(metadata)}`;
 }
 
+function normalizeActionData(raw: unknown): Record<string, unknown> | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const data = { ...(raw as Record<string, unknown>) };
+  delete data.entity_id;
+
+  if (Object.prototype.hasOwnProperty.call(data, "brightness_pct")) {
+    const numeric = Number(data.brightness_pct);
+    if (Number.isFinite(numeric) && numeric > 0) {
+      data.brightness_pct = Math.max(1, Math.min(100, Math.round(numeric)));
+    } else {
+      delete data.brightness_pct;
+    }
+  }
+
+  for (const [key, value] of Object.entries(data)) {
+    if (value === undefined || value === null || value === "") {
+      delete data[key];
+    }
+  }
+  return Object.keys(data).length > 0 ? data : undefined;
+}
+
+function normalizeRuleAction(rawAction: unknown): TopomationRuleAction | undefined {
+  if (!rawAction || typeof rawAction !== "object" || Array.isArray(rawAction)) {
+    return undefined;
+  }
+  const action = rawAction as Record<string, any>;
+  const rawService = typeof action.action === "string" ? action.action : "";
+  const actionService = rawService.includes(".") ? rawService.split(".").slice(1).join(".") : rawService;
+  const normalizedService = String(actionService || "").trim();
+  if (!normalizedService) {
+    return undefined;
+  }
+  const actionData = normalizeActionData(action?.data);
+  const targetEntity = action?.target?.entity_id;
+  if (typeof targetEntity === "string" && targetEntity.trim().length > 0) {
+    return {
+      entity_id: targetEntity.trim(),
+      service: normalizedService,
+      ...(actionData ? { data: actionData } : {}),
+    };
+  }
+  if (Array.isArray(targetEntity)) {
+    const firstTarget = targetEntity.find((candidate) => typeof candidate === "string" && candidate.trim().length > 0);
+    if (typeof firstTarget === "string") {
+      return {
+        entity_id: firstTarget.trim(),
+        service: normalizedService,
+        ...(actionData ? { data: actionData } : {}),
+      };
+    }
+  }
+  const dataEntity = action?.data?.entity_id;
+  if (typeof dataEntity === "string" && dataEntity.trim().length > 0) {
+    return {
+      entity_id: dataEntity.trim(),
+      service: normalizedService,
+      ...(actionData ? { data: actionData } : {}),
+    };
+  }
+  return undefined;
+}
+
+function extractRuleActions(config: Record<string, any>): TopomationRuleAction[] {
+  const actionBlock = config?.actions ?? config?.action;
+  const actionEntries = Array.isArray(actionBlock) ? actionBlock : actionBlock ? [actionBlock] : [];
+  const normalized = actionEntries
+    .map((entry) => normalizeRuleAction(entry))
+    .filter((entry): entry is TopomationRuleAction => !!entry);
+  return normalized;
+}
+
 function extractActionSummary(config: Record<string, any>): {
+  actions?: TopomationRuleAction[];
   action_entity_id?: string;
   action_service?: string;
+  action_data?: Record<string, unknown>;
 } {
-  const actionBlock = config?.actions ?? config?.action;
-  const firstAction = Array.isArray(actionBlock) ? actionBlock[0] : actionBlock;
-  if (!firstAction || typeof firstAction !== "object") {
+  const actions = extractRuleActions(config);
+  if (actions.length === 0) {
     return {};
   }
-
-  const rawService = typeof firstAction.action === "string" ? firstAction.action : "";
-  const actionService = rawService.includes(".") ? rawService.split(".").slice(1).join(".") : rawService;
-
-  const targetEntity = firstAction?.target?.entity_id;
-  if (typeof targetEntity === "string") {
-    return {
-      action_entity_id: targetEntity,
-      action_service: actionService || undefined,
-    };
-  }
-
-  if (Array.isArray(targetEntity) && typeof targetEntity[0] === "string") {
-    return {
-      action_entity_id: targetEntity[0],
-      action_service: actionService || undefined,
-    };
-  }
-
-  const dataEntity = firstAction?.data?.entity_id;
-  if (typeof dataEntity === "string") {
-    return {
-      action_entity_id: dataEntity,
-      action_service: actionService || undefined,
-    };
-  }
-
+  const firstAction = actions[0];
   return {
-    action_service: actionService || undefined,
+    actions,
+    action_entity_id: firstAction.entity_id,
+    action_service: firstAction.service,
+    action_data: firstAction.data,
   };
+}
+
+function normalizeRuleActionsFromPayload(
+  rule: Partial<TopomationActionRule>,
+  fallbackTriggerType: ActionTriggerType
+): TopomationRuleAction[] {
+  const rawActions = Array.isArray(rule.actions) ? rule.actions : [];
+  const normalizedActions = rawActions
+    .map((action) => {
+      if (!action || typeof action !== "object") return undefined;
+      const entityId = String((action as any).entity_id || "").trim();
+      if (!entityId) return undefined;
+      const serviceRaw = String((action as any).service || "").trim();
+      const service = serviceRaw || defaultActionServiceForTrigger(entityId, fallbackTriggerType);
+      return {
+        entity_id: entityId,
+        service,
+        ...(normalizeActionData((action as any).data) ? { data: normalizeActionData((action as any).data) } : {}),
+      } satisfies TopomationRuleAction;
+    })
+    .filter((action): action is TopomationRuleAction => !!action);
+  if (normalizedActions.length > 0) {
+    return normalizedActions;
+  }
+
+  const fallbackEntityId = String(rule.action_entity_id || "").trim();
+  if (!fallbackEntityId) return [];
+  const fallbackServiceRaw = String(rule.action_service || "").trim();
+  const fallbackService =
+    fallbackServiceRaw || defaultActionServiceForTrigger(fallbackEntityId, fallbackTriggerType);
+  return [
+    {
+      entity_id: fallbackEntityId,
+      service: fallbackService,
+      ...(normalizeActionData(rule.action_data) ? { data: normalizeActionData(rule.action_data) } : {}),
+    },
+  ];
 }
 
 function hasSunDarkCondition(config: Record<string, any>): boolean {
@@ -631,8 +726,10 @@ async function listTopomationActionRulesLegacy(
           name,
           trigger_type: metadata.trigger_type,
           rule_uuid: metadata.rule_uuid,
+          actions: summary.actions,
           action_entity_id: summary.action_entity_id,
           action_service: summary.action_service,
+          action_data: summary.action_data,
           ambient_condition: normalizeAmbientCondition(
             metadata.trigger_type,
             metadata.ambient_condition,
@@ -706,9 +803,12 @@ export async function listTopomationActionRules(
             rule.ambient_condition,
             requireDark
           );
+          const actions = normalizeRuleActionsFromPayload(rule, triggerType);
+          const primaryAction = actions[0];
           return {
             ...rule,
             trigger_type: triggerType,
+            actions,
             ambient_condition: ambientCondition,
             must_be_occupied: Boolean(rule.must_be_occupied),
             time_condition_enabled: Boolean(rule.time_condition_enabled),
@@ -721,6 +821,9 @@ export async function listTopomationActionRules(
                 ? rule.end_time
                 : undefined,
             require_dark: requireDark || ambientCondition === "dark",
+            action_entity_id: primaryAction?.entity_id,
+            action_service: primaryAction?.service,
+            action_data: primaryAction?.data,
           } satisfies TopomationActionRule;
         })
         .filter((rule): rule is TopomationActionRule => !!rule)
@@ -743,6 +846,7 @@ async function createTopomationActionRuleLegacy(
     trigger_type: ActionTriggerType;
     action_entity_id: string;
     action_service: string;
+    action_data?: Record<string, unknown>;
     ambient_condition?: ActionAmbientCondition;
     must_be_occupied?: boolean;
     time_condition_enabled?: boolean;
@@ -832,6 +936,7 @@ async function createTopomationActionRuleLegacy(
         target: {
           entity_id: args.action_entity_id,
         },
+        ...(normalizeActionData(args.action_data) ? { data: normalizeActionData(args.action_data) } : {}),
       },
     ],
     mode: "single",
@@ -849,6 +954,7 @@ async function createTopomationActionRuleLegacy(
     trigger_type: args.trigger_type,
     action_entity_id: args.action_entity_id,
     action_service: args.action_service,
+    action_data: normalizeActionData(args.action_data),
     ambient_condition: ambientCondition,
     must_be_occupied: Boolean(args.must_be_occupied),
     time_condition_enabled: Boolean(args.time_condition_enabled),
@@ -865,8 +971,10 @@ export async function createTopomationActionRule(
     location: Location;
     name: string;
     trigger_type: ActionTriggerType;
-    action_entity_id: string;
-    action_service: string;
+    actions?: TopomationRuleAction[];
+    action_entity_id?: string;
+    action_service?: string;
+    action_data?: Record<string, unknown>;
     ambient_condition?: ActionAmbientCondition;
     must_be_occupied?: boolean;
     time_condition_enabled?: boolean;
@@ -878,14 +986,30 @@ export async function createTopomationActionRule(
   },
   entryId?: string
 ): Promise<TopomationActionRule> {
+  const normalizedActions = normalizeRuleActionsFromPayload(
+    {
+      actions: args.actions,
+      action_entity_id: args.action_entity_id,
+      action_service: args.action_service,
+      action_data: args.action_data,
+    },
+    args.trigger_type
+  );
+  const primaryAction = normalizedActions[0];
+  if (!primaryAction) {
+    throw new Error("At least one action target is required");
+  }
+
   try {
     const response = await hass.callWS<{ rule?: TopomationActionRule }>({
       type: WS_TYPE_ACTION_RULES_CREATE,
       location_id: args.location.id,
       name: args.name,
       trigger_type: args.trigger_type,
-      action_entity_id: args.action_entity_id,
-      action_service: args.action_service,
+      action_entity_id: primaryAction.entity_id,
+      action_service: primaryAction.service,
+      action_data: primaryAction.data,
+      actions: normalizedActions,
       ambient_condition: args.ambient_condition,
       must_be_occupied: Boolean(args.must_be_occupied),
       time_condition_enabled: Boolean(args.time_condition_enabled),
@@ -905,6 +1029,8 @@ export async function createTopomationActionRule(
         response.rule.ambient_condition,
         requireDark
       );
+      const actions = normalizeRuleActionsFromPayload(response.rule, normalizedTrigger);
+      const responsePrimaryAction = actions[0] || primaryAction;
       return {
         ...response.rule,
         trigger_type: normalizedTrigger,
@@ -912,7 +1038,11 @@ export async function createTopomationActionRule(
           typeof response.rule.rule_uuid === "string" && response.rule.rule_uuid.trim().length > 0
             ? response.rule.rule_uuid.trim()
             : args.rule_uuid,
+        actions,
         ambient_condition: ambientCondition,
+        action_entity_id: responsePrimaryAction?.entity_id,
+        action_service: responsePrimaryAction?.service,
+        action_data: responsePrimaryAction?.data,
         must_be_occupied: Boolean(response.rule.must_be_occupied),
         time_condition_enabled: Boolean(response.rule.time_condition_enabled),
         start_time:

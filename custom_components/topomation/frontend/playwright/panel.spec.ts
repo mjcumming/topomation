@@ -39,7 +39,7 @@ async function ensureLightingRuleExists(page: any): Promise<void> {
   const inspector = page.locator("ht-location-inspector");
   const rows = inspector.locator(".dusk-block-row");
   if ((await rows.count()) > 0) return;
-  await inspector.getByTestId("duskdawn-block-add-bottom").click();
+  await inspector.getByTestId("action-rule-add").click();
   await expect(rows.first()).toBeVisible();
 }
 
@@ -288,22 +288,21 @@ test("lighting tab contract: clickable rule title, footer delete, add-rule butto
   const inspector = page.locator("ht-location-inspector");
   const firstRule = inspector.locator(".dusk-block-row").first();
 
-  await expect(inspector.locator(".section-title", { hasText: "Lighting rules" })).toHaveCount(1);
-  const sectionTitles = await inspector
-    .locator(".section-title")
-    .evaluateAll((nodes) => nodes.map((node) => (node.textContent || "").trim()));
-  expect(sectionTitles).not.toContain("Rules");
-  await expect(inspector.getByText("All lighting rule changes saved.")).toHaveCount(0);
+  await expect(inspector.locator(".section-title", { hasText: "Lighting Rules" })).toHaveCount(1);
   const titleButton = firstRule.locator(".dusk-block-title-button");
   await expect(titleButton).toBeVisible();
   await titleButton.click();
   await expect(firstRule.locator("input.dusk-block-title-input")).toBeVisible();
-  await expect(firstRule.locator(".dusk-block-footer").getByRole("button", { name: "Delete rule" })).toBeVisible();
-  await expect(inspector.getByTestId("duskdawn-block-add")).toHaveCount(0);
-  await expect(inspector.getByTestId("duskdawn-block-add-bottom")).toBeVisible();
+  await expect(firstRule.locator(".dusk-block-footer").getByRole("button", { name: "Save rule" })).toBeVisible();
+  await expect(firstRule.locator(".dusk-block-footer").getByRole("button", { name: "Remove rule" })).toBeVisible();
+  await expect(firstRule.locator(".dusk-block-footer").getByRole("button", { name: "Delete rule" })).toHaveCount(0);
+  await expect(inspector.getByTestId("action-rule-add")).toBeVisible();
+  await expect(inspector.getByTestId("startup-reapply-lighting")).toHaveCount(0);
 });
 
-test("lighting tab contract: time window reveals begin/end and per-light only-if-off control", async ({ page }) => {
+test("lighting tab contract: trigger options include dark/bright and time window reveals begin/end", async ({
+  page,
+}) => {
   await page.goto("/mock-harness.html");
   await selectKitchen(page);
   await openLightingTab(page);
@@ -312,31 +311,14 @@ test("lighting tab contract: time window reveals begin/end and per-light only-if
   const inspector = page.locator("ht-location-inspector");
   const firstRule = inspector.locator(".dusk-block-row").first();
   const triggerSelect = firstRule.locator(".dusk-rule-row", { hasText: "Trigger" }).locator("select");
-  await expect(firstRule.locator("select[data-testid*='-ambient-condition']")).toHaveCount(0);
-  await expect(firstRule.locator("[data-testid*='-ambient-locked']")).toContainText("Must be dark");
-
-  await triggerSelect.selectOption("on_occupied");
-  await expect(firstRule.locator("select[data-testid*='-ambient-condition']")).toHaveCount(1);
-  await expect(firstRule.locator("[data-testid*='-must-be-occupied-locked']")).toContainText(
-    "Must be occupied"
-  );
-  await expect(firstRule.locator("input[data-testid*='-must-be-occupied']")).toHaveCount(0);
+  await expect(triggerSelect).toBeVisible();
+  await triggerSelect.selectOption("on_bright");
+  await expect(triggerSelect).toHaveValue("on_bright");
 
   const timeRow = firstRule.locator(".dusk-conditions .config-row", { hasText: "Use time window" });
   await expect(timeRow).toBeVisible();
   await timeRow.locator("input[type='checkbox']").check();
   await expect(firstRule.locator("input[type='time']")).toHaveCount(2);
-  await expect(firstRule.locator(".dusk-rule-row", { hasText: "Already-on behavior" })).toHaveCount(0);
-
-  const includeToggle = firstRule.locator("input[data-testid*='-include-']").first();
-  await expect(includeToggle).toBeVisible();
-  await includeToggle.check();
-
-  const includeCount = await firstRule.locator("input[data-testid*='-include-']").count();
-  const onlyIfOffCount = await firstRule.locator("input[data-testid*='-already-on-']").count();
-  expect(onlyIfOffCount).toBeLessThan(includeCount);
-  await expect(firstRule.locator("select[data-testid*='-power-']").first()).toBeVisible();
-  await expect(firstRule.locator("input[data-testid*='-already-on-']").first()).toBeVisible();
 });
 
 test("media tab renders rule editor", async ({ page }) => {
@@ -344,6 +326,12 @@ test("media tab renders rule editor", async ({ page }) => {
   await selectKitchen(page);
 
   const inspector = page.locator("ht-location-inspector");
+  await expect(inspector.getByRole("button", { name: "Detection" })).toBeVisible();
+  await expect(inspector.getByRole("button", { name: "Ambient" })).toBeVisible();
+  await expect(inspector.getByRole("button", { name: "Lighting" })).toBeVisible();
+  await expect(inspector.getByRole("button", { name: "Media" })).toBeVisible();
+  await expect(inspector.getByRole("button", { name: "HVAC" })).toBeVisible();
+  await expect(inspector.getByRole("button", { name: "Appliances" })).toHaveCount(0);
   await openActionsTab(page);
 
   await expect(inspector).toContainText("Media Rules");
@@ -370,7 +358,7 @@ test("actions rule add/save/delete persists managed automations", async ({ page 
     .locator("select")
     .selectOption("media_player.kitchen_speaker");
   await rule.locator(".dusk-rule-row", { hasText: "Action" }).locator("select").selectOption("media_pause");
-  await inspector.getByRole("button", { name: "Save changes" }).click();
+  await rule.getByRole("button", { name: "Save rule" }).click();
 
   await expect
     .poll(async () => {
@@ -386,7 +374,6 @@ test("actions rule add/save/delete persists managed automations", async ({ page 
     .toBe(true);
 
   await rule.getByRole("button", { name: "Delete rule" }).click();
-  await inspector.getByRole("button", { name: "Save changes" }).click();
   await expect.poll(async () => (await kitchenTopomationActionSummaries(page)).length).toBe(0);
 });
 
@@ -422,7 +409,7 @@ test("actions rule ambient + time conditions persist into automation config", as
   await endInput.fill("23:45");
   await endInput.dispatchEvent("change");
 
-  await inspector.getByRole("button", { name: "Save changes" }).click();
+  await rule.getByRole("button", { name: "Save rule" }).click();
 
   await expect
     .poll(async () => {
@@ -525,15 +512,13 @@ test("on occupied/on vacant triggers map to on/off occupancy state transitions",
   await openActionsTab(page);
 
   const inspector = page.locator("ht-location-inspector");
-  const deleteButtons = inspector.locator(
-    ".dusk-block-row[data-testid^='action-rule-'] .dusk-block-footer button"
-  );
+  const deleteButtons = inspector.getByRole("button", { name: "Delete rule" });
   while ((await deleteButtons.count()) > 0) {
     await deleteButtons.first().click();
   }
-  const saveRulesButton = inspector.getByRole("button", { name: "Save changes" });
-  if (await saveRulesButton.isEnabled()) {
-    await saveRulesButton.click();
+  const removeButtons = inspector.getByRole("button", { name: "Remove rule" });
+  while ((await removeButtons.count()) > 0) {
+    await removeButtons.first().click();
   }
   await expect.poll(async () => (await kitchenTopomationActionSummaries(page)).length).toBe(0);
 
@@ -547,6 +532,7 @@ test("on occupied/on vacant triggers map to on/off occupancy state transitions",
     .locator("select")
     .selectOption("media_player.kitchen_speaker");
   await occupiedRule.locator(".dusk-rule-row", { hasText: "Action" }).locator("select").selectOption("media_play");
+  await occupiedRule.getByRole("button", { name: "Save rule" }).click();
 
   await inspector.getByRole("button", { name: "Add rule" }).click();
   const vacantRule = inspector
@@ -558,8 +544,7 @@ test("on occupied/on vacant triggers map to on/off occupancy state transitions",
     .locator("select")
     .selectOption("media_player.kitchen_speaker");
   await vacantRule.locator(".dusk-rule-row", { hasText: "Action" }).locator("select").selectOption("media_stop");
-
-  await inspector.getByRole("button", { name: "Save changes" }).click();
+  await vacantRule.getByRole("button", { name: "Save rule" }).click();
   await expect
     .poll(async () => {
       const summaries = await kitchenTopomationActionSummaries(page);

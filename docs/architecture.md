@@ -1,7 +1,7 @@
 # Topomation Integration Architecture
 
 **Version**: 1.0
-**Date**: 2026-02-27
+**Date**: 2026-03-06
 **Purpose**: Define the architecture of the Home Assistant integration for Topomation
 
 > **Note**: This document focuses on **integration-specific** architecture. For core kernel architecture (LocationManager, EventBus, Modules), see the Topomation core library documentation.
@@ -207,8 +207,8 @@ class TopomationCoordinator:
 
 - `topomation/locations/list` - Get all locations
 - `topomation/locations/set_module_config` - Update module config
-- `topomation/actions/rules/list` - Enumerate managed occupied/vacant rules for a location
-- `topomation/actions/rules/create` - Create/replace one managed occupied/vacant rule
+- `topomation/actions/rules/list` - Enumerate managed automation rules for a location (`on_occupied`, `on_vacant`, `on_dark`, `on_bright`)
+- `topomation/actions/rules/create` - Create/replace one managed automation rule (supports ordered multi-action targets via `actions[]`)
 - `topomation/actions/rules/delete` - Delete one managed rule
 - `topomation/actions/rules/set_enabled` - Enable/disable one managed rule
 
@@ -280,9 +280,10 @@ def handle_locations_list(hass, connection, msg):
 - `Location Manager` (`/topomation`) is the single visible sidebar entry.
 - Alias routes are retained for deep linking and default-focus behavior:
   - `/topomation-occupancy` (defaults inspector to `Detection`)
-  - `/topomation-appliances` (defaults inspector to `Appliances`)
   - `/topomation-media` (defaults inspector to `Media`)
   - `/topomation-hvac` (defaults inspector to `HVAC`)
+  - `/topomation-appliances` remains a legacy compatibility alias and now opens
+    the HVAC-focused inspector path.
 
 All routes use the same underlying `topomation-panel` frontend module and
 shared location tree selection context.
@@ -290,6 +291,9 @@ shared location tree selection context.
 **Workspace Behavior**:
 
 - Location tree is always present on the left; occupancy/actions use the same selected node context.
+- Workspace uses top-level right-panel tabs:
+  - `Configure`
+  - `Assign Devices`
 - Each non-root location row exposes two quick controls:
   - occupancy toggle icon (house): mark occupied/unoccupied
   - lock icon: lock/unlock location
@@ -298,12 +302,25 @@ shared location tree selection context.
   - `Detection`
   - `Ambient`
   - `Lighting`
-  - `Appliances`
   - `Media`
   - `HVAC`
 - Advanced occupancy relationship controls are kept under `Detection` as an in-tab advanced section (not a separate top-level tab).
-- `Lighting` rules persist under module id `dusk_dawn` (internal id retained during dev phase).
-- `Appliances` / `Media` / `HVAC` rules are authored as native Home Assistant automations via `topomation/actions/rules/*`.
+- Detection's primary sync workflow is `Sync Locations` with explicit sibling scope.
+- Editable tab behavior is explicit-save:
+  - `Detection` and `Ambient` use tab-level draft + explicit save/discard.
+  - rule-authoring tabs (`Lighting`, `Media`, `HVAC`) use
+    card-local lifecycle controls (`Save rule` / `Update rule` /
+    `Discard edits` / `Remove rule` / `Delete rule`) and no silent auto-save.
+- UX decision baseline is Home Assistant-native:
+  - when workflow design is ambiguous, prefer HA interaction patterns; document
+  justified deviations in ADR/contracts.
+- Ambiguity escalation gate:
+  - if contracts, design guide, issue requirements, or live behavior conflict,
+    implementation must stop and request user decision before coding that area.
+- `Lighting` rules follow HA-canonical managed automation ownership
+  (legacy `modules.dusk_dawn` is migration compatibility only).
+- `Media` / `HVAC` rules are authored as native Home Assistant automations via
+  `topomation/actions/rules/*`.
 - Topomation tags those automations with panel metadata + labels/category so each location tab can filter only its own rules.
 - Managed rule metadata includes stable per-rule identity (`rule_uuid`) inside
   `[topomation]` description payloads so edits can be applied in place.
@@ -320,12 +337,16 @@ shared location tree selection context.
   write and returns an actionable error.
 - Reconciliation is event-driven (startup load + `automation.*` state_changed
   subscription while inspector is open); no periodic polling loop in v1.
-- Startup reapply policy is edited in each automation tab (`Lighting`, `Appliances`, `Media`, `HVAC`) but persists to one shared automation-module key:
-  `modules.automation.reapply_last_state_on_startup`.
+- Non-light startup reapply controls remain domain-specific where supported.
+- Lighting does not expose a Topomation-specific startup reapply toggle and
+  should align with native HA automation behavior.
 - Built-in non-light action domains in this phase are constrained to:
-  - `switch.*` (Appliances)
   - `media_player.*` (Media)
   - `fan.*` (HVAC)
+  - `switch.*` compatibility inside `HVAC` for switch-controlled
+    exhaust/ventilation devices
+- `climate.*` is intentionally deferred until preset-oriented occupancy
+  behavior is contracted.
 - Integration-owned nodes (`building`, `grounds`, `subarea`) are configured through explicit source assignment in inspector.
 - HA-backed wrappers (`floor_*`, `area_*`) keep HA-linked entity discovery defaults.
 
@@ -435,7 +456,8 @@ class HAPlatformAdapter:
 3. SyncManager updates topology location name
 4. User drags an HA-backed area under a different floor in topology UI
 5. WebSocket reorder updates topology parent and writes HA area.floor_id to match
-6. Create/rename/delete of HA areas/floors is not allowed via integration API
+6. Linked wrapper lifecycle operations use guarded integration APIs and keep HA
+   registry state synchronized where linkage exists
 ```
 
 ### 4.5 Startup Merge and Reconciliation
@@ -465,6 +487,9 @@ Broken/invalid persisted payloads are ignored and do not block startup.
 ### 5.1 Configuration Storage
 
 **Store Key / File**: `topomation.config` -> `.storage/topomation.config`
+
+Note: example includes legacy `modules.dusk_dawn` payload for migration
+compatibility. Target-state Lighting rule persistence is HA automation entities.
 
 **Contents**:
 
@@ -548,8 +573,9 @@ Per-location metadata in `_meta` determines synchronization authority:
 
 - `sync_source=homeassistant` and `sync_enabled=true`
   - HA changes -> topology updates are allowed
-  - Topology changes -> lifecycle writeback is disabled, except area floor-link
-    sync on explicit reorder (updates HA `floor_id` for HA-backed areas)
+  - Topology lifecycle mutations for linked wrappers are allowed only through
+    guarded WebSocket handlers (`create/update/delete` + explicit reorder
+    floor-link sync), not blind module writeback
   - `sync/enable` toggle is not allowed for HA-backed floor/area wrappers
 - `sync_source=topology` and `sync_enabled=true`
   - HA changes -> topology updates are blocked

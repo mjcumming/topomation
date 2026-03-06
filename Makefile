@@ -13,7 +13,7 @@ help:
 	@echo "  make dev-install  Install with development dependencies"
 	@echo "  make test         Run tests"
 	@echo "  make test-comprehensive  Run backend + frontend unit/component/e2e suites"
-	@echo "  make test-release-live   Run release gate (comprehensive + real HA contract)"
+	@echo "  make test-release-live   Run release gate (comprehensive + live HA contract/browser)"
 	@echo "  make frontend-test-smoke Run production-like frontend smoke profile"
 	@echo "  make test-ha-up       Start local HA via hass -c /workspaces/core/config --debug"
 	@echo "  make test-ha-status   Show HA process + HTTP reachability status"

@@ -132,9 +132,11 @@ Edit `mock-hass.ts` to add:
 
 The mock harness should mirror adapter policy:
 
-- HA owns floor/area lifecycle (create/rename/delete in HA menus only).
-- Panel behavior focuses on hierarchy overlay reorder and module configuration.
-- HA-backed area moves must sync `floor_id` from nearest floor ancestor (or `null` at root).
+- HA registry data remains canonical for linked wrappers.
+- Panel/API lifecycle operations (`create/update/delete`) are allowed with
+  guardrails and ownership checks.
+- HA-backed area moves must sync `floor_id` from nearest floor ancestor (or
+  `null` at root).
 
 The mock WebSocket API (`callWS` in `mock-hass.ts`) is used to:
 
@@ -235,6 +237,22 @@ npm run test:unit:watch
 ```
 
 ### E2E/UI Interaction Tests (Playwright) - Recommended for DnD + Dialog Flows
+
+Default Playwright runs are mock/local-harness only:
+
+```bash
+cd custom_components/topomation/frontend
+npm run test:e2e
+```
+
+That default config intentionally excludes `playwright/live-*.spec.ts`. Run live
+HA browser checks only with the dedicated config and explicit credentials:
+
+```bash
+cd custom_components/topomation/frontend
+HA_URL=http://127.0.0.1:8123 HA_TOKEN=... \
+  npx playwright test --config playwright.live.config.ts playwright/live-automation-ui.spec.ts
+```
 
 These tests run a real browser against the mock harness, which is the only reliable way to test
 **drag-and-drop** and complex **dialog** flows.
@@ -412,7 +430,7 @@ Before committing any frontend changes:
    - [ ] Drag location → drop works
    - [ ] Move area under another floor updates `ha_floor_id` in mock response
    - [ ] Move area to root clears `ha_floor_id` in mock response
-   - [ ] Blocked lifecycle ops (`create/update/delete`) show expected policy error
+   - [ ] Lifecycle ops (`create/update/delete`) enforce expected guardrails/policy errors
    - [ ] Theme toggle works (Ctrl+Shift+T)
 5. **Run full local gate before release**:
    - [ ] `cd /workspaces/topomation && ./scripts/test-comprehensive.sh`

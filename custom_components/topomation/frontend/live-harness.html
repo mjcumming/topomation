@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>Topomation Live Harness</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+        background: #f3f5f7;
+        color: #1f2a37;
+        font-family: Roboto, "Noto Sans", sans-serif;
+      }
+
+      body {
+        display: flex;
+        flex-direction: column;
+      }
+
+      .status {
+        padding: 12px 16px;
+        font-size: 14px;
+        border-bottom: 1px solid #d7dde3;
+        background: #ffffff;
+      }
+
+      .status[data-state="ready"] {
+        color: #0f5132;
+      }
+
+      .status[data-state="error"] {
+        color: #842029;
+        background: #f8d7da;
+      }
+
+      topomation-panel {
+        display: block;
+        min-height: calc(100vh - 49px);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="status" data-testid="live-harness-status" data-state="booting">
+      Booting Topomation live harness...
+    </div>
+    <topomation-panel id="panel"></topomation-panel>
+
+    <script type="module">
+      import "./topomation-panel.js";
+
+      const statusEl = document.querySelector("[data-testid='live-harness-status']");
+      const panel = document.querySelector("#panel");
+
+      const readyState = {
+        ready: false,
+        readyPromise: null,
+        resolveReady: null,
+      };
+
+      readyState.readyPromise = new Promise((resolve) => {
+        readyState.resolveReady = resolve;
+      });
+
+      const harnessConfig =
+        window.__TOPOMATION_LIVE_HARNESS__ ||
+        JSON.parse(sessionStorage.getItem("topomation-live-harness") || "null") ||
+        {};
+
+      if (harnessConfig && Object.keys(harnessConfig).length > 0) {
+        sessionStorage.setItem("topomation-live-harness", JSON.stringify(harnessConfig));
+      }
+
+      const explicitBaseUrl = typeof harnessConfig.baseUrl === "string" ? harnessConfig.baseUrl.trim() : "";
+      const baseUrl = explicitBaseUrl || window.location.origin;
+      const token =
+        typeof harnessConfig.token === "string" && harnessConfig.token.trim()
+          ? harnessConfig.token.trim()
+          : "";
+      const entryIdOverride =
+        typeof harnessConfig.entryId === "string" && harnessConfig.entryId.trim()
+          ? harnessConfig.entryId.trim()
+          : "";
+      const requestedView =
+        typeof harnessConfig.topomationView === "string" && harnessConfig.topomationView.trim()
+          ? harnessConfig.topomationView.trim()
+          : "location";
+
+      const localize = (key, ...args) => {
+        if (!args.length) return key;
+        return `${key} ${args.join(" ")}`.trim();
+      };
+
+      const setStatus = (message, state = "loading") => {
+        statusEl.textContent = message;
+        statusEl.dataset.state = state;
+      };
+
+      const wsUrlFromHttp = (httpUrl) => {
+        const parsed = new URL(httpUrl);
+        parsed.protocol = parsed.protocol === "https:" ? "wss:" : "ws:";
+        parsed.pathname = "/api/websocket";
+        parsed.search = "";
+        parsed.hash = "";
+        return parsed.toString();
+      };
+
+      class LiveConnection {
+        constructor(httpUrl, accessToken) {
+          this._httpUrl = httpUrl.replace(/\/+$/, "");
+          this._accessToken = accessToken;
+          this._wsUrl = wsUrlFromHttp(this._httpUrl);
+          this._socket = null;
+          this._connectedPromise = null;
+          this._messageId = 1;
+          this._pending = new Map();
+          this._subscriptions = new Map();
+        }
+
+        async connect() {
+          if (this._connectedPromise) return this._connectedPromise;
+          this._connectedPromise = new Promise((resolve, reject) => {
+            const socket = new WebSocket(this._wsUrl);
+            this._socket = socket;
+
+            socket.addEventListener("message", async (event) => {
+              let payload;
+              try {
+                payload = JSON.parse(event.data);
+              } catch (err) {
+                return;
+              }
+
+              if (payload.type === "auth_required") {
+                socket.send(
+                  JSON.stringify({
+                    type: "auth",
+                    access_token: this._accessToken,
+                  })
+                );
+                return;
+              }
+
+              if (payload.type === "auth_ok") {
+                resolve();
+                return;
+              }
+
+              if (payload.type === "auth_invalid") {
+                reject(new Error(payload.message || "Home Assistant auth failed"));
+                return;
+              }
+
+              if (typeof payload.id === "number" && this._pending.has(payload.id)) {
+                const pending = this._pending.get(payload.id);
+                this._pending.delete(payload.id);
+                if (payload.success === false) {
+                  pending.reject(new Error(payload.error?.message || "Home Assistant websocket error"));
+                  return;
+                }
+                pending.resolve(payload.result);
+                return;
+              }
+
+              if (payload.type === "event" && typeof payload.id === "number") {
+                const subscription = this._subscriptions.get(payload.id);
+                if (subscription) {
+                  subscription.callback(payload.event);
+                }
+              }
+            });
+
+            socket.addEventListener("error", () => {
+              reject(new Error("Home Assistant websocket connection failed"));
+            });
+
+            socket.addEventListener("close", () => {
+              this._connectedPromise = null;
+              this._socket = null;
+            });
+          });
+
+          return this._connectedPromise;
+        }
+
+        async sendMessagePromise(message) {
+          await this.connect();
+          const id = this._messageId++;
+          return new Promise((resolve, reject) => {
+            this._pending.set(id, { resolve, reject });
+            this._socket.send(JSON.stringify({ id, ...message }));
+          });
+        }
+
+        async subscribeEvents(callback, eventType) {
+          await this.connect();
+          const id = this._messageId++;
+          this._subscriptions.set(id, { callback, eventType });
+          return new Promise((resolve, reject) => {
+            this._pending.set(id, {
+              resolve: () => {
+                resolve(async () => {
+                  this._subscriptions.delete(id);
+                  try {
+                    await this.sendMessagePromise({ type: "unsubscribe_events", subscription: id });
+                  } catch (_err) {
+                    // ignore unsubscribe failures in the harness
+                  }
+                });
+              },
+              reject,
+            });
+            this._socket.send(
+              JSON.stringify({
+                id,
+                type: "subscribe_events",
+                ...(eventType ? { event_type: eventType } : {}),
+              })
+            );
+          });
+        }
+      }
+
+      const toStateMap = (states) => {
+        const result = {};
+        for (const state of states || []) {
+          if (!state || typeof state.entity_id !== "string") continue;
+          result[state.entity_id] = state;
+        }
+        return result;
+      };
+
+      const toRegistryMap = (items, key) => {
+        const result = {};
+        for (const item of items || []) {
+          if (!item || typeof item[key] !== "string") continue;
+          result[item[key]] = item;
+        }
+        return result;
+      };
+
+      const callApi = async (method, endpoint, parameters) => {
+        const url = `${baseUrl.replace(/\/+$/, "")}/api/${String(endpoint || "").replace(/^\/+/, "")}`;
+        const request = {
+          method: String(method || "get").toUpperCase(),
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        };
+        if (parameters !== undefined) {
+          request.headers["Content-Type"] = "application/json";
+          request.body = JSON.stringify(parameters);
+        }
+        const response = await fetch(url, request);
+        if (!response.ok) {
+          throw new Error(`${request.method} ${endpoint} failed: ${response.status}`);
+        }
+        const text = await response.text();
+        return text ? JSON.parse(text) : null;
+      };
+
+      const refreshRegistryData = async (hass) => {
+        const [areas, floors, config] = await Promise.all([
+          hass.callWS({ type: "config/area_registry/list" }),
+          hass.callWS({ type: "config/floor_registry/list" }).catch(() => []),
+          callApi("get", "config"),
+        ]);
+
+        hass.areas = toRegistryMap(areas, "area_id");
+        hass.floors = toRegistryMap(floors, "floor_id");
+        hass.config = config || {};
+      };
+
+      const refreshStates = async (hass) => {
+        const states = await callApi("get", "states");
+        hass.states = toStateMap(states);
+      };
+
+      const resolveTopomationEntryId = async (hass) => {
+        if (entryIdOverride) return entryIdOverride;
+        const entries = await hass.callWS({ type: "config_entries/get" });
+        const match = Array.isArray(entries)
+          ? entries.find(
+              (entry) =>
+                entry &&
+                entry.domain === "topomation" &&
+                String(entry.state || "").toLowerCase() === "loaded"
+            ) || entries.find((entry) => entry && entry.domain === "topomation")
+          : null;
+        return match?.entry_id || undefined;
+      };
+
+      const liveConnection = new LiveConnection(baseUrl, token);
+
+      const hass = {
+        callWS: async (request) => liveConnection.sendMessagePromise(request),
+        callApi,
+        connection: liveConnection,
+        states: {},
+        areas: {},
+        floors: {},
+        config: {},
+        localize,
+      };
+
+      const applyReactiveHass = () => {
+        panel.hass = {
+          ...hass,
+          states: { ...hass.states },
+          areas: { ...hass.areas },
+          floors: { ...hass.floors },
+          config: { ...hass.config },
+        };
+      };
+
+      const waitForReady = async () => {
+        await readyState.readyPromise;
+      };
+
+      const selectLocation = async (locationId) => {
+        await waitForReady();
+        panel._selectedId = locationId;
+        panel._rightPanelMode = "inspector";
+        panel.requestUpdate();
+        await panel.updateComplete;
+      };
+
+      const getRenderableLocations = async () => {
+        await waitForReady();
+        return Array.isArray(panel._locations) ? panel._locations : [];
+      };
+
+      const getSuitableLightingLocation = async () => {
+        await waitForReady();
+        const locations = Array.isArray(panel._locations) ? panel._locations : [];
+        return (
+          locations.find((location) => {
+            const entityIds = Array.isArray(location.entity_ids) ? location.entity_ids : [];
+            const lightIds = entityIds.filter((entityId) => String(entityId).startsWith("light."));
+            return lightIds.length >= 2;
+          }) || null
+        );
+      };
+
+      window.topomationLiveHarness = {
+        waitForReady,
+        selectLocation,
+        getRenderableLocations,
+        getSuitableLightingLocation,
+        getPanel: () => panel,
+        getStatusText: () => statusEl.textContent || "",
+      };
+
+      const main = async () => {
+        if (!token) {
+          throw new Error("Missing live harness token");
+        }
+
+        setStatus("Connecting to Home Assistant...");
+        await liveConnection.connect();
+
+        await Promise.all([refreshStates(hass), refreshRegistryData(hass)]);
+        const resolvedEntryId = await resolveTopomationEntryId(hass);
+
+        panel.narrow = false;
+        panel.panel = {
+          config: {
+            topomation_view: requestedView,
+            ...(resolvedEntryId ? { entry_id: resolvedEntryId } : {}),
+          },
+        };
+        panel.route = { path: "/topomation" };
+        applyReactiveHass();
+
+        const stateUnsub = await hass.connection.subscribeEvents(async (event) => {
+          if (!event || event.event_type !== "state_changed") return;
+          const entityId = event.data?.entity_id;
+          if (!entityId) return;
+          const newState = event.data?.new_state;
+          if (newState) {
+            hass.states = { ...hass.states, [entityId]: newState };
+          } else {
+            const nextStates = { ...hass.states };
+            delete nextStates[entityId];
+            hass.states = nextStates;
+          }
+          applyReactiveHass();
+        }, "state_changed");
+
+        const areaUnsub = await hass.connection.subscribeEvents(async () => {
+          await refreshRegistryData(hass);
+          applyReactiveHass();
+        }, "area_registry_updated");
+
+        window.addEventListener("beforeunload", () => {
+          stateUnsub?.();
+          areaUnsub?.();
+        });
+
+        readyState.ready = true;
+        readyState.resolveReady();
+        setStatus("Live harness ready.", "ready");
+      };
+
+      main().catch((err) => {
+        console.error("[topomation-live-harness]", err);
+        setStatus(`Live harness error: ${err.message || err}`, "error");
+      });
+    </script>
+  </body>
+</html>

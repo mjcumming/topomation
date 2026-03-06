@@ -84,6 +84,7 @@ async def test_async_list_rules_filters_to_location_and_extracts_summary(
     assert rule["id"] == "topomation_bathroom_vacant"
     assert rule["entity_id"] == "automation.bathroom_vacant"
     assert rule["trigger_type"] == "on_vacant"
+    assert rule["actions"] == [{"entity_id": "light.bathroom", "service": "turn_off"}]
     assert rule["action_entity_id"] == "light.bathroom"
     assert rule["action_service"] == "turn_off"
     assert rule["ambient_condition"] == "dark"
@@ -170,6 +171,90 @@ async def test_async_delete_rules_for_location_deletes_only_matching_automations
     assert deleted == ["topomation_kitchen_occupied_light_kitchen"]
 
 
+@pytest.mark.asyncio
+async def test_async_list_rules_snapshots_entity_mapping_before_awaits(
+    hass: HomeAssistant,
+) -> None:
+    """Listing should not fail when the automation entity mapping mutates mid-iteration."""
+    manager = TopomationManagedActions(hass)
+    metadata = {
+        "version": 3,
+        "location_id": "kitchen",
+        "trigger_type": "on_occupied",
+        "ambient_condition": "any",
+        "must_be_occupied": False,
+        "time_condition_enabled": False,
+        "start_time": "18:00",
+        "end_time": "23:59",
+    }
+    description = f"Managed by Topomation.\n{TOPOMATION_AUTOMATION_METADATA_PREFIX} {json.dumps(metadata)}"
+
+    first_config = {
+        CONF_ID: "topomation_kitchen_occupied_ceiling",
+        "alias": "Kitchen Occupied: Kitchen Ceiling (turn on)",
+        "description": description,
+        "actions": [
+            {
+                "action": "light.turn_on",
+                "target": {"entity_id": "light.kitchen_ceiling"},
+            }
+        ],
+    }
+    second_config = {
+        CONF_ID: "topomation_kitchen_occupied_island",
+        "alias": "Kitchen Occupied: Kitchen Island (turn on)",
+        "description": description,
+        "actions": [
+            {
+                "action": "light.turn_on",
+                "target": {"entity_id": "light.kitchen_island"},
+            }
+        ],
+    }
+
+    first_entity = SimpleNamespace(
+        entity_id="automation.kitchen_occupied_ceiling",
+        raw_config=first_config,
+        unique_id="topomation_kitchen_occupied_ceiling",
+    )
+    second_entity = SimpleNamespace(
+        entity_id="automation.kitchen_occupied_island",
+        raw_config=second_config,
+        unique_id="topomation_kitchen_occupied_island",
+    )
+    component = SimpleNamespace(
+        entities={
+            first_entity.entity_id: first_entity,
+            second_entity.entity_id: second_entity,
+        }
+    )
+    hass.data[AUTOMATION_DATA_COMPONENT] = component
+    hass.states.async_set(first_entity.entity_id, "on")
+    hass.states.async_set(second_entity.entity_id, "on")
+
+    async def _fake_get(method: str, automation_id: str, payload: dict[str, object] | None = None) -> dict[str, object]:
+        del method, payload
+        component.entities["automation.transient"] = SimpleNamespace(
+            entity_id="automation.transient",
+            raw_config={CONF_ID: "transient"},
+            unique_id="transient",
+        )
+        if automation_id == "topomation_kitchen_occupied_ceiling":
+            return {"config": first_config}
+        if automation_id == "topomation_kitchen_occupied_island":
+            return {"config": second_config}
+        return {}
+
+    manager._call_automation_config_api = _fake_get  # type: ignore[method-assign]
+
+    rules = await manager.async_list_rules("kitchen")
+
+    assert [rule["id"] for rule in rules] == [
+        "topomation_kitchen_occupied_ceiling",
+        "topomation_kitchen_occupied_island",
+    ]
+
+
 def test_private_helpers_parse_and_mutate_config() -> None:
     """Internal helper functions preserve managed metadata and config ids."""
     manager = TopomationManagedActions(cast(HomeAssistant, SimpleNamespace()))
@@ -206,7 +291,7 @@ def test_private_helpers_parse_and_mutate_config() -> None:
     assert manager._normalize_existing_automation_id("automation.kitchen dark safety") == "kitchen_dark_safety"  # noqa: SLF001
     assert manager._normalize_rule_uuid("Rule-ABC_12345678") == "rule-abc_12345678"  # noqa: SLF001
 
-    action_entity, action_service = manager._extract_action_summary(  # noqa: SLF001
+    extracted_actions = manager._extract_actions(  # noqa: SLF001
         {
             "actions": [
                 {
@@ -216,10 +301,9 @@ def test_private_helpers_parse_and_mutate_config() -> None:
             ]
         }
     )
-    assert action_entity == "light.bathroom"
-    assert action_service == "turn_on"
+    assert extracted_actions == [{"entity_id": "light.bathroom", "service": "turn_on"}]
 
-    fallback_entity, fallback_service = manager._extract_action_summary(  # noqa: SLF001
+    fallback_actions = manager._extract_actions(  # noqa: SLF001
         {
             "action": {
                 "action": "switch.turn_off",
@@ -227,8 +311,7 @@ def test_private_helpers_parse_and_mutate_config() -> None:
             }
         }
     )
-    assert fallback_entity == "switch.fan"
-    assert fallback_service == "turn_off"
+    assert fallback_actions == [{"entity_id": "switch.fan", "service": "turn_off"}]
 
     assert manager._has_sun_dark_condition(  # noqa: SLF001
         {
@@ -286,6 +369,66 @@ async def test_resolve_created_entity_id_retries_registry_lookup(
 
     assert entity_id == "automation.kitchen_occupied"
     assert fake_registry.calls == 3
+
+
+@pytest.mark.asyncio
+async def test_async_create_rule_rolls_back_when_registration_does_not_converge(
+    hass: HomeAssistant,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Create must rollback and fail when HA never registers the automation."""
+    manager = TopomationManagedActions(hass)
+    api_calls: list[tuple[str, str, dict[str, object] | None]] = []
+
+    async def _fake_validate(
+        _hass: HomeAssistant,
+        automation_id: str,
+        config_payload: dict[str, object],
+    ) -> dict[str, object]:
+        assert automation_id == config_payload[CONF_ID]
+        return config_payload
+
+    async def _fake_call(
+        method: str,
+        automation_id: str,
+        payload: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        api_calls.append((method, automation_id, payload))
+        return {}
+
+    async def _never_resolve_entity_id(
+        automation_id: str,
+        *,
+        max_attempts: int,
+        wait_seconds: float,
+    ) -> str | None:
+        assert automation_id.startswith("topomation_kitchen_on_dark")
+        assert max_attempts > 0
+        assert wait_seconds > 0
+        return None
+
+    monkeypatch.setattr(
+        "custom_components.topomation.managed_actions.async_validate_config_item",
+        _fake_validate,
+    )
+    monkeypatch.setattr(manager, "_call_automation_config_api", _fake_call)
+    monkeypatch.setattr(manager, "_resolve_created_entity_id", _never_resolve_entity_id)
+
+    location = SimpleNamespace(id="kitchen", name="Kitchen", modules={})
+
+    with pytest.raises(ValueError, match="Topomation rolled back the attempted write"):
+        await manager.async_create_rule(
+            location=location,
+            name="Kitchen dark safety",
+            trigger_type="on_dark",
+            action_entity_id="light.kitchen_ceiling",
+            action_service="turn_on",
+        )
+
+    assert len(api_calls) == 2
+    assert api_calls[0][0] == "POST"
+    assert api_calls[1] == ("DELETE", api_calls[0][1], None)
+    assert manager._recent_rule_snapshots == {}  # noqa: SLF001
 
 
 def test_apply_topomation_grouping_uses_topomation_labels_and_category(

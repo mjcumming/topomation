@@ -33,6 +33,23 @@ fi
 # Load config (HA_TARGET may be set by caller, e.g. test-release-live.sh sets HA_TARGET=dev)
 source tests/ha-config.env
 
+# In the dev-container release path, pin "dev" runs to the local HA runtime when
+# explicitly requested by the caller. This avoids accidentally validating a
+# remote/stale instance that is not serving the current workspace build.
+if [ "${HA_TARGET:-dev}" = "dev" ] && [ "${TOPOMATION_PREFER_LOCAL_HA:-0}" = "1" ]; then
+    if [ -z "${HA_URL_LOCAL:-}" ]; then
+        HA_URL_LOCAL="http://127.0.0.1:8123"
+    fi
+    if [ -z "${HA_TOKEN_LOCAL:-}" ] && [ -f "ha_long_lived_token" ]; then
+        HA_TOKEN_LOCAL="$(cat ha_long_lived_token)"
+    fi
+    if [ -n "${HA_URL_LOCAL:-}" ] && [ -n "${HA_TOKEN_LOCAL:-}" ]; then
+        export HA_URL="${HA_URL_LOCAL}"
+        export HA_TOKEN="${HA_TOKEN_LOCAL}"
+        echo -e "${BLUE}🔒 Using local HA override for dev release validation: $HA_URL${NC}"
+    fi
+fi
+
 # Verify required variables
 if [ -z "$HA_URL" ]; then
     echo -e "${RED}❌ HA_URL not set for current target${NC}"

@@ -16,16 +16,18 @@ This is a **contract + process** document, not a speculative future design.
 
 ## Canonical contract (current behavior)
 
-1. Home Assistant is the source of truth for floor/area lifecycle.
-2. The adapter is read-only for HA lifecycle operations:
-   - `locations/create` -> blocked
-   - `locations/update` -> blocked
-   - `locations/delete` -> blocked
+1. Home Assistant is canonical for HA registry-backed metadata on wrappers
+   (`ha_area_id`, `ha_floor_id`, registry names/floor linkage).
+2. Location lifecycle is supported via WebSocket API with guardrails:
+   - `locations/create` supports topology locations and HA-linked area wrappers.
+   - `locations/update` supports rename/reparent with hierarchy and ownership checks.
+   - `locations/delete` supports non-root delete with reparenting + HA cleanup when linked.
 3. Topology hierarchy reorder/reparent is allowed as an overlay.
 4. Reorder of an HA-backed area syncs HA `area.floor_id` from the nearest floor ancestor.
 5. If an HA-backed area is moved outside any floor lineage, HA `area.floor_id` is cleared (`null`).
 6. No synthetic `house` root exists (rootless topology model).
 7. `sync/enable` is blocked for HA-backed floor/area wrappers and allowed for topology-only locations.
+8. Managed shadow areas are integration-owned and reconciled automatically.
 
 References:
 - `docs/architecture.md`
@@ -43,10 +45,11 @@ References:
 | HA -> Topology | floor/area rename | Yes | Propagates to wrapper location |
 | HA -> Topology | area floor move | Yes | Updates topology parent linkage |
 | HA -> Topology | floor/area delete | Yes | Removes/reparents wrapper location as implemented |
-| Topology -> HA | create floor/area | No | Blocked by adapter policy |
-| Topology -> HA | rename floor/area | No | Blocked by adapter policy |
-| Topology -> HA | delete floor/area | No | Blocked by adapter policy |
-| Topology -> HA | reorder/reparent area | Yes | Only updates HA `area.floor_id` |
+| Topology -> HA | create linked area wrapper | Yes | Creates HA area and links wrapper when needed |
+| Topology -> HA | rename linked area/floor wrapper | Yes | Propagates rename to HA registry when linked |
+| Topology -> HA | delete linked area/floor wrapper | Yes | Deletes linked HA registry object when present |
+| Topology -> HA | reorder/reparent area | Yes | Updates HA `area.floor_id` from nearest floor ancestor |
+| Topology-only | create/update/delete non-HA locations | Yes | Topology-owned lifecycle only |
 
 ---
 
@@ -55,8 +58,8 @@ References:
 Run this checklist before editing sync-related code or docs:
 
 1. Did I read `docs/architecture.md`, `docs/adr-log.md`, ISSUE-050, and ISSUE-051?
-2. Am I proposing behavior that conflicts with "HA owns lifecycle"?
-3. Am I accidentally reintroducing non-reorder topology->HA writeback?
+2. Am I proposing behavior that conflicts with wrapper ownership and HA metadata canonicality?
+3. Am I accidentally bypassing guardrails for linked HA wrappers or managed shadows?
 4. Am I preserving the rootless model (no `house` root assumptions)?
 5. If a move is involved, is `floor_id` nearest-ancestor/`null` behavior preserved?
 6. Did I update both docs and tests for any contract change?
@@ -90,14 +93,14 @@ npx playwright test
 Use these to catch policy regressions quickly:
 
 ```bash
-rg -n "locations/create|locations/update|locations/delete" custom_components/topomation/websocket_api.py
-rg -n "async_update\\(.*name=|async_delete\\(" custom_components/topomation/sync_manager.py
+rg -n "def handle_locations_create|def handle_locations_update|def handle_locations_delete" custom_components/topomation/websocket_api.py
+rg -n "_sync_ha_area_floor_assignment|_rename_ha_backed_location|_reconcile_managed_shadow_areas" custom_components/topomation/websocket_api.py
 rg -n "\\bhouse\\b|\\broom\\b|\\bzone\\b" docs/architecture.md docs/bidirectional-sync-design.md
 ```
 
 Expected outcomes:
-- WebSocket lifecycle handlers are policy rejects.
-- Sync manager does not perform topology-origin lifecycle writeback to HA names/deletes.
+- WebSocket lifecycle handlers exist and enforce guardrails.
+- Wrapper-linked HA updates are explicit and bounded to linked objects/fields.
 - No stale root/type assumptions in active architecture docs.
 
 ---

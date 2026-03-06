@@ -30,7 +30,12 @@ This validates (in the same order as CI):
 
 1. **Backend:** custom_components layout, version sync (manifest + const.py + pyproject.toml), Ruff, Mypy, Pytest
 2. **Frontend:** unit tests (Vitest), build, runtime bundle parity (`dist/topomation-panel.js` vs committed `topomation-panel.js`)
-3. **Comprehensive:** Web Test Runner (component tests), Playwright e2e
+3. **Comprehensive:** Web Test Runner (component tests), Playwright e2e against the mock/local harness
+
+`./scripts/test-comprehensive.sh` intentionally excludes `playwright/live-*.spec.ts`.
+Live Home Assistant browser specs run only through the dedicated live gate in
+Section 3. This keeps the default local/CI matrix deterministic while still
+requiring a real-HA UI pass before release.
 
 If any step fails, fix it before pushing. Do not push then fix in a follow-up.
 If any step fails, release work is blocked until the step passes.
@@ -53,6 +58,14 @@ Do not cut a release from mock-only evidence.
 Topomation integration must be loaded in that HA instance; the live contract
 gate now fails fast when it is missing.
 
+Delivery status mapping for behavior-changing work:
+
+1. `Implemented`: code/docs/tests landed locally.
+2. `Released`: artifact/runtime bundle shipped.
+3. `Live-validated`: this section's live HA gate passed and was recorded.
+
+Do not use `Released` or `Live-validated` interchangeably.
+
 **Release gate uses local/test environment by default.** The gate runs against
 `HA_URL_DEV` / `HA_TOKEN_DEV` (localhost). Production testing is optional and
 can be done separately by setting `HA_TARGET=prod` before running.
@@ -60,6 +73,15 @@ can be done separately by setting `HA_TARGET=prod` before running.
 If your `tests/ha-config.env` keeps a remote default in `HA_URL`, explicitly
 override `HA_URL_DEV` / `HA_TOKEN_DEV` to local values for dev-container release
 work.
+
+`make test-release-live` now also auto-prefers the local dev HA runtime in the
+dev-container when:
+
+1. `HA_TARGET=dev` (the default), and
+2. either `HA_TOKEN_LOCAL` is exported or `/workspaces/topomation/ha_long_lived_token` exists
+
+That avoids accidentally validating a remote/stale instance during release prep.
+Use `HA_TARGET=prod` when you intentionally want the production target instead.
 
 ```bash
 cp tests/ha-config.env.template tests/ha-config.env
@@ -78,7 +100,10 @@ make test-release-live
 HA_TARGET=prod make test-release-live
 ```
 
-This verifies real HA automation registration, enumeration, config readback, and deletion.
+This verifies:
+
+1. real HA automation registration, enumeration, config readback, and deletion
+2. the live browser workflow via `playwright.live.config.ts`
 The live contract now asserts against the entity registry `unique_id` and then uses the
 resolved registry `entity_id` (automation entities are alias-slug based, not guaranteed to
 be `automation.<config_id>`).
@@ -95,6 +120,12 @@ One-command release gate:
 make test-release-live
 ```
 
+That command now runs:
+
+1. `./scripts/test-comprehensive.sh`
+2. `./tests/run-live-tests.sh tests/test-live-managed-actions-contract.py`
+3. `cd custom_components/topomation/frontend && HA_URL=... HA_TOKEN=... npx playwright test --config playwright.live.config.ts playwright/live-automation-ui.spec.ts`
+
 ## 4) Release cut checklist
 
 1. Run **`./scripts/test-comprehensive.sh`** and ensure it passes (no pushing until it does).
@@ -110,6 +141,7 @@ make test-release-live
    - `Backend checks`
    - `Frontend checks`
    - `Comprehensive gate (browser suites)`
+   - If behavior changed in the live UI path, confirm the local `make test-release-live` run stayed green on the release commit/worktree before considering the push releasable.
 8. Verify `Auto Release` job result is green before considering the release complete.
    If any required check/release job fails, treat release as failed and fix before retry.
 

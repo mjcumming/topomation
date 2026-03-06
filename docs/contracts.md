@@ -1,6 +1,6 @@
 # Contracts
 
-**Last reviewed**: 2026-03-03
+**Last reviewed**: 2026-03-06
 **Purpose**: canonical behavior contracts for Topomation runtime and panel actions.
 
 Use this file as the quick contract surface. Keep it synchronized with:
@@ -132,7 +132,10 @@ Additional save points:
 - UI save behavior requirement:
   - successful create/update/delete should not visually revert checkbox/select state
     during temporary HA registry/config eventual consistency windows.
-  - if convergence polling times out, user gets explicit "saved, still syncing" feedback.
+  - if post-save UI reconciliation is delayed after backend success criteria are met,
+    user gets explicit "saved, still syncing" feedback.
+  - create operations that never register in HA are errors, not "saved, still syncing"
+    states; they must rollback per the create success criteria above.
 - **Automation config source**: The integration uses the same REST API as the Home Assistant
   automation UI (`/api/config/automation/config/<id>`). That API always writes to
   `automations.yaml` (HA core constant). The automation component reload re-reads config
@@ -194,14 +197,24 @@ Additional save points:
 
 ## C-013 Linked Rooms + Advanced Adjacency Contract
 
-- Detection supports primary room-sync peers via occupancy config key
+- Detection supports primary location-sync peers via occupancy config key
   `sync_locations: string[]`.
+- Primary sync UI/copy uses label `Sync Locations` (not `Sync Rooms`).
 - Sync semantics are reciprocal and state-aligned:
   - checking a sync peer writes both directions (`A.sync_locations += B`,
     `B.sync_locations += A`)
-  - any occupancy contributor change in one synced room is mirrored to peers
+  - any occupancy contributor change in one synced location is mirrored to peers
     using synthetic sync sources (`sync:<origin>::<source>`) so occupancy state
     and timeout windows remain aligned.
+- Sync candidate scope is explicit and sibling-scoped:
+  - selected location and candidates must share the same `parent_id`
+  - `area` <-> `area` sync is allowed when parent type is one of:
+    - `area`
+    - `floor`
+    - `building`
+  - `floor` <-> `floor` sync is allowed only when parent type is `building`
+  - integration-owned/system nodes outside those scopes are excluded from sync
+    target/candidate roles.
 - Detection supports directional linked-room contributors via occupancy config key
   `linked_locations: string[]`.
 - Semantics are directional:
@@ -313,47 +326,115 @@ Additional save points:
   - include at least one deep re-entrant chain test to verify stack-safe
     behavior under large event cascades.
 
-## C-017 Lighting (`dusk_dawn`) Policy Contract
+## C-017 Automation Editing + Lighting Persistence Contract
 
-- Inspector IA in this phase:
-  - top-level tabs: `Detection`, `Ambient`, `Lighting`, `Appliances`, `Media`, `HVAC`
+- Inspector IA contract:
+  - top-level tabs: `Detection`, `Ambient`, `Lighting`, `Media`, `HVAC`
   - no top-level `Advanced` tab and no generic `Actions` tab
   - advanced occupancy controls are rendered inside `Detection`.
-- `Lighting` uses the rule-card editor for `light.*` only.
-- Non-light managed automation tabs are split by domain:
-  - `Appliances` -> `switch.*`
+- Workspace mode controls contract:
+  - `Configure` and `Assign Devices` are top-level workspace tabs (shared tab affordance pattern),
+    not mixed-mode button toggles.
+- Save/update behavior is explicit across editable automation surfaces:
+  - `Detection` and `Ambient` use tab-level draft state + explicit
+    save/discard controls.
+  - `Lighting`, `Media`, and `HVAC` use per-rule card lifecycle
+    controls (`Save rule` / `Update rule` / `Discard edits` / `Remove rule` /
+    `Delete rule`) as applicable.
+  - no silent auto-save for user-authored policy/config edits in these tabs.
+- Rule-card destructive-control gating:
+  - unsaved draft rule rows must not render `Delete rule`
+  - unsaved drafts expose `Save rule` + `Remove rule`
+  - persisted edited rows expose `Update rule` + `Discard edits` + `Delete rule`
+  - persisted clean rows expose `Delete rule` only.
+- Rule workflow control placement:
+  - do not combine tab-level `Save changes` / `Discard changes` with per-rule
+    `Delete rule` controls for the same rule-editing workflow.
+  - lifecycle controls for each rule are colocated on that rule card.
+- `Lighting` owns `light.*` rule editing and persists using HA-canonical
+  managed automation ownership (same authority model as other managed-rule
+  domains).
+- Non-light managed automation tabs remain split by intent:
   - `Media` -> `media_player.*`
-  - `HVAC` -> `fan.*`
-- Module id remains `dusk_dawn` in this phase.
-- Dev-phase v3 contract in `modules.dusk_dawn`:
-  - `version: 3`
-  - `blocks: [{ id, name, start_time, end_time, time_condition_enabled, trigger_mode, ambient_condition, must_be_occupied, already_on_behavior, light_targets[] }]`
-  - `trigger_mode: on_occupied | on_vacant | on_dark | on_bright` (per block)
-  - `ambient_condition: any | dark | bright` (per block)
-  - `must_be_occupied: bool` (per block)
-  - `already_on_behavior: leave_unchanged | set_target` (per block legacy default/fallback)
-  - `time_condition_enabled: bool` (per block, optional time-window gate)
-  - `start_time/end_time: HH:MM` (per block, overnight windows allowed)
-  - `light_targets[]: [{ entity_id, power: on|off, brightness_pct?, color_hex?, already_on_behavior? }]`
-  - `light_targets[].already_on_behavior: leave_unchanged | set_target` (optional per-light override)
-- Top-level `enabled`, `trigger_mode`, `already_on_behavior` are not part of v3.
-- Policy is considered active when at least one block has at least one light action.
-- Integration startup should ensure v3-safe defaults exist for every location:
-  - `version: 3`
-  - `blocks: []`
-- WebSocket `locations/set_module_config` validates `module_id == "dusk_dawn"`:
-  - reject invalid enum values for block-level trigger/already-on modes
-  - reject invalid `start_time` / `end_time` format (must be `HH:MM`)
-  - require unique block ids
-  - clamp `brightness_pct` to `1..100` when provided
-  - normalize `color_hex` to `#RRGGBB` when provided
-  - validate optional `light_targets[].already_on_behavior`
-  - reject non-`light.*` targets
+  - `HVAC` -> `fan.*` plus `switch.*` compatibility for switch-controlled
+    exhaust/ventilation devices
+  - no dedicated `Appliances` tab in v1.
+  - `climate.*` thermostat/preset workflows are deferred until a narrower
+    contract exists for common occupancy actions.
+- Lighting rule persistence contract:
+  - HA automation entities/config are canonical for Lighting rule state.
+  - save path is upsert+diff with stable metadata identity (`rule_uuid`).
+  - backend integration is the only writer for Lighting automation mutations.
 - Ownership constraint:
-  - hard-block `light.*` overlap between Lighting-policy targets and managed-action targets in `Appliances` / `Media` / `HVAC` for the same location.
-- Shared startup reapply behavior:
-  - each automation tab renders its own startup toggle UI
-  - all toggles persist to the same key: `modules.automation.reapply_last_state_on_startup`.
-- Contract migration policy for this dev phase:
-  - if stored config is pre-v3 or legacy-shape, reset to v3 defaults (no compatibility shim).
-- UI contract is locked by `docs/lighting-ui-contract.md` and must be updated with any lighting-tab UX change.
+  - hard-block `light.*` overlap between Lighting-policy targets and managed-action targets in `Media` / `HVAC` for the same location.
+- Startup behavior contract:
+  - Lighting tab does not expose a Topomation-specific startup reapply toggle.
+  - startup behavior follows native HA automation semantics.
+- Lighting trigger-derived condition contract:
+  - `on_dark` and `on_bright` lock ambient condition to the matching value and
+    render ambient condition as derived/read-only.
+  - `on_occupied` locks `must_be_occupied=true` and renders it as
+    derived/read-only.
+  - `on_vacant` locks `must_be_occupied=false` (displayed as `Must be vacant`)
+    and renders it as derived/read-only.
+- Lighting multi-action contract:
+  - one Lighting rule may include multiple action targets.
+  - persistence writes those targets as ordered HA automation action steps.
+  - response/list payloads include full action target list (`actions[]`) plus
+    first-action summary fields for compatibility (`action_entity_id`,
+    `action_service`, `action_data`).
+- Legacy migration compatibility:
+  - existing `modules.dusk_dawn` payloads may be present during migration.
+  - migration logic must preserve behavior while converging persisted Lighting
+    state to HA-managed automation records.
+- Lighting UI contract is locked by `docs/automation-ui-guide.md` (Section 10)
+  and must be updated with any lighting-tab UX change.
+
+## C-018 Home Assistant UX Baseline Contract
+
+- UI/UX decisions should default to Home Assistant-native interaction patterns.
+- This baseline applies in particular to:
+  - control placement/hierarchy
+  - save/update/discard affordances
+  - naming/labels
+  - error and recovery messaging.
+- Deviation from HA-native patterns is allowed when integration constraints or
+  workflow clarity require it, but the rationale must be explicit in:
+  - ADR notes (`docs/adr-log.md`) and
+  - active UX contract docs (`docs/automation-ui-guide.md` and/or this file).
+
+## C-019 Ambiguity Escalation Contract
+
+- If implementation guidance conflicts across:
+  - `docs/contracts.md`
+  - `docs/automation-ui-guide.md`
+  - active issue requirements
+  - observed shipped UI behavior
+  implementation must stop and request a user decision before coding that area.
+- If more than one plausible UI/behavior pattern exists and no explicit contract
+  chooses one, implementation must stop and request user choice.
+- Do not mark ambiguous work complete until user sign-off is received.
+- Resolved choices must be documented in contracts/guide/ADR in the same change
+  set.
+
+## C-020 Delivery Status + Validation Claim Contract
+
+- Active behavior/status docs must distinguish delivery stage explicitly:
+  - `Target`: approved/intended contract or design baseline
+  - `Implemented`: landed in repo with code/docs/tests updated
+  - `Released`: shipped in an installable artifact/runtime bundle
+  - `Live-validated`: exercised against a running Home Assistant instance with
+    the required live checklist/release gate recorded
+- Execution state and delivery state are separate concerns:
+  - use execution markers such as `Pending`, `In progress`, `Blocked`, `Done`
+    for work tracking
+  - use delivery markers above for behavior confidence/shipping claims
+- `Complete` / `Completed` is not a sufficient behavior claim in active docs for
+  work that changes runtime behavior, UI behavior, or contracts.
+  - if used for archival/task bookkeeping, pair it with an explicit delivery
+    state or keep it out of active status summaries
+- If live HA validation is still pending for a behavior change, active docs may
+  claim `Implemented` but must not claim `Live-validated`.
+- Active docs that summarize current behavior (`docs/current-work.md`,
+  `docs/work-tracking.md`, active issue checklists, and release/live validation
+  docs) must stay aligned in the same change set.

@@ -1,6 +1,6 @@
 # Documentation Index
 
-**Last Reviewed**: 2026-03-03
+**Last Reviewed**: 2026-03-06
 
 This file is the source of truth for active documentation and lifecycle rules.
 If a file is not listed as active below, treat it as reference-only.
@@ -11,6 +11,7 @@ If a file is not listed as active below, treat it as reference-only.
 | --- | --- | --- |
 | `docs/architecture.md` | Integration architecture and adapter boundaries | Active |
 | `docs/contracts.md` | Canonical behavior contracts and invariants | Active |
+| `docs/automation-ui-guide.md` | Automation workspace and inspector UX baseline (tabs, save model, sync scope, messaging) | Active |
 | `docs/bidirectional-sync-design.md` | Sync contract + mandatory pre-change checks | Active |
 | `docs/adr-log.md` | Architectural decisions and policy record | Active |
 | `docs/agent-quickstart.md` | Fast startup guide for contributors and AI agents | Active (Operational) |
@@ -30,8 +31,8 @@ If a file is not listed as active below, treat it as reference-only.
 | `docs/cursor-guide.md` | Agent reference and repository operating notes | Active (Reference) |
 | `docs/tree-dnd-stabilization-plan.md` | Tree DnD explicit drop targets — implementation plan (C-011, ADR-HA-039) | Active (Operational) |
 | `docs/ambient-light-v1-design.md` | Ambient light v1 design scope, UX, and phased implementation plan | Active (Operational) |
-| `docs/dusk-dawn-lighting-ui-spec.md` | Lighting rules model UI spec (triggers, conditions, actions, ownership boundaries) | Active (Operational) |
-| `docs/lighting-ui-contract.md` | Locked Lighting-tab UX contract and acceptance checks | Active |
+| `docs/dusk-dawn-lighting-ui-spec.md` | Historical lighting-model exploration (pre-HA-canonical migration notes) | Active (Reference) |
+| `docs/lighting-ui-contract.md` | Compatibility pointer to canonical Lighting contract in `docs/automation-ui-guide.md` | Active (Reference) |
 
 ## Project Docs Scope (`/project`)
 
@@ -46,13 +47,34 @@ Do not use `/project` files as architecture or contract policy sources.
 
 ## Policy Source Order
 
-When documents disagree, use this order:
+When documents disagree, use this order for the concern you are changing:
 
-1. `docs/bidirectional-sync-design.md`
-2. `docs/contracts.md`
-3. `docs/architecture.md`
-4. `docs/adr-log.md`
-5. tests + implementation under `custom_components/topomation/`
+1. Sync-only behavior: `docs/bidirectional-sync-design.md`
+2. General product/runtime behavior: `docs/contracts.md`
+3. Automation workspace and inspector UX: `docs/automation-ui-guide.md`
+4. Integration structure and component boundaries: `docs/architecture.md`
+5. Decision history/rationale: `docs/adr-log.md`
+6. tests + implementation under `custom_components/topomation/`
+
+## Delivery Status Vocabulary
+
+Use these terms consistently in active status docs:
+
+- `Target`: agreed contract/design baseline; not yet fully implemented.
+- `Implemented`: landed in repo with code/docs/tests updated.
+- `Released`: shipped in an installable artifact/runtime bundle.
+- `Live-validated`: rerun against a live Home Assistant instance and recorded in
+  the required checklist/release gate.
+
+Execution tracking is separate:
+
+- `Pending`
+- `In progress`
+- `Blocked`
+- `Done`
+
+Do not use `Complete` / `Completed` as a standalone behavior claim in active
+docs when live HA validation is still pending.
 
 ## Governance Rules
 
@@ -71,3 +93,4 @@ When documents disagree, use this order:
 3. Keep one source per concern: architecture in `docs`, strategy in `project/roadmap.md`, execution in `docs/work-tracking.md`, tasks in `project/issues/`.
 4. Run `scripts/check-docs-consistency.sh` before merge for sync/contract changes.
 5. If a recurring environment/workflow prerequisite is discovered during a fix, automate it where possible and document it in active docs in the same change.
+6. Active behavior-status docs must distinguish execution state from delivery state when work is not yet live-validated.
