@@ -9,21 +9,23 @@ Status markers:
 
 ## Snapshot
 
+- Active focus: repo workflow reset and authority-chain hardening (ADR-HA-063): dev mode only, ambiguity stop rule, and exact touched-workflow validation gate.
 - Active focus: managed shadow area contract + implementation checklist (ADR-HA-049 / ISSUE-057).
 - Active focus: HA-canonical managed-rule sync (ADR-HA-053) with stable rule identity and in-place upserts.
-- Active focus: automation UX + persistence realignment (ADR-HA-054/055/056/060/061/062): the active rule UI is scoped to Lighting/Media/HVAC, runs dev-mode without legacy migration fallbacks, and needs a fresh live HA rerun after the 2026-03-06 no-legacy cleanup.
+- Active focus: automation UX + persistence realignment (ADR-HA-054/055/056/060/061/062/063): the active rule UI is scoped to Lighting/Media/HVAC, runs dev-mode without legacy migration fallbacks, and cannot regain a release/live claim until the exact current branch state is rerun through the touched-workflow gate on live HA.
 - Active execution checklist: `project/issues/issue-058-automation-ui-contract-implementation.md`.
 - New planning track: ambient light v1 design baseline captured in `docs/ambient-light-v1-design.md` before dusk/dawn coupling work.
 - Recently completed: Tree DnD now uses explicit drop targets (before/inside/after/outdent) from pointer Y and optional outdent strip; zone-only resolver; heuristic x-offset logic removed. User order preserved by existing backend (`manual_order` + A-Z until first reorder).
-- Contract source set: `docs/contracts.md`, `docs/automation-ui-guide.md`, `docs/architecture.md`, `docs/adr-log.md`.
+- Contract source set: `docs/working-agreement.md`, `docs/contracts.md`, `docs/automation-ui-guide.md`, `docs/architecture.md`, `docs/adr-log.md`.
 
 ## In-flight work (update per session)
 
 | Item | Owner | Execution | Delivery | Notes |
 | --- | --- | --- | --- | --- |
+| Repo workflow reset + authority-chain hardening | active | Done | Implemented | ADR-HA-063, `docs/working-agreement.md`, and `docs/touched-workflow-release-gate.md` landed to stop ambiguity drift, legacy carryover, and status inflation. |
 | Managed shadow areas + assignment remap | active | In progress | Target | ADR-HA-049 approved; ISSUE-057 tracks backend/UI/test checklist. |
-| Automation UX + contracts reset | active | Done | Implemented | ADR-HA-054/055/056/060/061 are implemented; ADR-HA-062 removes remaining legacy automation fallbacks in the active dev branch. Fresh live HA rerun is pending after the no-legacy cleanup. |
-| Automation UX implementation checklist (ISSUE-058) | active | In progress | Implemented | Detection/Ambient draft flow, HA-canonical/card-local Lighting workflow, and the dev-mode no-legacy cleanup are in repo. Fresh live HA rerun is pending before promoting delivery again. |
+| Automation UX + contracts reset | active | Blocked | Implemented | Branch behavior changed again after the older 2026-03-06 live reruns; no release/live claim until the touched-workflow gate is rerun on the exact current main branch state. |
+| Automation UX implementation checklist (ISSUE-058) | active | Blocked | Implemented | Detection/Ambient draft flow, HA-canonical/card-local Lighting workflow, dev-mode no-legacy cleanup, and Media/HVAC card simplification are in repo. Exact-branch live rerun is still pending. |
 | Ambient light v1 design + implementation sequencing | active | In progress | Target | Design guide added; next step is phase-A inspector read path and config UX. |
 | Parallel branch updates | multiple | In progress | n/a | Verify `git status` before editing overlapping files. |
 | Managed action rule resilience | active | Done | Live-validated | Added fallback/reconciliation contracts + production smoke coverage; live managed-actions contract rerun passed on 2026-03-06. |
@@ -39,6 +41,8 @@ Status markers:
 2. If unexpected edits appear in files you are touching, pause and coordinate.
 3. Avoid reverting unrelated changes from other in-flight work.
 4. Keep behavioral docs in sync with code changes in the same change set.
+5. Use `docs/working-agreement.md` and `docs/touched-workflow-release-gate.md`
+   before resuming behavior changes or release testing.
 
 ## Handoff checklist
 
@@ -51,3 +55,5 @@ Status markers:
 
 1. Keep this file current when parallel work shifts focus areas.
 2. Optionally add CI enforcement for contract/doc timestamp freshness.
+3. Do not resume release-candidate testing until the touched-workflow gate is
+   recorded for the exact current main branch state.

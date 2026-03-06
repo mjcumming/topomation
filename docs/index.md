@@ -12,6 +12,8 @@ If a file is not listed as active below, treat it as reference-only.
 | `docs/architecture.md` | Integration architecture and adapter boundaries | Active |
 | `docs/contracts.md` | Canonical behavior contracts and invariants | Active |
 | `docs/automation-ui-guide.md` | Automation workspace and inspector UX baseline (tabs, save model, sync scope, messaging) | Active |
+| `docs/working-agreement.md` | Active repo operating contract (dev mode, ambiguity stop rule, validation honesty) | Active (Operational) |
+| `docs/touched-workflow-release-gate.md` | Required release/live-validation gate tied to exact touched workflows | Active (Operational) |
 | `docs/bidirectional-sync-design.md` | Sync contract + mandatory pre-change checks | Active |
 | `docs/adr-log.md` | Architectural decisions and policy record | Active |
 | `docs/agent-quickstart.md` | Fast startup guide for contributors and AI agents | Active (Operational) |
@@ -50,16 +52,23 @@ Use `/project` for execution artifacts only:
 
 Do not use `/project` files as architecture or contract policy sources.
 
-## Policy Source Order
+## Active Authority Chain
 
-When documents disagree, use this order for the concern you are changing:
+For behavior-changing work, use this order and stop at the first explicit rule:
 
-1. Sync-only behavior: `docs/bidirectional-sync-design.md`
-2. General product/runtime behavior: `docs/contracts.md`
-3. Automation workspace and inspector UX: `docs/automation-ui-guide.md`
-4. Integration structure and component boundaries: `docs/architecture.md`
-5. Decision history/rationale: `docs/adr-log.md`
-6. tests + implementation under `custom_components/topomation/`
+1. `docs/working-agreement.md`
+2. `docs/contracts.md`
+3. `docs/automation-ui-guide.md`
+4. `docs/architecture.md`
+5. `docs/adr-log.md`
+
+Supplemental notes:
+
+- `docs/bidirectional-sync-design.md` is sync-specific only and does not
+  override the chain above outside sync behavior.
+- Operational docs, issue checklists, and release notes do not override the
+  active authority chain.
+- tests + implementation verify the chain; they do not replace it.
 
 ## Delivery Status Vocabulary
 
@@ -99,3 +108,7 @@ docs when live HA validation is still pending.
 4. Run `scripts/check-docs-consistency.sh` before merge for sync/contract changes.
 5. If a recurring environment/workflow prerequisite is discovered during a fix, automate it where possible and document it in active docs in the same change.
 6. Active behavior-status docs must distinguish execution state from delivery state when work is not yet live-validated.
+7. Do not implement ambiguous UX or workflow behavior without first updating the
+   active authority chain or getting explicit user direction.
+8. Do not claim `Released` or `Live-validated` without the exact touched-workflow
+   evidence required by `docs/touched-workflow-release-gate.md`.

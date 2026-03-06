@@ -3,6 +3,21 @@
 **Last reviewed**: 2026-02-27
 **Scope**: release-candidate validation before bumping `manifest.json` version.
 
+## 0) Declare touched workflows first
+
+Before running release validation, fill out the record in
+`docs/touched-workflow-release-gate.md` for the exact branch state you plan to
+release.
+
+Minimum record:
+
+1. commit under test
+2. touched workflow list
+3. commands to run
+4. per-workflow outcome
+
+If the touched workflow list is missing or vague, release work is blocked.
+
 ## 1) Local preflight
 
 From repo root:
@@ -57,6 +72,8 @@ Every release must pass this gate against a running Home Assistant instance.
 Do not cut a release from mock-only evidence.
 Topomation integration must be loaded in that HA instance; the live contract
 gate now fails fast when it is missing.
+This gate must cover the exact workflows listed in
+`docs/touched-workflow-release-gate.md`.
 
 Delivery status mapping for behavior-changing work:
 
@@ -65,6 +82,7 @@ Delivery status mapping for behavior-changing work:
 3. `Live-validated`: this section's live HA gate passed and was recorded.
 
 Do not use `Released` or `Live-validated` interchangeably.
+Do not carry a previous `Live-validated` claim across later behavior changes.
 
 **Release gate uses local/test environment by default.** The gate runs against
 `HA_URL_DEV` / `HA_TOKEN_DEV` (localhost). Production testing is optional and
@@ -137,12 +155,13 @@ That command now runs:
 4. Ensure docs/contracts/ADR updates are in the same change when behavior changed.
 5. Run `make test-release-live` after final edits (if you have `tests/ha-config.env`).
 6. Run **`./scripts/test-comprehensive.sh`** again after any last edits; only then push to `main`.
-7. After pushing, verify CI required jobs are green on the release commit:
+7. Update the touched-workflow gate record with the exact release commit and outcomes.
+8. After pushing, verify CI required jobs are green on the release commit:
    - `Backend checks`
    - `Frontend checks`
    - `Comprehensive gate (browser suites)`
    - If behavior changed in the live UI path, confirm the local `make test-release-live` run stayed green on the release commit/worktree before considering the push releasable.
-8. Verify `Auto Release` job result is green before considering the release complete.
+9. Verify `Auto Release` job result is green before considering the release complete.
    If any required check/release job fails, treat release as failed and fix before retry.
 
 CI runs the same backend/frontend/comprehensive checks. **Auto Release** runs when any of the three version files change and creates the release once CI passes. It also runs the release job when the release for the current version does not exist yet (e.g. after fixing CI or the changelog step without bumping again). If a release was skipped and you did not push another version-file change, go to **Actions → Auto Release → Run workflow** to create the release for the current version.

@@ -2818,6 +2818,69 @@ truth.
 
 ---
 
+### ADR-HA-063: Working Agreement + Exact Touched-Workflow Release Gate Reset (2026-03-06)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+
+The repo hit the same failure pattern repeatedly:
+
+1. ambiguous UX decisions were implemented instead of escalated
+2. legacy compatibility paths survived explicit instructions to remove them
+3. broad test passes were treated as evidence for the exact workflow that
+   changed
+4. older live HA passes were implicitly carried forward across later behavior
+   changes
+5. status docs claimed more certainty than the exact branch state supported
+
+The problem was no longer just one bug or one screen. It was the operating
+model for how changes were being made and validated.
+
+**Decision**:
+
+1. Add an active repo working agreement in `docs/working-agreement.md`.
+2. Add an active touched-workflow release gate in
+   `docs/touched-workflow-release-gate.md`.
+3. Tighten the active authority chain to:
+   - `docs/working-agreement.md`
+   - `docs/contracts.md`
+   - `docs/automation-ui-guide.md`
+   - `docs/architecture.md`
+   - `docs/adr-log.md`
+4. Active operational docs and issue checklists may not override that chain.
+5. Dev-mode only remains the default; legacy compatibility is not preserved
+   unless explicitly re-approved.
+6. Release/live claims require exact-branch, exact-bundle, exact-workflow
+   evidence.
+7. If UX/workflow behavior is ambiguous, implementation must stop and ask.
+
+**Rationale**:
+
+1. A written operating contract is necessary because the same drift kept
+   recurring.
+2. Exact touched-workflow validation is the only reliable way to connect test
+   evidence to the behavior that actually changed.
+3. A tighter authority chain reduces room for “reasonable” but unapproved UI
+   interpretation.
+4. Honest status semantics are required to know what is implemented versus what
+   is actually releasable.
+
+**Consequences**:
+
+- ✅ The repo now has an explicit operating contract, not just scattered
+  expectations across chat history.
+- ✅ Release/live claims are blocked unless exact workflow evidence is recorded.
+- ✅ Old live validation can no longer be casually reused after later behavior
+  changes.
+- ✅ Ambiguous UX is now a mandatory stop condition.
+- ⚠️ Current automation UX work remains `Implemented`, not `Released` or
+  `Live-validated`, until the new gate is executed on the exact branch state.
+- ⚠️ This ADR does not fix product bugs by itself; it fixes how the repo is
+  allowed to move forward.
+
+---
+
 ## How to Use This Log
 
 ### When to Create an ADR

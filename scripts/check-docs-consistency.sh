@@ -55,6 +55,7 @@ ACTIVE_DOCS=(
 
 POLICY_DOCS=(
   "README.md"
+  "docs/working-agreement.md"
   "docs/contracts.md"
   "docs/automation-ui-guide.md"
   "docs/architecture.md"
@@ -128,6 +129,41 @@ check_matches \
   "Docs index does not list dusk-dawn lighting spec as active" \
   '^\| `docs/dusk-dawn-lighting-ui-spec\.md` \|.*\| Active' \
   "docs/index.md"
+
+require_match \
+  "Docs index lists working agreement as active" \
+  '^\| `docs/working-agreement\.md` \|.*\| Active' \
+  "docs/index.md"
+
+require_match \
+  "Docs index lists touched-workflow release gate as active" \
+  '^\| `docs/touched-workflow-release-gate\.md` \|.*\| Active' \
+  "docs/index.md"
+
+require_match \
+  "Docs index defines working agreement as authority-chain priority 1" \
+  '^1\. `docs/working-agreement\.md`' \
+  "docs/index.md"
+
+require_match \
+  "Working agreement defines dev-mode only rule" \
+  '^1\. Dev mode only:' \
+  "docs/working-agreement.md"
+
+require_match \
+  "Working agreement defines ambiguity stop rule" \
+  '^2\. Ambiguity stop rule:' \
+  "docs/working-agreement.md"
+
+require_match \
+  "Working agreement requires touched-workflow gate" \
+  'Touched-workflow gate is mandatory' \
+  "docs/working-agreement.md"
+
+require_match \
+  "Release docs reference touched-workflow release gate" \
+  'docs/touched-workflow-release-gate\.md' \
+  "docs/release-validation-runbook.md" "docs/live-ha-validation-checklist.md"
 
 require_match \
   "Docs index defines delivery status vocabulary" \

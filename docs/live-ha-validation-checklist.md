@@ -4,6 +4,16 @@ Use this checklist to validate the topomation integration on a real Home Assista
 
 **Prerequisites**: Home Assistant running (dev container, VM, or production). Integration installed via developer tools or HACS.
 
+**Gate rule**: use this checklist together with `docs/touched-workflow-release-gate.md`.
+Do not use this file by itself to justify a release or `Live-validated` claim.
+
+## 0. Release-Gate Metadata
+
+- [ ] Commit under test is recorded.
+- [ ] Frontend bundle under test was rebuilt from that same commit.
+- [ ] Touched workflows are listed in `docs/touched-workflow-release-gate.md`.
+- [ ] This checklist run is for the exact branch state being evaluated.
+
 ---
 
 ## 1. Occupancy Flow (Core Value Proposition)
@@ -137,7 +147,7 @@ Current evidence state for Section 5 / 5.1 (2026-03-06):
 - Delivery status: `Implemented`
 - Automated validation: passed in targeted backend/frontend/Playwright suites
 - Live managed-actions backend contract: passed on 2026-03-06 (`tests/test-live-managed-actions-contract.py`, 2 passed)
-- Live UI delta rerun: previous pass recorded on 2026-03-06; rerun required after the no-legacy dev cleanup
+- Live UI delta rerun: previous pass recorded on 2026-03-06; rerun required after the no-legacy cleanup and later Media/HVAC rule-card UX reset
 
 - [x] In `On Occupied`, enable a light action row and confirm checkbox remains checked after save.
 - [x] Reload panel/browser and confirm managed action row remains enabled.
@@ -167,12 +177,15 @@ executed on a running HA instance, even if automated coverage passes locally.
 - [x] Lighting `On occupied` / `On vacant` render occupancy condition as derived/read-only (`Set by trigger`).
 - [x] One Lighting rule can save multiple selected light action targets and reconciles with all targets intact after reload.
 - [x] Save path preserves stable `rule_uuid` identity and updates in place (upsert+diff).
+- [ ] Media and HVAC rule cards do not render `Ambient must be`.
+- [ ] `Run on startup` is rendered in a bottom `Execution` section, not inside `Conditions`.
+- [ ] Media action options include power, playback, mute/unmute, and volume controls.
 - [x] `Sync Locations` eligibility is sibling-scoped with:
   - `area` siblings under parent `area|floor|building`
   - `floor` siblings under parent `building`.
 - [ ] Repeat these checks on a live HA runtime (outside mock harness) and record outcome.
 
-**Delta result**: [ ] PASS / [ ] FAIL — Notes: A prior live HA delta rerun for the narrowed Lighting/Media/HVAC IA passed on 2026-03-06 against local HA 2026.2.3, but the active dev branch has since removed remaining automation legacy fallbacks and route aliases. Rerun the live browser delta against this exact branch state before restoring `Live-validated`.
+**Delta result**: [ ] PASS / [ ] FAIL — Notes: A prior live HA delta rerun for the narrowed Lighting/Media/HVAC IA passed on 2026-03-06 against local HA 2026.2.3, but the active branch has since changed again: no-legacy cleanup, managed-action error-surface correction, and Media/HVAC rule-card UX simplification. Rerun the live browser delta against this exact branch state before restoring `Live-validated`.
 
 ---
 
