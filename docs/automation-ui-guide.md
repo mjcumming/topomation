@@ -69,14 +69,17 @@ Top-to-bottom layout order:
 ## 6.5 Non-Lighting Scope
 
 1. `Media` is the common-case media workflow:
-   `media_player.*` targets with simple occupancy-driven play/pause/stop/power
-   actions.
+   `media_player.*` targets with simple occupancy-driven power/playback/volume/
+   mute actions.
 2. `HVAC` is a fans-first workflow in v1:
    - `fan.*` targets are first-class.
    - switch-controlled exhaust/ventilation devices may also appear here via
      `switch.*` compatibility.
-3. Do not present a dedicated `Appliances` top-level tab in v1.
-4. Do not present `climate.*` thermostat/preset editing until a narrower common
+3. `Media` and `HVAC` do not expose an ambient-light condition filter in v1.
+4. `Run on startup` is not rendered inside `Conditions`; it lives in a
+   separate bottom `Execution` section on the rule card.
+5. Do not present a dedicated `Appliances` top-level tab in v1.
+6. Do not present `climate.*` thermostat/preset editing until a narrower common
    occupancy contract is agreed and documented.
 
 ## 7. Rule Lifecycle Controls
@@ -140,14 +143,15 @@ Rule-card requirements:
    - ambient filter (`Ignore ambient`, `Must be dark`, `Must be bright`)
    - `Must be occupied` toggle
    - `Use time window` toggle
+4. Execution group appears below `Actions` and includes:
    - `Run on startup` toggle
-4. Trigger-derived behavior:
+5. Trigger-derived behavior:
    - `On dark` enforces ambient condition `dark` and renders ambient as derived/read-only.
    - `On bright` enforces ambient condition `bright` and renders ambient as derived/read-only.
    - `On occupied` enforces `Must be occupied` and renders that condition as derived/read-only.
    - `On vacant` enforces `Must be vacant` and renders that condition as derived/read-only.
-5. Time-window inputs (`Begin`, `End`) appear only when enabled.
-6. Actions editor uses a capability-based light device list:
+6. Time-window inputs (`Begin`, `End`) appear only when enabled.
+7. Actions editor uses a capability-based light device list:
    - one row per compatible local `light.*` entity
    - row include toggles are multi-select and define the ordered action list for the rule
    - dimmable rows use a brightness slider (`0` -> `turn_off`, `>0` ->
@@ -156,11 +160,11 @@ Rule-card requirements:
      `Toggle`)
    - do not render a separate top-level `Device` + `Action` dropdown pair for
      Lighting rules.
-7. Rule lifecycle controls:
+8. Rule lifecycle controls:
    - unsaved draft rows show `Save rule` + `Remove rule`
    - persisted edited rows show `Update rule` + `Discard edits` + `Delete rule`
    - persisted clean rows show `Delete rule`.
-8. Rule lifecycle controls are card-local; they are not split between tab-level
+9. Rule lifecycle controls are card-local; they are not split between tab-level
    buttons and rule-card buttons.
 
 Acceptance checks:
@@ -168,7 +172,7 @@ Acceptance checks:
 1. Single top `Lighting rules` header.
 2. Inline rule rename behavior works.
 3. `Use time window` reveals `Begin` and `End`.
-4. `Run on startup` is available on the rule card; no tab-global startup
+4. `Run on startup` is available in the card `Execution` section; no tab-global startup
    toggle is rendered.
 5. `On dark` / `On bright` enforce matching ambient condition semantics.
 6. `On occupied` / `On vacant` enforce matching occupancy condition semantics.

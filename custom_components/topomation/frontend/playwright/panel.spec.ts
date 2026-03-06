@@ -378,7 +378,7 @@ test("actions rule add/save/delete persists managed automations", async ({ page 
   await expect.poll(async () => (await kitchenTopomationActionSummaries(page)).length).toBe(0);
 });
 
-test("actions rule ambient + time conditions persist into automation config", async ({ page }) => {
+test("media rule time + execution settings persist without ambient controls", async ({ page }) => {
   await page.goto("/mock-harness.html");
   await selectKitchen(page);
   await openActionsTab(page);
@@ -396,13 +396,11 @@ test("actions rule ambient + time conditions persist into automation config", as
     .locator("select")
     .selectOption("media_player.kitchen_speaker");
   await rule.locator(".dusk-rule-row", { hasText: "Action" }).locator("select").selectOption("media_play");
-  await rule
-    .locator(".dusk-conditions .config-row", { hasText: "Ambient must be" })
-    .locator("select")
-    .selectOption("dark");
+  await expect(rule.locator(".dusk-conditions .config-row", { hasText: "Ambient must be" })).toHaveCount(0);
 
   const timeRow = rule.locator(".dusk-conditions .config-row", { hasText: "Use time window" });
   await timeRow.locator("input[type='checkbox']").check();
+  await rule.locator("[data-testid$='-run-on-startup']").check();
   const startInput = rule.locator("input[type='time']").nth(0);
   const endInput = rule.locator("input[type='time']").nth(1);
   await startInput.fill("21:30");
@@ -418,8 +416,8 @@ test("actions rule ambient + time conditions persist into automation config", as
       return summaries.some(
         (summary) =>
           summary.trigger_type === "on_occupied" &&
-          summary.ambient_condition === "dark" &&
-          summary.has_dark_condition &&
+          summary.ambient_condition === "any" &&
+          !summary.has_dark_condition &&
           summary.time_after === "21:30" &&
           summary.time_before === "23:45"
       );
@@ -502,6 +500,8 @@ test("media rule service options align to media player controls", async ({ page 
       "media_play_pause",
       "media_pause",
       "media_stop",
+      "volume_mute:true",
+      "volume_mute:false",
       "volume_up",
       "volume_down",
     ]);

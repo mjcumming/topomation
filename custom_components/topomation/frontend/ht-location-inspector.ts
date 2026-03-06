@@ -5887,6 +5887,36 @@ export class HtLocationInspector extends LitElement {
     return "turn_on";
   }
 
+  private _tabSupportsActionAmbient(tab: DeviceAutomationTab): boolean {
+    return tab === "lighting";
+  }
+
+  private _ruleTabForEditing(rule: Partial<TopomationActionRule>): DeviceAutomationTab | undefined {
+    const actionEntityId = String(rule.action_entity_id || "").trim();
+    if (actionEntityId) {
+      return this._tabForActionEntity(actionEntityId);
+    }
+    const ruleId = String(rule.id || "").trim();
+    if (ruleId) {
+      return this._actionRuleTabById[ruleId];
+    }
+    return undefined;
+  }
+
+  private _effectiveAmbientConditionForRule(
+    rule: Partial<TopomationActionRule>,
+    tab?: DeviceAutomationTab
+  ): "any" | "dark" | "bright" {
+    const resolvedTab = tab ?? this._ruleTabForEditing(rule);
+    if (resolvedTab && !this._tabSupportsActionAmbient(resolvedTab)) {
+      return "any";
+    }
+    return this._normalizeActionAmbientCondition(
+      rule.ambient_condition,
+      this._normalizeActionTriggerType(rule.trigger_type)
+    );
+  }
+
   private _normalizeActionBrightnessPct(rawValue: unknown, fallback = 30): number {
     const numeric = Number(rawValue);
     if (Number.isFinite(numeric) && numeric > 0) {
@@ -5912,12 +5942,22 @@ export class HtLocationInspector extends LitElement {
       normalizedEntityId.startsWith("light.") &&
       this._isDimmableEntity(normalizedEntityId) &&
       normalizedService === "turn_on";
+    const mediaMuteAction =
+      normalizedEntityId.startsWith("media_player.") && normalizedService === "volume_mute";
 
     if (Object.prototype.hasOwnProperty.call(data, "brightness_pct")) {
       if (dimmableLightTurnOn) {
         data.brightness_pct = this._normalizeActionBrightnessPct(data.brightness_pct, 30);
       } else {
         delete data.brightness_pct;
+      }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(data, "is_volume_muted")) {
+      if (mediaMuteAction && typeof data.is_volume_muted === "boolean") {
+        data.is_volume_muted = Boolean(data.is_volume_muted);
+      } else {
+        delete data.is_volume_muted;
       }
     }
 
@@ -5932,47 +5972,79 @@ export class HtLocationInspector extends LitElement {
   private _actionServiceOptionsForRule(
     entityId: string,
     triggerType: TopomationActionRule["trigger_type"]
-  ): Array<{ value: string; label: string }> {
+  ): Array<{ value: string; label: string; service: string; data?: Record<string, unknown> }> {
     const normalizedEntityId = String(entityId || "").trim();
     if (!normalizedEntityId) return [];
     const domain = normalizedEntityId.split(".", 1)[0];
     if (domain === "media_player") {
       return [
-        { value: "turn_on", label: "Power on" },
-        { value: "turn_off", label: "Power off" },
-        { value: "media_play", label: "Play" },
-        { value: "media_play_pause", label: "Play/Pause" },
-        { value: "media_pause", label: "Pause" },
-        { value: "media_stop", label: "Stop" },
-        { value: "volume_up", label: "Volume up" },
-        { value: "volume_down", label: "Volume down" },
+        { value: "turn_on", label: "Power on", service: "turn_on" },
+        { value: "turn_off", label: "Power off", service: "turn_off" },
+        { value: "media_play", label: "Play", service: "media_play" },
+        { value: "media_play_pause", label: "Play/Pause", service: "media_play_pause" },
+        { value: "media_pause", label: "Pause", service: "media_pause" },
+        { value: "media_stop", label: "Stop", service: "media_stop" },
+        { value: "volume_mute:true", label: "Mute", service: "volume_mute", data: { is_volume_muted: true } },
+        { value: "volume_mute:false", label: "Unmute", service: "volume_mute", data: { is_volume_muted: false } },
+        { value: "volume_up", label: "Volume up", service: "volume_up" },
+        { value: "volume_down", label: "Volume down", service: "volume_down" },
       ];
     }
     if (domain === "fan") {
       return [
-        { value: "turn_on", label: "Turn on" },
-        { value: "turn_off", label: "Turn off" },
+        { value: "turn_on", label: "Turn on", service: "turn_on" },
+        { value: "turn_off", label: "Turn off", service: "turn_off" },
       ];
     }
     if (domain === "switch") {
       return [
-        { value: "turn_on", label: "Turn on" },
-        { value: "turn_off", label: "Turn off" },
-        { value: "toggle", label: "Toggle" },
+        { value: "turn_on", label: "Turn on", service: "turn_on" },
+        { value: "turn_off", label: "Turn off", service: "turn_off" },
+        { value: "toggle", label: "Toggle", service: "toggle" },
       ];
     }
     if (domain === "light") {
       return [
-        { value: "turn_on", label: "Turn on" },
-        { value: "turn_off", label: "Turn off" },
-        { value: "toggle", label: "Toggle" },
+        { value: "turn_on", label: "Turn on", service: "turn_on" },
+        { value: "turn_off", label: "Turn off", service: "turn_off" },
+        { value: "toggle", label: "Toggle", service: "toggle" },
       ];
     }
     const defaultService = this._defaultActionServiceForTrigger(normalizedEntityId, triggerType);
     return [
-      { value: "turn_on", label: "Turn on" },
-      { value: "turn_off", label: "Turn off" },
+      { value: "turn_on", label: "Turn on", service: "turn_on" },
+      { value: "turn_off", label: "Turn off", service: "turn_off" },
     ].sort((a, b) => (a.value === defaultService ? -1 : b.value === defaultService ? 1 : 0));
+  }
+
+  private _actionServiceOptionValue(actionService?: string, actionData?: unknown): string {
+    const normalizedService = String(actionService || "").trim();
+    if (normalizedService === "volume_mute") {
+      const isMuted =
+        typeof (actionData as { is_volume_muted?: unknown } | undefined)?.is_volume_muted === "boolean"
+          ? Boolean((actionData as { is_volume_muted?: unknown }).is_volume_muted)
+          : true;
+      return `volume_mute:${isMuted ? "true" : "false"}`;
+    }
+    return normalizedService;
+  }
+
+  private _actionServiceSelection(
+    optionValue: string,
+    entityId: string,
+    triggerType: TopomationActionRule["trigger_type"]
+  ): { service: string; data?: Record<string, unknown> } {
+    const options = this._actionServiceOptionsForRule(entityId, triggerType);
+    const match = options.find((option) => option.value === optionValue);
+    if (match) {
+      return {
+        service: match.service,
+        ...(match.data ? { data: match.data } : {}),
+      };
+    }
+    return {
+      service: String(optionValue || "").trim() || this._defaultActionServiceForTrigger(entityId, triggerType),
+    };
   }
 
   private _actionDomainsForTab(tab: DeviceAutomationTab): string[] {
@@ -6173,7 +6245,7 @@ export class HtLocationInspector extends LitElement {
       name: this._resolveActionRuleName(rule, index),
       trigger_type: this._normalizeActionTriggerType(rule.trigger_type),
       actions,
-      ambient_condition: this._normalizeActionAmbientCondition(rule.ambient_condition, rule.trigger_type),
+      ambient_condition: this._effectiveAmbientConditionForRule(rule),
       must_be_occupied: Boolean(rule.must_be_occupied),
       time_condition_enabled: Boolean(rule.time_condition_enabled),
       start_time: this._normalizeActionTime(rule.start_time, "18:00"),
@@ -6549,11 +6621,13 @@ export class HtLocationInspector extends LitElement {
         const ruleTargets = this._actionTargetsForRule(normalizedRule);
         const primaryAction = ruleTargets[0];
         if (!primaryAction) continue;
-        const existing =
+      const existing =
           existingById.get(String(normalizedRule.id || "")) ||
           existingByRuleUuid.get(
             this._normalizeRuleUuid(normalizedRule.rule_uuid, normalizedRule.id)
           );
+        const ruleTab = this._ruleTabForEditing(normalizedRule);
+        const ambientCondition = this._effectiveAmbientConditionForRule(normalizedRule, ruleTab);
         const automationId = existing ? String(existing.id || "") : undefined;
         const createdRule = await createTopomationActionRule(
           this.hass,
@@ -6567,12 +6641,12 @@ export class HtLocationInspector extends LitElement {
             action_entity_id: primaryAction.entity_id,
             action_service: primaryAction.service,
             action_data: primaryAction.data,
-            ambient_condition: normalizedRule.ambient_condition,
+            ambient_condition: ambientCondition,
             must_be_occupied: Boolean(normalizedRule.must_be_occupied),
             time_condition_enabled: Boolean(normalizedRule.time_condition_enabled),
             start_time: normalizedRule.start_time,
             end_time: normalizedRule.end_time,
-            require_dark: normalizedRule.ambient_condition === "dark",
+            require_dark: ambientCondition === "dark",
           },
           this.entryId
         );
@@ -6651,6 +6725,8 @@ export class HtLocationInspector extends LitElement {
     try {
       const ruleTargets = this._actionTargetsForRule(rule);
       const primaryAction = ruleTargets[0];
+      const ruleTab = this._ruleTabForEditing(rule);
+      const ambientCondition = this._effectiveAmbientConditionForRule(rule, ruleTab);
       if (!primaryAction) {
         throw new Error("Select at least one target device before saving.");
       }
@@ -6666,13 +6742,13 @@ export class HtLocationInspector extends LitElement {
           action_entity_id: primaryAction.entity_id,
           action_service: primaryAction.service,
           action_data: primaryAction.data,
-          ambient_condition: rule.ambient_condition,
+          ambient_condition: ambientCondition,
           must_be_occupied: Boolean(rule.must_be_occupied),
           time_condition_enabled: Boolean(rule.time_condition_enabled),
           start_time: rule.start_time,
           end_time: rule.end_time,
           run_on_startup: this._resolvedActionRunOnStartup(rule),
-          require_dark: rule.ambient_condition === "dark",
+          require_dark: ambientCondition === "dark",
         },
         this.entryId
       );
@@ -6990,6 +7066,7 @@ export class HtLocationInspector extends LitElement {
                 const editingName = this._editingActionRuleNameId === ruleId;
                 const label = rule.name?.trim() || `Rule ${index + 1}`;
                 const triggerType = this._normalizeActionTriggerType(rule.trigger_type);
+                const supportsAmbientCondition = this._tabSupportsActionAmbient(tab);
                 const selectedActionEntityId = String(rule.action_entity_id || "").trim();
                 const normalizedActionData = this._normalizeActionDataForRule(
                   rule.action_data,
@@ -7021,6 +7098,10 @@ export class HtLocationInspector extends LitElement {
                 const serviceOptions = this._actionServiceOptionsForRule(
                   selectedActionEntityId,
                   triggerType
+                );
+                const selectedServiceOptionValue = this._actionServiceOptionValue(
+                  rule.action_service,
+                  normalizedActionData
                 );
                 return html`
                   <div class="dusk-block-row" data-testid=${`action-rule-${ruleId}`}>
@@ -7089,43 +7170,47 @@ export class HtLocationInspector extends LitElement {
 
                     <div class="dusk-rule-section-title">Conditions</div>
                     <div class="dusk-conditions">
-                      <div class="config-row">
-                        <div>
-                          <div class="config-label">Ambient must be</div>
-                          <div class="config-help">
-                            ${ambientLocked
-                              ? "Derived from trigger."
-                              : "Optional ambient filter at trigger time."}
-                          </div>
-                        </div>
-                        <div class="config-value">
-                          ${ambientLocked
-                            ? html`
-                                <div class="dusk-condition-derived">
-                                  <span>${ambientConditionLabel}</span>
-                                  <span class="dusk-condition-derived-note">Set by trigger</span>
+                      ${supportsAmbientCondition
+                        ? html`
+                            <div class="config-row">
+                              <div>
+                                <div class="config-label">Ambient must be</div>
+                                <div class="config-help">
+                                  ${ambientLocked
+                                    ? "Derived from trigger."
+                                    : "Optional ambient filter at trigger time."}
                                 </div>
-                              `
-                            : html`
-                                <select
-                                  class="dusk-wide-select"
-                                  .value=${ambientCondition}
-                                  ?disabled=${busy}
-                                  @change=${(ev: Event) =>
-                                    this._updateActionRule(ruleId, {
-                                      ambient_condition: this._normalizeActionAmbientCondition(
-                                        (ev.target as HTMLSelectElement).value,
-                                        triggerType
-                                      ),
-                                    })}
-                                >
-                                  <option value="any">Ignore ambient</option>
-                                  <option value="dark">Must be dark</option>
-                                  <option value="bright">Must be bright</option>
-                                </select>
-                              `}
-                        </div>
-                      </div>
+                              </div>
+                              <div class="config-value">
+                                ${ambientLocked
+                                  ? html`
+                                      <div class="dusk-condition-derived">
+                                        <span>${ambientConditionLabel}</span>
+                                        <span class="dusk-condition-derived-note">Set by trigger</span>
+                                      </div>
+                                    `
+                                  : html`
+                                      <select
+                                        class="dusk-wide-select"
+                                        .value=${ambientCondition}
+                                        ?disabled=${busy}
+                                        @change=${(ev: Event) =>
+                                          this._updateActionRule(ruleId, {
+                                            ambient_condition: this._normalizeActionAmbientCondition(
+                                              (ev.target as HTMLSelectElement).value,
+                                              triggerType
+                                            ),
+                                          })}
+                                      >
+                                        <option value="any">Ignore ambient</option>
+                                        <option value="dark">Must be dark</option>
+                                        <option value="bright">Must be bright</option>
+                                      </select>
+                                    `}
+                              </div>
+                            </div>
+                          `
+                        : ""}
 
                       <div class="config-row">
                         <div>
@@ -7175,28 +7260,6 @@ export class HtLocationInspector extends LitElement {
                             @change=${(ev: Event) =>
                               this._updateActionRule(ruleId, {
                                 time_condition_enabled: (ev.target as HTMLInputElement).checked,
-                              })}
-                          />
-                        </div>
-                      </div>
-
-                      <div class="config-row">
-                        <div>
-                          <div class="config-label">Run on startup</div>
-                          <div class="config-help">
-                            Re-evaluate this rule after Home Assistant starts.
-                          </div>
-                        </div>
-                        <div class="config-value">
-                          <input
-                            type="checkbox"
-                            class="switch-input"
-                            .checked=${runOnStartup}
-                            data-testid=${`action-rule-${ruleId}-run-on-startup`}
-                            ?disabled=${busy}
-                            @change=${(ev: Event) =>
-                              this._updateActionRule(ruleId, {
-                                run_on_startup: (ev.target as HTMLInputElement).checked,
                               })}
                           />
                         </div>
@@ -7290,15 +7353,20 @@ export class HtLocationInspector extends LitElement {
                             <span class="config-label">Action</span>
                             <select
                               class="dusk-wide-select"
-                              .value=${rule.action_service || ""}
+                              .value=${selectedServiceOptionValue}
                               ?disabled=${busy || !selectedActionEntityId}
                               @change=${(ev: Event) => {
-                                const nextService = String(
+                                const nextSelection = String(
                                   (ev.target as HTMLSelectElement).value || ""
                                 ).trim();
+                                const nextAction = this._actionServiceSelection(
+                                  nextSelection,
+                                  selectedActionEntityId,
+                                  rule.trigger_type
+                                );
                                 this._updateActionRule(ruleId, {
-                                  action_service: nextService,
-                                  action_data: {},
+                                  action_service: nextAction.service,
+                                  action_data: nextAction.data || {},
                                 });
                               }}
                             >
@@ -7310,6 +7378,30 @@ export class HtLocationInspector extends LitElement {
                             </select>
                           </div>
                         `}
+                    <div class="dusk-rule-section-title">Execution</div>
+                    <div class="dusk-conditions">
+                      <div class="config-row">
+                        <div>
+                          <div class="config-label">Run on startup</div>
+                          <div class="config-help">
+                            Re-evaluate this rule after Home Assistant starts.
+                          </div>
+                        </div>
+                        <div class="config-value">
+                          <input
+                            type="checkbox"
+                            class="switch-input"
+                            .checked=${runOnStartup}
+                            data-testid=${`action-rule-${ruleId}-run-on-startup`}
+                            ?disabled=${busy}
+                            @change=${(ev: Event) =>
+                              this._updateActionRule(ruleId, {
+                                run_on_startup: (ev.target as HTMLInputElement).checked,
+                              })}
+                          />
+                        </div>
+                      </div>
+                    </div>
                     <div class="dusk-block-footer">
                       ${!isPersisted
                         ? html`

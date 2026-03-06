@@ -361,6 +361,9 @@ Additional save points:
   - no dedicated `Appliances` tab in v1.
   - `climate.*` thermostat/preset workflows are deferred until a narrower
     contract exists for common occupancy actions.
+  - `Media` and `HVAC` do not expose ambient-light conditions in v1.
+  - `Media` action choices focus on common occupancy controls:
+    power, playback, volume, and mute.
 - Lighting rule persistence contract:
   - HA automation entities/config are canonical for Lighting rule state.
   - save path is upsert+diff with stable metadata identity (`rule_uuid`).
@@ -370,7 +373,8 @@ Additional save points:
 - Startup behavior contract:
   - `Lighting`, `Media`, and `HVAC` do not expose tab-global startup reapply
     toggles.
-  - rule cards expose a per-rule `Run on startup` toggle.
+  - rule cards expose a per-rule `Run on startup` toggle in a bottom
+    `Execution` section, not inside `Conditions`.
   - startup replay only honors explicit managed-rule metadata
     (`run_on_startup`).
 - Lighting trigger-derived condition contract:

@@ -2769,7 +2769,7 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect((activeTab?.textContent || "").trim()).to.equal("Media");
   });
 
-  it("adds a rule and shows trigger/conditions/actions controls", async () => {
+  it("adds a rule and shows HVAC trigger/conditions/actions controls", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>) => {
         if (request.type === "topomation/actions/rules/list") {
@@ -2822,15 +2822,16 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(row).to.exist;
 
     const selects = Array.from(row!.querySelectorAll("select.dusk-wide-select")) as HTMLSelectElement[];
-    expect(selects.length).to.equal(4);
+    expect(selects.length).to.equal(3);
 
     const triggerOptions = Array.from(selects[0].options).map((option) => option.value);
     expect(triggerOptions).to.deep.equal(["on_occupied", "on_vacant"]);
 
-    expect((row!.textContent || "")).to.include("Ambient must be");
     expect((row!.textContent || "")).to.include("Must be occupied");
     expect((row!.textContent || "")).to.include("Use time window");
+    expect((row!.textContent || "")).to.include("Execution");
     expect((row!.textContent || "")).to.include("Run on startup");
+    expect((row!.textContent || "")).to.not.include("Ambient must be");
 
     expect(row!.querySelectorAll('input[type="time"]').length).to.equal(0);
     const timeToggle = Array.from(
@@ -2930,15 +2931,15 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(row).to.exist;
 
     const selects = Array.from(row!.querySelectorAll("select.dusk-wide-select")) as HTMLSelectElement[];
-    expect(selects.length).to.equal(4);
-    const targetOptions = Array.from(selects[2].options).map((option) => option.value);
+    expect(selects.length).to.equal(3);
+    const targetOptions = Array.from(selects[1].options).map((option) => option.value);
     expect(targetOptions).to.include("fan.kitchen_hood");
     expect(targetOptions).to.include("switch.kitchen_accent");
     expect(targetOptions).to.not.include("light.kitchen_ceiling");
     expect(targetOptions).to.not.include("media_player.kitchen_speaker");
   });
 
-  it("saves action rules with trigger, ambient, occupancy, and time conditions", async () => {
+  it("saves HVAC action rules with occupancy, time, and execution settings", async () => {
     const deleteCalls: Array<Record<string, any>> = [];
     const createCalls: Array<Record<string, any>> = [];
 
@@ -3037,12 +3038,10 @@ describe("HtLocationInspector occupancy source composer", () => {
     await element.updateComplete;
 
     selects = Array.from(row!.querySelectorAll("select.dusk-wide-select")) as HTMLSelectElement[];
-    selects[1].value = "bright";
+    selects[1].value = "fan.kitchen_hood";
     selects[1].dispatchEvent(new Event("change", { bubbles: true, composed: true }));
-    selects[2].value = "fan.kitchen_hood";
+    selects[2].value = "turn_off";
     selects[2].dispatchEvent(new Event("change", { bubbles: true, composed: true }));
-    selects[3].value = "turn_off";
-    selects[3].dispatchEvent(new Event("change", { bubbles: true, composed: true }));
     await element.updateComplete;
 
     const timeToggle = Array.from(
@@ -3087,7 +3086,7 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(typeof payload.rule_uuid).to.equal("string");
     expect(String(payload.rule_uuid || "").length).to.be.greaterThan(0);
     expect(payload.trigger_type).to.equal("on_vacant");
-    expect(payload.ambient_condition).to.equal("bright");
+    expect(payload.ambient_condition).to.equal("any");
     expect(payload.must_be_occupied).to.equal(false);
     expect(payload.time_condition_enabled).to.equal(true);
     expect(payload.start_time).to.equal("19:15");
@@ -3096,6 +3095,84 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(payload.action_entity_id).to.equal("fan.kitchen_hood");
     expect(payload.action_service).to.equal("turn_off");
     expect(payload.require_dark).to.equal(false);
+  });
+
+  it("shows media actions without ambient and includes mute controls", async () => {
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>) => {
+        if (request.type === "topomation/actions/rules/list") {
+          return { rules: [] } as T;
+        }
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        return [] as T;
+      },
+      connection: {},
+      states: {
+        "media_player.kitchen_speaker": {
+          entity_id: "media_player.kitchen_speaker",
+          state: "idle",
+          attributes: {
+            friendly_name: "Kitchen Speaker",
+            area_id: "kitchen",
+          },
+        },
+      },
+      areas: {},
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_kitchen";
+    location.ha_area_id = "kitchen";
+    location.modules._meta = { type: "area" };
+    location.entity_ids = ["media_player.kitchen_speaker"];
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector .hass=${hass} .location=${location} .forcedTab=${"media"}></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    const addRuleButton = element.shadowRoot?.querySelector(
+      '[data-testid="action-rule-add"]'
+    ) as HTMLButtonElement | null;
+    expect(addRuleButton).to.exist;
+    addRuleButton!.click();
+    await element.updateComplete;
+
+    await waitUntil(
+      () => (element.shadowRoot?.querySelectorAll(".dusk-block-row").length || 0) === 1,
+      "new media rule row did not render"
+    );
+
+    const row = element.shadowRoot!.querySelector(".dusk-block-row") as HTMLElement | null;
+    expect(row).to.exist;
+    expect((row!.textContent || "")).to.not.include("Ambient must be");
+    expect((row!.textContent || "")).to.include("Execution");
+
+    const selects = Array.from(row!.querySelectorAll("select.dusk-wide-select")) as HTMLSelectElement[];
+    expect(selects.length).to.equal(3);
+    selects[1].value = "media_player.kitchen_speaker";
+    selects[1].dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+    await element.updateComplete;
+
+    const actionSelect = Array.from(
+      row!.querySelectorAll("select.dusk-wide-select")
+    )[2] as HTMLSelectElement;
+    const actionOptionValues = Array.from(actionSelect.options).map((option) => option.value);
+    expect(actionOptionValues).to.deep.equal([
+      "turn_on",
+      "turn_off",
+      "media_play",
+      "media_play_pause",
+      "media_pause",
+      "media_stop",
+      "volume_mute:true",
+      "volume_mute:false",
+      "volume_up",
+      "volume_down",
+    ]);
   });
 
   it("reloads action rules from Home Assistant when external changes occur during draft edits", async () => {

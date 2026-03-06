@@ -335,6 +335,8 @@ shared location tree selection context.
 - Reconciliation is event-driven (startup load + `automation.*` state_changed
   subscription while inspector is open); no periodic polling loop in v1.
 - Startup replay is authored per rule through rule-card `Run on startup`.
+- `Run on startup` is presented in a dedicated bottom `Execution` section on
+  rule cards; it is not part of the `Conditions` group.
 - Managed rules persist explicit startup opt-in in automation metadata
   (`run_on_startup`); the active runtime does not use a location-global
   startup fallback.
@@ -343,6 +345,7 @@ shared location tree selection context.
   - `fan.*` (HVAC)
   - `switch.*` compatibility inside `HVAC` for switch-controlled
     exhaust/ventilation devices
+- Media/HVAC rule cards do not expose ambient-light filters in v1.
 - `climate.*` is intentionally deferred until preset-oriented occupancy
   behavior is contracted.
 - Integration-owned nodes (`building`, `grounds`, `subarea`) are configured through explicit source assignment in inspector.
