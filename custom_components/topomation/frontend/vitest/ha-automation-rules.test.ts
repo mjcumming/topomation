@@ -268,6 +268,70 @@ describe("ha-automation-rules websocket path", () => {
     expect(callApi).not.toHaveBeenCalled();
   });
 
+  it("preserves create_failed backend errors instead of masking them as unavailable", async () => {
+    const callWS = vi.fn(async (request: Record<string, unknown>) => {
+      if (request.type === "topomation/actions/rules/create") {
+        throw {
+          code: "create_failed",
+          message: 'No occupancy binary sensor found for location "Kitchen" (kitchen)',
+        };
+      }
+      return {};
+    });
+    const hass = {
+      callWS,
+      callApi: vi.fn(),
+      states: {},
+    } as any;
+
+    await expect(
+      createTopomationActionRule(hass, {
+        location: {
+          id: "kitchen",
+          name: "Kitchen",
+        } as any,
+        name: "Kitchen Occupied: Kitchen Light (turn on)",
+        trigger_type: "on_occupied",
+        action_entity_id: "light.kitchen",
+        action_service: "turn_on",
+        ambient_condition: "dark",
+        must_be_occupied: true,
+      })
+    ).rejects.toThrow('No occupancy binary sensor found for location "Kitchen" (kitchen)');
+  });
+
+  it("preserves unknown_error create responses instead of masking them as unavailable", async () => {
+    const callWS = vi.fn(async (request: Record<string, unknown>) => {
+      if (request.type === "topomation/actions/rules/create") {
+        throw {
+          code: "unknown_error",
+          message: "Automation API POST 500: duplicate key value violates unique constraint",
+        };
+      }
+      return {};
+    });
+    const hass = {
+      callWS,
+      callApi: vi.fn(),
+      states: {},
+    } as any;
+
+    await expect(
+      createTopomationActionRule(hass, {
+        location: {
+          id: "kitchen",
+          name: "Kitchen",
+        } as any,
+        name: "Kitchen Occupied: Kitchen Light (turn on)",
+        trigger_type: "on_occupied",
+        action_entity_id: "light.kitchen",
+        action_service: "turn_on",
+        ambient_condition: "dark",
+        must_be_occupied: true,
+      })
+    ).rejects.toThrow("Automation API POST 500");
+  });
+
   it("fails fast when delete ws command is unavailable", async () => {
     const callWS = vi.fn(async (request: Record<string, unknown>) => {
       if (request.type === "topomation/actions/rules/delete") {

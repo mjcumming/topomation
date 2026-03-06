@@ -49,7 +49,13 @@ function extractWsErrorCode(err: unknown): string | undefined {
 
 function isWsCommandUnavailable(err: unknown): boolean {
   const code = extractWsErrorCode(err);
-  if (code && ["unknown_command", "not_found", "invalid_format", "unknown_error"].includes(code)) {
+  if (
+    code &&
+    (code === "unknown_command" ||
+      code === "not_found" ||
+      code === "not_loaded" ||
+      code.endsWith("_not_loaded"))
+  ) {
     return true;
   }
 
@@ -57,7 +63,8 @@ function isWsCommandUnavailable(err: unknown): boolean {
   return (
     message.includes("unknown_command") ||
     message.includes("unknown command") ||
-    message.includes("unsupported") ||
+    message.includes("unsupported command") ||
+    message.includes("command is unsupported") ||
     message.includes("not loaded") ||
     message.includes("not_loaded") ||
     message.includes("invalid handler")

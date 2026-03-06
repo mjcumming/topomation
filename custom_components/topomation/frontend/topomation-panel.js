@@ -3196,10 +3196,10 @@ function Yo(r) {
 }
 function pi(r) {
   const t = Yo(r);
-  if (t && ["unknown_command", "not_found", "invalid_format", "unknown_error"].includes(t))
+  if (t && (t === "unknown_command" || t === "not_found" || t === "not_loaded" || t.endsWith("_not_loaded")))
     return !0;
   const e = Qo(r).toLowerCase();
-  return e.includes("unknown_command") || e.includes("unknown command") || e.includes("unsupported") || e.includes("not loaded") || e.includes("not_loaded") || e.includes("invalid handler");
+  return e.includes("unknown_command") || e.includes("unknown command") || e.includes("unsupported command") || e.includes("command is unsupported") || e.includes("not loaded") || e.includes("not_loaded") || e.includes("invalid handler");
 }
 function It(r) {
   return new Error(
