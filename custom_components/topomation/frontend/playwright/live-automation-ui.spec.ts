@@ -3,11 +3,38 @@ import WebSocket from "ws";
 
 const LIVE_HARNESS_PATH = "/api/topomation/static/live-harness.html";
 
+/** Use real panel at /topomation (e.g. production) when set; otherwise use live harness. */
+const LIVE_PANEL_PATH = process.env.LIVE_PANEL_PATH || "";
+
+function isRealPanel(): boolean {
+  return LIVE_PANEL_PATH === "/topomation" || LIVE_PANEL_PATH === "topomation";
+}
+
 async function openLiveHarness(page: any): Promise<void> {
   const token = process.env.HA_TOKEN || process.env.HA_TOKEN_LOCAL;
-  const baseUrl = process.env.HA_URL || process.env.HA_URL_LOCAL;
+  const baseUrl = (process.env.HA_URL || process.env.HA_URL_LOCAL)?.replace(/\/+$/, "");
   if (!token || !baseUrl) {
     throw new Error("HA_URL/HA_TOKEN must be set for live Playwright tests");
+  }
+
+  if (isRealPanel()) {
+    const panelPath = LIVE_PANEL_PATH.startsWith("/") ? LIVE_PANEL_PATH : `/${LIVE_PANEL_PATH}`;
+    await page.goto(baseUrl, { waitUntil: "domcontentloaded", timeout: 15000 });
+    await page.evaluate(
+      ({ t }: { t: string }) => {
+        try {
+          localStorage.setItem("hassTokens", JSON.stringify({ default: t }));
+          sessionStorage.setItem("hassTokens", JSON.stringify({ default: t }));
+        } catch {
+          // ignore
+        }
+      },
+      { t: token }
+    );
+    await page.goto(`${baseUrl}${panelPath}`, { waitUntil: "domcontentloaded", timeout: 20000 });
+    await expect(page.locator("topomation-panel")).toBeVisible({ timeout: 15000 });
+    await expect(page.locator("ht-location-inspector")).toBeVisible({ timeout: 5000 });
+    return;
   }
 
   await page.addInitScript(
@@ -30,6 +57,31 @@ async function openLiveHarness(page: any): Promise<void> {
 }
 
 async function selectLightingLocation(page: any): Promise<{ id: string; lightIds: string[] }> {
+  if (isRealPanel()) {
+    const tree = page.locator("ht-location-tree");
+    const inspector = page.locator("ht-location-inspector");
+    const items = tree.locator(".tree-item[data-id]");
+    const count = await items.count();
+    for (let i = 0; i < count; i++) {
+      const item = items.nth(i);
+      const dataId = await item.getAttribute("data-id");
+      if (!dataId) continue;
+      await item.click();
+      await inspector.getByRole("button", { name: "Lighting" }).click();
+      await expect(inspector.locator('[data-testid="actions-rules-section"]')).toBeVisible({ timeout: 3000 });
+      const lightRows = inspector.locator(".dusk-light-action-row");
+      const lightCount = await lightRows.count();
+      if (lightCount >= 2) {
+        const lightIds: string[] = [];
+        for (let j = 0; j < lightCount; j++) {
+          lightIds.push(`light.${j}`);
+        }
+        return { id: dataId, lightIds };
+      }
+    }
+    throw new Error("No location with at least two light entities was found in the tree");
+  }
+
   const selected = await page.evaluate(async () => {
     const harness = (window as any).topomationLiveHarness;
     await harness.waitForReady();
@@ -220,7 +272,7 @@ test("live automation lighting workflow matches contracted lifecycle controls", 
     await inspector.getByRole("button", { name: "Add rule" }).click();
     const draftRule = inspector.locator(".dusk-block-row[data-testid^='action-rule-']").last();
     await expect(draftRule).toBeVisible();
-    await expect(draftRule.locator("[data-testid$='-run-on-startup']")).toBeVisible();
+    await expect(inspector.getByTestId("action-rule-add")).toHaveCount(0);
     await expect(draftRule.getByRole("button", { name: "Save rule" })).toBeVisible();
     await expect(draftRule.getByRole("button", { name: "Remove rule" })).toBeVisible();
     await expect(draftRule.getByRole("button", { name: "Delete rule" })).toHaveCount(0);
@@ -229,18 +281,18 @@ test("live automation lighting workflow matches contracted lifecycle controls", 
     await triggerSelect.selectOption("on_dark");
     await expect(
       draftRule.locator(".dusk-conditions .config-row", { hasText: "Ambient must be" })
-    ).toContainText("Must be dark");
+    ).toHaveCount(0);
     await expect(
-      draftRule.locator(".dusk-conditions .config-row", { hasText: "Ambient must be" })
-    ).toContainText("Set by trigger");
+      draftRule.locator(".dusk-conditions .config-row", { hasText: "Occupancy must be" })
+    ).toBeVisible();
 
     await triggerSelect.selectOption("on_bright");
     await expect(
       draftRule.locator(".dusk-conditions .config-row", { hasText: "Ambient must be" })
-    ).toContainText("Must be bright");
+    ).toHaveCount(0);
     await expect(
-      draftRule.locator(".dusk-conditions .config-row", { hasText: "Ambient must be" })
-    ).toContainText("Set by trigger");
+      draftRule.locator(".dusk-conditions .config-row", { hasText: "Occupancy must be" })
+    ).toBeVisible();
 
     await triggerSelect.selectOption("on_occupied");
     await expect(
@@ -285,13 +337,19 @@ test("live automation lighting workflow matches contracted lifecycle controls", 
     await expect(draftRule.getByRole("button", { name: "Delete rule" })).toBeVisible();
 
     await page.reload();
-    await expect(page.getByTestId("live-harness-status")).toHaveAttribute("data-state", "ready");
-    await page.evaluate(async (locationId) => {
-      const harness = (window as any).topomationLiveHarness;
-      await harness.waitForReady();
-      await harness.selectLocation(locationId);
-    }, location.id);
-    await openLightingTab(page);
+    if (isRealPanel()) {
+      await expect(page.locator("topomation-panel")).toBeVisible({ timeout: 15000 });
+      await page.locator(`ht-location-tree .tree-item[data-id="${location.id}"]`).click();
+      await openLightingTab(page);
+    } else {
+      await expect(page.getByTestId("live-harness-status")).toHaveAttribute("data-state", "ready");
+      await page.evaluate(async (locationId) => {
+        const harness = (window as any).topomationLiveHarness;
+        await harness.waitForReady();
+        await harness.selectLocation(locationId);
+      }, location.id);
+      await openLightingTab(page);
+    }
 
     const persistedRule = inspector.locator(`[data-testid="action-rule-${createdRuleId}"]`);
     await expect(persistedRule).toBeVisible();

@@ -30,6 +30,10 @@ export interface TopomationActionRule {
   enabled: boolean;
 }
 
+function normalizeMustBeOccupied(rawValue: unknown): boolean | undefined {
+  return typeof rawValue === "boolean" ? rawValue : undefined;
+}
+
 const WS_TYPE_ACTION_RULES_LIST = "topomation/actions/rules/list";
 const WS_TYPE_ACTION_RULES_CREATE = "topomation/actions/rules/create";
 const WS_TYPE_ACTION_RULES_DELETE = "topomation/actions/rules/delete";
@@ -211,7 +215,7 @@ export async function listTopomationActionRules(
             trigger_type: triggerType,
             actions,
             ambient_condition: ambientCondition,
-            must_be_occupied: Boolean(rule.must_be_occupied),
+            must_be_occupied: normalizeMustBeOccupied(rule.must_be_occupied),
             time_condition_enabled: Boolean(rule.time_condition_enabled),
             start_time:
               typeof rule.start_time === "string" && rule.start_time.length > 0
@@ -291,7 +295,9 @@ export async function createTopomationActionRule(
       action_data: primaryAction.data,
       actions: normalizedActions,
       ambient_condition: args.ambient_condition,
-      must_be_occupied: Boolean(args.must_be_occupied),
+      ...(typeof args.must_be_occupied === "boolean"
+        ? { must_be_occupied: args.must_be_occupied }
+        : {}),
       time_condition_enabled: Boolean(args.time_condition_enabled),
       start_time: args.start_time,
       end_time: args.end_time,
@@ -324,7 +330,7 @@ export async function createTopomationActionRule(
         action_entity_id: responsePrimaryAction?.entity_id,
         action_service: responsePrimaryAction?.service,
         action_data: responsePrimaryAction?.data,
-        must_be_occupied: Boolean(response.rule.must_be_occupied),
+        must_be_occupied: normalizeMustBeOccupied(response.rule.must_be_occupied),
         time_condition_enabled: Boolean(response.rule.time_condition_enabled),
         start_time:
           typeof response.rule.start_time === "string" && response.rule.start_time.length > 0

@@ -279,7 +279,7 @@ test("selecting location shows occupancy inspector with area sensors", async ({ 
   await expect(inspector.locator(".candidate-list").first()).toBeVisible();
 });
 
-test("lighting tab contract: clickable rule title, footer delete, add-rule button", async ({ page }) => {
+test("lighting tab contract: clickable rule title, footer lifecycle controls, add-rule hidden during draft", async ({ page }) => {
   await page.goto("/mock-harness.html");
   await selectKitchen(page);
   await openLightingTab(page);
@@ -296,9 +296,8 @@ test("lighting tab contract: clickable rule title, footer delete, add-rule butto
   await expect(firstRule.locator(".dusk-block-footer").getByRole("button", { name: "Save rule" })).toBeVisible();
   await expect(firstRule.locator(".dusk-block-footer").getByRole("button", { name: "Remove rule" })).toBeVisible();
   await expect(firstRule.locator(".dusk-block-footer").getByRole("button", { name: "Delete rule" })).toHaveCount(0);
-  await expect(inspector.getByTestId("action-rule-add")).toBeVisible();
+  await expect(inspector.getByTestId("action-rule-add")).toHaveCount(0);
   await expect(inspector.getByTestId("startup-reapply-lighting")).toHaveCount(0);
-  await expect(firstRule.locator("[data-testid$='-run-on-startup']")).toBeVisible();
 });
 
 test("lighting tab contract: trigger options include dark/bright and time window reveals begin/end", async ({
@@ -378,7 +377,7 @@ test("actions rule add/save/delete persists managed automations", async ({ page 
   await expect.poll(async () => (await kitchenTopomationActionSummaries(page)).length).toBe(0);
 });
 
-test("media rule time + execution settings persist without ambient controls", async ({ page }) => {
+test("media rule time settings persist without ambient controls", async ({ page }) => {
   await page.goto("/mock-harness.html");
   await selectKitchen(page);
   await openActionsTab(page);
@@ -400,7 +399,6 @@ test("media rule time + execution settings persist without ambient controls", as
 
   const timeRow = rule.locator(".dusk-conditions .config-row", { hasText: "Use time window" });
   await timeRow.locator("input[type='checkbox']").check();
-  await rule.locator("[data-testid$='-run-on-startup']").check();
   const startInput = rule.locator("input[type='time']").nth(0);
   const endInput = rule.locator("input[type='time']").nth(1);
   await startInput.fill("21:30");

@@ -50,8 +50,7 @@ async function openLightingTab(page: any): Promise<void> {
 }
 
 async function addBasicKitchenActionRule(
-  page: any,
-  options: { runOnStartup?: boolean } = {}
+  page: any
 ): Promise<void> {
   const inspector = page.locator("ht-location-inspector");
   await expect(inspector).toBeVisible();
@@ -60,9 +59,6 @@ async function addBasicKitchenActionRule(
     .locator(".dusk-block-row[data-testid^='action-rule-']")
     .first();
   await expect(rule).toBeVisible();
-  if (options.runOnStartup) {
-    await rule.locator("[data-testid$='-run-on-startup']").check();
-  }
   await rule.locator(".dusk-rule-row", { hasText: "Trigger" }).locator("select").selectOption("on_occupied");
   await rule
     .locator(".dusk-rule-row", { hasText: "Device" })
@@ -112,7 +108,7 @@ test.describe("Production profile smoke", () => {
     await openProductionProfile(page);
   });
 
-  test("automation tabs use per-rule startup and media add-rule survives reactive hass churn", async ({ page }) => {
+test("automation tabs omit startup controls and media add-rule survives reactive hass churn", async ({ page }) => {
     await selectKitchen(page);
     await openLightingTab(page);
     await expect(page.getByTestId("startup-reapply-lighting")).toHaveCount(0);
@@ -132,7 +128,7 @@ test.describe("Production profile smoke", () => {
       }
     });
 
-    await addBasicKitchenActionRule(page, { runOnStartup: true });
+    await addBasicKitchenActionRule(page);
 
     await expect
       .poll(async () => {
@@ -140,8 +136,7 @@ test.describe("Production profile smoke", () => {
         return rules.some(
           (rule) =>
             rule?.action_entity_id === "media_player.kitchen_speaker" &&
-            rule?.action_service === "media_pause" &&
-            rule?.run_on_startup === true
+            rule?.action_service === "media_pause"
         );
       })
       .toBe(true);

@@ -101,8 +101,7 @@ Add an `Ambient` section in the location inspector (no dusk/dawn action tab yet)
 1. Read-only status card:
    - current lux/state/source/fallback
 2. Config card:
-   - selected sensor (explicit) or unset to inherit from parent
-   - inherit from parent toggle
+   - one sensor selector: direct sensor choice, or `Inherit from parent`
    - dark threshold / bright threshold
    - fallback to sun toggle
    - assume dark on error toggle

@@ -215,7 +215,7 @@ test("detection workflow persists occupancy source configuration", async ({ page
     .toBe(true);
 });
 
-test("automation tabs use per-rule startup checkboxes", async ({ page }) => {
+test("automation tabs do not expose tab-level startup controls", async ({ page }) => {
   await page.goto("/mock-harness.html");
 
   await selectKitchen(page);
@@ -226,17 +226,6 @@ test("automation tabs use per-rule startup checkboxes", async ({ page }) => {
   await expect(page.getByTestId("startup-reapply-media")).toHaveCount(0);
   await page.locator("ht-location-inspector").getByRole("button", { name: "HVAC" }).click();
   await expect(page.getByTestId("startup-reapply-hvac")).toHaveCount(0);
-
-  await openActionsTab(page);
-  await page.getByRole("button", { name: "Add rule" }).click();
-  const rule = page
-    .locator("ht-location-inspector .dusk-block-row[data-testid^='action-rule-']")
-    .first();
-  await expect(rule).toBeVisible();
-  const startupToggle = rule.locator("[data-testid$='-run-on-startup']");
-  await expect(startupToggle).toBeVisible();
-  await startupToggle.check();
-  await expect(startupToggle).toBeChecked();
 });
 
 test("lighting media and hvac tabs each save managed rules", async ({ page }) => {
@@ -273,7 +262,6 @@ test("lighting media and hvac tabs each save managed rules", async ({ page }) =>
   await inspector.getByRole("button", { name: "Add rule" }).click();
   const lightingRule = inspector.locator(".dusk-block-row[data-testid^='action-rule-']").last();
   await expect(lightingRule).toBeVisible();
-  await lightingRule.locator("[data-testid$='-run-on-startup']").check();
   await lightingRule.getByRole("button", { name: "Save rule" }).click();
   await expect
     .poll(async () => {
@@ -281,8 +269,7 @@ test("lighting media and hvac tabs each save managed rules", async ({ page }) =>
       return rules.some(
         (rule) =>
           typeof rule?.action_entity_id === "string" &&
-          rule.action_entity_id.startsWith("light.") &&
-          rule.run_on_startup === true
+          rule.action_entity_id.startsWith("light.")
       );
     })
     .toBe(true);
@@ -299,7 +286,6 @@ test("lighting media and hvac tabs each save managed rules", async ({ page }) =>
     .locator(".dusk-rule-row", { hasText: "Action" })
     .locator("select")
     .selectOption("media_pause");
-  await mediaRule.locator("[data-testid$='-run-on-startup']").check();
   await mediaRule.getByRole("button", { name: "Save rule" }).click();
   await expect
     .poll(async () => {
@@ -307,8 +293,7 @@ test("lighting media and hvac tabs each save managed rules", async ({ page }) =>
       return rules.some(
         (rule) =>
           rule?.action_entity_id === "media_player.kitchen_speaker" &&
-          rule?.action_service === "media_pause" &&
-          rule?.run_on_startup === true
+          rule?.action_service === "media_pause"
       );
     })
     .toBe(true);
@@ -325,7 +310,6 @@ test("lighting media and hvac tabs each save managed rules", async ({ page }) =>
     .locator(".dusk-rule-row", { hasText: "Action" })
     .locator("select")
     .selectOption("turn_on");
-  await hvacRule.locator("[data-testid$='-run-on-startup']").check();
   await hvacRule.getByRole("button", { name: "Save rule" }).click();
   await expect
     .poll(async () => {
@@ -333,8 +317,7 @@ test("lighting media and hvac tabs each save managed rules", async ({ page }) =>
       return rules.some(
         (rule) =>
           rule?.action_entity_id === "fan.kitchen_bathroom_exhaust" &&
-          rule?.action_service === "turn_on" &&
-          rule?.run_on_startup === true
+          rule?.action_service === "turn_on"
       );
     })
     .toBe(true);

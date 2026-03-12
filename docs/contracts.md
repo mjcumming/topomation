@@ -154,6 +154,10 @@ Additional save points:
   **category** (Topomation), and **labels** (Topomation, Topomation - On Occupied / On Vacant).
   This matches the Settings → Automations & scenes → Save dialog options so rules appear
   correctly in the UI and by area/category/labels.
+- Managed action occupancy conditions are tri-state:
+  - `true` => must be occupied
+  - `false` => must be vacant
+  - omitted / `null` => ignore occupancy
 
 ## C-010 Panel authorization contract
 
@@ -218,6 +222,21 @@ Additional save points:
 - Detection supports directional linked-room contributors via occupancy config key
   `linked_locations: string[]`.
 - Semantics are directional:
+
+## C-014 Inspector Draft Bar Contract
+
+- `Detection` and `Ambient` use one shared tab-level draft interaction model.
+- Clean state:
+  - no `Save changes` / `Discard` controls are rendered.
+- Dirty state:
+  - a sticky bottom action bar appears inside the inspector viewport.
+  - left side copy indicates unsaved/saving state.
+  - right side shows `Discard` and `Save changes`.
+- Saving state:
+  - the sticky bar remains visible and `Save changes` shows `Saving...`.
+- Save errors:
+  - the sticky bar remains visible and an inline warning is shown above it.
+- `Lighting`, `Media`, and `HVAC` do not use this sticky draft bar; they keep per-rule lifecycle controls.
   - If location `A` config includes `linked_locations: ["B"]`, occupancy of `B`
     contributes to `A`.
   - Checking a contributor row updates only that forward direction by default.
@@ -304,8 +323,7 @@ Additional save points:
   - indicate inherited source state when applicable.
 - Inspector Ambient view must expose ambient diagnostics/config:
   - current lux, `is_dark`, `is_bright`, source sensor/location, source method
-  - explicit lux sensor selector
-  - inherit toggle
+  - one lux sensor selector whose empty/default option is `Inherit from parent`
   - dark/bright threshold controls
   - fallback-to-sun and assume-dark-on-error toggles.
 
@@ -373,14 +391,12 @@ Additional save points:
 - Startup behavior contract:
   - `Lighting`, `Media`, and `HVAC` do not expose tab-global startup reapply
     toggles.
-  - rule cards expose a per-rule `Run on startup` toggle in a bottom
-    `Execution` section, not inside `Conditions`.
-  - startup replay only honors explicit managed-rule metadata
-    (`run_on_startup`).
 - Lighting trigger-derived condition contract:
-  - `on_dark` and `on_bright` lock ambient condition to the matching value and
-    render ambient condition as derived/read-only.
+  - `on_dark` and `on_bright` imply the matching ambient condition and do not
+    render a separate ambient-condition row.
   - `on_occupied` locks `must_be_occupied=true` and renders it as
+    derived/read-only.
+  - `on_vacant` locks `must_be_occupied=false` and renders it as
     derived/read-only.
   - `on_vacant` locks `must_be_occupied=false` (displayed as `Must be vacant`)
     and renders it as derived/read-only.

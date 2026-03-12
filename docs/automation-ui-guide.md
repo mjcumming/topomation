@@ -59,11 +59,17 @@ Top-to-bottom layout order:
 1. Silent auto-save is not used for user-authored policy edits.
 2. Save controls must indicate dirty/clean state clearly.
 3. `Detection` and `Ambient` use tab-level draft controls:
+   - controls render only while the tab has unsaved changes (or is actively saving / showing a save error)
+   - controls are presented in a sticky bottom action bar within the inspector viewport
    - `Save changes` commits draft
    - `Discard changes` restores persisted state.
-4. Rule-authoring tabs (`Lighting`, `Media`, `HVAC`) use
+4. Ambient assignment uses one selector control:
+   - direct sensor options for the location
+   - `Inherit from parent` as the empty/default option
+   - do not render a separate inherit checkbox alongside the selector.
+5. Rule-authoring tabs (`Lighting`, `Media`, `HVAC`) use
    per-rule card controls for rule lifecycle edits.
-5. Do not mix tab-level `Save changes` / `Discard changes` with per-card
+6. Do not mix tab-level `Save changes` / `Discard changes` with per-card
    `Delete rule` for the same rule workflow.
 
 ## 6.5 Non-Lighting Scope
@@ -76,10 +82,8 @@ Top-to-bottom layout order:
    - switch-controlled exhaust/ventilation devices may also appear here via
      `switch.*` compatibility.
 3. `Media` and `HVAC` do not expose an ambient-light condition filter in v1.
-4. `Run on startup` is not rendered inside `Conditions`; it lives in a
-   separate bottom `Execution` section on the rule card.
-5. Do not present a dedicated `Appliances` top-level tab in v1.
-6. Do not present `climate.*` thermostat/preset editing until a narrower common
+4. Do not present a dedicated `Appliances` top-level tab in v1.
+5. Do not present `climate.*` thermostat/preset editing until a narrower common
    occupancy contract is agreed and documented.
 
 ## 7. Rule Lifecycle Controls
@@ -101,9 +105,6 @@ Top-to-bottom layout order:
 1. Lighting rules follow HA-canonical managed automation ownership.
 2. Stable metadata identity (`rule_uuid`) is required for create/update tracking.
 3. The active Lighting editor ignores legacy `modules.dusk_dawn` payloads.
-4. Startup replay is authored per rule through rule-card `Run on startup`,
-   persisted as managed-rule metadata (`run_on_startup`).
-5. Startup replay only honors explicit per-rule metadata in the active UI/runtime.
 
 ## 9. Home Assistant UX Alignment Rule
 
@@ -128,7 +129,9 @@ Deviation policy:
 2. Do not render a duplicate nested `Rules` section title directly under
    `Lighting rules`.
 3. `Add rule` is rendered once as a footer action.
-4. Lighting tab does not expose a Topomation-specific tab-global startup
+4. `Add rule` is hidden while any rule card in the current tab has unsaved edits
+   or is an unsaved draft.
+5. Lighting tab does not expose a Topomation-specific tab-global startup
    reapply toggle.
 
 Rule-card requirements:
@@ -140,18 +143,18 @@ Rule-card requirements:
    - `On dark`
    - `On bright`
 3. Conditions group includes:
-   - ambient filter (`Ignore ambient`, `Must be dark`, `Must be bright`)
-   - `Must be occupied` toggle
    - `Use time window` toggle
-4. Execution group appears below `Actions` and includes:
-   - `Run on startup` toggle
-5. Trigger-derived behavior:
-   - `On dark` enforces ambient condition `dark` and renders ambient as derived/read-only.
-   - `On bright` enforces ambient condition `bright` and renders ambient as derived/read-only.
+4. Trigger-derived behavior:
+   - `On dark` implies the dark ambient condition and does not render an ambient row.
+   - `On bright` implies the bright ambient condition and does not render an ambient row.
    - `On occupied` enforces `Must be occupied` and renders that condition as derived/read-only.
    - `On vacant` enforces `Must be vacant` and renders that condition as derived/read-only.
-6. Time-window inputs (`Begin`, `End`) appear only when enabled.
-7. Actions editor uses a capability-based light device list:
+   - when ambient condition is `Ignore ambient`, do not render an ambient row.
+   - when occupancy condition is `Doesn't matter`, do not render an occupancy row.
+   - `On dark` / `On bright` default occupancy to `Doesn't matter`.
+   - `On occupied` / `On vacant` default ambient to `Ignore ambient`.
+5. Time-window inputs (`Begin`, `End`) appear only when enabled.
+6. Actions editor uses a capability-based light device list:
    - one row per compatible local `light.*` entity
    - row include toggles are multi-select and define the ordered action list for the rule
    - dimmable rows use a brightness slider (`0` -> `turn_off`, `>0` ->
@@ -160,11 +163,11 @@ Rule-card requirements:
      `Toggle`)
    - do not render a separate top-level `Device` + `Action` dropdown pair for
      Lighting rules.
-8. Rule lifecycle controls:
+7. Rule lifecycle controls:
    - unsaved draft rows show `Save rule` + `Remove rule`
    - persisted edited rows show `Update rule` + `Discard edits` + `Delete rule`
    - persisted clean rows show `Delete rule`.
-9. Rule lifecycle controls are card-local; they are not split between tab-level
+8. Rule lifecycle controls are card-local; they are not split between tab-level
    buttons and rule-card buttons.
 
 Acceptance checks:
@@ -172,10 +175,8 @@ Acceptance checks:
 1. Single top `Lighting rules` header.
 2. Inline rule rename behavior works.
 3. `Use time window` reveals `Begin` and `End`.
-4. `Run on startup` is available in the card `Execution` section; no tab-global startup
-   toggle is rendered.
-5. `On dark` / `On bright` enforce matching ambient condition semantics.
-6. `On occupied` / `On vacant` enforce matching occupancy condition semantics.
+4. `On dark` / `On bright` enforce matching ambient condition semantics without a separate ambient row.
+5. `On occupied` / `On vacant` enforce matching occupancy condition semantics.
 6. Unsaved draft rule hides `Delete rule`.
 7. Persisted edited rule shows `Update rule`, `Discard edits`, and `Delete rule`.
 8. Persisted clean rule shows `Delete rule`.

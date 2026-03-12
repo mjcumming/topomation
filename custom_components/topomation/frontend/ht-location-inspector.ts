@@ -181,6 +181,7 @@ export class HtLocationInspector extends LitElement {
 
       .inspector-container {
         padding: var(--spacing-md);
+        padding-bottom: calc(var(--spacing-xl) + 80px);
       }
 
       .header {
@@ -460,6 +461,8 @@ export class HtLocationInspector extends LitElement {
       }
 
       .dusk-rule-section-title {
+        margin-top: 18px;
+        margin-bottom: 6px;
         font-size: 14px;
         font-weight: 500;
         letter-spacing: 0;
@@ -487,6 +490,7 @@ export class HtLocationInspector extends LitElement {
 
       .dusk-conditions {
         margin-top: 14px;
+        margin-bottom: 20px;
         margin-left: 8px;
         padding-left: 12px;
         border-left: 2px solid rgba(var(--rgb-primary-color), 0.18);
@@ -585,6 +589,7 @@ export class HtLocationInspector extends LitElement {
       }
 
       .dusk-save-button {
+        appearance: none;
         border: 1px solid var(--divider-color);
         background: var(--card-background-color);
         color: var(--primary-text-color);
@@ -594,12 +599,16 @@ export class HtLocationInspector extends LitElement {
         font-size: 13px;
         font-weight: 600;
         cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        line-height: 1.2;
       }
 
       .dusk-save-button.dirty {
         border-color: var(--primary-color);
         background: var(--primary-color);
-        color: var(--primary-background-color, #fff);
+        color: #fff;
       }
 
       .dusk-save-button:disabled {
@@ -625,6 +634,43 @@ export class HtLocationInspector extends LitElement {
         display: inline-flex;
         align-items: center;
         gap: 8px;
+      }
+
+      .sticky-draft-bar {
+        position: sticky;
+        bottom: 0;
+        z-index: 5;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-top: 16px;
+        padding: 12px 16px;
+        border: 1px solid var(--divider-color);
+        border-radius: 12px;
+        background: color-mix(in srgb, var(--card-background-color) 92%, white 8%);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+      }
+
+      .sticky-draft-bar-note {
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--primary-text-color);
+      }
+
+      .sticky-draft-bar-actions {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        margin-left: auto;
+      }
+
+      .draft-save-button {
+        min-width: 124px;
+      }
+
+      .draft-toolbar-actions-only {
+        justify-content: flex-end;
       }
 
       .dusk-inline-actions {
@@ -863,7 +909,7 @@ export class HtLocationInspector extends LitElement {
       }
 
       .tab-content {
-        padding: var(--spacing-md) 0;
+        padding: 8px 0 0;
       }
 
       .config-row {
@@ -1965,6 +2011,16 @@ export class HtLocationInspector extends LitElement {
           justify-content: flex-end;
         }
 
+        .sticky-draft-bar {
+          flex-direction: column;
+          align-items: stretch;
+        }
+
+        .sticky-draft-bar-actions {
+          width: 100%;
+          justify-content: flex-end;
+        }
+
         .sources-heading {
           flex-direction: column;
           align-items: flex-start;
@@ -2143,7 +2199,8 @@ export class HtLocationInspector extends LitElement {
         action_entity_id: String(rule.action_entity_id || ""),
         action_service: String(rule.action_service || ""),
         ambient_condition: String(rule.ambient_condition || ""),
-        must_be_occupied: Boolean(rule.must_be_occupied),
+        must_be_occupied:
+          typeof rule.must_be_occupied === "boolean" ? rule.must_be_occupied : null,
         time_condition_enabled: Boolean(rule.time_condition_enabled),
         start_time: String(rule.start_time || ""),
         end_time: String(rule.end_time || ""),
@@ -2245,9 +2302,13 @@ export class HtLocationInspector extends LitElement {
   private _renderDetectionDraftToolbar() {
     const hasUnsaved = this._occupancyDraftDirty;
     const busy = this._savingOccupancyDraft;
+    const hasError = Boolean(this._occupancySaveError);
+    if (!hasUnsaved && !busy && !hasError) return "";
     return html`
-      <div class="draft-toolbar" data-testid="detection-draft-toolbar">
-        <div class="draft-toolbar-note">${hasUnsaved ? "Detection changes are not saved." : "Detection changes saved."}</div>
+      ${this._occupancySaveError
+        ? html`<div class="policy-warning" data-testid="detection-save-error">${this._occupancySaveError}</div>`
+        : ""}
+      <div class="draft-toolbar draft-toolbar-actions-only" data-testid="detection-draft-toolbar">
         <div class="draft-toolbar-actions">
           <button
             class="button button-secondary"
@@ -2269,9 +2330,47 @@ export class HtLocationInspector extends LitElement {
           </button>
         </div>
       </div>
-      ${this._occupancySaveError
-        ? html`<div class="policy-warning" data-testid="detection-save-error">${this._occupancySaveError}</div>`
-        : ""}
+    `;
+  }
+
+  private _renderStickyDraftBar(
+    kind: "detection" | "ambient",
+    options: {
+      hasUnsaved: boolean;
+      busy: boolean;
+      error?: string;
+      onDiscard: () => void;
+      onSave: () => void;
+    }
+  ) {
+    const { hasUnsaved, busy, error, onDiscard, onSave } = options;
+    if (!hasUnsaved && !busy && !error) return "";
+    const note = busy ? "Saving changes..." : "Unsaved changes";
+    return html`
+      ${error ? html`<div class="policy-warning">${error}</div>` : ""}
+      <div class="sticky-draft-bar" data-testid=${`${kind}-sticky-draft-bar`}>
+        <div class="sticky-draft-bar-note">${note}</div>
+        <div class="sticky-draft-bar-actions">
+          <button
+            class="button button-secondary"
+            type="button"
+            data-testid=${`${kind}-discard-button`}
+            ?disabled=${busy || !hasUnsaved}
+            @click=${onDiscard}
+          >
+            Discard
+          </button>
+          <button
+            class="button button-primary draft-save-button"
+            type="button"
+            data-testid=${`${kind}-save-button`}
+            ?disabled=${busy || !hasUnsaved}
+            @click=${onSave}
+          >
+            ${busy ? "Saving..." : "Save changes"}
+          </button>
+        </div>
+      </div>
     `;
   }
 
@@ -2358,6 +2457,10 @@ export class HtLocationInspector extends LitElement {
 
   private _sanitizeAmbientConfig(config: AmbientConfig): AmbientConfig {
     const defaults = this._ambientDefaults();
+    const luxSensor =
+      typeof config.lux_sensor === "string" && config.lux_sensor.trim().length > 0
+        ? config.lux_sensor.trim()
+        : null;
     const darkThreshold = Math.max(0, Number(config.dark_threshold) || 0);
     const brightThreshold = Math.max(
       Math.max(1, darkThreshold) + 1,
@@ -2366,9 +2469,20 @@ export class HtLocationInspector extends LitElement {
     return {
       ...defaults,
       ...config,
+      lux_sensor: luxSensor,
       auto_discover: false,
+      inherit_from_parent:
+        typeof config.inherit_from_parent === "boolean"
+          ? config.inherit_from_parent
+          : defaults.inherit_from_parent,
       dark_threshold: darkThreshold,
       bright_threshold: brightThreshold,
+      fallback_to_sun:
+        typeof config.fallback_to_sun === "boolean" ? config.fallback_to_sun : defaults.fallback_to_sun,
+      assume_dark_on_error:
+        typeof config.assume_dark_on_error === "boolean"
+          ? config.assume_dark_on_error
+          : defaults.assume_dark_on_error,
     };
   }
 
@@ -2376,6 +2490,18 @@ export class HtLocationInspector extends LitElement {
     this._ambientDraft = this._persistedAmbientConfig();
     this._ambientDraftDirty = false;
     this._ambientSaveError = undefined;
+  }
+
+  private _ambientConfigSignature(config: AmbientConfig): string {
+    const sanitized = this._sanitizeAmbientConfig(config);
+    return JSON.stringify({
+      lux_sensor: sanitized.lux_sensor ?? null,
+      inherit_from_parent: Boolean(sanitized.inherit_from_parent),
+      dark_threshold: sanitized.dark_threshold,
+      bright_threshold: sanitized.bright_threshold,
+      fallback_to_sun: Boolean(sanitized.fallback_to_sun),
+      assume_dark_on_error: Boolean(sanitized.assume_dark_on_error),
+    });
   }
 
   private _getAmbientConfig(): AmbientConfig {
@@ -2386,8 +2512,11 @@ export class HtLocationInspector extends LitElement {
   }
 
   private _setAmbientDraft(config: AmbientConfig): void {
-    this._ambientDraft = this._sanitizeAmbientConfig(config);
-    this._ambientDraftDirty = true;
+    const sanitized = this._sanitizeAmbientConfig(config);
+    this._ambientDraft = sanitized;
+    this._ambientDraftDirty =
+      this._ambientConfigSignature(sanitized) !==
+      this._ambientConfigSignature(this._persistedAmbientConfig());
     this._ambientSaveError = undefined;
     this.requestUpdate();
   }
@@ -2418,6 +2547,7 @@ export class HtLocationInspector extends LitElement {
       this._showToast(this._ambientSaveError, "error");
     } finally {
       this._savingAmbientConfig = false;
+      this.requestUpdate();
     }
   }
 
@@ -2454,6 +2584,7 @@ export class HtLocationInspector extends LitElement {
       );
       if (loadSeq !== this._ambientReadingLoadSeq) return;
       this._ambientReading = reading;
+      this._hydrateAmbientDraftFromReading(reading);
       this._ambientReadingError = undefined;
     } catch (err: any) {
       if (loadSeq !== this._ambientReadingLoadSeq) return;
@@ -2465,6 +2596,23 @@ export class HtLocationInspector extends LitElement {
         this.requestUpdate();
       }
     }
+  }
+
+  private _hydrateAmbientDraftFromReading(reading: AmbientLightReading): void {
+    if (this._ambientDraftDirty) return;
+    const persisted = this._persistedAmbientConfig();
+    if (persisted.lux_sensor) return;
+    const sourceSensor = typeof reading.source_sensor === "string" ? reading.source_sensor.trim() : "";
+    if (!sourceSensor || reading.is_inherited === true) return;
+    if (!this._isSelectableLuxSensor(sourceSensor)) return;
+    const nextConfig = this._sanitizeAmbientConfig({
+      ...persisted,
+      lux_sensor: sourceSensor,
+      inherit_from_parent: false,
+    });
+    this._ambientDraft = nextConfig;
+    this._ambientDraftDirty = false;
+    this._ambientSaveError = undefined;
   }
 
   private _ambientSourceMethod(reading?: AmbientLightReading): string {
@@ -2493,6 +2641,13 @@ export class HtLocationInspector extends LitElement {
     return `${rawLux.toFixed(1)} lx`;
   }
 
+  private _ambientStateLabel(reading?: AmbientLightReading): string {
+    if (reading?.is_dark === true) return "Dark";
+    if (reading?.is_bright === true) return "Bright";
+    if (reading?.is_dark === false && reading?.is_bright === false) return "Neutral";
+    return "Unknown";
+  }
+
   private _ambientSensorCandidates(): string[] {
     if (!this.location) return [];
     const candidateIds = new Set<string>();
@@ -2500,9 +2655,14 @@ export class HtLocationInspector extends LitElement {
     if (typeof config.lux_sensor === "string" && config.lux_sensor.trim()) {
       candidateIds.add(config.lux_sensor.trim());
     }
+    const effectiveSourceSensor =
+      typeof this._ambientReading?.source_sensor === "string" ? this._ambientReading.source_sensor.trim() : "";
+    if (effectiveSourceSensor) {
+      candidateIds.add(effectiveSourceSensor);
+    }
 
     for (const entityId of this.location.entity_ids || []) {
-      if (this._isLuxSensorEntity(entityId)) {
+      if (this._isSelectableLuxSensor(entityId)) {
         candidateIds.add(entityId);
       }
     }
@@ -2510,10 +2670,8 @@ export class HtLocationInspector extends LitElement {
     if (this.location.ha_area_id) {
       const states = this.hass?.states || {};
       for (const entityId of Object.keys(states)) {
-        const registryAreaId = this._entityAreaById[entityId];
-        const areaId = registryAreaId !== undefined ? registryAreaId : states[entityId]?.attributes?.area_id;
-        if (areaId !== this.location.ha_area_id) continue;
-        if (!this._isLuxSensorEntity(entityId)) continue;
+        if (!this._entityIsInArea(entityId, this.location.ha_area_id)) continue;
+        if (!this._isSelectableLuxSensor(entityId)) continue;
         candidateIds.add(entityId);
       }
     }
@@ -2521,9 +2679,29 @@ export class HtLocationInspector extends LitElement {
     return [...candidateIds].sort((left, right) => this._entityName(left).localeCompare(this._entityName(right)));
   }
 
+  private _selectedAmbientSensorId(
+    config: AmbientConfig,
+    reading: AmbientLightReading | undefined
+  ): string {
+    const explicitSensor = typeof config.lux_sensor === "string" ? config.lux_sensor.trim() : "";
+    if (explicitSensor) return explicitSensor;
+    const effectiveSensor = typeof reading?.source_sensor === "string" ? reading.source_sensor.trim() : "";
+    if (effectiveSensor && reading?.is_inherited !== true) {
+      return effectiveSensor;
+    }
+    return "";
+  }
+
   private _isLuxSensorEntity(entityId: string): boolean {
     const stateObj = this.hass?.states?.[entityId];
     return this._isLuxSensorEntityForState(entityId, stateObj);
+  }
+
+  private _isSelectableLuxSensor(entityId: string): boolean {
+    const stateObj = this.hass?.states?.[entityId];
+    if (!this._isLuxSensorEntityForState(entityId, stateObj)) return false;
+    const stateValue = String(stateObj?.state || "").trim().toLowerCase();
+    return stateValue !== "" && stateValue !== "unknown" && stateValue !== "unavailable";
   }
 
   private _isLuxSensorEntityForState(entityId: string, stateObj: any): boolean {
@@ -2720,7 +2898,7 @@ export class HtLocationInspector extends LitElement {
     return html`
       <div class="tab-content">
         ${activeTab === "detection"
-          ? html`${this._renderDetectionDraftToolbar()} ${this._renderOccupancyTab()} ${this._renderAdvancedTab()}`
+          ? html`${this._renderOccupancyTab()} ${this._renderAdvancedTab()}`
           : activeTab === "ambient"
             ? this._renderAmbientTab()
           : activeTab === "lighting"
@@ -2729,6 +2907,23 @@ export class HtLocationInspector extends LitElement {
               ? this._renderDeviceAutomationTab("media")
             : activeTab === "hvac"
               ? this._renderDeviceAutomationTab("hvac")
+            : ""}
+        ${activeTab === "detection"
+          ? this._renderStickyDraftBar("detection", {
+              hasUnsaved: this._occupancyDraftDirty,
+              busy: this._savingOccupancyDraft,
+              error: this._occupancySaveError,
+              onDiscard: () => this._discardDetectionDraft(),
+              onSave: () => this._saveDetectionDraft(),
+            })
+          : activeTab === "ambient"
+            ? this._renderStickyDraftBar("ambient", {
+                hasUnsaved: this._ambientDraftDirty,
+                busy: this._savingAmbientConfig,
+                error: this._ambientSaveError,
+                onDiscard: () => this._discardAmbientDraft(),
+                onSave: () => this._saveAmbientDraft(),
+              })
             : ""}
       </div>
     `;
@@ -3091,11 +3286,7 @@ export class HtLocationInspector extends LitElement {
     if ((this.location.entity_ids || []).includes(entityId)) return true;
 
     if (this.location.ha_area_id) {
-      const registryAreaId = this._entityAreaById[entityId];
-      const stateAreaId = candidateState?.attributes?.area_id;
-      const resolvedAreaId =
-        registryAreaId !== undefined ? registryAreaId : typeof stateAreaId === "string" ? stateAreaId : null;
-      if (resolvedAreaId === this.location.ha_area_id) return true;
+      if (this._resolveEntityAreaId(entityId, candidateState) === this.location.ha_area_id) return true;
     }
 
     return false;
@@ -3113,16 +3304,12 @@ export class HtLocationInspector extends LitElement {
       typeof reading?.source_location === "string" && reading.source_location
         ? this._locationName(reading.source_location)
         : "-";
-    const isDarkLabel =
-      typeof reading?.is_dark === "boolean" ? (reading.is_dark ? "Yes" : "No") : "-";
-    const isBrightLabel =
-      typeof reading?.is_bright === "boolean" ? (reading.is_bright ? "Yes" : "No") : "-";
+    const ambientStateLabel = this._ambientStateLabel(reading);
     const darkThreshold = Math.max(0, Number(config.dark_threshold) || 0);
     const brightThreshold = Math.max(darkThreshold + 1, Number(config.bright_threshold) || darkThreshold + 1);
-    const selectedLuxSensor =
-      typeof config.lux_sensor === "string" && config.lux_sensor.trim() ? config.lux_sensor.trim() : "";
+    const selectedLuxSensor = this._selectedAmbientSensorId(config, reading);
+    const emptyLuxSensorLabel = "Inherit from parent";
     const busy = this._savingAmbientConfig;
-    const hasUnsaved = this._ambientDraftDirty;
 
     return html`
       <div class="card-section" data-testid="ambient-section">
@@ -3131,26 +3318,6 @@ export class HtLocationInspector extends LitElement {
             <ha-icon .icon=${"mdi:weather-sunny"}></ha-icon>
             Ambient
           </div>
-          <div class="section-title-actions">
-            <button
-              class="button button-secondary"
-              type="button"
-              data-testid="ambient-discard-button"
-              ?disabled=${busy || !hasUnsaved}
-              @click=${() => this._discardAmbientDraft()}
-            >
-              Discard
-            </button>
-            <button
-              class="dusk-save-button ${hasUnsaved ? "dirty" : ""}"
-              type="button"
-              data-testid="ambient-save-button"
-              ?disabled=${busy || !hasUnsaved}
-              @click=${() => this._saveAmbientDraft()}
-            >
-              ${busy ? "Saving..." : "Save changes"}
-            </button>
-          </div>
         </div>
 
         ${this._ambientReadingError
@@ -3158,19 +3325,11 @@ export class HtLocationInspector extends LitElement {
               <div class="policy-warning" data-testid="ambient-error">${this._ambientReadingError}</div>
             `
           : ""}
-        ${this._ambientSaveError
-          ? html`
-              <div class="policy-warning" data-testid="ambient-save-error">${this._ambientSaveError}</div>
-            `
-          : ""}
-
         <div class="ambient-grid">
           <div class="ambient-key">Lux level</div>
           <div class="ambient-value" data-testid="ambient-lux-level">${this._formatAmbientLux(reading)}</div>
-          <div class="ambient-key">Is dark</div>
-          <div class="ambient-value" data-testid="ambient-is-dark">${isDarkLabel}</div>
-          <div class="ambient-key">Is bright</div>
-          <div class="ambient-value" data-testid="ambient-is-bright">${isBrightLabel}</div>
+          <div class="ambient-key">Ambient state</div>
+          <div class="ambient-value" data-testid="ambient-state">${ambientStateLabel}</div>
           <div class="ambient-key">Source method</div>
           <div class="ambient-value" data-testid="ambient-source-method">${sourceMethodLabel}</div>
           <div class="ambient-key">Source sensor</div>
@@ -3186,11 +3345,10 @@ export class HtLocationInspector extends LitElement {
         <div class="config-row">
           <div>
             <div class="config-label">Lux sensor</div>
-            <div class="config-help">Choose a mapped illuminance sensor for this location.</div>
+            <div class="config-help">Choose a direct illuminance sensor or inherit from the parent location.</div>
           </div>
           <div class="config-value">
             <select
-              .value=${selectedLuxSensor}
               ?disabled=${busy}
               data-testid="ambient-lux-sensor-select"
               @change=${(ev: Event) => {
@@ -3198,36 +3356,19 @@ export class HtLocationInspector extends LitElement {
                 this._setAmbientDraft({
                   ...config,
                   lux_sensor: value || null,
+                  inherit_from_parent: value ? false : true,
                 });
                 this._scheduleAmbientReadingReload();
               }}
             >
-              <option value="">Use inherited/default sensor</option>
-              ${candidates.map((entityId) => html`<option value=${entityId}>${this._entityName(entityId)}</option>`)}
+              <option value="" ?selected=${selectedLuxSensor === ""}>${emptyLuxSensorLabel}</option>
+              ${candidates.map(
+                (entityId) =>
+                  html`<option value=${entityId} ?selected=${selectedLuxSensor === entityId}>
+                    ${this._entityName(entityId)}
+                  </option>`
+              )}
             </select>
-          </div>
-        </div>
-
-        <div class="config-row">
-          <div>
-            <div class="config-label">Inherit from parent</div>
-            <div class="config-help">Use ancestor ambient sensor if this location has no direct sensor.</div>
-          </div>
-          <div class="config-value">
-            <input
-              type="checkbox"
-              class="switch-input"
-              .checked=${Boolean(config.inherit_from_parent)}
-              ?disabled=${busy}
-              data-testid="ambient-inherit-toggle"
-              @change=${(ev: Event) => {
-                this._setAmbientDraft({
-                  ...config,
-                  inherit_from_parent: (ev.target as HTMLInputElement).checked,
-                });
-                this._scheduleAmbientReadingReload();
-              }}
-            />
           </div>
         </div>
 
@@ -5408,12 +5549,17 @@ export class HtLocationInspector extends LitElement {
   }
 
   private _entityIsInArea(entityId: string, areaId: string): boolean {
-    const states = this.hass?.states || {};
+    return this._resolveEntityAreaId(entityId) === areaId;
+  }
+
+  private _resolveEntityAreaId(entityId: string, stateObj?: any): string | null {
     const registryAreaId = this._entityAreaById[entityId];
-    if (registryAreaId !== undefined) {
-      return registryAreaId === areaId;
+    if (typeof registryAreaId === "string" && registryAreaId.trim()) {
+      return registryAreaId;
     }
-    return states[entityId]?.attributes?.area_id === areaId;
+    const resolvedStateObj = stateObj ?? this.hass?.states?.[entityId];
+    const stateAreaId = resolvedStateObj?.attributes?.area_id;
+    return typeof stateAreaId === "string" && stateAreaId.trim() ? stateAreaId : null;
   }
 
   private _isDoorBoundaryEntity(entityId: string): boolean {
@@ -5703,7 +5849,7 @@ export class HtLocationInspector extends LitElement {
     if (!trimmed) {
       return true;
     }
-    return /^Rule \d+$/i.test(trimmed);
+    return /^Rule \d+$/i.test(trimmed) || /^New rule$/i.test(trimmed);
   }
 
   private _resolveActionRuleName(rule: TopomationActionRule, index: number): string {
@@ -5732,27 +5878,12 @@ export class HtLocationInspector extends LitElement {
   private _normalizeActionMustBeOccupied(
     value: unknown,
     triggerType: TopomationActionRule["trigger_type"]
-  ): boolean {
+  ): boolean | undefined {
     const lockedMustBeOccupied = this._lockedActionMustBeOccupiedForTrigger(triggerType);
     if (lockedMustBeOccupied !== undefined) {
       return lockedMustBeOccupied;
     }
-    return Boolean(value);
-  }
-
-  private _normalizeActionRunOnStartup(value: unknown): boolean | undefined {
     return typeof value === "boolean" ? value : undefined;
-  }
-
-  private _defaultActionRunOnStartup(): boolean {
-    return false;
-  }
-
-  private _resolvedActionRunOnStartup(rule: Partial<TopomationActionRule>): boolean {
-    if (typeof rule.run_on_startup === "boolean") {
-      return rule.run_on_startup;
-    }
-    return this._defaultActionRunOnStartup();
   }
 
   private _normalizeActionTargets(
@@ -6115,7 +6246,7 @@ export class HtLocationInspector extends LitElement {
       name:
         typeof rule.name === "string" && rule.name.trim().length > 0
           ? rule.name.trim()
-          : `Rule ${index + 1}`,
+          : "New rule",
       rule_uuid: ruleUuid,
       trigger_type: triggerType,
       actions,
@@ -6130,7 +6261,7 @@ export class HtLocationInspector extends LitElement {
       time_condition_enabled: Boolean(rule.time_condition_enabled),
       start_time: this._normalizeActionTime(rule.start_time, "18:00"),
       end_time: this._normalizeActionTime(rule.end_time, "23:59"),
-      run_on_startup: this._normalizeActionRunOnStartup(rule.run_on_startup),
+      run_on_startup: false,
       enabled: rule.enabled !== false,
       require_dark: this._normalizeActionAmbientCondition(rule.ambient_condition, triggerType) === "dark",
     };
@@ -6246,11 +6377,11 @@ export class HtLocationInspector extends LitElement {
       trigger_type: this._normalizeActionTriggerType(rule.trigger_type),
       actions,
       ambient_condition: this._effectiveAmbientConditionForRule(rule),
-      must_be_occupied: Boolean(rule.must_be_occupied),
+      must_be_occupied:
+        typeof rule.must_be_occupied === "boolean" ? rule.must_be_occupied : null,
       time_condition_enabled: Boolean(rule.time_condition_enabled),
       start_time: this._normalizeActionTime(rule.start_time, "18:00"),
       end_time: this._normalizeActionTime(rule.end_time, "23:59"),
-      run_on_startup: this._resolvedActionRunOnStartup(rule),
       enabled: rule.enabled !== false,
     });
   }
@@ -6364,7 +6495,7 @@ export class HtLocationInspector extends LitElement {
     const nextRule: TopomationActionRule = {
       id: nextRuleId,
       entity_id: "",
-      name: `Rule ${rules.length + 1}`,
+      name: "New rule",
       rule_uuid: this._generateRuleUuid(),
       trigger_type: triggerType,
       actions: actionEntityId
@@ -6378,11 +6509,11 @@ export class HtLocationInspector extends LitElement {
       action_entity_id: actionEntityId || undefined,
       action_service: this._defaultActionServiceForTrigger(actionEntityId, triggerType),
       ambient_condition: this._defaultActionAmbientConditionForTrigger(triggerType),
-      must_be_occupied: this._normalizeActionMustBeOccupied(false, triggerType),
+      must_be_occupied: this._normalizeActionMustBeOccupied(undefined, triggerType),
       time_condition_enabled: false,
       start_time: "18:00",
       end_time: "23:59",
-      run_on_startup: this._defaultActionRunOnStartup(),
+      run_on_startup: false,
       enabled: true,
     };
     this._setActionRulesDraft([...rules, nextRule]);
@@ -6560,7 +6691,7 @@ export class HtLocationInspector extends LitElement {
     const errors: string[] = [];
     const hhmmPattern = /^([01]\d|2[0-3]):([0-5]\d)$/;
     rules.forEach((rule, index) => {
-      const label = rule.name?.trim() || `Rule ${index + 1}`;
+      const label = rule.name?.trim() || "New rule";
       const targets = this._actionTargetsForRule(rule);
       if (targets.length === 0) {
         errors.push(`${label}: select at least one target device.`);
@@ -6621,7 +6752,7 @@ export class HtLocationInspector extends LitElement {
         const ruleTargets = this._actionTargetsForRule(normalizedRule);
         const primaryAction = ruleTargets[0];
         if (!primaryAction) continue;
-      const existing =
+        const existing =
           existingById.get(String(normalizedRule.id || "")) ||
           existingByRuleUuid.get(
             this._normalizeRuleUuid(normalizedRule.rule_uuid, normalizedRule.id)
@@ -6633,7 +6764,7 @@ export class HtLocationInspector extends LitElement {
           this.hass,
           {
             location: this.location,
-            name: normalizedRule.name || `Rule ${index + 1}`,
+            name: normalizedRule.name || "New rule",
             rule_uuid: normalizedRule.rule_uuid,
             automation_id: automationId || undefined,
             trigger_type: normalizedRule.trigger_type,
@@ -6642,7 +6773,7 @@ export class HtLocationInspector extends LitElement {
             action_service: primaryAction.service,
             action_data: primaryAction.data,
             ambient_condition: ambientCondition,
-            must_be_occupied: Boolean(normalizedRule.must_be_occupied),
+            must_be_occupied: normalizedRule.must_be_occupied,
             time_condition_enabled: Boolean(normalizedRule.time_condition_enabled),
             start_time: normalizedRule.start_time,
             end_time: normalizedRule.end_time,
@@ -6743,11 +6874,11 @@ export class HtLocationInspector extends LitElement {
           action_service: primaryAction.service,
           action_data: primaryAction.data,
           ambient_condition: ambientCondition,
-          must_be_occupied: Boolean(rule.must_be_occupied),
+          must_be_occupied: rule.must_be_occupied,
           time_condition_enabled: Boolean(rule.time_condition_enabled),
           start_time: rule.start_time,
           end_time: rule.end_time,
-          run_on_startup: this._resolvedActionRunOnStartup(rule),
+          run_on_startup: false,
           require_dark: ambientCondition === "dark",
         },
         this.entryId
@@ -7035,6 +7166,10 @@ export class HtLocationInspector extends LitElement {
         : tab === "media"
           ? "media"
           : "HVAC or ventilation";
+    const hasRuleInEditState = rules.some((rule, index) => {
+      const persistedRule = this._persistedActionRuleForDraft(rule);
+      return !persistedRule || this._isActionRuleDirty(rule, index, persistedRule);
+    });
 
     return html`
       <div class="card-section" data-testid="actions-rules-section">
@@ -7078,19 +7213,15 @@ export class HtLocationInspector extends LitElement {
                   rule.ambient_condition,
                   triggerType
                 );
-                const ambientConditionLabel =
-                  ambientCondition === "dark"
-                    ? "Must be dark"
-                    : ambientCondition === "bright"
-                      ? "Must be bright"
-                      : "Ignore ambient";
                 const mustBeOccupiedLocked =
                   this._isActionMustBeOccupiedLockedByTrigger(triggerType);
                 const mustBeOccupied = this._normalizeActionMustBeOccupied(
                   rule.must_be_occupied,
                   triggerType
                 );
-                const runOnStartup = this._resolvedActionRunOnStartup(rule);
+                const showAmbientConditionRow =
+                  supportsAmbientCondition && !ambientLocked && ambientCondition !== "any";
+                const showOccupancyConditionRow = true;
                 const occupancyConditionLabel = mustBeOccupied ? "Must be occupied" : "Must be vacant";
                 const persistedRule = this._persistedActionRuleForDraft(rule);
                 const isPersisted = Boolean(persistedRule);
@@ -7119,13 +7250,13 @@ export class HtLocationInspector extends LitElement {
                               @blur=${() =>
                                 this._commitActionRuleNameEdit(
                                   ruleId,
-                                  `Rule ${index + 1}`
+                                  "New rule"
                                 )}
                               @keydown=${(ev: KeyboardEvent) => {
                                 if (ev.key === "Enter") {
                                   this._commitActionRuleNameEdit(
                                     ruleId,
-                                    `Rule ${index + 1}`
+                                    "New rule"
                                   );
                                 } else if (ev.key === "Escape") {
                                   this._cancelActionRuleNameEdit();
@@ -7170,79 +7301,86 @@ export class HtLocationInspector extends LitElement {
 
                     <div class="dusk-rule-section-title">Conditions</div>
                     <div class="dusk-conditions">
-                      ${supportsAmbientCondition
+                      ${showAmbientConditionRow
                         ? html`
                             <div class="config-row">
                               <div>
                                 <div class="config-label">Ambient must be</div>
+                                <div class="config-help">Optional ambient filter at trigger time.</div>
+                              </div>
+                              <div class="config-value">
+                                <select
+                                  class="dusk-wide-select"
+                                  .value=${ambientCondition}
+                                  ?disabled=${busy}
+                                  @change=${(ev: Event) =>
+                                    this._updateActionRule(ruleId, {
+                                      ambient_condition: this._normalizeActionAmbientCondition(
+                                        (ev.target as HTMLSelectElement).value,
+                                        triggerType
+                                      ),
+                                    })}
+                                >
+                                  <option value="any">Ignore ambient</option>
+                                  <option value="dark">Must be dark</option>
+                                  <option value="bright">Must be bright</option>
+                                </select>
+                              </div>
+                            </div>
+                          `
+                        : ""}
+
+                      ${showOccupancyConditionRow
+                        ? html`
+                            <div class="config-row">
+                              <div>
+                                <div class="config-label">Occupancy must be</div>
                                 <div class="config-help">
-                                  ${ambientLocked
+                                  ${mustBeOccupiedLocked
                                     ? "Derived from trigger."
-                                    : "Optional ambient filter at trigger time."}
+                                    : "Require the location to be occupied or vacant at trigger time."}
                                 </div>
                               </div>
                               <div class="config-value">
-                                ${ambientLocked
+                                ${mustBeOccupiedLocked
                                   ? html`
                                       <div class="dusk-condition-derived">
-                                        <span>${ambientConditionLabel}</span>
+                                        <span>${occupancyConditionLabel}</span>
                                         <span class="dusk-condition-derived-note">Set by trigger</span>
                                       </div>
                                     `
                                   : html`
                                       <select
                                         class="dusk-wide-select"
-                                        .value=${ambientCondition}
+                                        .value=${typeof mustBeOccupied === "boolean"
+                                          ? mustBeOccupied
+                                            ? "occupied"
+                                            : "vacant"
+                                          : "ignore"}
                                         ?disabled=${busy}
-                                        @change=${(ev: Event) =>
+                                        @change=${(ev: Event) => {
+                                          const nextValue = String(
+                                            (ev.target as HTMLSelectElement).value || "ignore"
+                                          ).trim();
                                           this._updateActionRule(ruleId, {
-                                            ambient_condition: this._normalizeActionAmbientCondition(
-                                              (ev.target as HTMLSelectElement).value,
-                                              triggerType
-                                            ),
-                                          })}
+                                            must_be_occupied:
+                                              nextValue === "occupied"
+                                                ? true
+                                                : nextValue === "vacant"
+                                                  ? false
+                                                  : undefined,
+                                          });
+                                        }}
                                       >
-                                        <option value="any">Ignore ambient</option>
-                                        <option value="dark">Must be dark</option>
-                                        <option value="bright">Must be bright</option>
+                                        <option value="ignore">Doesn't matter</option>
+                                        <option value="occupied">Must be occupied</option>
+                                        <option value="vacant">Must be vacant</option>
                                       </select>
                                     `}
                               </div>
                             </div>
                           `
                         : ""}
-
-                      <div class="config-row">
-                        <div>
-                          <div class="config-label">Must be occupied</div>
-                          <div class="config-help">
-                            ${mustBeOccupiedLocked
-                              ? "Derived from trigger."
-                              : "Apply this rule only when the location is occupied at trigger time."}
-                          </div>
-                        </div>
-                        <div class="config-value">
-                          ${mustBeOccupiedLocked
-                            ? html`
-                                <div class="dusk-condition-derived">
-                                  <span>${occupancyConditionLabel}</span>
-                                  <span class="dusk-condition-derived-note">Set by trigger</span>
-                                </div>
-                              `
-                            : html`
-                                <input
-                                  type="checkbox"
-                                  class="switch-input"
-                                  .checked=${Boolean(mustBeOccupied)}
-                                  ?disabled=${busy}
-                                  @change=${(ev: Event) =>
-                                    this._updateActionRule(ruleId, {
-                                      must_be_occupied: (ev.target as HTMLInputElement).checked,
-                                    })}
-                                />
-                              `}
-                        </div>
-                      </div>
 
                       <div class="config-row">
                         <div>
@@ -7378,30 +7516,6 @@ export class HtLocationInspector extends LitElement {
                             </select>
                           </div>
                         `}
-                    <div class="dusk-rule-section-title">Execution</div>
-                    <div class="dusk-conditions">
-                      <div class="config-row">
-                        <div>
-                          <div class="config-label">Run on startup</div>
-                          <div class="config-help">
-                            Re-evaluate this rule after Home Assistant starts.
-                          </div>
-                        </div>
-                        <div class="config-value">
-                          <input
-                            type="checkbox"
-                            class="switch-input"
-                            .checked=${runOnStartup}
-                            data-testid=${`action-rule-${ruleId}-run-on-startup`}
-                            ?disabled=${busy}
-                            @change=${(ev: Event) =>
-                              this._updateActionRule(ruleId, {
-                                run_on_startup: (ev.target as HTMLInputElement).checked,
-                              })}
-                          />
-                        </div>
-                      </div>
-                    </div>
                     <div class="dusk-block-footer">
                       ${!isPersisted
                         ? html`
@@ -7471,16 +7585,20 @@ export class HtLocationInspector extends LitElement {
               })}
         </div>
 
-        <div class="dusk-list-footer">
-          <button
-            class="button button-primary"
-            data-testid="action-rule-add"
-            ?disabled=${busy}
-            @click=${() => this._addActionRule(tab)}
-          >
-            Add rule
-          </button>
-        </div>
+        ${hasRuleInEditState
+          ? ""
+          : html`
+              <div class="dusk-list-footer">
+                <button
+                  class="button button-primary"
+                  data-testid="action-rule-add"
+                  ?disabled=${busy}
+                  @click=${() => this._addActionRule(tab)}
+                >
+                  Add rule
+                </button>
+              </div>
+            `}
       </div>
     `;
   }

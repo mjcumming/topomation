@@ -2009,7 +2009,7 @@ async def handle_action_rules_list(
         vol.Optional("action_data"): dict,
         vol.Optional("actions"): [dict],
         vol.Optional("ambient_condition"): vol.In(("any", "dark", "bright")),
-        vol.Optional("must_be_occupied", default=False): bool,
+        vol.Optional("must_be_occupied"): vol.Any(bool, None),
         vol.Optional("time_condition_enabled", default=False): bool,
         vol.Optional("start_time"): str,
         vol.Optional("end_time"): str,
@@ -2170,7 +2170,11 @@ async def handle_action_rules_create(
             actions=actions,
             require_dark=bool(msg.get("require_dark", False)),
             ambient_condition=ambient_condition,
-            must_be_occupied=bool(msg.get("must_be_occupied", False)),
+            must_be_occupied=(
+                msg.get("must_be_occupied")
+                if isinstance(msg.get("must_be_occupied"), bool)
+                else None
+            ),
             time_condition_enabled=time_condition_enabled,
             start_time=start_time.strip() if isinstance(start_time, str) else None,
             end_time=end_time.strip() if isinstance(end_time, str) else None,

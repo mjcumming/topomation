@@ -2829,8 +2829,6 @@ describe("HtLocationInspector occupancy source composer", () => {
 
     expect((row!.textContent || "")).to.include("Must be occupied");
     expect((row!.textContent || "")).to.include("Use time window");
-    expect((row!.textContent || "")).to.include("Execution");
-    expect((row!.textContent || "")).to.include("Run on startup");
     expect((row!.textContent || "")).to.not.include("Ambient must be");
 
     expect(row!.querySelectorAll('input[type="time"]').length).to.equal(0);
@@ -2839,12 +2837,7 @@ describe("HtLocationInspector occupancy source composer", () => {
     ).find((candidate) => (candidate.textContent || "").includes("Use time window"))?.querySelector(
       "input.switch-input"
     ) as HTMLInputElement | null;
-    const startupToggle = row!.querySelector(
-      '[data-testid^="action-rule-"][data-testid$="-run-on-startup"]'
-    ) as HTMLInputElement | null;
     expect(timeToggle).to.exist;
-    expect(startupToggle).to.exist;
-    expect(startupToggle?.checked).to.equal(false);
     timeToggle!.click();
     await element.updateComplete;
 
@@ -3049,13 +3042,7 @@ describe("HtLocationInspector occupancy source composer", () => {
     ).find((candidate) => (candidate.textContent || "").includes("Use time window"))?.querySelector(
       "input.switch-input"
     ) as HTMLInputElement | null;
-    const startupToggle = row!.querySelector(
-      '[data-testid="action-rule-rule_existing-run-on-startup"]'
-    ) as HTMLInputElement | null;
     expect(timeToggle).to.exist;
-    expect(startupToggle).to.exist;
-    startupToggle!.checked = true;
-    startupToggle!.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
     timeToggle!.click();
     await element.updateComplete;
 
@@ -3091,7 +3078,7 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(payload.time_condition_enabled).to.equal(true);
     expect(payload.start_time).to.equal("19:15");
     expect(payload.end_time).to.equal("23:30");
-    expect(payload.run_on_startup).to.equal(true);
+    expect(payload.run_on_startup).to.equal(false);
     expect(payload.action_entity_id).to.equal("fan.kitchen_hood");
     expect(payload.action_service).to.equal("turn_off");
     expect(payload.require_dark).to.equal(false);
@@ -3149,7 +3136,6 @@ describe("HtLocationInspector occupancy source composer", () => {
     const row = element.shadowRoot!.querySelector(".dusk-block-row") as HTMLElement | null;
     expect(row).to.exist;
     expect((row!.textContent || "")).to.not.include("Ambient must be");
-    expect((row!.textContent || "")).to.include("Execution");
 
     const selects = Array.from(row!.querySelectorAll("select.dusk-wide-select")) as HTMLSelectElement[];
     expect(selects.length).to.equal(3);
@@ -3699,11 +3685,17 @@ describe("HtLocationInspector WIAB configuration", () => {
     ambientTab?.click();
     await element.updateComplete;
 
+    expect(element.shadowRoot?.querySelector('[data-testid="ambient-save-button"]')).to.equal(null);
+    expect(element.shadowRoot?.querySelector('[data-testid="ambient-discard-button"]')).to.equal(null);
+
     const sectionLuxText =
       element.shadowRoot?.querySelector('[data-testid="ambient-lux-level"]')?.textContent || "";
+    const ambientStateText =
+      element.shadowRoot?.querySelector('[data-testid="ambient-state"]')?.textContent || "";
     const sourceMethodText =
       element.shadowRoot?.querySelector('[data-testid="ambient-source-method"]')?.textContent || "";
     expect(sectionLuxText).to.equal("22.5 lx");
+    expect(ambientStateText).to.equal("Dark");
     expect(sourceMethodText).to.equal("Inherited sensor");
     expect(element.shadowRoot?.querySelector('[data-testid="ambient-refresh-button"]')).to.not.exist;
 
@@ -3979,10 +3971,343 @@ describe("HtLocationInspector WIAB configuration", () => {
             request.config?.dark_threshold === 120 &&
             request.config?.bright_threshold >= 121 &&
             request.config?.lux_sensor === "sensor.patio_lux" &&
+            request.config?.inherit_from_parent === false &&
             request.config?.auto_discover === false
         ),
       "ambient changes were not persisted on save"
     );
+  });
+
+  it("prefers available ambient sensors in the active area and refreshes the reading after save", async () => {
+    const setConfigCalls: Array<Record<string, any>> = [];
+    let ambientReadingCount = 0;
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>): Promise<T> => {
+        if (request.type === "config/entity_registry/list") {
+          return [
+            {
+              entity_id: "sensor.dead_area_lux",
+              area_id: "kitchen",
+            },
+            {
+              entity_id: "sensor.kitchen_ambient_lux",
+              area_id: null,
+            },
+          ] as T;
+        }
+        if (request.type === "config/device_registry/list") return [] as T;
+        if (request.type === "topomation/ambient/get_reading") {
+          ambientReadingCount += 1;
+          if (ambientReadingCount === 1) {
+            return {
+              lux: 1000,
+              source_sensor: null,
+              source_location: null,
+              is_inherited: false,
+              is_dark: false,
+              is_bright: true,
+              dark_threshold: 50,
+              bright_threshold: 500,
+              fallback_method: "sun_position",
+              timestamp: new Date().toISOString(),
+            } as T;
+          }
+          return {
+            lux: 250,
+            source_sensor: "sensor.kitchen_ambient_lux",
+            source_location: "area_kitchen",
+            is_inherited: false,
+            is_dark: false,
+            is_bright: false,
+            dark_threshold: 50,
+            bright_threshold: 500,
+            fallback_method: null,
+            timestamp: new Date().toISOString(),
+          } as T;
+        }
+        if (request.type === "topomation/locations/set_module_config") {
+          setConfigCalls.push(request);
+          return { success: true } as T;
+        }
+        return {} as T;
+      },
+      connection: {},
+      states: {
+        "sensor.dead_area_lux": {
+          entity_id: "sensor.dead_area_lux",
+          state: "unavailable",
+          attributes: {
+            friendly_name: "Dead Area Lux",
+            device_class: "illuminance",
+            unit_of_measurement: "lx",
+            area_id: "kitchen",
+          },
+        },
+        "sensor.kitchen_ambient_lux": {
+          entity_id: "sensor.kitchen_ambient_lux",
+          state: "250",
+          attributes: {
+            friendly_name: "Kitchen Ambient Lux",
+            device_class: "illuminance",
+            unit_of_measurement: "lx",
+            area_id: "kitchen",
+          },
+        },
+      },
+      areas: {
+        kitchen: { area_id: "kitchen", name: "Kitchen" },
+      },
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_kitchen";
+    location.name = "Kitchen";
+    location.ha_area_id = "kitchen";
+    location.entity_ids = ["sensor.dead_area_lux"];
+    location.modules._meta = { type: "area" };
+    location.modules.ambient = {
+      lux_sensor: null,
+      auto_discover: false,
+      inherit_from_parent: true,
+      dark_threshold: 50,
+      bright_threshold: 500,
+      fallback_to_sun: true,
+      assume_dark_on_error: true,
+    };
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector .hass=${hass} .location=${location}></ht-location-inspector>
+    `);
+
+    const ambientTab = Array.from(element.shadowRoot?.querySelectorAll(".tab") || []).find((tab) =>
+      (tab.textContent || "").includes("Ambient")
+    ) as HTMLButtonElement | undefined;
+    expect(ambientTab).to.exist;
+    ambientTab?.click();
+    await element.updateComplete;
+
+    const sensorSelect = element.shadowRoot?.querySelector(
+      '[data-testid="ambient-lux-sensor-select"]'
+    ) as HTMLSelectElement | null;
+    expect(sensorSelect).to.exist;
+    const optionValues = Array.from(sensorSelect?.options || []).map((option) => option.value);
+    expect(optionValues).to.include("sensor.kitchen_ambient_lux");
+    expect(optionValues).to.not.include("sensor.dead_area_lux");
+
+    sensorSelect!.value = "sensor.kitchen_ambient_lux";
+    sensorSelect!.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+    await element.updateComplete;
+
+    const saveButton = element.shadowRoot?.querySelector(
+      '[data-testid="ambient-save-button"]'
+    ) as HTMLButtonElement | null;
+    expect(saveButton).to.exist;
+    saveButton!.click();
+    await element.updateComplete;
+
+    await waitUntil(
+      () =>
+        setConfigCalls.some(
+          (request) =>
+            request.module_id === "ambient" &&
+            request.config?.lux_sensor === "sensor.kitchen_ambient_lux" &&
+            request.config?.inherit_from_parent === false
+        ),
+      "ambient save payload did not include the selected area lux sensor"
+    );
+
+    await waitUntil(
+      () => (element.shadowRoot?.querySelector('[data-testid="ambient-source-sensor"]')?.textContent || "").trim() ===
+        "sensor.kitchen_ambient_lux",
+      "ambient source sensor did not refresh after save"
+    );
+    expect(
+      (element.shadowRoot?.querySelector('[data-testid="ambient-source-location"]')?.textContent || "").trim()
+    ).to.equal("Kitchen");
+  });
+
+  it("shows a neutral empty ambient sensor label when a direct local sensor is available", async () => {
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>): Promise<T> => {
+        if (request.type === "config/entity_registry/list") {
+          return [
+            {
+              entity_id: "sensor.living_room_ambient_lux",
+              area_id: null,
+            },
+          ] as T;
+        }
+        if (request.type === "config/device_registry/list") return [] as T;
+        if (request.type === "topomation/ambient/get_reading") {
+          return {
+            lux: 1000,
+            source_sensor: null,
+            source_location: null,
+            is_inherited: false,
+            is_dark: false,
+            is_bright: true,
+            dark_threshold: 50,
+            bright_threshold: 500,
+            fallback_method: "sun_position",
+            timestamp: new Date().toISOString(),
+          } as T;
+        }
+        return {} as T;
+      },
+      connection: {},
+      states: {
+        "sensor.living_room_ambient_lux": {
+          entity_id: "sensor.living_room_ambient_lux",
+          state: "120",
+          attributes: {
+            friendly_name: "Living Room Ambient Lux",
+            device_class: "illuminance",
+            unit_of_measurement: "lx",
+            area_id: "living_room",
+          },
+        },
+      },
+      areas: {
+        living_room: { area_id: "living_room", name: "Living Room" },
+      },
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_living_room";
+    location.name = "Living Room";
+    location.ha_area_id = "living_room";
+    location.modules._meta = { type: "area" };
+    location.modules.ambient = {
+      lux_sensor: null,
+      auto_discover: false,
+      inherit_from_parent: true,
+      dark_threshold: 50,
+      bright_threshold: 500,
+      fallback_to_sun: true,
+      assume_dark_on_error: true,
+    };
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector .hass=${hass} .location=${location}></ht-location-inspector>
+    `);
+
+    const ambientTab = Array.from(element.shadowRoot?.querySelectorAll(".tab") || []).find((tab) =>
+      (tab.textContent || "").includes("Ambient")
+    ) as HTMLButtonElement | undefined;
+    expect(ambientTab).to.exist;
+    ambientTab?.click();
+    await element.updateComplete;
+
+    const sensorSelect = element.shadowRoot?.querySelector(
+      '[data-testid="ambient-lux-sensor-select"]'
+    ) as HTMLSelectElement | null;
+    expect(sensorSelect).to.exist;
+    expect(sensorSelect?.options[0]?.textContent?.trim()).to.equal("Inherit from parent");
+    expect(element.shadowRoot?.querySelector('[data-testid="ambient-inherit-toggle"]')).to.equal(null);
+  });
+
+  it("shows the ambient draft bar after selecting a different lux sensor", async () => {
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>): Promise<T> => {
+        if (request.type === "config/entity_registry/list") {
+          return [
+            { entity_id: "sensor.living_room_ambient_lux", area_id: null },
+            { entity_id: "sensor.living_room_window_ambient_lux", area_id: null },
+          ] as T;
+        }
+        if (request.type === "config/device_registry/list") return [] as T;
+        if (request.type === "topomation/ambient/get_reading") {
+          return {
+            lux: 120,
+            source_sensor: "sensor.living_room_ambient_lux",
+            source_location: "area_living_room",
+            is_inherited: false,
+            is_dark: false,
+            is_bright: false,
+            dark_threshold: 50,
+            bright_threshold: 500,
+            fallback_method: null,
+            timestamp: new Date().toISOString(),
+          } as T;
+        }
+        return {} as T;
+      },
+      connection: {},
+      states: {
+        "sensor.living_room_ambient_lux": {
+          entity_id: "sensor.living_room_ambient_lux",
+          state: "120",
+          attributes: {
+            friendly_name: "Living Room Ambient Lux",
+            device_class: "illuminance",
+            unit_of_measurement: "lx",
+            area_id: "living_room",
+          },
+        },
+        "sensor.living_room_window_ambient_lux": {
+          entity_id: "sensor.living_room_window_ambient_lux",
+          state: "180",
+          attributes: {
+            friendly_name: "Living Room Window Ambient Lux",
+            device_class: "illuminance",
+            unit_of_measurement: "lx",
+            area_id: "living_room",
+          },
+        },
+      },
+      areas: {
+        living_room: { area_id: "living_room", name: "Living Room" },
+      },
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_living_room";
+    location.name = "Living Room";
+    location.ha_area_id = "living_room";
+    location.modules._meta = { type: "area" };
+    location.modules.ambient = {
+      lux_sensor: "sensor.living_room_ambient_lux",
+      auto_discover: false,
+      inherit_from_parent: false,
+      dark_threshold: 50,
+      bright_threshold: 500,
+      fallback_to_sun: true,
+      assume_dark_on_error: true,
+    };
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector .hass=${hass} .location=${location}></ht-location-inspector>
+    `);
+
+    const ambientTab = Array.from(element.shadowRoot?.querySelectorAll(".tab") || []).find((tab) =>
+      (tab.textContent || "").includes("Ambient")
+    ) as HTMLButtonElement | undefined;
+    ambientTab?.click();
+    await element.updateComplete;
+
+    const sensorSelect = element.shadowRoot?.querySelector(
+      '[data-testid="ambient-lux-sensor-select"]'
+    ) as HTMLSelectElement | null;
+    expect(sensorSelect).to.exist;
+    sensorSelect!.value = "sensor.living_room_window_ambient_lux";
+    sensorSelect!.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+    await element.updateComplete;
+
+    const stickyBar = element.shadowRoot?.querySelector(
+      '[data-testid="ambient-sticky-draft-bar"]'
+    ) as HTMLElement | null;
+    const saveButton = element.shadowRoot?.querySelector(
+      '[data-testid="ambient-save-button"]'
+    ) as HTMLButtonElement | null;
+    expect(stickyBar).to.exist;
+    expect(saveButton).to.exist;
+    expect(saveButton?.disabled).to.equal(false);
   });
 
   it("ignores legacy dusk/dawn payloads in the active lighting editor", async () => {
@@ -4107,6 +4432,13 @@ describe("HtLocationInspector WIAB configuration", () => {
       "expected fresh lighting draft rule to render"
     );
 
+    const draftTitle = element.shadowRoot?.querySelector(
+      ".dusk-block-title-button"
+    ) as HTMLButtonElement | null;
+    expect(draftTitle).to.exist;
+    expect((draftTitle?.textContent || "").trim()).to.equal("New rule");
+    expect(element.shadowRoot?.querySelector('[data-testid="action-rule-add"]')).to.equal(null);
+
     const triggerSelect = element.shadowRoot?.querySelector(
       ".dusk-block-row select.dusk-wide-select"
     ) as HTMLSelectElement | null;
@@ -4114,6 +4446,18 @@ describe("HtLocationInspector WIAB configuration", () => {
     triggerSelect!.value = "on_bright";
     triggerSelect!.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
     await element.updateComplete;
+
+    const draftRule = element.shadowRoot?.querySelector(".dusk-block-row") as HTMLElement | null;
+    expect(draftRule).to.exist;
+    expect((draftRule?.textContent || "")).to.not.include("Ambient must be");
+    expect((draftRule?.textContent || "")).to.include("Occupancy must be");
+    const occupancySelect = Array.from(
+      draftRule?.querySelectorAll(".dusk-conditions select.dusk-wide-select") || []
+    ).find((select) =>
+      Array.from((select as HTMLSelectElement).options).some((option) => option.value === "ignore")
+    ) as HTMLSelectElement | undefined;
+    expect(occupancySelect).to.exist;
+    expect(occupancySelect?.value).to.equal("ignore");
 
     const saveButton = element.shadowRoot?.querySelector(
       '[data-testid^="action-rule-"][data-testid$="-save"]'
@@ -4129,6 +4473,7 @@ describe("HtLocationInspector WIAB configuration", () => {
     expect(payload.actions.length).to.equal(1);
     expect(payload.action_entity_id).to.equal("light.kitchen_ceiling");
     expect(payload.action_service).to.equal("turn_off");
+    expect(payload.must_be_occupied).to.equal(undefined);
     expect(typeof payload.rule_uuid).to.equal("string");
     expect(String(payload.rule_uuid || "").length).to.be.greaterThan(0);
     expect(setConfigCalls.some((request) => request.module_id === "dusk_dawn")).to.equal(false);
@@ -4346,6 +4691,7 @@ describe("HtLocationInspector WIAB configuration", () => {
       '[data-testid="action-rule-rule_existing"]'
     ) as HTMLElement | null;
     expect(persistedRow).to.exist;
+    expect((persistedRow?.textContent || "")).to.not.include("Ambient must be");
 
     const triggerRow = Array.from(
       persistedRow?.querySelectorAll(".dusk-rule-row") || []
@@ -4358,10 +4704,11 @@ describe("HtLocationInspector WIAB configuration", () => {
 
     const persistedOccupancyRow = Array.from(
       persistedRow?.querySelectorAll(".config-row") || []
-    ).find((row) => (row.textContent || "").includes("Must be occupied")) as HTMLElement | undefined;
+    ).find((row) => (row.textContent || "").includes("Occupancy must be")) as HTMLElement | undefined;
     expect(persistedOccupancyRow).to.exist;
     expect(persistedOccupancyRow?.querySelector("input[type='checkbox']")).to.equal(null);
     expect((persistedOccupancyRow?.textContent || "").includes("Set by trigger")).to.equal(true);
+    expect(element.shadowRoot?.querySelector('[data-testid="action-rule-add"]')).to.equal(null);
 
     await waitUntil(
       () => !!element.shadowRoot?.querySelector('[data-testid="action-rule-rule_existing-update"]'),

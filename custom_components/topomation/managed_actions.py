@@ -62,7 +62,7 @@ class _TopomationMetadata:
     location_id: str
     trigger_type: ActionTriggerType
     ambient_condition: ActionAmbientCondition
-    must_be_occupied: bool
+    must_be_occupied: bool | None
     time_condition_enabled: bool
     start_time: str
     end_time: str
@@ -79,7 +79,7 @@ class _RecentRuleSnapshot:
     name: str
     trigger_type: ActionTriggerType
     ambient_condition: ActionAmbientCondition
-    must_be_occupied: bool
+    must_be_occupied: bool | None
     time_condition_enabled: bool
     start_time: str
     end_time: str
@@ -287,7 +287,7 @@ class TopomationManagedActions:
         action_data: Mapping[str, Any] | None = None,
         require_dark: bool = False,
         ambient_condition: str | None = None,
-        must_be_occupied: bool = False,
+        must_be_occupied: bool | None = None,
         time_condition_enabled: bool = False,
         start_time: str | None = None,
         end_time: str | None = None,
@@ -326,8 +326,9 @@ class TopomationManagedActions:
         )
 
         occupancy_entity_id: str | None = None
-        requires_occupancy_entity = normalized_trigger in {"on_occupied", "on_vacant"} or bool(
-            must_be_occupied
+        requires_occupancy_entity = (
+            normalized_trigger in {"on_occupied", "on_vacant"}
+            or isinstance(must_be_occupied, bool)
         )
         if requires_occupancy_entity:
             occupancy_entity_id = self._find_occupancy_entity_id(location_id)
@@ -362,7 +363,7 @@ class TopomationManagedActions:
 
         conditions = self._build_condition_definitions(
             ambient_condition=normalized_ambient_condition,
-            must_be_occupied=bool(must_be_occupied),
+            must_be_occupied=must_be_occupied,
             occupancy_entity_id=occupancy_entity_id,
             time_condition_enabled=bool(time_condition_enabled),
             start_time=normalized_start_time,
@@ -375,7 +376,11 @@ class TopomationManagedActions:
             "location_id": location_id,
             "trigger_type": normalized_trigger,
             "ambient_condition": normalized_ambient_condition,
-            "must_be_occupied": bool(must_be_occupied),
+            **(
+                {"must_be_occupied": must_be_occupied}
+                if isinstance(must_be_occupied, bool)
+                else {}
+            ),
             "time_condition_enabled": bool(time_condition_enabled),
             "start_time": normalized_start_time,
             "end_time": normalized_end_time,
@@ -436,7 +441,7 @@ class TopomationManagedActions:
             name=name,
             trigger_type=normalized_trigger,
             ambient_condition=normalized_ambient_condition,
-            must_be_occupied=bool(must_be_occupied),
+            must_be_occupied=must_be_occupied,
             time_condition_enabled=bool(time_condition_enabled),
             start_time=normalized_start_time,
             end_time=normalized_end_time,
@@ -508,7 +513,7 @@ class TopomationManagedActions:
             "action_service": primary_action_service,
             "action_data": primary_action_data,
             "ambient_condition": normalized_ambient_condition,
-            "must_be_occupied": bool(must_be_occupied),
+            "must_be_occupied": must_be_occupied,
             "time_condition_enabled": bool(time_condition_enabled),
             "start_time": normalized_start_time,
             "end_time": normalized_end_time,
@@ -667,7 +672,7 @@ class TopomationManagedActions:
         name: str,
         trigger_type: ActionTriggerType,
         ambient_condition: ActionAmbientCondition,
-        must_be_occupied: bool,
+        must_be_occupied: bool | None,
         time_condition_enabled: bool,
         start_time: str,
         end_time: str,
@@ -878,7 +883,7 @@ class TopomationManagedActions:
         self,
         *,
         ambient_condition: ActionAmbientCondition,
-        must_be_occupied: bool,
+        must_be_occupied: bool | None,
         occupancy_entity_id: str | None,
         time_condition_enabled: bool,
         start_time: str,
@@ -895,14 +900,14 @@ class TopomationManagedActions:
         if ambient_clause is not None:
             conditions.append(ambient_clause)
 
-        if must_be_occupied:
+        if isinstance(must_be_occupied, bool):
             if not occupancy_entity_id:
-                raise ValueError("Must-be-occupied condition requires an occupancy sensor")
+                raise ValueError("Occupancy condition requires an occupancy sensor")
             conditions.append(
                 {
                     "condition": "state",
                     "entity_id": occupancy_entity_id,
-                    "state": "on",
+                    "state": "on" if must_be_occupied else "off",
                 }
             )
 
@@ -1029,7 +1034,14 @@ class TopomationManagedActions:
                 trigger_type=trigger_type,
                 require_dark=bool(parsed.get("require_dark", False)),
             )
-            must_be_occupied = bool(parsed.get("must_be_occupied", False))
+            raw_must_be_occupied = (
+                parsed.get("must_be_occupied") if isinstance(parsed, Mapping) else None
+            )
+            must_be_occupied = (
+                raw_must_be_occupied
+                if isinstance(raw_must_be_occupied, bool)
+                else None
+            )
             time_condition_enabled = bool(parsed.get("time_condition_enabled", False))
             start_time = self._normalize_time_hhmm(
                 parsed.get("start_time") if isinstance(parsed, Mapping) else None,
