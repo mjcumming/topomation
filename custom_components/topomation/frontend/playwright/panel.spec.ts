@@ -482,7 +482,7 @@ test("media rule service options align to media player controls", async ({ page 
     .first();
   await expect(rule).toBeVisible();
 
-  const deviceSelect = rule.locator(".dusk-rule-row", { hasText: "Device" }).locator("select");
+  const deviceSelect = rule.locator(".dusk-rule-row", { hasText: "Target device" }).locator("select");
   const actionSelect = rule.locator(".dusk-rule-row", { hasText: "Action" }).locator("select");
   await deviceSelect.selectOption("media_player.kitchen_receiver");
   await expect
@@ -492,16 +492,15 @@ test("media rule service options align to media player controls", async ({ page 
       )
     )
     .toEqual([
-      "turn_on",
-      "turn_off",
       "media_play",
-      "media_play_pause",
-      "media_pause",
-      "media_stop",
-      "volume_mute:true",
+      "turn_on",
       "volume_mute:false",
-      "volume_up",
-      "volume_down",
+      "volume_set",
+      "volume_mute:true",
+      "media_pause",
+      "media_play_pause",
+      "turn_off",
+      "media_stop",
     ]);
 });
 

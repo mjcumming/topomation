@@ -382,6 +382,14 @@ Additional save points:
   - `Media` and `HVAC` do not expose ambient-light conditions in v1.
   - `Media` action choices focus on common occupancy controls:
     power, playback, volume, and mute.
+  - `Media` and `HVAC` rule cards do not render a separate occupancy-condition
+    row; `on_occupied` / `on_vacant` already define the occupancy side.
+  - `Media` keeps only the time-window condition in v1.
+  - `HVAC` keeps only the time-window condition in v1.
+  - `Media` exposes `volume_set` as a first-class action with a visible percent
+    control only when selected.
+  - `HVAC` exposes `fan.set_percentage` as a first-class action for `fan.*`
+    targets with a visible percent control only when selected.
 - Lighting rule persistence contract:
   - HA automation entities/config are canonical for Lighting rule state.
   - save path is upsert+diff with stable metadata identity (`rule_uuid`).

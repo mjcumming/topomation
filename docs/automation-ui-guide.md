@@ -77,10 +77,18 @@ Top-to-bottom layout order:
 1. `Media` is the common-case media workflow:
    `media_player.*` targets with simple occupancy-driven power/playback/volume/
    mute actions.
+   - only `On occupied` / `On vacant` triggers
+   - no separate occupancy-condition row
+   - optional time window remains available
+   - `Set volume` exposes a percentage control only when selected
 2. `HVAC` is a fans-first workflow in v1:
    - `fan.*` targets are first-class.
    - switch-controlled exhaust/ventilation devices may also appear here via
      `switch.*` compatibility.
+   - only `On occupied` / `On vacant` triggers
+   - no separate occupancy-condition row
+   - optional time window remains available
+   - `Set speed` exposes a percentage control for `fan.*` targets only
 3. `Media` and `HVAC` do not expose an ambient-light condition filter in v1.
 4. Do not present a dedicated `Appliances` top-level tab in v1.
 5. Do not present `climate.*` thermostat/preset editing until a narrower common

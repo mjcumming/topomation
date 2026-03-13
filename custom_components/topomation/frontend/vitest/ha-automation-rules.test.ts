@@ -67,6 +67,48 @@ describe("ha-automation-rules websocket path", () => {
     );
   });
 
+  it("normalizes legacy trigger values from backend list payloads", async () => {
+    const callWS = vi.fn(async (request: Record<string, unknown>) => {
+      if (request.type === "topomation/actions/rules/list") {
+        return {
+          rules: [
+            {
+              id: "rule_occ",
+              entity_id: "automation.rule_occ",
+              name: "Occupied Rule",
+              trigger_type: "occupied",
+              action_entity_id: "light.kitchen",
+              action_service: "turn_on",
+              ambient_condition: "any",
+              must_be_occupied: true,
+              enabled: true,
+            },
+            {
+              id: "rule_bright",
+              entity_id: "automation.rule_bright",
+              name: "Bright Rule",
+              trigger_type: "bright",
+              action_entity_id: "light.kitchen",
+              action_service: "turn_off",
+              ambient_condition: "bright",
+              enabled: true,
+            },
+          ],
+        };
+      }
+      return {};
+    });
+    const hass = {
+      callWS,
+      callApi: vi.fn(),
+      states: {},
+    } as any;
+
+    const listed = await listTopomationActionRules(hass, "kitchen");
+
+    expect(listed.map((rule) => rule.trigger_type)).toEqual(["on_bright", "on_occupied"]);
+  });
+
   it("creates managed rules through backend websocket contract", async () => {
     const createdRule: TopomationActionRule = {
       id: "rule_created",

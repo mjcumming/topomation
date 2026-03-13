@@ -1954,6 +1954,146 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(syncCheckbox).to.exist;
   });
 
+  it("normalizes sync locations as a full group across all selected members", async () => {
+    const callWsRequests: Array<Record<string, any>> = [];
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>) => {
+        callWsRequests.push(request);
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        if (request.type === "topomation/locations/set_module_config") {
+          return { success: true } as T;
+        }
+        return {} as T;
+      },
+      connection: {},
+      states: {},
+      areas: {},
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_kitchen";
+    location.name = "Kitchen";
+    location.parent_id = "floor_main";
+    location.modules._meta = { type: "area" };
+    location.modules.occupancy = {
+      enabled: true,
+      default_timeout: 300,
+      default_trailing_timeout: 120,
+      occupancy_sources: [],
+      linked_locations: [],
+      sync_locations: ["area_family_room"],
+    };
+
+    const allLocations: Location[] = [
+      location,
+      {
+        ...structuredClone(baseLocation),
+        id: "area_family_room",
+        name: "Family Room",
+        parent_id: "floor_main",
+        modules: {
+          _meta: { type: "area" },
+          occupancy: {
+            enabled: true,
+            default_timeout: 300,
+            default_trailing_timeout: 120,
+            occupancy_sources: [],
+            linked_locations: [],
+            sync_locations: ["area_kitchen"],
+          },
+        },
+      },
+      {
+        ...structuredClone(baseLocation),
+        id: "area_back_hallway",
+        name: "Back Hallway",
+        parent_id: "floor_main",
+        modules: {
+          _meta: { type: "area" },
+          occupancy: {
+            enabled: true,
+            default_timeout: 300,
+            default_trailing_timeout: 120,
+            occupancy_sources: [],
+            linked_locations: [],
+            sync_locations: [],
+          },
+        },
+      },
+      {
+        ...structuredClone(baseLocation),
+        id: "floor_main",
+        name: "Main Floor",
+        parent_id: "building_main",
+        modules: { _meta: { type: "floor" } },
+      },
+      {
+        ...structuredClone(baseLocation),
+        id: "building_main",
+        name: "Main Building",
+        parent_id: null,
+        modules: { _meta: { type: "building" } },
+      },
+    ];
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${location}
+        .allLocations=${allLocations}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
+    await switchTopTab(element, "Advanced");
+
+    const hallwayCheckbox = element.shadowRoot!.querySelector(
+      '[data-testid="sync-location-area_back_hallway"]'
+    ) as HTMLInputElement;
+    expect(hallwayCheckbox).to.exist;
+    hallwayCheckbox.click();
+    await element.updateComplete;
+
+    const saveButton = element.shadowRoot!.querySelector(
+      '[data-testid="detection-save-button"]'
+    ) as HTMLButtonElement;
+    expect(saveButton).to.exist;
+    saveButton.click();
+    await element.updateComplete;
+
+    await waitUntil(() => {
+      const kitchenWrite = callWsRequests.find(
+        (item) =>
+          item.type === "topomation/locations/set_module_config" &&
+          item.location_id === "area_kitchen"
+      );
+      const familyWrite = callWsRequests.find(
+        (item) =>
+          item.type === "topomation/locations/set_module_config" &&
+          item.location_id === "area_family_room"
+      );
+      const hallwayWrite = callWsRequests.find(
+        (item) =>
+          item.type === "topomation/locations/set_module_config" &&
+          item.location_id === "area_back_hallway"
+      );
+      if (!kitchenWrite || !familyWrite || !hallwayWrite) return false;
+      const kitchenPeers = kitchenWrite.config?.sync_locations || [];
+      const familyPeers = familyWrite.config?.sync_locations || [];
+      const hallwayPeers = hallwayWrite.config?.sync_locations || [];
+      return (
+        kitchenPeers.includes("area_family_room") &&
+        kitchenPeers.includes("area_back_hallway") &&
+        familyPeers.includes("area_kitchen") &&
+        familyPeers.includes("area_back_hallway") &&
+        hallwayPeers.includes("area_kitchen") &&
+        hallwayPeers.includes("area_family_room")
+      );
+    }, "full sync group writes were not observed");
+  });
+
   it("shows floor sync candidates for sibling floors under one building", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>) => {
@@ -2827,7 +2967,7 @@ describe("HtLocationInspector occupancy source composer", () => {
     const triggerOptions = Array.from(selects[0].options).map((option) => option.value);
     expect(triggerOptions).to.deep.equal(["on_occupied", "on_vacant"]);
 
-    expect((row!.textContent || "")).to.include("Must be occupied");
+    expect((row!.textContent || "")).to.not.include("Must be occupied");
     expect((row!.textContent || "")).to.include("Use time window");
     expect((row!.textContent || "")).to.not.include("Ambient must be");
 
@@ -2922,6 +3062,7 @@ describe("HtLocationInspector occupancy source composer", () => {
 
     const row = element.shadowRoot!.querySelector(".dusk-block-row") as HTMLElement | null;
     expect(row).to.exist;
+    expect((row!.textContent || "")).to.not.include("Occupancy must be");
 
     const selects = Array.from(row!.querySelectorAll("select.dusk-wide-select")) as HTMLSelectElement[];
     expect(selects.length).to.equal(3);
@@ -3136,6 +3277,7 @@ describe("HtLocationInspector occupancy source composer", () => {
     const row = element.shadowRoot!.querySelector(".dusk-block-row") as HTMLElement | null;
     expect(row).to.exist;
     expect((row!.textContent || "")).to.not.include("Ambient must be");
+    expect((row!.textContent || "")).to.not.include("Occupancy must be");
 
     const selects = Array.from(row!.querySelectorAll("select.dusk-wide-select")) as HTMLSelectElement[];
     expect(selects.length).to.equal(3);
@@ -3148,17 +3290,121 @@ describe("HtLocationInspector occupancy source composer", () => {
     )[2] as HTMLSelectElement;
     const actionOptionValues = Array.from(actionSelect.options).map((option) => option.value);
     expect(actionOptionValues).to.deep.equal([
-      "turn_on",
-      "turn_off",
       "media_play",
-      "media_play_pause",
-      "media_pause",
-      "media_stop",
-      "volume_mute:true",
+      "turn_on",
       "volume_mute:false",
-      "volume_up",
-      "volume_down",
+      "volume_set",
+      "volume_mute:true",
+      "media_pause",
+      "media_play_pause",
+      "turn_off",
+      "media_stop",
     ]);
+  });
+
+  it("shows media volume control only for set volume actions", async () => {
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>) => {
+        if (request.type === "topomation/actions/rules/list") return { rules: [] } as T;
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        return [] as T;
+      },
+      connection: {},
+      states: {
+        "media_player.kitchen_speaker": {
+          entity_id: "media_player.kitchen_speaker",
+          state: "idle",
+          attributes: { friendly_name: "Kitchen Speaker", area_id: "kitchen" },
+        },
+      },
+      areas: {},
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_kitchen";
+    location.ha_area_id = "kitchen";
+    location.modules._meta = { type: "area" };
+    location.entity_ids = ["media_player.kitchen_speaker"];
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector .hass=${hass} .location=${location} .forcedTab=${"media"}></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    const addRuleButton = element.shadowRoot?.querySelector(
+      '[data-testid="action-rule-add"]'
+    ) as HTMLButtonElement | null;
+    addRuleButton!.click();
+    await element.updateComplete;
+
+    const row = element.shadowRoot!.querySelector(".dusk-block-row") as HTMLElement;
+    const selects = Array.from(row.querySelectorAll("select.dusk-wide-select")) as HTMLSelectElement[];
+    selects[1].value = "media_player.kitchen_speaker";
+    selects[1].dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+    await element.updateComplete;
+
+    let actionSelect = Array.from(row.querySelectorAll("select.dusk-wide-select"))[2] as HTMLSelectElement;
+    actionSelect.value = "volume_set";
+    actionSelect.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+    await element.updateComplete;
+
+    expect((row.textContent || "")).to.include("Volume");
+    const slider = row.querySelector('input[type="range"]') as HTMLInputElement | null;
+    expect(slider).to.exist;
+    expect(slider?.value).to.equal("30");
+  });
+
+  it("shows HVAC fan speed control only for set speed actions", async () => {
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>) => {
+        if (request.type === "topomation/actions/rules/list") return { rules: [] } as T;
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        return [] as T;
+      },
+      connection: {},
+      states: {
+        "fan.kitchen_hood": {
+          entity_id: "fan.kitchen_hood",
+          state: "off",
+          attributes: { friendly_name: "Kitchen Hood", area_id: "kitchen" },
+        },
+      },
+      areas: {},
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_kitchen";
+    location.ha_area_id = "kitchen";
+    location.modules._meta = { type: "area" };
+    location.entity_ids = ["fan.kitchen_hood"];
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector .hass=${hass} .location=${location} .forcedTab=${"hvac"}></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    const addRuleButton = element.shadowRoot?.querySelector(
+      '[data-testid="action-rule-add"]'
+    ) as HTMLButtonElement | null;
+    addRuleButton!.click();
+    await element.updateComplete;
+
+    const row = element.shadowRoot!.querySelector(".dusk-block-row") as HTMLElement;
+    const actionSelect = Array.from(row.querySelectorAll("select.dusk-wide-select"))[2] as HTMLSelectElement;
+    actionSelect.value = "set_percentage";
+    actionSelect.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+    await element.updateComplete;
+
+    expect((row.textContent || "")).to.include("Fan speed");
+    const slider = row.querySelector('input[type="range"]') as HTMLInputElement | null;
+    expect(slider).to.exist;
+    expect(slider?.value).to.equal("30");
   });
 
   it("reloads action rules from Home Assistant when external changes occur during draft edits", async () => {
@@ -3978,7 +4224,7 @@ describe("HtLocationInspector WIAB configuration", () => {
     );
   });
 
-  it("prefers available ambient sensors in the active area and refreshes the reading after save", async () => {
+  it("lists direct area lux sensors even when unavailable and refreshes the reading after save", async () => {
     const setConfigCalls: Array<Record<string, any>> = [];
     let ambientReadingCount = 0;
     const hass: HomeAssistant = {
@@ -4094,7 +4340,7 @@ describe("HtLocationInspector WIAB configuration", () => {
     expect(sensorSelect).to.exist;
     const optionValues = Array.from(sensorSelect?.options || []).map((option) => option.value);
     expect(optionValues).to.include("sensor.kitchen_ambient_lux");
-    expect(optionValues).to.not.include("sensor.dead_area_lux");
+    expect(optionValues).to.include("sensor.dead_area_lux");
 
     sensorSelect!.value = "sensor.kitchen_ambient_lux";
     sensorSelect!.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
@@ -4764,5 +5010,271 @@ describe("HtLocationInspector WIAB configuration", () => {
     expect(removeRuleCount).to.equal(1);
     expect(saveRuleCount).to.equal(1);
     expect(deleteRuleCount).to.equal(1);
+  });
+
+  it("shows the ambient condition selector for on occupied rules", async () => {
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>): Promise<T> => {
+        if (request.type === "topomation/actions/rules/list") {
+          return { rules: [] } as T;
+        }
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        if (request.type === "topomation/ambient/get_reading") {
+          return {
+            lux: 12,
+            is_dark: true,
+            is_bright: false,
+            source_sensor: null,
+            source_location: null,
+            timestamp: new Date().toISOString(),
+          } as T;
+        }
+        return {} as T;
+      },
+      connection: {},
+      states: {
+        "light.office_status_light": {
+          entity_id: "light.office_status_light",
+          state: "off",
+          attributes: {
+            friendly_name: "Office Status Light",
+            supported_color_modes: ["brightness"],
+          },
+        },
+      },
+      areas: {
+        office: { area_id: "office", name: "Office" },
+      },
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_office";
+    location.name = "Office";
+    location.ha_area_id = "office";
+    location.entity_ids = ["light.office_status_light"];
+    location.modules._meta = { type: "area" };
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${location}
+        .forcedTab=${"lighting"}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    const addRuleButton = element.shadowRoot?.querySelector(
+      '[data-testid="action-rule-add"]'
+    ) as HTMLButtonElement | null;
+    expect(addRuleButton).to.exist;
+    addRuleButton!.click();
+    await element.updateComplete;
+
+    const triggerSelect = element.shadowRoot?.querySelector(
+      ".dusk-block-row select.dusk-wide-select"
+    ) as HTMLSelectElement | null;
+    expect(triggerSelect).to.exist;
+    triggerSelect!.value = "on_occupied";
+    triggerSelect!.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+    await element.updateComplete;
+
+    const draftRule = element.shadowRoot?.querySelector(".dusk-block-row") as HTMLElement | null;
+    expect(draftRule).to.exist;
+    expect((draftRule?.textContent || "")).to.include("Ambient must be");
+    const ambientSelect = Array.from(
+      draftRule?.querySelectorAll(".dusk-conditions select.dusk-wide-select") || []
+    ).find((select) =>
+      Array.from((select as HTMLSelectElement).options).some((option) => option.value === "bright")
+    ) as HTMLSelectElement | undefined;
+    expect(ambientSelect).to.exist;
+    expect(ambientSelect?.value).to.equal("any");
+  });
+
+  it("resets trigger-derived conditionals when switching trigger families", async () => {
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>): Promise<T> => {
+        if (request.type === "topomation/actions/rules/list") {
+          return {
+            rules: [
+              {
+                id: "rule_existing",
+                entity_id: "automation.rule_existing",
+                name: "Existing",
+                trigger_type: "on_occupied",
+                rule_uuid: "rule_existing_uuid",
+                action_entity_id: "light.storage_light",
+                action_service: "turn_on",
+                ambient_condition: "any",
+                must_be_occupied: true,
+                time_condition_enabled: false,
+                enabled: true,
+              },
+            ],
+          } as T;
+        }
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        if (request.type === "topomation/ambient/get_reading") {
+          return {
+            lux: 12,
+            is_dark: true,
+            is_bright: false,
+            source_sensor: null,
+            source_location: null,
+            timestamp: new Date().toISOString(),
+          } as T;
+        }
+        return {} as T;
+      },
+      connection: {},
+      states: {
+        "light.storage_light": {
+          entity_id: "light.storage_light",
+          state: "off",
+          attributes: {
+            friendly_name: "Storage Light",
+            supported_color_modes: ["brightness"],
+          },
+        },
+      },
+      areas: {
+        storage: { area_id: "storage", name: "Storage" },
+      },
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_storage";
+    location.name = "Storage";
+    location.ha_area_id = "storage";
+    location.entity_ids = ["light.storage_light"];
+    location.modules._meta = { type: "area" };
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${location}
+        .forcedTab=${"lighting"}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    await waitUntil(
+      () => (element.shadowRoot?.querySelectorAll(".dusk-block-row").length || 0) === 1,
+      "expected persisted lighting rule row to render"
+    );
+
+    const persistedRow = element.shadowRoot?.querySelector(
+      '[data-testid="action-rule-rule_existing"]'
+    ) as HTMLElement | null;
+    expect(persistedRow).to.exist;
+
+    const triggerSelect = persistedRow?.querySelector(
+      ".dusk-rule-row select"
+    ) as HTMLSelectElement | null;
+    expect(triggerSelect).to.exist;
+    triggerSelect!.value = "on_dark";
+    triggerSelect!.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+    await element.updateComplete;
+
+    const updatedRow = element.shadowRoot?.querySelector(
+      '[data-testid="action-rule-rule_existing"]'
+    ) as HTMLElement | null;
+    expect(updatedRow).to.exist;
+    expect((updatedRow?.textContent || "")).to.not.include("Set by trigger");
+
+    const occupancySelect = Array.from(
+      updatedRow?.querySelectorAll(".dusk-conditions select.dusk-wide-select") || []
+    ).find((select) =>
+      Array.from((select as HTMLSelectElement).options).some((option) => option.value === "ignore")
+    ) as HTMLSelectElement | undefined;
+    expect(occupancySelect).to.exist;
+    expect(occupancySelect?.value).to.equal("ignore");
+  });
+
+  it("hydrates the trigger select from a loaded legacy trigger payload", async () => {
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>): Promise<T> => {
+        if (request.type === "topomation/actions/rules/list") {
+          return {
+            rules: [
+              {
+                id: "rule_existing",
+                entity_id: "automation.rule_existing",
+                name: "Existing",
+                trigger_type: "occupied",
+                rule_uuid: "rule_existing_uuid",
+                action_entity_id: "light.office_status_light",
+                action_service: "turn_on",
+                ambient_condition: "any",
+                must_be_occupied: true,
+                time_condition_enabled: false,
+                enabled: true,
+              },
+            ],
+          } as T;
+        }
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        if (request.type === "topomation/ambient/get_reading") {
+          return {
+            lux: 12,
+            is_dark: true,
+            is_bright: false,
+            source_sensor: null,
+            source_location: null,
+            timestamp: new Date().toISOString(),
+          } as T;
+        }
+        return {} as T;
+      },
+      connection: {},
+      states: {
+        "light.office_status_light": {
+          entity_id: "light.office_status_light",
+          state: "off",
+          attributes: {
+            friendly_name: "Office Status Light",
+            supported_color_modes: ["brightness"],
+          },
+        },
+      },
+      areas: {
+        office: { area_id: "office", name: "Office" },
+      },
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_office";
+    location.name = "Office";
+    location.ha_area_id = "office";
+    location.entity_ids = ["light.office_status_light"];
+    location.modules._meta = { type: "area" };
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${location}
+        .forcedTab=${"lighting"}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    await waitUntil(
+      () => (element.shadowRoot?.querySelectorAll(".dusk-block-row").length || 0) === 1,
+      "expected persisted lighting rule row to render"
+    );
+
+    const triggerSelect = element.shadowRoot?.querySelector(
+      '[data-testid="action-rule-rule_existing"] .dusk-rule-row select'
+    ) as HTMLSelectElement | null;
+    expect(triggerSelect).to.exist;
+    expect(triggerSelect?.value).to.equal("on_occupied");
   });
 });

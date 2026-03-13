@@ -2662,7 +2662,7 @@ export class HtLocationInspector extends LitElement {
     }
 
     for (const entityId of this.location.entity_ids || []) {
-      if (this._isSelectableLuxSensor(entityId)) {
+      if (this._isLuxSensorEntity(entityId)) {
         candidateIds.add(entityId);
       }
     }
@@ -2671,7 +2671,7 @@ export class HtLocationInspector extends LitElement {
       const states = this.hass?.states || {};
       for (const entityId of Object.keys(states)) {
         if (!this._entityIsInArea(entityId, this.location.ha_area_id)) continue;
-        if (!this._isSelectableLuxSensor(entityId)) continue;
+        if (!this._isLuxSensorEntity(entityId)) continue;
         candidateIds.add(entityId);
       }
     }
@@ -3738,6 +3738,63 @@ export class HtLocationInspector extends LitElement {
     return this._normalizeLinkedLocationIds(raw, undefined, candidate.id);
   }
 
+  private _syncLocationGroupMemberIds(sourceLocationId: string): string[] {
+    const visited = new Set<string>();
+    const queue = [sourceLocationId];
+
+    while (queue.length > 0) {
+      const currentId = queue.shift()!;
+      if (visited.has(currentId)) continue;
+      visited.add(currentId);
+
+      const currentLocation =
+        currentId === this.location?.id
+          ? this.location
+          : (this.allLocations || []).find((candidate) => candidate.id === currentId);
+      if (!currentLocation) continue;
+
+      const directPeers = new Set(this._candidateSyncLocationIds(currentLocation));
+      for (const candidate of this._syncLocationCandidatesForLocation(currentLocation)) {
+        const candidatePeers = new Set(this._candidateSyncLocationIds(candidate));
+        if (directPeers.has(candidate.id) || candidatePeers.has(currentId)) {
+          queue.push(candidate.id);
+        }
+      }
+    }
+
+    return [...visited].sort((left, right) => this._locationName(left).localeCompare(this._locationName(right)));
+  }
+
+  private _syncLocationCandidatesForLocation(location: Location): Location[] {
+    const scope = this._syncLocationScopeForLocation(location);
+    if (!scope) return [];
+    return (this.allLocations || [])
+      .filter((candidate) => candidate.id !== location.id)
+      .filter((candidate) => candidate.parent_id === scope.parentId)
+      .filter((candidate) => getLocationType(candidate) === scope.candidateType)
+      .filter((candidate) => !isSystemShadowLocation(candidate))
+      .sort((left, right) => left.name.localeCompare(right.name));
+  }
+
+  private _syncLocationScopeForLocation(
+    location: Location
+  ): { candidateType: "area" | "floor"; parentId: string; parentType: string } | undefined {
+    if (isSystemShadowLocation(location)) return undefined;
+    const locationType = getLocationType(location);
+    const parentId = String(location.parent_id || "").trim();
+    if (!parentId) return undefined;
+    const parent = (this.allLocations || []).find((candidate) => candidate.id === parentId);
+    if (!parent) return undefined;
+    const parentType = getLocationType(parent);
+    if (locationType === "area" && (parentType === "area" || parentType === "floor" || parentType === "building")) {
+      return { candidateType: "area", parentId, parentType };
+    }
+    if (locationType === "floor" && parentType === "building") {
+      return { candidateType: "floor", parentId, parentType };
+    }
+    return undefined;
+  }
+
   private _isTwoWayLinked(candidate: Location, linkedSet: Set<string>): boolean {
     if (!this.location) return false;
     if (!linkedSet.has(candidate.id)) return false;
@@ -3765,33 +3822,49 @@ export class HtLocationInspector extends LitElement {
   private _toggleSyncLocation(candidate: Location, enabled: boolean): void {
     if (!this.location) return;
     const sourceLocationId = this.location.id;
-    const sourceConfig = this._getOccupancyConfig();
-    const sourceSyncSet = new Set(this._syncLocationIds(sourceConfig));
-    const candidateSyncSet = new Set(this._candidateSyncLocationIds(candidate));
-
+    const previousGroupIds = new Set(this._syncLocationGroupMemberIds(sourceLocationId));
+    const groupMemberIds = new Set(previousGroupIds);
+    groupMemberIds.add(sourceLocationId);
     if (enabled) {
-      sourceSyncSet.add(candidate.id);
-      candidateSyncSet.add(sourceLocationId);
+      groupMemberIds.add(candidate.id);
     } else {
-      sourceSyncSet.delete(candidate.id);
-      candidateSyncSet.delete(sourceLocationId);
+      groupMemberIds.delete(candidate.id);
     }
 
-    const nextSourceSynced = [...sourceSyncSet].sort((left, right) =>
-      this._locationName(left).localeCompare(this._locationName(right))
-    );
-    const nextCandidateSynced = [...candidateSyncSet].sort((left, right) =>
+    const nextGroupIds = [...groupMemberIds].sort((left, right) =>
       this._locationName(left).localeCompare(this._locationName(right))
     );
 
-    this._setOccupancyDraft({
-      ...sourceConfig,
-      sync_locations: nextSourceSynced,
-    });
-    this._setPendingOccupancyForLocation(candidate.id, {
-      ...this._occupancyConfigForLocation(candidate),
-      sync_locations: nextCandidateSynced,
-    });
+    for (const locationId of nextGroupIds) {
+      const targetLocation =
+        locationId === sourceLocationId
+          ? this.location
+          : (this.allLocations || []).find((item) => item.id === locationId);
+      if (!targetLocation) continue;
+      const config = this._occupancyConfigForLocation(targetLocation);
+      const nextSynced = nextGroupIds.filter((peerId) => peerId !== locationId);
+      const nextConfig = {
+        ...config,
+        sync_locations: nextSynced,
+      };
+      if (locationId === sourceLocationId) {
+        this._setOccupancyDraft(nextConfig);
+      } else {
+        this._setPendingOccupancyForLocation(locationId, nextConfig);
+      }
+    }
+
+    previousGroupIds.add(sourceLocationId);
+    for (const locationId of previousGroupIds) {
+      if (groupMemberIds.has(locationId) || locationId === sourceLocationId) continue;
+      const targetLocation = (this.allLocations || []).find((item) => item.id === locationId);
+      if (!targetLocation) continue;
+      const config = this._occupancyConfigForLocation(targetLocation);
+      this._setPendingOccupancyForLocation(locationId, {
+        ...config,
+        sync_locations: [],
+      });
+    }
   }
 
   private _toggleTwoWayLinkedLocation(candidate: Location, enabled: boolean): void {
@@ -6056,6 +6129,22 @@ export class HtLocationInspector extends LitElement {
     return Math.max(1, Math.min(100, Math.round(fallback)));
   }
 
+  private _normalizeActionPercent(rawValue: unknown, fallback = 30): number {
+    const numeric = Number(rawValue);
+    if (Number.isFinite(numeric)) {
+      return Math.max(0, Math.min(100, Math.round(numeric)));
+    }
+    return Math.max(0, Math.min(100, Math.round(fallback)));
+  }
+
+  private _normalizeActionVolumeLevel(rawValue: unknown, fallback = 30): number {
+    const numeric = Number(rawValue);
+    if (Number.isFinite(numeric) && numeric >= 0 && numeric <= 1) {
+      return Math.round(numeric * 100);
+    }
+    return this._normalizeActionPercent(rawValue, fallback);
+  }
+
   private _normalizeActionDataForRule(
     rawData: unknown,
     actionEntityId: string,
@@ -6075,6 +6164,10 @@ export class HtLocationInspector extends LitElement {
       normalizedService === "turn_on";
     const mediaMuteAction =
       normalizedEntityId.startsWith("media_player.") && normalizedService === "volume_mute";
+    const mediaVolumeAction =
+      normalizedEntityId.startsWith("media_player.") && normalizedService === "volume_set";
+    const fanPercentageAction =
+      normalizedEntityId.startsWith("fan.") && normalizedService === "set_percentage";
 
     if (Object.prototype.hasOwnProperty.call(data, "brightness_pct")) {
       if (dimmableLightTurnOn) {
@@ -6089,6 +6182,22 @@ export class HtLocationInspector extends LitElement {
         data.is_volume_muted = Boolean(data.is_volume_muted);
       } else {
         delete data.is_volume_muted;
+      }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(data, "volume_level")) {
+      if (mediaVolumeAction) {
+        data.volume_level = this._normalizeActionVolumeLevel(data.volume_level, 30) / 100;
+      } else {
+        delete data.volume_level;
+      }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(data, "percentage")) {
+      if (fanPercentageAction) {
+        data.percentage = this._normalizeActionPercent(data.percentage, 30);
+      } else {
+        delete data.percentage;
       }
     }
 
@@ -6108,24 +6217,44 @@ export class HtLocationInspector extends LitElement {
     if (!normalizedEntityId) return [];
     const domain = normalizedEntityId.split(".", 1)[0];
     if (domain === "media_player") {
-      return [
+      const options = [
         { value: "turn_on", label: "Power on", service: "turn_on" },
         { value: "turn_off", label: "Power off", service: "turn_off" },
         { value: "media_play", label: "Play", service: "media_play" },
         { value: "media_play_pause", label: "Play/Pause", service: "media_play_pause" },
         { value: "media_pause", label: "Pause", service: "media_pause" },
         { value: "media_stop", label: "Stop", service: "media_stop" },
+        { value: "volume_set", label: "Set volume", service: "volume_set", data: { volume_level: 0.3 } },
         { value: "volume_mute:true", label: "Mute", service: "volume_mute", data: { is_volume_muted: true } },
         { value: "volume_mute:false", label: "Unmute", service: "volume_mute", data: { is_volume_muted: false } },
-        { value: "volume_up", label: "Volume up", service: "volume_up" },
-        { value: "volume_down", label: "Volume down", service: "volume_down" },
       ];
+      const preferredOrder =
+        triggerType === "on_vacant"
+          ? ["media_pause", "media_stop", "turn_off", "volume_mute:true"]
+          : ["media_play", "turn_on", "volume_mute:false", "volume_set"];
+      return options.sort((a, b) => {
+        const aIndex = preferredOrder.indexOf(a.value);
+        const bIndex = preferredOrder.indexOf(b.value);
+        if (aIndex >= 0 || bIndex >= 0) {
+          if (aIndex < 0) return 1;
+          if (bIndex < 0) return -1;
+          return aIndex - bIndex;
+        }
+        return a.label.localeCompare(b.label);
+      });
     }
     if (domain === "fan") {
-      return [
+      const options = [
         { value: "turn_on", label: "Turn on", service: "turn_on" },
         { value: "turn_off", label: "Turn off", service: "turn_off" },
+        { value: "set_percentage", label: "Set speed", service: "set_percentage", data: { percentage: 30 } },
       ];
+      const defaultService = this._defaultActionServiceForTrigger(normalizedEntityId, triggerType);
+      return options.sort((a, b) => {
+        if (a.service === defaultService) return -1;
+        if (b.service === defaultService) return 1;
+        return a.label.localeCompare(b.label);
+      });
     }
     if (domain === "switch") {
       return [
@@ -6157,7 +6286,27 @@ export class HtLocationInspector extends LitElement {
           : true;
       return `volume_mute:${isMuted ? "true" : "false"}`;
     }
+    if (normalizedService === "volume_set") {
+      return "volume_set";
+    }
+    if (normalizedService === "set_percentage") {
+      return "set_percentage";
+    }
     return normalizedService;
+  }
+
+  private _mediaVolumePercent(actionData?: unknown): number {
+    return this._normalizeActionVolumeLevel(
+      (actionData as { volume_level?: unknown } | undefined)?.volume_level,
+      30
+    );
+  }
+
+  private _fanSpeedPercent(actionData?: unknown): number {
+    return this._normalizeActionPercent(
+      (actionData as { percentage?: unknown } | undefined)?.percentage,
+      30
+    );
   }
 
   private _actionServiceSelection(
@@ -6485,6 +6634,47 @@ export class HtLocationInspector extends LitElement {
     this._setActionRulesDraft(mergedRules);
   }
 
+  private _mergeSavedActionRuleLocally(
+    savedRule: TopomationActionRule,
+    previousDraftRules: TopomationActionRule[],
+    previousRuleId: string
+  ): void {
+    const normalizedSavedRule = this._normalizeActionRule(savedRule, 0);
+    const savedRuleId = String(normalizedSavedRule.id || "").trim();
+    const savedRuleUuid = this._normalizeRuleUuid(normalizedSavedRule.rule_uuid, savedRuleId);
+
+    const nextPersistedRules = this._actionRules
+      .filter((rule) => {
+        const existingId = String(rule.id || "").trim();
+        const existingUuid = this._normalizeRuleUuid(rule.rule_uuid, existingId);
+        if (existingId && savedRuleId && existingId === savedRuleId) return false;
+        if (existingId && previousRuleId && existingId === previousRuleId) return false;
+        if (savedRuleUuid && existingUuid === savedRuleUuid) return false;
+        return true;
+      })
+      .map((rule, index) => this._normalizeActionRule(rule, index));
+    nextPersistedRules.push(normalizedSavedRule);
+
+    const nextDraftRules = previousDraftRules
+      .filter((rule) => String(rule.id || "").trim() !== previousRuleId)
+      .map((rule, index) => this._normalizeActionRule(rule, index));
+    nextDraftRules.push(normalizedSavedRule);
+
+    this._actionRules = nextPersistedRules;
+    this._setActionRulesDraft(nextDraftRules);
+
+    if (previousRuleId && previousRuleId !== savedRuleId) {
+      const previousTab = this._actionRuleTabById[previousRuleId];
+      if (previousTab && savedRuleId) {
+        this._actionRuleTabById = {
+          ...this._actionRuleTabById,
+          [savedRuleId]: previousTab,
+        };
+        delete this._actionRuleTabById[previousRuleId];
+      }
+    }
+  }
+
   private _addActionRule(tab: DeviceAutomationTab): void {
     const rules = this._workingActionRules();
     const candidates = this._actionRuleTargetEntities(tab);
@@ -6525,6 +6715,7 @@ export class HtLocationInspector extends LitElement {
   ): void {
     const rules = this._workingActionRules().map((rule, index) => {
       if (rule.id !== ruleId) return this._normalizeActionRule(rule, index);
+      const previousTriggerType = this._normalizeActionTriggerType(rule.trigger_type);
       const merged = {
         ...rule,
         ...patch,
@@ -6534,16 +6725,20 @@ export class HtLocationInspector extends LitElement {
         const triggerType = this._normalizeActionTriggerType(patch.trigger_type);
         merged.trigger_type = triggerType;
         if (!Object.prototype.hasOwnProperty.call(patch, "ambient_condition")) {
-          merged.ambient_condition = this._normalizeActionAmbientCondition(
-            merged.ambient_condition,
-            triggerType
-          );
+          const movedOffAmbientDerivedTrigger =
+            this._isActionAmbientConditionLockedByTrigger(previousTriggerType) &&
+            !this._isActionAmbientConditionLockedByTrigger(triggerType);
+          merged.ambient_condition = movedOffAmbientDerivedTrigger
+            ? this._defaultActionAmbientConditionForTrigger(triggerType)
+            : this._normalizeActionAmbientCondition(merged.ambient_condition, triggerType);
         }
         if (!Object.prototype.hasOwnProperty.call(patch, "must_be_occupied")) {
-          merged.must_be_occupied = this._normalizeActionMustBeOccupied(
-            merged.must_be_occupied,
-            triggerType
-          );
+          const movedOffOccupancyDerivedTrigger =
+            this._isActionMustBeOccupiedLockedByTrigger(previousTriggerType) &&
+            !this._isActionMustBeOccupiedLockedByTrigger(triggerType);
+          merged.must_be_occupied = movedOffOccupancyDerivedTrigger
+            ? this._normalizeActionMustBeOccupied(undefined, triggerType)
+            : this._normalizeActionMustBeOccupied(merged.must_be_occupied, triggerType);
         }
         if (
           !Object.prototype.hasOwnProperty.call(patch, "action_service") &&
@@ -6861,7 +7056,7 @@ export class HtLocationInspector extends LitElement {
       if (!primaryAction) {
         throw new Error("Select at least one target device before saving.");
       }
-      await createTopomationActionRule(
+      const savedRule = await createTopomationActionRule(
         this.hass,
         {
           location: this.location,
@@ -6883,12 +7078,10 @@ export class HtLocationInspector extends LitElement {
         },
         this.entryId
       );
-
-      const syncedRules = await listTopomationActionRules(this.hass, this.location.id, this.entryId);
-      this._rebuildActionRulesDraftAfterSync(syncedRules, previousDraftRules, {
-        ruleIds: new Set([ruleId]),
-        ruleUuids: new Set([this._normalizeRuleUuid(rule.rule_uuid, ruleId)]),
-      });
+      this._mergeSavedActionRuleLocally(savedRule, previousDraftRules, ruleId);
+      window.setTimeout(() => {
+        void this._loadActionRules();
+      }, 250);
       this._showToast(persistedRule ? "Rule updated" : "Rule saved", "success");
     } catch (err: any) {
       this._actionRulesSaveError = err?.message || "Failed to save action rule";
@@ -7219,9 +7412,8 @@ export class HtLocationInspector extends LitElement {
                   rule.must_be_occupied,
                   triggerType
                 );
-                const showAmbientConditionRow =
-                  supportsAmbientCondition && !ambientLocked && ambientCondition !== "any";
-                const showOccupancyConditionRow = true;
+                const showAmbientConditionRow = supportsAmbientCondition && !ambientLocked;
+                const showOccupancyConditionRow = tab === "lighting";
                 const occupancyConditionLabel = mustBeOccupied ? "Must be occupied" : "Must be vacant";
                 const persistedRule = this._persistedActionRuleForDraft(rule);
                 const isPersisted = Boolean(persistedRule);
@@ -7234,6 +7426,14 @@ export class HtLocationInspector extends LitElement {
                   rule.action_service,
                   normalizedActionData
                 );
+                const showMediaVolumeRow =
+                  tab === "media" &&
+                  selectedActionEntityId.startsWith("media_player.") &&
+                  selectedServiceOptionValue === "volume_set";
+                const showFanSpeedRow =
+                  tab === "hvac" &&
+                  selectedActionEntityId.startsWith("fan.") &&
+                  selectedServiceOptionValue === "set_percentage";
                 return html`
                   <div class="dusk-block-row" data-testid=${`action-rule-${ruleId}`}>
                     <div class="dusk-block-head">
@@ -7284,7 +7484,6 @@ export class HtLocationInspector extends LitElement {
                       <span class="config-label">Trigger</span>
                       <select
                         class="dusk-wide-select"
-                        .value=${rule.trigger_type}
                         ?disabled=${busy}
                         @change=${(ev: Event) =>
                           this._updateActionRule(ruleId, {
@@ -7294,7 +7493,14 @@ export class HtLocationInspector extends LitElement {
                           })}
                       >
                         ${triggerOptions.map(
-                          (option) => html`<option value=${option.value}>${option.label}</option>`
+                          (option) => html`
+                            <option
+                              value=${option.value}
+                              ?selected=${option.value === triggerType}
+                            >
+                              ${option.label}
+                            </option>
+                          `
                         )}
                       </select>
                     </div>
@@ -7453,7 +7659,7 @@ export class HtLocationInspector extends LitElement {
                         )
                       : html`
                           <div class="dusk-rule-row">
-                            <span class="config-label">Device</span>
+                            <span class="config-label">Target device</span>
                             <select
                               class="dusk-wide-select"
                               .value=${selectedActionEntityId}
@@ -7482,7 +7688,7 @@ export class HtLocationInspector extends LitElement {
                               <option value="">Select device...</option>
                               ${entityOptions.map((entityId) => html`
                                 <option value=${entityId}>
-                                  ${this._entityName(entityId)} (${entityId})
+                                  ${this._entityName(entityId)}
                                 </option>
                               `)}
                             </select>
@@ -7515,6 +7721,68 @@ export class HtLocationInspector extends LitElement {
                                   )}
                             </select>
                           </div>
+                          ${showMediaVolumeRow
+                            ? html`
+                                <div class="dusk-rule-row">
+                                  <span class="config-label">Volume</span>
+                                  <div class="config-value">
+                                    <div class="dusk-slider-row">
+                                      <input
+                                        type="range"
+                                        min="0"
+                                        max="100"
+                                        step="1"
+                                        .value=${String(this._mediaVolumePercent(normalizedActionData))}
+                                        ?disabled=${busy}
+                                        @input=${(ev: Event) => {
+                                          const percent = this._normalizeActionPercent(
+                                            (ev.target as HTMLInputElement).value,
+                                            30
+                                          );
+                                          this._updateActionRule(ruleId, {
+                                            action_data: { volume_level: percent / 100 },
+                                          });
+                                        }}
+                                      />
+                                      <span class="text-muted">
+                                        ${this._mediaVolumePercent(normalizedActionData)}%
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+                              `
+                            : ""}
+                          ${showFanSpeedRow
+                            ? html`
+                                <div class="dusk-rule-row">
+                                  <span class="config-label">Fan speed</span>
+                                  <div class="config-value">
+                                    <div class="dusk-slider-row">
+                                      <input
+                                        type="range"
+                                        min="0"
+                                        max="100"
+                                        step="1"
+                                        .value=${String(this._fanSpeedPercent(normalizedActionData))}
+                                        ?disabled=${busy}
+                                        @input=${(ev: Event) => {
+                                          const percent = this._normalizeActionPercent(
+                                            (ev.target as HTMLInputElement).value,
+                                            30
+                                          );
+                                          this._updateActionRule(ruleId, {
+                                            action_data: { percentage: percent },
+                                          });
+                                        }}
+                                      />
+                                      <span class="text-muted">
+                                        ${this._fanSpeedPercent(normalizedActionData)}%
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+                              `
+                            : ""}
                         `}
                     <div class="dusk-block-footer">
                       ${!isPersisted

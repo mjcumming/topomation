@@ -1251,6 +1251,50 @@ def _allowed_linked_room_neighbors_for_target(
     return allowed
 
 
+def _allowed_sync_neighbors_for_target(
+    loc_mgr: LocationManager,
+    target_location_id: str,
+) -> set[str]:
+    """Return valid sync peer IDs for one target location."""
+    target = loc_mgr.get_location(target_location_id)
+    if target is None or _is_managed_shadow_area(target):
+        return set()
+
+    target_type = _location_type(target)
+    parent_id = getattr(target, "parent_id", None)
+    if not isinstance(parent_id, str) or not parent_id:
+        return set()
+
+    parent = loc_mgr.get_location(parent_id)
+    if parent is None:
+        return set()
+
+    parent_type = _location_type(parent)
+    candidate_type: str | None = None
+    if target_type == "area" and parent_type in {"area", "floor", "building"}:
+        candidate_type = "area"
+    elif target_type == "floor" and parent_type == "building":
+        candidate_type = "floor"
+    if candidate_type is None:
+        return set()
+
+    allowed: set[str] = set()
+    for candidate in loc_mgr.all_locations():
+        candidate_id = getattr(candidate, "id", None)
+        if not isinstance(candidate_id, str) or not candidate_id:
+            continue
+        if candidate_id == target_location_id:
+            continue
+        if getattr(candidate, "parent_id", None) != parent_id:
+            continue
+        if _location_type(candidate) != candidate_type:
+            continue
+        if _is_managed_shadow_area(candidate):
+            continue
+        allowed.add(candidate_id)
+    return allowed
+
+
 def _effective_linked_locations_for_target(
     loc_mgr: LocationManager,
     target_location_id: str,
@@ -1278,7 +1322,7 @@ def _effective_sync_locations_for_target(
     if not synced:
         return []
 
-    allowed = _allowed_linked_room_neighbors_for_target(loc_mgr, target_location_id)
+    allowed = _allowed_sync_neighbors_for_target(loc_mgr, target_location_id)
     if not allowed:
         return []
 

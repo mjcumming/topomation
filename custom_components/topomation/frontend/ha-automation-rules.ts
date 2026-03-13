@@ -88,6 +88,8 @@ function normalizeTriggerType(raw: unknown): ActionTriggerType | null {
     .toLowerCase();
   if (normalized === "occupied") return "on_occupied";
   if (normalized === "vacant") return "on_vacant";
+  if (normalized === "dark") return "on_dark";
+  if (normalized === "bright") return "on_bright";
   if (normalized === "on_occupied" || normalized === "on_vacant" || normalized === "on_dark" || normalized === "on_bright") {
     return normalized;
   }
