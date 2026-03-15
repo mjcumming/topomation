@@ -60,7 +60,7 @@ v4 changes the mental model from "block timeline" to "lighting rules."
 ### 4.1 Detection tab
 
 1. Sensor/source setup.
-2. Occupancy diagnostics and advanced occupancy relationship controls.
+2. Occupancy diagnostics.
 3. No direct light action authoring.
 
 ### 4.2 Ambient tab

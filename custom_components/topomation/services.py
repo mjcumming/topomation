@@ -86,21 +86,33 @@ def _resolve_kernel(hass: HomeAssistant, call: ServiceCall) -> dict[str, object]
         _LOGGER.error("Integration not loaded")
         return None
 
+    def _is_kernel_candidate(value: object) -> bool:
+        return isinstance(value, dict) and (
+            "location_manager" in value or "modules" in value
+        )
+
+    kernel_candidates = {
+        key: value for key, value in domain_data.items() if _is_kernel_candidate(value)
+    }
+    if not kernel_candidates:
+        _LOGGER.error("Integration runtime kernels not loaded")
+        return None
+
     requested_entry_id = call.data.get("entry_id")
     if requested_entry_id is not None:
-        kernel = domain_data.get(requested_entry_id)
+        kernel = kernel_candidates.get(requested_entry_id)
         if kernel is None:
             _LOGGER.error("Config entry '%s' not found", requested_entry_id)
             return None
         return kernel
 
-    if len(domain_data) == 1:
-        return next(iter(domain_data.values()))
+    if len(kernel_candidates) == 1:
+        return next(iter(kernel_candidates.values()))
 
     location_id = call.data.get("location_id")
     if isinstance(location_id, str) and location_id:
         matching_kernels: list[dict[str, object]] = []
-        for kernel in domain_data.values():
+        for kernel in kernel_candidates.values():
             loc_mgr = kernel.get("location_manager")
             get_location = getattr(loc_mgr, "get_location", None)
             if not callable(get_location):
@@ -128,7 +140,7 @@ def _resolve_kernel(hass: HomeAssistant, call: ServiceCall) -> dict[str, object]
 
     _LOGGER.error(
         "Multiple Topomation entries loaded (%s); include service field 'entry_id'",
-        ", ".join(domain_data),
+        ", ".join(kernel_candidates),
     )
     return None
 

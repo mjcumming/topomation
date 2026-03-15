@@ -57,6 +57,15 @@ type OccupancyTransitionState = {
   reason?: string;
   changedAt?: string;
 };
+type OccupancyExplainabilityChange = {
+  kind: "signal" | "state";
+  event: string;
+  sourceId?: string;
+  signalKey?: string;
+  reason?: string;
+  occupied?: boolean;
+  changedAt?: string;
+};
 type EntityRegistryMeta = {
   hiddenBy?: string | null;
   disabledBy?: string | null;
@@ -136,10 +145,9 @@ export class HtLocationInspector extends LitElement {
   @state() private _editingActionRuleNameValue = "";
   private _actionRuleTabById: Record<string, DeviceAutomationTab> = {};
   @state() private _syncImportInProgress = false;
-  @state() private _showAdvancedAdjacency = false;
+  @state() private _managedShadowAutoRepairInProgress = false;
   @state() private _showRecentOccupancyEvents = false;
   @state() private _recentEventsDrawerOpen = true;
-  @state() private _recentEventsDrawerHeight: "compact" | "medium" | "tall" = "medium";
   @state() private _adjacencyNeighborId = "";
   @state() private _adjacencyBoundaryType = "door";
   @state() private _adjacencyDirection = "bidirectional";
@@ -164,6 +172,7 @@ export class HtLocationInspector extends LitElement {
   private _ambientReadingLoadSeq = 0;
   private _ambientReadingReloadTimer?: number;
   private _clockTimer?: number;
+  private _managedShadowAutoRepairKey?: string;
   private _unsubAutomationStateChanged?: () => void;
   private _automationStateSubscriptionConnection?: unknown;
   private _actionRulesReloadTimer?: number;
@@ -778,25 +787,111 @@ export class HtLocationInspector extends LitElement {
         white-space: nowrap;
       }
 
+      .occupancy-explainability {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        max-width: 900px;
+      }
+
+      .occupancy-explainability-grid {
+        display: grid;
+        grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
+        gap: 14px;
+        align-items: start;
+      }
+
+      .occupancy-explainability-panel {
+        border: 1px solid var(--divider-color);
+        border-radius: 12px;
+        padding: 14px;
+        background: rgba(var(--rgb-primary-color), 0.03);
+      }
+
+      .occupancy-explainability-panel-title {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--secondary-text-color);
+        margin-bottom: 10px;
+      }
+
+      .occupancy-status-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        border-radius: 999px;
+        padding: 6px 10px;
+        font-size: 12px;
+        font-weight: 700;
+        margin-bottom: 10px;
+      }
+
+      .occupancy-status-chip.is-occupied {
+        background: rgba(var(--rgb-success-color), 0.12);
+        color: var(--success-color);
+      }
+
+      .occupancy-status-chip.is-vacant {
+        background: rgba(var(--rgb-warning-color), 0.12);
+        color: var(--warning-color);
+      }
+
+      .occupancy-summary-lines {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .occupancy-summary-line {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+
+      .occupancy-summary-label {
+        font-size: 11px;
+        font-weight: 700;
+        color: var(--secondary-text-color);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      .occupancy-summary-value {
+        color: var(--primary-text-color);
+      }
+
       .occupancy-events {
         display: flex;
         flex-direction: column;
         gap: 6px;
-        margin-top: 10px;
-        max-width: 820px;
       }
 
       .occupancy-event {
-        display: inline-flex;
-        align-items: center;
-        justify-content: space-between;
+        display: grid;
+        grid-template-columns: 110px minmax(0, 1fr) auto;
+        align-items: start;
         gap: 10px;
         font-size: 12px;
         color: var(--primary-text-color);
         border: 1px solid var(--divider-color);
         border-radius: 8px;
-        padding: 6px 8px;
+        padding: 8px 10px;
         background: rgba(var(--rgb-primary-color), 0.03);
+      }
+
+      .occupancy-event-time {
+        font-variant-numeric: tabular-nums;
+        color: var(--text-secondary-color);
+        white-space: nowrap;
+      }
+
+      .occupancy-event-copy {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        min-width: 0;
       }
 
       .occupancy-event-source {
@@ -806,9 +901,21 @@ export class HtLocationInspector extends LitElement {
         text-overflow: ellipsis;
       }
 
+      .occupancy-event-description {
+        color: var(--text-secondary-color);
+      }
+
       .occupancy-event-meta {
         color: var(--text-secondary-color);
         white-space: nowrap;
+      }
+
+      .occupancy-empty-state {
+        border: 1px dashed var(--divider-color);
+        border-radius: 8px;
+        padding: 12px;
+        color: var(--secondary-text-color);
+        background: rgba(var(--rgb-primary-color), 0.02);
       }
 
       .header-meta {
@@ -2112,6 +2219,14 @@ export class HtLocationInspector extends LitElement {
           align-items: flex-start;
           gap: 4px;
         }
+
+        .occupancy-explainability-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .occupancy-event {
+          grid-template-columns: 1fr;
+        }
       }
     `,
   ];
@@ -2183,7 +2298,8 @@ export class HtLocationInspector extends LitElement {
         this._externalAreaId = "";
         this._externalEntityId = "";
         this._wiabShowAllEntities = false;
-        this._showAdvancedAdjacency = false;
+        this._managedShadowAutoRepairKey = undefined;
+        this._managedShadowAutoRepairInProgress = false;
         this._showRecentOccupancyEvents = false;
         this._onTimeoutMemory = {};
         this._actionRulesDraft = undefined;
@@ -2225,6 +2341,10 @@ export class HtLocationInspector extends LitElement {
         void this._loadActionRules();
         void this._loadAmbientReading();
       }
+    }
+
+    if (changedProps.has("allLocations") || changedProps.has("location")) {
+      this._maybeAutoRepairManagedShadowArea();
     }
 
     if (changedProps.has("entityRegistryRevision")) {
@@ -3299,53 +3419,30 @@ export class HtLocationInspector extends LitElement {
     return html`
       <div>
         ${this._renderWiabSection(config)}
-        ${this._renderAdjacencyAdvancedSection(config)}
         ${this._isManagedShadowHost() ? this._renderManagedShadowAreaSection() : ""}
       </div>
     `;
   }
 
-  private _nextRecentEventsDrawerHeight(): "compact" | "medium" | "tall" {
-    if (this._recentEventsDrawerHeight === "compact") return "medium";
-    if (this._recentEventsDrawerHeight === "medium") return "tall";
-    return "compact";
-  }
-
   private _renderRecentOccupancyEventsDrawer() {
-    const config = this._getOccupancyConfig();
-    const occupancyActivity = this._occupancyContributions(config);
-    if (occupancyActivity.length === 0) return "";
-    const occupancyEventsToRender = this._showRecentOccupancyEvents
-      ? occupancyActivity
-      : occupancyActivity.slice(0, 1);
+    const currentState = this._recentExplainabilityCurrentState();
+    const recentChanges = this._recentExplainabilityChanges();
+    if (!currentState && recentChanges.length === 0) return "";
+    const recentChangesToRender = this._showRecentOccupancyEvents
+      ? recentChanges
+      : recentChanges.slice(0, 5);
 
     return html`
       <div
-        class="recent-events-drawer ${this._recentEventsDrawerOpen ? this._recentEventsDrawerHeight : "collapsed"}"
+        class="recent-events-drawer ${this._recentEventsDrawerOpen ? "medium" : "collapsed"}"
         data-testid="recent-occupancy-events-drawer"
       >
         <div class="recent-events-drawer-header">
           <div class="recent-events-drawer-title">
             <ha-icon .icon=${"mdi:timeline-clock-outline"}></ha-icon>
-            Recent Occupancy Events
+            Room Explainability
           </div>
           <div class="recent-events-drawer-controls">
-            <button
-              class="button button-secondary"
-              type="button"
-              style="padding: 2px 8px; font-size: 11px;"
-              data-testid="recent-events-height-toggle"
-              ?disabled=${!this._recentEventsDrawerOpen}
-              @click=${() => {
-                this._recentEventsDrawerHeight = this._nextRecentEventsDrawerHeight();
-              }}
-            >
-              ${this._recentEventsDrawerHeight === "compact"
-                ? "Small"
-                : this._recentEventsDrawerHeight === "medium"
-                  ? "Medium"
-                  : "Tall"}
-            </button>
             <button
               class="button button-secondary"
               type="button"
@@ -3361,8 +3458,8 @@ export class HtLocationInspector extends LitElement {
         </div>
         <div class="recent-events-drawer-body">
           <div class="recent-events-drawer-help">
-            <span>Sources currently contributing to occupancy.</span>
-            ${occupancyActivity.length > 1
+            <span>See why this room is in its current state and what changed most recently.</span>
+            ${recentChanges.length > 5
               ? html`
                   <button
                     class="button button-secondary"
@@ -3378,16 +3475,82 @@ export class HtLocationInspector extends LitElement {
                 `
               : ""}
           </div>
-          <div class="occupancy-events">
-            ${occupancyEventsToRender.map(
-              (item) => html`
-                <div class="occupancy-event">
-                  <span class="occupancy-event-source">${item.sourceLabel}</span>
-                  <span class="occupancy-event-meta">${item.stateLabel}</span>
-                  ${item.relativeTime ? html`<span class="occupancy-event-meta">${item.relativeTime}</span>` : ""}
-                </div>
-              `
-            )}
+          <div class="occupancy-explainability">
+            ${currentState
+              ? html`
+                  <div class="occupancy-explainability-grid">
+                    <div class="occupancy-explainability-panel">
+                      <div class="occupancy-explainability-panel-title">Current state</div>
+                      <div
+                        class="occupancy-status-chip ${currentState.occupied ? "is-occupied" : "is-vacant"}"
+                      >
+                        ${currentState.occupied ? "Occupied" : "Vacant"}
+                      </div>
+                      <div class="occupancy-summary-lines">
+                        <div class="occupancy-summary-line">
+                          <div class="occupancy-summary-label">Why</div>
+                          <div class="occupancy-summary-value">${currentState.why}</div>
+                        </div>
+                        ${currentState.nextChange
+                          ? html`
+                              <div class="occupancy-summary-line">
+                                <div class="occupancy-summary-label">Next change</div>
+                                <div class="occupancy-summary-value">${currentState.nextChange}</div>
+                              </div>
+                            `
+                          : ""}
+                        ${currentState.lockedSummary
+                          ? html`
+                              <div class="occupancy-summary-line">
+                                <div class="occupancy-summary-label">Lock</div>
+                                <div class="occupancy-summary-value">${currentState.lockedSummary}</div>
+                              </div>
+                            `
+                          : ""}
+                      </div>
+                    </div>
+                    <div class="occupancy-explainability-panel">
+                      <div class="occupancy-explainability-panel-title">Active contributors</div>
+                      ${currentState.contributors.length
+                        ? html`
+                            <div class="occupancy-events">
+                              ${currentState.contributors.map(
+                                (item) => html`
+                                  <div class="occupancy-event">
+                                    <span class="occupancy-event-source">${item.sourceLabel}</span>
+                                    <span class="occupancy-event-meta">${item.stateLabel}</span>
+                                    <span class="occupancy-event-meta">${item.relativeTime}</span>
+                                  </div>
+                                `
+                              )}
+                            </div>
+                          `
+                        : html`<div class="occupancy-empty-state">No active contributors.</div>`}
+                    </div>
+                  </div>
+                `
+              : ""}
+            <div class="occupancy-explainability-panel">
+              <div class="occupancy-explainability-panel-title">Recent changes</div>
+              ${recentChangesToRender.length
+                ? html`
+                    <div class="occupancy-events">
+                      ${recentChangesToRender.map(
+                        (item) => html`
+                          <div class="occupancy-event">
+                            <span class="occupancy-event-time">${item.timeLabel}</span>
+                            <div class="occupancy-event-copy">
+                              <span class="occupancy-event-source">${item.title}</span>
+                              <span class="occupancy-event-description">${item.description}</span>
+                            </div>
+                            <span class="occupancy-event-meta">${item.relativeTime}</span>
+                          </div>
+                        `
+                      )}
+                    </div>
+                  `
+                : html`<div class="occupancy-empty-state">No recent occupancy changes yet.</div>`}
+            </div>
           </div>
         </div>
       </div>
@@ -3626,8 +3789,17 @@ export class HtLocationInspector extends LitElement {
     return areaRegistryName || area.name;
   }
 
-  private _renderManagedShadowAreaSection() {
-    if (!this._isManagedShadowHost() || !this.location) return "";
+  private _managedShadowState():
+    | {
+        hostId: string;
+        shadowAreaId: string;
+        currentLabel: string;
+        isConsistent: boolean;
+        mismatchReasons: string[];
+        needsRepair: boolean;
+      }
+    | undefined {
+    if (!this._isManagedShadowHost() || !this.location) return undefined;
 
     const hostId = this.location.id;
     const shadowAreaId = this._currentManagedShadowAreaId();
@@ -3642,7 +3814,6 @@ export class HtLocationInspector extends LitElement {
       hasExpectedRole &&
       mappedHostId === hostId
     );
-    const currentLabel = shadowAreaId ? this._managedShadowAreaLabel(shadowAreaId) : "Not configured";
     const mismatchReasons: string[] = [];
     if (shadowAreaId && !shadowArea) {
       mismatchReasons.push("configured system area was not found");
@@ -3657,14 +3828,36 @@ export class HtLocationInspector extends LitElement {
       mismatchReasons.push('missing role tag "managed_shadow"');
     }
     if (shadowArea && mappedHostId !== hostId) {
-      mismatchReasons.push(
-        `shadow host mapping mismatch (expected ${hostId}, got ${mappedHostId || "unset"})`
-      );
+      mismatchReasons.push(`shadow host mapping mismatch (expected ${hostId}, got ${mappedHostId || "unset"})`);
     }
-    const mismatchReasonText = mismatchReasons.length
-      ? mismatchReasons.join("; ")
-      : "metadata mismatch";
-    const needsRepair = !shadowAreaId || !isConsistent;
+
+    return {
+      hostId,
+      shadowAreaId,
+      currentLabel: shadowAreaId ? this._managedShadowAreaLabel(shadowAreaId) : "Not configured",
+      isConsistent,
+      mismatchReasons,
+      needsRepair: !shadowAreaId || !isConsistent,
+    };
+  }
+
+  private _maybeAutoRepairManagedShadowArea(): void {
+    const state = this._managedShadowState();
+    if (!state || !state.needsRepair || !this.hass || !this.location) return;
+    const repairKey = `${this.location.id}:${state.shadowAreaId || "missing"}`;
+    if (this._managedShadowAutoRepairKey === repairKey || this._managedShadowAutoRepairInProgress) {
+      return;
+    }
+    this._managedShadowAutoRepairKey = repairKey;
+    this._managedShadowAutoRepairInProgress = true;
+    void this._runSyncImport({ silent: true, backgroundRepair: true });
+  }
+
+  private _renderManagedShadowAreaSection() {
+    const state = this._managedShadowState();
+    if (!state || !this.location) return "";
+
+    const mismatchReasonText = state.mismatchReasons.length ? state.mismatchReasons.join("; ") : "metadata mismatch";
 
     return html`
       <div class="card-section" data-testid="managed-shadow-section">
@@ -3677,32 +3870,37 @@ export class HtLocationInspector extends LitElement {
           remapped to a managed shadow HA area for native area_id interoperability.
         </div>
         <div class="subsection-help">
-          Current system area: ${currentLabel}
+          Current system area: ${state.currentLabel}
         </div>
-        ${!shadowAreaId
+        ${this._managedShadowAutoRepairInProgress
           ? html`
-              <div class="policy-warning" data-testid="managed-shadow-warning">
-                Missing managed system area mapping for ${hostId}. Action: run Sync Import to create and
-                relink the managed system area.
+              <div class="policy-note" data-testid="managed-shadow-auto-repair">
+                Topomation is reconciling this managed system area automatically.
               </div>
             `
-          : ""}
-        ${shadowAreaId && !isConsistent
-          ? html`
-              <div class="policy-warning" data-testid="managed-shadow-warning">
-                Managed system area mapping is inconsistent for ${hostId}: ${mismatchReasonText}. Action:
-                run Sync Import to reconcile metadata.
-              </div>
-            `
-          : ""}
-        ${needsRepair
+          : !state.shadowAreaId
+            ? html`
+                <div class="policy-warning" data-testid="managed-shadow-warning">
+                  Missing managed system area mapping for ${state.hostId}. Topomation could not repair it
+                  automatically. Action: run Sync Import to create and relink the managed system area.
+                </div>
+              `
+            : !state.isConsistent
+              ? html`
+                  <div class="policy-warning" data-testid="managed-shadow-warning">
+                    Managed system area mapping is inconsistent for ${state.hostId}: ${mismatchReasonText}.
+                    Topomation could not repair it automatically. Action: run Sync Import to reconcile metadata.
+                  </div>
+                `
+              : ""}
+        ${state.needsRepair && !this._managedShadowAutoRepairInProgress
           ? html`
               <div class="advanced-toggle-row">
                 <button
                   class="button button-secondary"
                   type="button"
                   data-testid="managed-shadow-sync-import"
-                  ?disabled=${this._syncImportInProgress}
+                  ?disabled=${this._syncImportInProgress || this._managedShadowAutoRepairInProgress}
                   @click=${() => void this._runSyncImport()}
                 >
                   ${this._syncImportInProgress ? "Running Sync Import..." : "Run Sync Import"}
@@ -4175,36 +4373,6 @@ export class HtLocationInspector extends LitElement {
               </div>
             `}
       </div>
-    `;
-  }
-
-  private _renderAdjacencyAdvancedSection(config: OccupancyConfig) {
-    const expanded = this._showAdvancedAdjacency;
-    return html`
-      <div class="card-section">
-        <div class="section-title">
-          <ha-icon .icon=${"mdi:beaker-outline"}></ha-icon>
-          Advanced Occupancy Relationships
-        </div>
-        <div class="subsection-help">
-          Directional contributors and movement handoff are advanced tools.
-          Most homes should start with Sync Locations.
-        </div>
-        <div class="advanced-toggle-row">
-          <button
-            class="button button-secondary"
-            data-testid="adjacency-advanced-toggle"
-            @click=${() => {
-              this._showAdvancedAdjacency = !this._showAdvancedAdjacency;
-            }}
-          >
-            ${expanded ? "Hide Advanced Controls" : "Show Advanced Controls"}
-          </button>
-        </div>
-      </div>
-      ${expanded
-        ? html`${this._renderLinkedLocationsSection(config)} ${this._renderAdjacencySection()} ${this._renderHandoffTraceSection()}`
-        : ""}
     `;
   }
 
@@ -7219,9 +7387,6 @@ export class HtLocationInspector extends LitElement {
         this.entryId
       );
       this._mergeSavedActionRuleLocally(savedRule, previousDraftRules, ruleId);
-      window.setTimeout(() => {
-        void this._loadActionRules();
-      }, 250);
       this._showToast(persistedRule ? "Rule updated" : "Rule saved", "success");
     } catch (err: any) {
       this._actionRulesSaveError = err?.message || "Failed to save action rule";
@@ -8565,6 +8730,128 @@ export class HtLocationInspector extends LitElement {
     return `Reason: ${rawReason}`;
   }
 
+  private _recentExplainabilityCurrentState():
+    | {
+        occupied: boolean;
+        why: string;
+        nextChange?: string;
+        lockedSummary?: string;
+        contributors: Array<{ sourceLabel: string; stateLabel: string; relativeTime: string }>;
+      }
+    | undefined {
+    const occupancyState = this._getOccupancyState();
+    if (!occupancyState) return undefined;
+
+    const occupied = occupancyState.state === "on";
+    const attrs = occupancyState.attributes || {};
+    const contributors = this._occupancyContributions(this._getOccupancyConfig(), true);
+    const vacantAt = this._resolveVacantAt(attrs, occupied);
+    const lockState = this._getLockState();
+    const why = occupied
+      ? this._resolveOccupiedReason(occupancyState, true) || "Active source events detected"
+      : this._resolveVacancyReason(occupancyState, false) || "No active contributors remain";
+
+    let nextChange: string | undefined;
+    if (occupied) {
+      if (vacantAt === null) {
+        nextChange = "No timeout scheduled";
+      } else if (vacantAt instanceof Date) {
+        nextChange = `Vacates ${this._formatDateTime(vacantAt)}`;
+      }
+    }
+
+    let lockedSummary: string | undefined;
+    if (lockState.isLocked) {
+      lockedSummary = lockState.lockedBy.length
+        ? `Held by ${lockState.lockedBy.join(", ")}`
+        : "Occupancy is held by a lock";
+    }
+
+    return {
+      occupied,
+      why,
+      nextChange,
+      lockedSummary,
+      contributors,
+    };
+  }
+
+  private _recentExplainabilityChanges(): Array<{
+    title: string;
+    description: string;
+    timeLabel: string;
+    relativeTime: string;
+    changedAtMs: number;
+  }> {
+    const occupancyState = this._getOccupancyState();
+    const attrs = occupancyState?.attributes || {};
+    const rawChanges = Array.isArray(attrs.recent_changes) ? attrs.recent_changes : [];
+
+    return rawChanges
+      .map((item: any) => this._normalizeExplainabilityChange(item))
+      .filter((item): item is OccupancyExplainabilityChange => Boolean(item))
+      .map((item) => {
+        const timestamp = this._parseDateValue(item.changedAt);
+        const sourceLabel = item.sourceId
+          ? this._sourceLabelForSourceId(this._getOccupancyConfig(), item.sourceId)
+          : undefined;
+        return {
+          title: this._explainabilityChangeTitle(item),
+          description: this._explainabilityChangeDescription(item, sourceLabel),
+          timeLabel: timestamp ? this._formatTimeOnly(timestamp) : "Now",
+          relativeTime: timestamp ? `${this._formatElapsedDuration(timestamp)} ago` : "just now",
+          changedAtMs: timestamp?.getTime() || this._nowEpochMs,
+        };
+      })
+      .sort((left, right) => right.changedAtMs - left.changedAtMs);
+  }
+
+  private _normalizeExplainabilityChange(item: any): OccupancyExplainabilityChange | undefined {
+    if (!item || typeof item !== "object") return undefined;
+    const kind = item.kind === "signal" ? "signal" : item.kind === "state" ? "state" : undefined;
+    const event = typeof item.event === "string" ? item.event.trim().toLowerCase() : "";
+    if (!kind || !event) return undefined;
+    return {
+      kind,
+      event,
+      sourceId: typeof item.source_id === "string" && item.source_id.trim() ? item.source_id.trim() : undefined,
+      signalKey:
+        typeof item.signal_key === "string" && item.signal_key.trim() ? item.signal_key.trim() : undefined,
+      reason: typeof item.reason === "string" && item.reason.trim() ? item.reason.trim() : undefined,
+      occupied: typeof item.occupied === "boolean" ? item.occupied : undefined,
+      changedAt: typeof item.changed_at === "string" && item.changed_at.trim() ? item.changed_at : undefined,
+    };
+  }
+
+  private _explainabilityChangeTitle(item: OccupancyExplainabilityChange): string {
+    if (item.kind === "state") {
+      return item.event === "occupied" ? "Room became occupied" : "Room became vacant";
+    }
+    if (item.event === "trigger") return "Source triggered";
+    if (item.event === "clear") return "Source cleared";
+    if (item.event === "vacate") return "Vacate requested";
+    return `Source ${item.event}`;
+  }
+
+  private _explainabilityChangeDescription(
+    item: OccupancyExplainabilityChange,
+    sourceLabel?: string
+  ): string {
+    if (item.kind === "state") {
+      const reason = this._formatOccupancyReason(item.reason);
+      return reason || (item.event === "occupied" ? "Occupancy turned on" : "Occupancy turned off");
+    }
+
+    const sourceText = sourceLabel
+      ? `${sourceLabel}${item.sourceId && sourceLabel !== item.sourceId ? ` (${item.sourceId})` : ""}`
+      : item.sourceId || "Unknown source";
+
+    if (item.event === "trigger") return `${sourceText} reported activity`;
+    if (item.event === "clear") return `${sourceText} cleared its contribution`;
+    if (item.event === "vacate") return `${sourceText} requested vacancy`;
+    return `${sourceText} reported ${item.event}`;
+  }
+
   private _formatOccupancyEventReason(eventType: string, mode: "occupied" | "vacancy"): string {
     const prefixes = {
       occupied: "Occupied by",
@@ -8615,7 +8902,7 @@ export class HtLocationInspector extends LitElement {
           this._parseDateValue(contribution?.timestamp);
 
         const relativeTime = timestamp
-          ? `${this._formatRelativeDuration(timestamp)} ago`
+          ? `${this._formatElapsedDuration(timestamp)} ago`
           : this._isContributionActive(contribution)
             ? "active"
             : "inactive";
@@ -8706,9 +8993,33 @@ export class HtLocationInspector extends LitElement {
     }).format(value);
   }
 
+  private _formatTimeOnly(value: Date): string {
+    return new Intl.DateTimeFormat(undefined, {
+      timeStyle: "short",
+    }).format(value);
+  }
+
   private _formatRelativeDuration(target: Date): string {
     const totalSeconds = Math.max(0, Math.floor((target.getTime() - this._nowEpochMs) / 1000));
     if (totalSeconds <= 0) return "now";
+
+    const days = Math.floor(totalSeconds / 86400);
+    const hours = Math.floor((totalSeconds % 86400) / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+
+    const parts: string[] = [];
+    if (days > 0) parts.push(`${days}d`);
+    if (hours > 0) parts.push(`${hours}h`);
+    if (minutes > 0 && parts.length < 2) parts.push(`${minutes}m`);
+    if (parts.length === 0 || (days === 0 && hours === 0 && minutes === 0)) parts.push(`${seconds}s`);
+
+    return parts.slice(0, 2).join(" ");
+  }
+
+  private _formatElapsedDuration(since: Date): string {
+    const totalSeconds = Math.max(0, Math.floor((this._nowEpochMs - since.getTime()) / 1000));
+    if (totalSeconds <= 0) return "just now";
 
     const days = Math.floor(totalSeconds / 86400);
     const hours = Math.floor((totalSeconds % 86400) / 3600);
@@ -9008,7 +9319,7 @@ export class HtLocationInspector extends LitElement {
     );
   }
 
-  private async _runSyncImport(): Promise<void> {
+  private async _runSyncImport(options?: { silent?: boolean; backgroundRepair?: boolean }): Promise<void> {
     if (this._syncImportInProgress) return;
     this._syncImportInProgress = true;
     try {
@@ -9022,12 +9333,19 @@ export class HtLocationInspector extends LitElement {
         typeof (response as Record<string, unknown>)?.message === "string"
           ? String((response as Record<string, unknown>).message)
           : "Sync import completed";
-      this._showToast(message, "success");
+      if (!options?.silent) {
+        this._showToast(message, "success");
+      }
     } catch (err: any) {
       console.error("Failed to run sync import:", err);
-      this._showToast(err?.message || "Failed to run sync import", "error");
+      if (!options?.silent) {
+        this._showToast(err?.message || "Failed to run sync import", "error");
+      }
     } finally {
       this._syncImportInProgress = false;
+      if (options?.backgroundRepair) {
+        this._managedShadowAutoRepairInProgress = false;
+      }
     }
   }
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -88,6 +88,11 @@ async def async_setup_entry(
             bus,
             occupancy_module=occupancy_module,
             ha_area_id=_location_ha_area_id(location),
+            recent_changes_provider=lambda current_location_id, entry_id=entry.entry_id: list(
+                hass.data[DOMAIN][entry_id]
+                .get("occupancy_recent_changes", {})
+                .get(current_location_id, [])
+            ),
         )
         sensors_by_location_id[location.id] = sensor
         entities.append(sensor)
@@ -114,6 +119,11 @@ async def async_setup_entry(
             bus,
             occupancy_module=occupancy_module,
             ha_area_id=_location_ha_area_id(location),
+            recent_changes_provider=lambda current_location_id, entry_id=entry.entry_id: list(
+                hass.data[DOMAIN][entry_id]
+                .get("occupancy_recent_changes", {})
+                .get(current_location_id, [])
+            ),
         )
         sensors_by_location_id[location_id] = sensor
         async_add_entities([sensor])
@@ -154,6 +164,7 @@ class OccupancyBinarySensor(BinarySensorEntity):
         bus: EventBus,
         occupancy_module: OccupancyModule | None = None,
         ha_area_id: str | None = None,
+        recent_changes_provider: Callable[[str], list[dict[str, Any]]] | None = None,
     ) -> None:
         """Initialize the sensor."""
         self._location_id = location_id
@@ -161,6 +172,7 @@ class OccupancyBinarySensor(BinarySensorEntity):
         self._bus = bus
         self._occupancy_module = occupancy_module
         self._ha_area_id = ha_area_id
+        self._recent_changes_provider = recent_changes_provider or (lambda _: [])
 
         self._attr_unique_id = f"occupancy_{location_id}"
         self._attr_name = f"{location_name} Occupancy"
@@ -217,6 +229,7 @@ class OccupancyBinarySensor(BinarySensorEntity):
             "seconds_until_vacant": seconds_until_vacant,
             "previous_occupied": payload.get("previous_occupied", False),
             "reason": payload.get("reason"),
+            "recent_changes": self._recent_changes_provider(self._location_id),
         }
 
     def _hydrate_from_module_state(self) -> bool:
@@ -291,8 +304,23 @@ class OccupancyBinarySensor(BinarySensorEntity):
                     "occupied" if self._attr_is_on else "vacant",
                 )
 
+        @callback
+        def on_occupancy_signal(event: Event) -> None:
+            """Refresh explainability attributes on source-level occupancy activity."""
+            if event.location_id != self._location_id:
+                return
+            if not self._hydrate_from_module_state():
+                attrs = dict(self._attr_extra_state_attributes)
+                attrs["recent_changes"] = self._recent_changes_provider(self._location_id)
+                self._attr_extra_state_attributes = attrs
+                self.async_write_ha_state()
+
         # Subscribe to occupancy changed events
         self._bus.subscribe(
             on_occupancy_changed,
             EventFilter(event_type="occupancy.changed"),
+        )
+        self._bus.subscribe(
+            on_occupancy_signal,
+            EventFilter(event_type="occupancy.signal"),
         )

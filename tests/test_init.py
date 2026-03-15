@@ -207,13 +207,82 @@ async def test_setup_entry_forwards_occupancy_changed_to_ha_bus(
     await hass.async_block_till_done()
     unsub()
 
-    assert {
-        "entry_id": config_entry.entry_id,
-        "location_id": "area_mud_room",
+    matched = next(
+        item for item in forwarded_events if item.get("location_id") == "area_mud_room"
+    )
+    assert matched["entry_id"] == config_entry.entry_id
+    assert matched["occupied"] is True
+    assert matched["previous_occupied"] is False
+    assert matched["reason"] == "event:trigger"
+    assert matched["recent_changes"][0]["kind"] == "state"
+    assert matched["recent_changes"][0]["event"] == "occupied"
+
+
+async def test_setup_entry_tracks_signal_events_in_recent_changes(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    mock_event_bus: Mock,
+) -> None:
+    """Signal events should be captured for inspector explainability history."""
+    config_entry.add_to_hass(hass)
+
+    with (
+        patch("custom_components.topomation.async_register_panel"),
+        patch("custom_components.topomation.async_register_websocket_api"),
+        patch("custom_components.topomation.async_register_services"),
+        patch.object(hass.config_entries, "async_forward_entry_setups", return_value=True),
+    ):
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    signal_callbacks = []
+    occupancy_callbacks = []
+    for call in mock_event_bus.subscribe.call_args_list:
+        if len(call.args) < 2:
+            continue
+        callback = call.args[0]
+        event_filter = call.args[1]
+        if getattr(event_filter, "event_type", None) == "occupancy.signal":
+            signal_callbacks.append(callback)
+        if getattr(event_filter, "event_type", None) == "occupancy.changed":
+            occupancy_callbacks.append(callback)
+
+    forwarded_events: list[dict] = []
+    unsub = hass.bus.async_listen(
+        EVENT_TOPOMATION_OCCUPANCY_CHANGED,
+        lambda evt: forwarded_events.append(dict(evt.data or {})),
+    )
+
+    signal_event = Mock()
+    signal_event.location_id = "area_mud_room"
+    signal_event.payload = {
+        "event_type": "trigger",
+        "source_id": "binary_sensor.mud_room_motion",
+    }
+    signal_event.timestamp = datetime.now(UTC)
+    for callback in signal_callbacks:
+        callback(signal_event)
+
+    changed_event = Mock()
+    changed_event.location_id = "area_mud_room"
+    changed_event.payload = {
         "occupied": True,
         "previous_occupied": False,
         "reason": "event:trigger",
-    } in forwarded_events
+    }
+    changed_event.timestamp = datetime.now(UTC)
+    for callback in occupancy_callbacks:
+        callback(changed_event)
+
+    await hass.async_block_till_done()
+    unsub()
+
+    matched = next(
+        item for item in forwarded_events if item.get("location_id") == "area_mud_room"
+    )
+    assert matched["recent_changes"][0]["kind"] == "state"
+    assert matched["recent_changes"][1]["kind"] == "signal"
+    assert matched["recent_changes"][1]["source_id"] == "binary_sensor.mud_room_motion"
 
 
 async def test_setup_entry_propagates_linked_location_trigger(

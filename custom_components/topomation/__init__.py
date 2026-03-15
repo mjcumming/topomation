@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections import deque
+from collections import defaultdict, deque
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from inspect import isawaitable
@@ -52,6 +52,7 @@ _OCCUPANCY_SYNC_LOCATIONS_KEY = "sync_locations"
 _META_ROLE_KEY = "role"
 _MANAGED_SHADOW_ROLE = "managed_shadow"
 _MAX_PROPAGATION_EVENTS_PER_DRAIN = 4096
+_MAX_OCCUPANCY_EXPLAINABILITY_EVENTS = 20
 
 PLATFORMS: list[Platform] = [
     Platform.BINARY_SENSOR,  # Occupancy binary sensors
@@ -70,6 +71,14 @@ def _prune_hidden_entities(hass: HomeAssistant, entry: ConfigEntry) -> None:
             or unique_id.startswith("ambient_is_bright_")
         ):
             registry.async_remove(reg_entry.entity_id)
+
+
+def _event_timestamp_iso(event: Event) -> str:
+    """Return a stable ISO timestamp for an event."""
+    timestamp = getattr(event, "timestamp", None)
+    if isinstance(timestamp, datetime):
+        return timestamp.astimezone(UTC).isoformat()
+    return dt_util.utcnow().isoformat()
 
 
 async def _async_handle_options_update(hass: HomeAssistant, entry: ConfigEntry) -> None:
@@ -175,6 +184,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "automation": automation_module,
         "ambient": AmbientLightModule(platform_adapter=platform_adapter),
     }
+    occupancy_recent_changes: dict[str, deque[dict[str, Any]]] = defaultdict(
+        lambda: deque(maxlen=_MAX_OCCUPANCY_EXPLAINABILITY_EVENTS)
+    )
 
     # 4. Attach modules to kernel
     for module in modules.values():
@@ -219,10 +231,52 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         reason = payload.get("reason")
         if isinstance(reason, str) and reason:
             ha_payload["reason"] = reason
+        changed_at = _event_timestamp_iso(event)
+        recent_changes = occupancy_recent_changes[location_id]
+        recent_changes.appendleft(
+            {
+                "kind": "state",
+                "event": "occupied" if occupied else "vacant",
+                "occupied": occupied,
+                "previous_occupied": previous_occupied
+                if isinstance(previous_occupied, bool)
+                else None,
+                "reason": reason if isinstance(reason, str) and reason else None,
+                "changed_at": changed_at,
+            }
+        )
+        ha_payload["recent_changes"] = list(recent_changes)
 
         hass.bus.async_fire(EVENT_TOPOMATION_OCCUPANCY_CHANGED, ha_payload)
 
     bus.subscribe(_forward_occupancy_changed, EventFilter(event_type="occupancy.changed"))
+
+    @callback
+    def _record_occupancy_signal(event: Event) -> None:
+        """Track recent source-level occupancy activity for inspector explainability."""
+        payload = event.payload if isinstance(event.payload, Mapping) else {}
+        location_id = event.location_id
+        if not isinstance(location_id, str) or not location_id:
+            return
+
+        raw_event_type = payload.get("event_type")
+        event_type = str(raw_event_type).strip().lower() if raw_event_type is not None else ""
+        source_id = payload.get("source_id")
+        signal_key = payload.get("signal_key")
+
+        occupancy_recent_changes[location_id].appendleft(
+            {
+                "kind": "signal",
+                "event": event_type or "signal",
+                "source_id": str(source_id).strip() if isinstance(source_id, str) and source_id.strip() else None,
+                "signal_key": str(signal_key).strip()
+                if isinstance(signal_key, str) and signal_key.strip()
+                else None,
+                "changed_at": _event_timestamp_iso(event),
+            }
+        )
+
+    bus.subscribe(_record_occupancy_signal, EventFilter(event_type="occupancy.signal"))
 
     @callback
     def _apply_linked_location_contributors(event: Event) -> None:
@@ -607,6 +661,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "event_bus": bus,
         "modules": modules,
         "coordinator": coordinator,
+        "occupancy_recent_changes": occupancy_recent_changes,
         "sync_manager": sync_manager,
         "event_bridge": event_bridge,
         "actions_runtime": actions_runtime,

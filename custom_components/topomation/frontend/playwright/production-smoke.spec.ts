@@ -178,37 +178,6 @@ test("automation tabs omit startup controls and media add-rule survives reactive
     await expect(sourceAfterReload).toBeChecked();
   });
 
-  test("state replay captures eventing paths used in production smoke profile", async ({ page }) => {
-    await selectKitchen(page);
-
-    await page.getByRole("button", { name: "Event Log" }).click();
-    await expect(page.locator(".event-log")).toBeVisible();
-
-    await page.evaluate(async () => {
-      await (window as any).runProductionReplay();
-    });
-
-    await expect
-      .poll(async () =>
-        page.evaluate(() => {
-          const panel = document.querySelector("topomation-panel") as any;
-          const entries = panel?._eventLogEntries || [];
-          const hasOccupancyChanged = entries.some(
-            (entry: any) => entry.message === "topomation_occupancy_changed"
-          );
-          const hasActionsSummary = entries.some(
-            (entry: any) => entry.message === "topomation_actions_summary"
-          );
-          const hasKitchenMotionState = entries.some(
-            (entry: any) =>
-              entry.message === "state_changed" &&
-              entry.data?.entityId === "binary_sensor.kitchen_motion"
-          );
-          return hasOccupancyChanged && hasActionsSummary && hasKitchenMotionState;
-        })
-      )
-      .toBe(true);
-  });
 
   test("managed action rule save survives delayed automation registry visibility", async ({ page }) => {
     await selectKitchen(page);

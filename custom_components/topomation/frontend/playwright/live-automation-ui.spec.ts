@@ -105,6 +105,12 @@ async function openLightingTab(page: any): Promise<void> {
   await expect(inspector.locator('[data-testid="actions-rules-section"]')).toBeVisible();
 }
 
+async function openDetectionTab(page: any): Promise<void> {
+  const inspector = page.locator("ht-location-inspector");
+  await expect(inspector).toBeVisible();
+  await inspector.getByRole("button", { name: "Detection" }).click();
+}
+
 function liveHaConfig(): { baseUrl: string; token: string } {
   const token = process.env.HA_TOKEN || process.env.HA_TOKEN_LOCAL;
   const baseUrl = process.env.HA_URL || process.env.HA_URL_LOCAL;
@@ -246,6 +252,21 @@ async function deleteRuleById(automationId: string): Promise<void> {
   });
 }
 
+async function callTopomationService(service: string, serviceData: Record<string, unknown>): Promise<void> {
+  const { baseUrl, token } = liveHaConfig();
+  const response = await fetch(`${baseUrl}/api/services/topomation/${service}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(serviceData),
+  });
+  if (!response.ok) {
+    throw new Error(`Topomation service ${service} failed: ${response.status} ${await response.text()}`);
+  }
+}
+
 test("live automation lighting workflow matches contracted lifecycle controls", async ({ page }) => {
   await openLiveHarness(page);
   const location = await selectLightingLocation(page);
@@ -380,4 +401,42 @@ test("live automation lighting workflow matches contracted lifecycle controls", 
       await deleteRuleById(createdRuleId);
     }
   }
+});
+
+test("live detection explainability updates on occupied and vacant transitions", async ({ page }) => {
+  await openLiveHarness(page);
+  const location = await selectLightingLocation(page);
+
+  const inspector = page.locator("ht-location-inspector");
+  await openDetectionTab(page);
+
+  const explainability = inspector.getByTestId("recent-occupancy-events-drawer");
+  await expect(explainability).toBeVisible();
+  await expect(explainability).toContainText("Room Explainability");
+  await expect(inspector.getByTestId("adjacency-advanced-toggle")).toHaveCount(0);
+  await expect(inspector.getByText("Advanced Occupancy Relationships")).toHaveCount(0);
+
+  const sourceId = "live_explainability_test";
+  await callTopomationService("vacate_area", {
+    location_id: location.id,
+    source_id: sourceId,
+    include_locked: true,
+  });
+  await expect(explainability).toContainText("Vacant", { timeout: 10000 });
+
+  await callTopomationService("trigger", {
+    location_id: location.id,
+    source_id: sourceId,
+    timeout: 300,
+  });
+  await expect(explainability).toContainText("Occupied", { timeout: 10000 });
+  await expect(explainability).toContainText("Room became occupied", { timeout: 10000 });
+
+  await callTopomationService("clear", {
+    location_id: location.id,
+    source_id: sourceId,
+    trailing_timeout: 0,
+  });
+  await expect(explainability).toContainText("Vacant", { timeout: 10000 });
+  await expect(explainability).toContainText("Room became vacant", { timeout: 10000 });
 });

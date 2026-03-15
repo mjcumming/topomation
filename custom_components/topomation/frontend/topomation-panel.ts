@@ -85,8 +85,6 @@ export class TopomationPanel extends LitElement {
     _editingLocation: { state: true },
     _renameConflict: { state: true },
     _newLocationDefaults: { state: true },
-    _eventLogOpen: { state: true },
-    _eventLogEntries: { state: true },
     _occupancyStateByLocation: { state: true },
     _occupancyTransitionByLocation: { state: true },
     _adjacencyEdges: { state: true },
@@ -121,14 +119,6 @@ export class TopomationPanel extends LitElement {
     localName: string;
     haName: string;
   };
-  @state() private _eventLogOpen = false;
-  @state() private _eventLogScope: "subtree" | "all" = "subtree";
-  @state() private _eventLogEntries: Array<{
-    ts: string;
-    type: string;
-    message: string;
-    data?: any;
-  }> = [];
   @state() private _occupancyStateByLocation: Record<string, boolean> = {};
   @state() private _occupancyTransitionByLocation: Record<string, OccupancyTransitionState> = {};
   @state() private _adjacencyEdges: AdjacencyEdge[] = [];
@@ -149,7 +139,6 @@ export class TopomationPanel extends LitElement {
   private _unsubStateChanged?: () => void;
   private _unsubOccupancyChanged?: () => void;
   private _unsubHandoffTrace?: () => void;
-  private _unsubActionsSummary?: () => void;
   private _unsubEntityRegistryUpdated?: () => void;
   private _unsubDeviceRegistryUpdated?: () => void;
   private _unsubAreaRegistryUpdated?: () => void;
@@ -253,10 +242,6 @@ export class TopomationPanel extends LitElement {
     if (this._unsubHandoffTrace) {
       this._unsubHandoffTrace();
       this._unsubHandoffTrace = undefined;
-    }
-    if (this._unsubActionsSummary) {
-      this._unsubActionsSummary();
-      this._unsubActionsSummary = undefined;
     }
     if (this._unsubEntityRegistryUpdated) {
       this._unsubEntityRegistryUpdated();
@@ -771,50 +756,6 @@ export class TopomationPanel extends LitElement {
         text-decoration: none;
       }
 
-      .event-log {
-        margin: 0 var(--spacing-md) var(--spacing-md);
-        border: 1px solid var(--divider-color);
-        border-radius: var(--border-radius);
-        background: var(--card-background-color);
-        overflow: hidden;
-      }
-
-      .event-log-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 8px 12px;
-        border-bottom: 1px solid var(--divider-color);
-        font-size: 12px;
-        font-weight: 600;
-      }
-
-      .event-log-list {
-        max-height: 220px;
-        overflow: auto;
-        font-family: var(--code-font-family, monospace);
-        font-size: 11px;
-      }
-
-      .event-log-item {
-        padding: 6px 10px;
-        border-bottom: 1px solid rgba(var(--rgb-primary-text-color, 0, 0, 0), 0.06);
-        line-height: 1.35;
-      }
-
-      .event-log-item:last-child {
-        border-bottom: none;
-      }
-
-      .event-log-meta {
-        color: var(--text-secondary-color);
-      }
-
-      .event-log-header-actions {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-      }
     `,
   ];
 
@@ -886,9 +827,6 @@ export class TopomationPanel extends LitElement {
                 title=${deleteDisabledReason}
               >
                 Delete Selected
-              </button>
-              <button class="button button-secondary" @click=${this._toggleEventLog}>
-                ${this._eventLogOpen ? "Hide Log" : "Event Log"}
               </button>
             </div>
           </div>
@@ -968,12 +906,10 @@ export class TopomationPanel extends LitElement {
                   .handoffTraces=${selectedLocation
                     ? this._handoffTraceByLocation[selectedLocation.id] || []
                     : []}
-                  @source-test=${this._handleSourceTest}
                   @adjacency-changed=${this._handleAdjacencyChanged}
                   @location-meta-changed=${this._handleLocationMetaChanged}
                 ></ht-location-inspector>
               `}
-          ${this._eventLogOpen ? this._renderEventLog() : ""}
         </div>
       </div>
 
@@ -1542,10 +1478,6 @@ export class TopomationPanel extends LitElement {
       this._occupancyStateByLocation = this._buildOccupancyStateMapFromStates();
       this._occupancyTransitionByLocation = this._buildOccupancyTransitionsFromStates();
       this._locationsVersion += 1;
-      this._logEvent("ws", "locations/list loaded", {
-        count: this._locations.length,
-      });
-
       // Keep selection valid against the visible/non-root subset.
       if (
         !this._selectedId ||
@@ -1560,7 +1492,6 @@ export class TopomationPanel extends LitElement {
     } catch (err: any) {
       console.error("Failed to load locations:", err);
       this._error = err.message || "Failed to load locations";
-      this._logEvent("error", "locations/list failed", err?.message || err);
     } finally {
       this._loading = false;
     }
@@ -1800,7 +1731,6 @@ export class TopomationPanel extends LitElement {
             source_id: "manual_ui",
           }),
         });
-        this._logEvent("ui", service, { locationId, source_id: "manual_ui" });
         await this._loadLocations(true);
         this._locationsVersion += 1;
         const locationName = this._locations.find((loc) => loc.id === locationId)?.name || locationId;
@@ -1876,7 +1806,6 @@ export class TopomationPanel extends LitElement {
           service,
           service_data: this._serviceDataWithEntryId(serviceData),
         });
-        this._logEvent("ui", service, { locationId, source_id: "manual_ui" });
         await this._loadLocations(true);
         this._locationsVersion += 1;
         this._showToast(
@@ -2194,10 +2123,6 @@ export class TopomationPanel extends LitElement {
       this._unsubHandoffTrace();
       this._unsubHandoffTrace = undefined;
     }
-    if (this._unsubActionsSummary) {
-      this._unsubActionsSummary();
-      this._unsubActionsSummary = undefined;
-    }
     if (this._unsubEntityRegistryUpdated) {
       this._unsubEntityRegistryUpdated();
       this._unsubEntityRegistryUpdated = undefined;
@@ -2214,14 +2139,12 @@ export class TopomationPanel extends LitElement {
     try {
       this._unsubUpdates = await this.hass.connection.subscribeEvents(
         (event: any) => {
-          this._logEvent("ha", "topomation_updated", event?.data || {});
           this._scheduleReload(true);
         },
         "topomation_updated"
       );
     } catch (err) {
       console.warn("Failed to subscribe to topomation_updated events", err);
-      this._logEvent("error", "subscribe failed: topomation_updated", String(err));
     }
 
     try {
@@ -2239,19 +2162,11 @@ export class TopomationPanel extends LitElement {
             previousOccupied: typeof previousOccupied === "boolean" ? previousOccupied : undefined,
             reason,
           });
-          this._logEvent("ha", "topomation_occupancy_changed", {
-            locationId,
-            occupied,
-            previousOccupied:
-              typeof previousOccupied === "boolean" ? previousOccupied : undefined,
-            reason,
-          });
         },
         "topomation_occupancy_changed"
       );
     } catch (err) {
       console.warn("Failed to subscribe to topomation_occupancy_changed events", err);
-      this._logEvent("error", "subscribe failed: topomation_occupancy_changed", String(err));
     }
 
     try {
@@ -2305,25 +2220,11 @@ export class TopomationPanel extends LitElement {
           let next = appendTrace(this._handoffTraceByLocation, fromLocationId, trace);
           next = appendTrace(next, toLocationId, trace);
           this._handoffTraceByLocation = next;
-          this._logEvent("ha", "topomation_handoff_trace", trace);
         },
         "topomation_handoff_trace"
       );
     } catch (err) {
       console.warn("Failed to subscribe to topomation_handoff_trace events", err);
-      this._logEvent("error", "subscribe failed: topomation_handoff_trace", String(err));
-    }
-
-    try {
-      this._unsubActionsSummary = await this.hass.connection.subscribeEvents(
-        (event: any) => {
-          this._logEvent("ha", "topomation_actions_summary", event?.data || {});
-        },
-        "topomation_actions_summary"
-      );
-    } catch (err) {
-      console.warn("Failed to subscribe to topomation_actions_summary events", err);
-      this._logEvent("error", "subscribe failed: topomation_actions_summary", String(err));
     }
 
     try {
@@ -2335,7 +2236,6 @@ export class TopomationPanel extends LitElement {
       );
     } catch (err) {
       console.warn("Failed to subscribe to entity_registry_updated events", err);
-      this._logEvent("error", "subscribe failed: entity_registry_updated", String(err));
     }
 
     try {
@@ -2347,7 +2247,6 @@ export class TopomationPanel extends LitElement {
       );
     } catch (err) {
       console.warn("Failed to subscribe to device_registry_updated events", err);
-      this._logEvent("error", "subscribe failed: device_registry_updated", String(err));
     }
 
     try {
@@ -2359,14 +2258,12 @@ export class TopomationPanel extends LitElement {
       );
     } catch (err) {
       console.warn("Failed to subscribe to area_registry_updated events", err);
-      this._logEvent("error", "subscribe failed: area_registry_updated", String(err));
     }
 
     await this._syncStateChangedSubscription();
   }
 
   private _scheduleRegistryRefresh(eventType: string, data: Record<string, unknown>): void {
-    this._logEvent("ha", eventType, data);
     if (this._registryRefreshTimer) {
       window.clearTimeout(this._registryRefreshTimer);
       this._registryRefreshTimer = undefined;
@@ -2459,22 +2356,9 @@ export class TopomationPanel extends LitElement {
     return map;
   }
 
-  private _toggleEventLog = (): void => {
-    this._eventLogOpen = !this._eventLogOpen;
-    void this._syncStateChangedSubscription();
-  };
-
   private async _syncStateChangedSubscription(): Promise<void> {
     if (!this.hass?.connection) return;
     if (typeof this.hass.connection.subscribeEvents !== "function") return;
-
-    if (!this._eventLogOpen) {
-      if (this._unsubStateChanged) {
-        this._unsubStateChanged();
-        this._unsubStateChanged = undefined;
-      }
-      return;
-    }
 
     if (this._unsubStateChanged) return;
 
@@ -2508,141 +2392,12 @@ export class TopomationPanel extends LitElement {
             });
           }
 
-          if (!this._shouldTrackEntity(entityId)) return;
-          const newState = event?.data?.new_state?.state;
-          const oldState = event?.data?.old_state?.state;
-          this._logEvent("ha", "state_changed", { entityId, oldState, newState });
         },
         "state_changed"
       );
     } catch (err) {
       console.warn("Failed to subscribe to state_changed events", err);
-      this._logEvent("error", "subscribe failed: state_changed", String(err));
     }
-  }
-
-  private _clearEventLog = (): void => {
-    this._eventLogEntries = [];
-  };
-
-  private _renderEventLog() {
-    return html`
-      <div class="event-log">
-        <div class="event-log-header">
-          <span>
-            Runtime Event Log (${this._eventLogEntries.length})
-            <span class="event-log-meta">• ${this._getEventLogScopeLabel()}</span>
-          </span>
-          <div class="event-log-header-actions">
-            <button class="button button-secondary" @click=${this._toggleEventLogScope}>
-              ${this._eventLogScope === "subtree" ? "All locations" : "Selected subtree"}
-            </button>
-            <button class="button button-secondary" @click=${this._clearEventLog}>Clear</button>
-          </div>
-        </div>
-        <div class="event-log-list">
-          ${this._eventLogEntries.length === 0
-            ? html`<div class="event-log-item event-log-meta">No events captured yet.</div>`
-            : this._eventLogEntries.map(
-                (entry) => html`
-                  <div class="event-log-item">
-                    <div class="event-log-meta">[${entry.ts}] ${entry.type}</div>
-                    <div>${entry.message}</div>
-                    ${entry.data !== undefined
-                      ? html`<div class="event-log-meta">${this._safeStringify(entry.data)}</div>`
-                      : ""}
-                  </div>
-                `
-              )}
-        </div>
-      </div>
-    `;
-  }
-
-  private _handleSourceTest = (e: CustomEvent): void => {
-    this._logEvent("ui", "source test", e.detail);
-  };
-
-  private _shouldTrackEntity(entityId: string): boolean {
-    if (this._eventLogScope === "all") {
-      return this._isTrackedEntity(entityId);
-    }
-    return this._isTrackedEntityInSelectedSubtree(entityId);
-  }
-
-  private _isTrackedEntity(entityId: string): boolean {
-    const tracked = new Set<string>();
-    for (const location of this._locations) {
-      for (const entity of location.entity_ids || []) tracked.add(entity);
-      const sources = location.modules?.occupancy?.occupancy_sources || [];
-      for (const source of sources) tracked.add(source.entity_id);
-    }
-    return tracked.has(entityId);
-  }
-
-  private _isTrackedEntityInSelectedSubtree(entityId: string): boolean {
-    const subtreeIds = this._getSelectedSubtreeLocationIds();
-    if (subtreeIds.size === 0) return false;
-
-    for (const location of this._locations) {
-      if (!subtreeIds.has(location.id)) continue;
-      if ((location.entity_ids || []).includes(entityId)) return true;
-      const sources = location.modules?.occupancy?.occupancy_sources || [];
-      if (sources.some((source: any) => source.entity_id === entityId)) return true;
-    }
-    return false;
-  }
-
-  private _getSelectedSubtreeLocationIds(): Set<string> {
-    const ids = new Set<string>();
-    if (!this._selectedId) return ids;
-    ids.add(this._selectedId);
-
-    let added = true;
-    while (added) {
-      added = false;
-      for (const loc of this._locations) {
-        if (loc.parent_id && ids.has(loc.parent_id) && !ids.has(loc.id)) {
-          ids.add(loc.id);
-          added = true;
-        }
-      }
-    }
-    return ids;
-  }
-
-  private _toggleEventLogScope = (): void => {
-    this._eventLogScope = this._eventLogScope === "subtree" ? "all" : "subtree";
-    this._logEvent(
-      "ui",
-      `event log scope set to ${this._eventLogScope === "subtree" ? "selected subtree" : "all locations"}`
-    );
-  };
-
-  private _getEventLogScopeLabel(): string {
-    if (this._eventLogScope === "all") return "all locations";
-    const selected = this._locations.find((loc) => loc.id === this._selectedId);
-    if (!selected) return "selected subtree";
-    const count = this._getSelectedSubtreeLocationIds().size;
-    return `${selected.name} subtree (${count} locations)`;
-  }
-
-  private _safeStringify(data: any): string {
-    try {
-      return JSON.stringify(data);
-    } catch {
-      return String(data);
-    }
-  }
-
-  private _logEvent(type: string, message: string, data?: any): void {
-    const entry = {
-      ts: new Date().toLocaleTimeString(),
-      type,
-      message,
-      data,
-    };
-    this._eventLogEntries = [entry, ...this._eventLogEntries].slice(0, 200);
   }
 
   private _showKeyboardShortcutsHelp(): void {

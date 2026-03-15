@@ -302,7 +302,8 @@ shared location tree selection context.
   - `Lighting`
   - `Media`
   - `HVAC`
-- Advanced occupancy relationship controls are kept under `Detection` as an in-tab advanced section (not a separate top-level tab).
+- Advanced occupancy relationship controls are currently hidden from the active
+  `Detection` inspector until that workflow is revalidated.
 - Detection's primary sync workflow is `Sync Locations` with explicit sibling scope.
 - Editable tab behavior is explicit-save:
   - `Detection` and `Ambient` use tab-level draft + explicit save/discard.

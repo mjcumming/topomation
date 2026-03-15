@@ -1428,6 +1428,15 @@ class TopomationManagedActions:
         }
         if area_id is not None:
             update_kwargs["area_id"] = area_id
+        existing_labels = set(entry.labels or ())
+        existing_categories = dict(entry.categories or {})
+        existing_area_id = getattr(entry, "area_id", None)
+        if (
+            existing_labels == set(update_kwargs["labels"])
+            and existing_categories == cast(dict[str, Any], update_kwargs["categories"])
+            and (area_id is None or existing_area_id == area_id)
+        ):
+            return
         try:
             entity_registry.async_update_entity(entity_id, **update_kwargs)
         except Exception:

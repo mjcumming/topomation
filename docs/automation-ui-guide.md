@@ -33,8 +33,8 @@ Top-to-bottom layout order:
 1. Source configuration and editing controls
 2. Add-source composer
 3. Sync section (`Sync Locations`)
-4. WIAB and advanced occupancy controls
-5. Recent occupancy events (logging/diagnostics section at bottom)
+4. WIAB controls
+5. Room explainability section (`Current state` + `Recent changes`) at the bottom
 
 ## 4. Sync Locations Scope
 

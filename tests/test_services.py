@@ -341,3 +341,30 @@ async def test_service_not_loaded_logs_and_noops(
 
     assert "Integration not loaded" in caplog.text
     async_unregister_services(hass)
+
+
+async def test_service_ignores_non_kernel_domain_data_entries(hass: HomeAssistant) -> None:
+    """Service resolution should skip non-kernel Topomation domain data entries."""
+    occupancy = Mock()
+    hass.data[DOMAIN] = {
+        "entry_1": {
+            "modules": {"occupancy": occupancy},
+            "location_manager": Mock(),
+        },
+        "automation_api_refresh_token": object(),
+    }
+    async_register_services(hass)
+
+    await hass.services.async_call(
+        DOMAIN,
+        "trigger",
+        {
+            "location_id": "kitchen",
+            "source_id": "manual",
+            "timeout": 60,
+        },
+        blocking=True,
+    )
+
+    occupancy.trigger.assert_called_once_with("kitchen", "manual", 60)
+    async_unregister_services(hass)

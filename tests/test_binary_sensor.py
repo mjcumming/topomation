@@ -28,7 +28,13 @@ async def test_binary_sensor_hydrates_startup_state_from_occupancy_module() -> N
     }
     occupancy_module.get_effective_timeout.return_value = None
 
-    sensor = OccupancyBinarySensor("kitchen", "Kitchen", bus, occupancy_module=occupancy_module)
+    sensor = OccupancyBinarySensor(
+        "kitchen",
+        "Kitchen",
+        bus,
+        occupancy_module=occupancy_module,
+        recent_changes_provider=lambda _: [{"kind": "state", "event": "occupied"}],
+    )
     sensor.async_write_ha_state = Mock()
 
     await sensor.async_added_to_hass()
@@ -38,11 +44,12 @@ async def test_binary_sensor_hydrates_startup_state_from_occupancy_module() -> N
     assert attrs["is_locked"] is True
     assert attrs["locked_by"] == ["manual_lock"]
     assert attrs["reason"] == "restore"
+    assert attrs["recent_changes"] == [{"kind": "state", "event": "occupied"}]
     sensor.async_write_ha_state.assert_called_once()
 
-    subscribed_callback, event_filter = bus.subscribe.call_args.args
-    assert callable(subscribed_callback)
-    assert getattr(event_filter, "event_type", None) == "occupancy.changed"
+    assert bus.subscribe.call_count == 2
+    assert getattr(bus.subscribe.call_args_list[0].args[1], "event_type", None) == "occupancy.changed"
+    assert getattr(bus.subscribe.call_args_list[1].args[1], "event_type", None) == "occupancy.signal"
 
 
 @pytest.mark.asyncio
@@ -53,14 +60,20 @@ async def test_binary_sensor_updates_on_live_occupancy_changed_event() -> None:
     occupancy_module.get_location_state.return_value = None
     occupancy_module.get_effective_timeout.return_value = None
 
-    sensor = OccupancyBinarySensor("kitchen", "Kitchen", bus, occupancy_module=occupancy_module)
+    sensor = OccupancyBinarySensor(
+        "kitchen",
+        "Kitchen",
+        bus,
+        occupancy_module=occupancy_module,
+        recent_changes_provider=lambda _: [{"kind": "state", "event": "occupied"}],
+    )
     sensor.async_write_ha_state = Mock()
 
     await sensor.async_added_to_hass()
     assert sensor.is_on is False
     assert sensor.async_write_ha_state.call_count == 0
 
-    callback = bus.subscribe.call_args.args[0]
+    callback = bus.subscribe.call_args_list[0].args[0]
     callback(
         Event(
             type="occupancy.changed",
@@ -73,4 +86,44 @@ async def test_binary_sensor_updates_on_live_occupancy_changed_event() -> None:
 
     assert sensor.is_on is True
     assert sensor.extra_state_attributes["reason"] == "event:trigger"
+    assert sensor.extra_state_attributes["recent_changes"] == [{"kind": "state", "event": "occupied"}]
+    assert sensor.async_write_ha_state.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_binary_sensor_refreshes_recent_changes_on_signal_event() -> None:
+    """Source-level occupancy signals should refresh explainability attributes."""
+    bus = Mock()
+    occupancy_module = Mock()
+    occupancy_module.get_location_state.return_value = {
+        "occupied": True,
+        "contributions": [],
+        "reason": "event:trigger",
+    }
+    occupancy_module.get_effective_timeout.return_value = None
+
+    sensor = OccupancyBinarySensor(
+        "kitchen",
+        "Kitchen",
+        bus,
+        occupancy_module=occupancy_module,
+        recent_changes_provider=lambda _: [{"kind": "signal", "event": "trigger"}],
+    )
+    sensor.async_write_ha_state = Mock()
+
+    await sensor.async_added_to_hass()
+    sensor.async_write_ha_state.reset_mock()
+
+    callback = bus.subscribe.call_args_list[1].args[0]
+    callback(
+        Event(
+            type="occupancy.signal",
+            source="event_bridge",
+            location_id="kitchen",
+            payload={"event_type": "trigger", "source_id": "binary_sensor.kitchen_motion"},
+            timestamp=datetime.now(UTC),
+        )
+    )
+
+    assert sensor.extra_state_attributes["recent_changes"] == [{"kind": "signal", "event": "trigger"}]
     assert sensor.async_write_ha_state.call_count == 1

@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Occupancy entities now expose a normalized `recent_changes` explainability
+  buffer that combines room-level occupied/vacant transitions with recent
+  source-level occupancy signals for the Detection inspector.
+- Added backend/frontend regression coverage for explainability updates,
+  service-kernel resolution, and managed-action registry grouping behavior.
+
+### Changed
+
+- Detection now treats `Room Explainability` as the primary diagnostic surface,
+  and advanced occupancy relationship controls are hidden from the active UI
+  until that workflow is revalidated.
+- Removed the header-level runtime event log from the primary workspace and
+  documented that hard-disable in the active contracts and ADR log.
+- Reworked the public README and installation guide around a clearer evaluation
+  and first-run path for Home Assistant users.
+
+### Fixed
+
+- Service resolution now ignores non-kernel `hass.data[DOMAIN]` entries when
+  multiple TopoMation config entries are loaded.
+- Managed-action entity-registry grouping now skips redundant update calls when
+  labels, categories, and area metadata are already correct.
+
 ## [0.2.29] - 2026-03-15
 
 ### Added

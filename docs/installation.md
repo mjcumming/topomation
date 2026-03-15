@@ -1,141 +1,189 @@
-# Installation Guide — Topomation v0.1.0
+# Installation Guide
 
-This guide covers installing the Topomation integration on Home Assistant for v0.1.0 (alpha).
+This guide covers installing and first-run setup for the TopoMation Home Assistant integration.
 
 ## Prerequisites
 
 - Home Assistant 2024.1.0 or newer
-- Python 3.12+ (HA 2024.x uses Python 3.12)
-- The `home-topology` core library (installed automatically via manifest)
+- HACS for the recommended install path
+- Existing Home Assistant areas and, optionally, floors
 
-## Installation Methods
+The integration installs its `home-topology` dependency automatically through the manifest.
 
-### HACS (Recommended)
+## Install with HACS
 
 1. Ensure [HACS](https://hacs.xyz/) is installed.
-2. Open **HACS** → **Integrations**.
-3. Click the three-dots menu → **Custom repositories**.
-4. Add: `https://github.com/mjcumming/topomation`
-5. Choose **Integration** as the category and add.
-6. Search for **Topomation** and click **Download**.
+2. Open **HACS** -> **Integrations**.
+3. Open the menu -> **Custom repositories**.
+4. Add `https://github.com/mjcumming/topomation`.
+5. Choose **Integration** as the category.
+6. Search for **TopoMation** and install it.
 7. Restart Home Assistant.
-8. Go to **Settings** → **Devices & Services** → **Add Integration** → **Topomation**.
+8. Go to **Settings** -> **Devices & Services** -> **Add Integration** -> **TopoMation**.
 
-### Manual
+## Manual install
 
 1. Download the [latest release](https://github.com/mjcumming/topomation/releases) or clone the repository.
-2. Copy the `custom_components/topomation` directory into your Home Assistant `config/custom_components/` directory.
+2. Copy `custom_components/topomation` into `config/custom_components/`.
 3. Restart Home Assistant.
-4. Go to **Settings** → **Devices & Services** → **Add Integration** → **Topomation**.
+4. Add **TopoMation** in **Settings** -> **Devices & Services**.
 
-## Post-Installation
+## First-run setup
 
-### 1. Configure the Integration
+### 1. Prepare floors and areas in Home Assistant
 
-The integration uses a config flow. After adding it, you will be guided through setup. No additional configuration is required for basic use.
+TopoMation imports Home Assistant floors and areas. Create or review those first in:
 
-### 2. Create Areas and Floors
+`Settings -> Areas, labels & zones`
 
-Areas and Floors are managed in Home Assistant Settings:
+Recommended setup:
 
-1. Go to **Settings** → **Areas, labels & zones**.
-2. Create Floors (e.g., Ground Floor, First Floor).
-3. Create Areas and assign them to floors.
-4. Assign entities (motion sensors, lights) to areas.
+1. Create floors such as `Main Floor` or `Basement`.
+2. Create areas such as `Kitchen`, `Living Room`, or `Garage`.
+3. Assign relevant entities to those areas.
 
-Optional topology wrappers managed by Topomation UI:
+TopoMation can also create topology-only structure around those imported nodes:
 
-1. Create `building` and/or `grounds` root nodes for structural grouping.
-2. Nest HA-backed floors/areas under those wrappers as needed.
-3. Use `subarea` nodes for child zones under an area (for example Pantry under Kitchen).
+- `building` for an indoor root
+- `grounds` for outdoor structure
+- `subarea` for nested zones such as closets, pantries, or reading nooks
 
-### 3. Import into Topology
+### 2. Open the TopoMation panel
 
-The integration automatically imports your HA areas and floors on startup. To force a re-import:
+After the integration loads, open **TopoMation** from the Home Assistant sidebar.
 
-- Reload the Topomation integration from **Settings** → **Devices & Services**, or
-- Restart Home Assistant.
+The main workspace is split into:
 
-### 4. Open the Manager
+- the location tree on the left
+- a right-side inspector with:
+  - `Configure`
+  - `Assign Devices`
 
-The integration exposes one primary sidebar panel:
+Inside `Configure`, the current inspector tabs are:
 
-- **Location Manager**: Topology/hierarchy management with occupancy and actions
-  tabs in the right panel (`Detection`, `On Occupied`, `On Vacant`).
-  Access requires an admin user session.
-  Action rules created in `On Occupied` / `On Vacant` are native Home Assistant
-  automations (not integration-local rule storage).
-  The built-in action composer is intentionally opinionated for common cases:
-  media players only expose `Stop` and `Turn off` actions.
-  If you want play/turn-on behavior on occupancy, use Topomation occupancy entities
-  as triggers in your own HA automations.
+- `Detection`
+- `Ambient`
+- `Lighting`
+- `Media`
+- `HVAC`
 
-Deep-link aliases are also available (same panel, different default focus):
+Admin access is required for panel use and managed automation writes.
 
-- `/topomation-occupancy`
-- `/topomation-actions`
+### 3. Build your topology
 
-### 5. Manual occupancy controls in the tree
+1. Review the imported floors and areas.
+2. Add `building`, `grounds`, or `subarea` nodes where helpful.
+3. Reorganize locations in the tree as needed.
 
-Each non-root location row in the left tree includes:
+TopoMation does not replace Home Assistant floors and areas. It adds hierarchy on top of them.
 
-- Occupancy icon (`mdi:home` / `mdi:home-account`) to manually mark occupied or unoccupied
-- Lock icon (`mdi:lock*`) to lock/unlock occupancy state
+### 4. Configure occupancy
 
-Behavior contract:
+Select a location and use the `Detection` tab to:
 
-- Mark occupied calls `topomation.trigger` with `source_id=manual_ui`
-- Mark unoccupied calls `topomation.vacate_area` with `source_id=manual_ui`
-- If the location is locked, manual occupancy changes are blocked and a warning is shown
+- add occupancy sources
+- define timeout behavior
+- configure sync relationships where needed
 
-### 6. Automation-first lock policies (recommended)
+Useful source examples:
 
-Topomation lock behavior is intended to be driven from HA automations:
+- motion sensors
+- door contacts
+- mmWave presence sensors
+- camera person-detection binary sensors
+- smart switches or other entity state changes
 
-- `topomation.lock` supports:
-  - `mode=freeze`
-  - `mode=block_occupied` (away/security)
-  - `mode=block_vacant` (party/manual hold)
-  - `scope=self|subtree`
-- Release with `topomation.unlock` (same `source_id`) or `topomation.unlock_all`.
+### 5. Configure ambient behavior
 
-Two starter blueprints are provided in this repository:
+Use the `Ambient` tab to:
+
+- assign a lux sensor directly
+- inherit ambient behavior from a parent location
+- define dark and bright thresholds
+- fall back to sunrise and sunset when needed
+
+### 6. Create managed automations
+
+Use the rule tabs to create native Home Assistant automations:
+
+- `Lighting` for `light.*` targets
+- `Media` for `media_player.*` targets
+- `HVAC` for `fan.*` and compatible ventilation-style `switch.*` targets
+
+Rules created here are stored as Home Assistant automations and appear in:
+
+`Settings -> Automations & Scenes`
+
+### 7. Validate the first room
+
+For a quick first success:
+
+1. Pick one room.
+2. Add one detection source.
+3. Set a timeout.
+4. Add a simple `On occupied` and `On vacant` lighting rule.
+5. Trigger the room and verify:
+   - the location occupancy sensor changes
+   - the managed automation appears in HA
+   - HA traces show the rule firing
+
+## Manual controls and services
+
+The tree exposes quick operator controls for manual occupancy and lock testing.
+
+These map to integration services:
+
+- `topomation.trigger`
+- `topomation.clear`
+- `topomation.vacate`
+- `topomation.vacate_area`
+- `topomation.lock`
+- `topomation.unlock`
+- `topomation.unlock_all`
+
+Lock-policy guidance: [docs/occupancy-lock-workflows.md](occupancy-lock-workflows.md)
+
+## Recommended automation-driven lock workflows
+
+TopoMation lock policies are designed to work well with HA helpers and automations:
+
+- `mode=block_occupied` for away or security workflows
+- `mode=block_vacant` for party mode or manual hold workflows
+- `mode=freeze` for temporary testing or state freeze scenarios
+
+Starter blueprints are included in:
 
 - `blueprints/automation/topomation/away_mode_vacant_guard.yaml`
 - `blueprints/automation/topomation/party_mode_hold_occupied.yaml`
-
-Import those files into HA blueprint editor, then create automations from the imported blueprints.
 
 ## Troubleshooting
 
 ### Integration fails to load
 
-- Check the [Home Assistant logs](https://www.home-assistant.io/docs/configuration/logging/) for errors.
-- Ensure `home-topology==1.0.0` is installed (it should install automatically; if not, install via pip in your HA environment).
+- Check Home Assistant logs.
+- Confirm the install completed and Home Assistant restarted cleanly.
 
 ### No locations appear
 
-- Create at least one Area in **Settings** → **Areas, labels & zones**.
+- Create at least one Home Assistant area.
 - Reload the integration or restart Home Assistant.
 
-### Occupancy entities not updating
+### Occupancy is not changing
 
-- Ensure motion sensors (or other sources) are assigned to the correct areas.
-- Add the entity as an occupancy source in the Location Manager panel
-  (select location → `Detection` tab → Add Source).
-- For integration-owned nodes (`building`, `grounds`, `subarea`), use explicit **Add Source** assignment from HA entities.
+- Confirm the entity is assigned to the expected location.
+- Confirm it was added as a source in `Detection`.
+- For topology-only nodes such as `building`, `grounds`, and `subarea`, use explicit source assignment from the UI.
 
-### Action rule create/delete fails
+### Rule creation fails
 
-- Confirm your user has admin rights (Topomation managed-action writes are admin-gated).
-- Open **Settings** → **Automations & Scenes** and verify automations can be created manually.
-- If occupancy actions still fail:
-  - inspect WS failures for `topomation/actions/rules/*` in browser dev tools
-  - check HA logs for `custom_components.topomation.managed_actions` errors.
+- Confirm you are using an admin account.
+- Confirm Home Assistant can create automations normally.
+- Check browser dev tools for websocket failures.
+- Check HA logs for `custom_components.topomation.managed_actions` errors.
 
-## Uninstallation
+## Uninstall
 
-1. Go to **Settings** → **Devices & Services**.
-2. Find **Topomation** and click the three dots → **Delete**.
-3. Remove `custom_components/topomation` if you installed manually.
+1. Go to **Settings** -> **Devices & Services**.
+2. Remove **TopoMation**.
+3. Delete `custom_components/topomation` if you installed manually.
 4. Restart Home Assistant.

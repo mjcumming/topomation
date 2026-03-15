@@ -1306,16 +1306,11 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(element.shadowRoot!.querySelector('[data-testid="header-vacancy-reason"]')).to.not.exist;
   });
 
-  it("creates adjacency edges from inspector controls", async () => {
-    const callWsRequests: Array<Record<string, any>> = [];
+  it("hides advanced occupancy relationship controls", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>) => {
-        callWsRequests.push(request);
         if (request.type === "config/entity_registry/list") return [] as T;
         if (request.type === "config/device_registry/list") return [] as T;
-        if (request.type === "topomation/adjacency/create") {
-          return { success: true, adjacency_edge: { edge_id: "edge_area_kitchen_area_hallway" } } as T;
-        }
         return {} as T;
       },
       connection: {},
@@ -1330,60 +1325,18 @@ describe("HtLocationInspector occupancy source composer", () => {
     location.name = "Kitchen";
     location.modules._meta = { type: "area" };
 
-    const allLocations: Location[] = [
-      location,
-      {
-        ...structuredClone(baseLocation),
-        id: "area_hallway",
-        name: "Hallway",
-        parent_id: null,
-        modules: { _meta: { type: "area" } },
-      },
-    ];
-
     const element = await fixture<HtLocationInspector>(html`
-      <ht-location-inspector
-        .hass=${hass}
-        .location=${location}
-        .allLocations=${allLocations}
-        .adjacencyEdges=${[]}
-      ></ht-location-inspector>
+      <ht-location-inspector .hass=${hass} .location=${location}></ht-location-inspector>
     `);
     await element.updateComplete;
-    await switchTopTab(element, "Advanced");
 
-    const advancedToggle = element.shadowRoot!.querySelector(
-      '[data-testid="adjacency-advanced-toggle"]'
-    ) as HTMLButtonElement;
-    expect(advancedToggle).to.exist;
-    advancedToggle.click();
-    await element.updateComplete;
-
-    let adjacencyChanged = false;
-    element.addEventListener("adjacency-changed", () => {
-      adjacencyChanged = true;
-    });
-
-    const addButton = element.shadowRoot!.querySelector(
-      ".adjacency-form-actions .button.button-primary"
-    ) as HTMLButtonElement;
-    expect(addButton).to.exist;
-    expect(addButton.disabled).to.equal(false);
-
-    addButton.click();
-    await element.updateComplete;
-
-    const createCall = callWsRequests.find(
-      (request) => request.type === "topomation/adjacency/create"
-    );
-    expect(createCall).to.exist;
-    expect(createCall?.from_location_id).to.equal("area_kitchen");
-    expect(createCall?.to_location_id).to.equal("area_hallway");
-    expect(createCall?.directionality).to.equal("bidirectional");
-    expect(adjacencyChanged).to.equal(true);
+    const inspectorText = element.shadowRoot?.textContent || "";
+    expect(inspectorText).to.not.include("Advanced Occupancy Relationships");
+    expect(inspectorText).to.not.include("Show Advanced Controls");
+    expect(element.shadowRoot?.querySelector('[data-testid="adjacency-advanced-toggle"]')).to.equal(null);
   });
 
-  it("limits adjacency neighbors to same-parent room-level siblings", async () => {
+  it("does not render adjacency neighbor controls in the active inspector UI", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>) => {
         if (request.type === "config/entity_registry/list") return [] as T;
@@ -1465,24 +1418,9 @@ describe("HtLocationInspector occupancy source composer", () => {
       ></ht-location-inspector>
     `);
     await element.updateComplete;
-    await switchTopTab(element, "Advanced");
 
-    const advancedToggle = element.shadowRoot!.querySelector(
-      '[data-testid="adjacency-advanced-toggle"]'
-    ) as HTMLButtonElement;
-    expect(advancedToggle).to.exist;
-    advancedToggle.click();
-    await element.updateComplete;
-
-    const neighborSelect = element.shadowRoot!.querySelector(
-      "#adjacency-neighbor"
-    ) as HTMLSelectElement;
-    expect(neighborSelect).to.exist;
-
-    const optionLabels = [...neighborSelect.querySelectorAll("option")].map((option) =>
-      option.textContent?.trim()
-    );
-    expect(optionLabels).to.deep.equal(["Hallway"]);
+    expect(element.shadowRoot?.querySelector("#adjacency-neighbor")).to.equal(null);
+    expect(element.shadowRoot?.textContent || "").to.not.include("Advanced Occupancy Relationships");
   });
 
   it("limits cross-area source picker to sibling areas on the same floor", async () => {
@@ -1604,17 +1542,11 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(panelText).to.include("Sibling areas on this floor are available, plus all compatible entities in this area.");
   });
 
-  it("supports multi-select linked room contributors without locking editing", async () => {
-    const callWsRequests: Array<Record<string, any>> = [];
+  it("does not render linked-room contributor controls in the active inspector UI", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>) => {
-        callWsRequests.push(request);
         if (request.type === "config/entity_registry/list") return [] as T;
         if (request.type === "config/device_registry/list") return [] as T;
-        if (request.type === "topomation/locations/set_module_config") {
-          await new Promise((resolve) => setTimeout(resolve, 40));
-          return { success: true } as T;
-        }
         return {} as T;
       },
       connection: {},
@@ -1686,55 +1618,9 @@ describe("HtLocationInspector occupancy source composer", () => {
       ></ht-location-inspector>
     `);
     await element.updateComplete;
-    await switchTopTab(element, "Advanced");
-    const advancedToggle = element.shadowRoot!.querySelector(
-      '[data-testid="adjacency-advanced-toggle"]'
-    ) as HTMLButtonElement;
-    expect(advancedToggle).to.exist;
-    advancedToggle.click();
-    await element.updateComplete;
 
-    const familyCheckbox = element.shadowRoot!.querySelector(
-      '[data-testid="linked-location-area_family_room"]'
-    ) as HTMLInputElement;
-    const diningCheckbox = element.shadowRoot!.querySelector(
-      '[data-testid="linked-location-area_dining_room"]'
-    ) as HTMLInputElement;
-    expect(familyCheckbox).to.exist;
-    expect(diningCheckbox).to.exist;
-    expect(familyCheckbox.checked).to.equal(false);
-    expect(diningCheckbox.checked).to.equal(false);
-
-    familyCheckbox.click();
-    await element.updateComplete;
-    expect(familyCheckbox.disabled).to.equal(false);
-    expect(diningCheckbox.disabled).to.equal(false);
-
-    diningCheckbox.click();
-    await element.updateComplete;
-    familyCheckbox.click();
-    await element.updateComplete;
-
-    const saveButton = element.shadowRoot!.querySelector(
-      '[data-testid="detection-save-button"]'
-    ) as HTMLButtonElement;
-    expect(saveButton).to.exist;
-    saveButton.click();
-    await element.updateComplete;
-
-    await waitUntil(() => {
-      const requests = callWsRequests.filter(
-        (item) => item.type === "topomation/locations/set_module_config" && item.location_id === "area_kitchen"
-      );
-      return requests.length >= 1;
-    }, "linked room save request not observed");
-
-    const requests = callWsRequests.filter(
-      (item) => item.type === "topomation/locations/set_module_config" && item.location_id === "area_kitchen"
-    );
-    const latest = requests[requests.length - 1];
-    expect(Array.isArray(latest?.config?.linked_locations)).to.equal(true);
-    expect(latest.config.linked_locations).to.deep.equal(["area_dining_room"]);
+    expect(element.shadowRoot?.querySelector('[data-testid="linked-location-area_family_room"]')).to.equal(null);
+    expect(element.shadowRoot?.querySelector('[data-testid="linked-location-area_dining_room"]')).to.equal(null);
   });
 
   it("sync locations writes reciprocal config updates", async () => {
@@ -2275,16 +2161,11 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(managedShadowCheckbox).to.equal(null);
   });
 
-  it("supports optional two-way linked room toggles", async () => {
-    const callWsRequests: Array<Record<string, any>> = [];
+  it("does not render two-way linked-room toggles in the active inspector UI", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>) => {
-        callWsRequests.push(request);
         if (request.type === "config/entity_registry/list") return [] as T;
         if (request.type === "config/device_registry/list") return [] as T;
-        if (request.type === "topomation/locations/set_module_config") {
-          return { success: true } as T;
-        }
         return {} as T;
       },
       connection: {},
@@ -2349,77 +2230,10 @@ describe("HtLocationInspector occupancy source composer", () => {
       ></ht-location-inspector>
     `);
     await element.updateComplete;
-    await switchTopTab(element, "Advanced");
-    const advancedToggle = element.shadowRoot!.querySelector(
-      '[data-testid="adjacency-advanced-toggle"]'
-    ) as HTMLButtonElement;
-    expect(advancedToggle).to.exist;
-    advancedToggle.click();
-    await element.updateComplete;
 
-    const linkedCheckbox = element.shadowRoot!.querySelector(
-      '[data-testid="linked-location-area_family_room"]'
-    ) as HTMLInputElement;
-    const twoWayCheckbox = element.shadowRoot!.querySelector(
-      '[data-testid="linked-location-two-way-area_family_room"]'
-    ) as HTMLInputElement;
-    expect(linkedCheckbox).to.exist;
-    expect(twoWayCheckbox).to.exist;
-    expect(twoWayCheckbox.disabled).to.equal(true);
-
-    linkedCheckbox.click();
-    await element.updateComplete;
-
-    expect(twoWayCheckbox.disabled).to.equal(false);
-    twoWayCheckbox.click();
-    await element.updateComplete;
-
-    let saveButton = element.shadowRoot!.querySelector(
-      '[data-testid="detection-save-button"]'
-    ) as HTMLButtonElement;
-    expect(saveButton).to.exist;
-    saveButton.click();
-    await element.updateComplete;
-
-    await waitUntil(() => {
-      return callWsRequests.some(
-        (item) =>
-          item.type === "topomation/locations/set_module_config" &&
-          item.location_id === "area_kitchen" &&
-          Array.isArray(item.config?.linked_locations) &&
-          item.config.linked_locations.includes("area_family_room")
-      );
-    }, "forward linked room add request not observed");
-
-    await waitUntil(() => {
-      return callWsRequests.some(
-        (item) =>
-          item.type === "topomation/locations/set_module_config" &&
-          item.location_id === "area_family_room" &&
-          Array.isArray(item.config?.linked_locations) &&
-          item.config.linked_locations.includes("area_kitchen")
-      );
-    }, "reverse linked room add request not observed");
-
-    twoWayCheckbox.click();
-    await element.updateComplete;
-
-    saveButton = element.shadowRoot!.querySelector(
-      '[data-testid="detection-save-button"]'
-    ) as HTMLButtonElement;
-    expect(saveButton).to.exist;
-    saveButton.click();
-    await element.updateComplete;
-
-    await waitUntil(() => {
-      return callWsRequests.some(
-        (item) =>
-          item.type === "topomation/locations/set_module_config" &&
-          item.location_id === "area_family_room" &&
-          Array.isArray(item.config?.linked_locations) &&
-          !item.config.linked_locations.includes("area_kitchen")
-      );
-    }, "reverse linked room remove request not observed");
+    expect(element.shadowRoot?.querySelector('[data-testid="linked-location-two-way-area_family_room"]')).to.equal(
+      null
+    );
   });
 
   it("does not offer linked room checkboxes for non-area floor-rooted locations", async () => {
@@ -2484,16 +2298,11 @@ describe("HtLocationInspector occupancy source composer", () => {
     );
   });
 
-  it("removes adjacency edges from inspector controls", async () => {
-    const callWsRequests: Array<Record<string, any>> = [];
+  it("does not render adjacency delete controls in the active inspector UI", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>) => {
-        callWsRequests.push(request);
         if (request.type === "config/entity_registry/list") return [] as T;
         if (request.type === "config/device_registry/list") return [] as T;
-        if (request.type === "topomation/adjacency/delete") {
-          return { success: true } as T;
-        }
         return {} as T;
       },
       connection: {},
@@ -2539,36 +2348,11 @@ describe("HtLocationInspector occupancy source composer", () => {
       ></ht-location-inspector>
     `);
     await element.updateComplete;
-    await switchTopTab(element, "Advanced");
 
-    const advancedToggle = element.shadowRoot!.querySelector(
-      '[data-testid="adjacency-advanced-toggle"]'
-    ) as HTMLButtonElement;
-    expect(advancedToggle).to.exist;
-    advancedToggle.click();
-    await element.updateComplete;
-
-    let adjacencyChanged = false;
-    element.addEventListener("adjacency-changed", () => {
-      adjacencyChanged = true;
-    });
-
-    const removeButton = element.shadowRoot!.querySelector(
-      ".adjacency-delete-btn"
-    ) as HTMLButtonElement;
-    expect(removeButton).to.exist;
-    removeButton.click();
-    await element.updateComplete;
-
-    const deleteCall = callWsRequests.find(
-      (request) => request.type === "topomation/adjacency/delete"
-    );
-    expect(deleteCall).to.exist;
-    expect(deleteCall?.edge_id).to.equal("edge_area_kitchen_area_hallway");
-    expect(adjacencyChanged).to.equal(true);
+    expect(element.shadowRoot?.querySelector(".adjacency-delete-btn")).to.equal(null);
   });
 
-  it("renders handoff traces for the selected location", async () => {
+  it("does not render handoff trace controls in the active inspector UI", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>) => {
         if (request.type === "config/entity_registry/list") return [] as T;
@@ -2620,22 +2404,8 @@ describe("HtLocationInspector occupancy source composer", () => {
       ></ht-location-inspector>
     `);
     await element.updateComplete;
-    await switchTopTab(element, "Advanced");
 
-    const advancedToggle = element.shadowRoot!.querySelector(
-      '[data-testid="adjacency-advanced-toggle"]'
-    ) as HTMLButtonElement;
-    expect(advancedToggle).to.exist;
-    advancedToggle.click();
-    await element.updateComplete;
-
-    const traceRows = element.shadowRoot!.querySelectorAll(".handoff-trace-row");
-    expect(traceRows.length).to.equal(1);
-    const traceText = (traceRows[0].textContent || "").replace(/\s+/g, " ").trim();
-    expect(traceText).to.include("Kitchen -> Hallway");
-    expect(traceText).to.include("Provisional Triggered");
-    expect(traceText).to.include("window 12s");
-    expect(traceText).to.include("trigger: binary_sensor.kitchen_hallway_door");
+    expect(element.shadowRoot!.querySelectorAll(".handoff-trace-row").length).to.equal(0);
   });
 
   it("renders vacant-at timestamp when effective timeout is provided", async () => {
@@ -3985,7 +3755,7 @@ describe("HtLocationInspector WIAB configuration", () => {
     );
   });
 
-  it("renders the recent occupancy events drawer and expands when Show all is toggled", async () => {
+  it("renders room explainability with current state and expandable recent changes", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>) => {
         if (request.type === "config/entity_registry/list") return [] as T;
@@ -4000,6 +3770,7 @@ describe("HtLocationInspector WIAB configuration", () => {
           attributes: {
             device_class: "occupancy",
             location_id: "area_kitchen",
+            reason: "event:trigger",
             contributions: [
               {
                 source_id: "binary_sensor.kitchen_motion",
@@ -4010,6 +3781,44 @@ describe("HtLocationInspector WIAB configuration", () => {
                 source_id: "sensor.kitchen_presence",
                 state: "active",
                 updated_at: new Date(Date.now() - 1000).toISOString(),
+              },
+            ],
+            recent_changes: [
+              {
+                kind: "state",
+                event: "occupied",
+                reason: "event:trigger",
+                changed_at: new Date().toISOString(),
+              },
+              {
+                kind: "signal",
+                event: "trigger",
+                source_id: "binary_sensor.kitchen_motion",
+                changed_at: new Date(Date.now() - 1000).toISOString(),
+              },
+              {
+                kind: "signal",
+                event: "clear",
+                source_id: "sensor.kitchen_presence",
+                changed_at: new Date(Date.now() - 2000).toISOString(),
+              },
+              {
+                kind: "signal",
+                event: "trigger",
+                source_id: "sensor.kitchen_presence",
+                changed_at: new Date(Date.now() - 3000).toISOString(),
+              },
+              {
+                kind: "signal",
+                event: "clear",
+                source_id: "binary_sensor.kitchen_motion",
+                changed_at: new Date(Date.now() - 4000).toISOString(),
+              },
+              {
+                kind: "signal",
+                event: "trigger",
+                source_id: "binary_sensor.kitchen_motion",
+                changed_at: new Date(Date.now() - 5000).toISOString(),
               },
             ],
           },
@@ -4040,10 +3849,16 @@ describe("HtLocationInspector WIAB configuration", () => {
       '[data-testid="recent-occupancy-events-drawer"]'
     ) as HTMLElement | null;
     expect(drawer).to.exist;
-    expect(drawer?.textContent || "").to.include("Recent Occupancy Events");
+    expect(drawer?.textContent || "").to.include("Room Explainability");
+    expect(drawer?.textContent || "").to.include("Current state");
+    expect(drawer?.textContent || "").to.include("Room became occupied");
+    expect(drawer?.textContent || "").to.not.include("Advanced Occupancy Relationships");
+    expect(
+      element.shadowRoot?.querySelector('[data-testid="adjacency-advanced-toggle"]')
+    ).to.equal(null);
 
-    const initialRows = element.shadowRoot?.querySelectorAll(".occupancy-event") || [];
-    expect(initialRows.length).to.equal(1);
+    const recentRows = Array.from(element.shadowRoot?.querySelectorAll(".occupancy-event") || []);
+    expect(recentRows.length).to.be.greaterThan(5);
 
     const toggle = element.shadowRoot?.querySelector(
       '[data-testid="recent-events-toggle"]'
@@ -4052,8 +3867,9 @@ describe("HtLocationInspector WIAB configuration", () => {
     toggle?.click();
     await element.updateComplete;
 
-    const expandedRows = element.shadowRoot?.querySelectorAll(".occupancy-event") || [];
-    expect(expandedRows.length).to.equal(2);
+    const expandedText = drawer?.textContent || "";
+    expect(expandedText).to.include("Source cleared");
+    expect(expandedText).to.include("Source triggered");
 
     const collapseToggle = element.shadowRoot?.querySelector(
       '[data-testid="recent-events-collapse-toggle"]'
@@ -4064,7 +3880,7 @@ describe("HtLocationInspector WIAB configuration", () => {
     expect(drawer?.className || "").to.include("collapsed");
   });
 
-  it("runs Sync Import from managed system area remediation control", async () => {
+  it("auto-runs Sync Import when managed system area mapping needs repair", async () => {
     const callWsRequests: Array<Record<string, any>> = [];
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>) => {
@@ -4108,13 +3924,6 @@ describe("HtLocationInspector WIAB configuration", () => {
         .allLocations=${allLocations}
       ></ht-location-inspector>
     `);
-    await element.updateComplete;
-
-    const syncImportButton = element.shadowRoot!.querySelector(
-      '[data-testid="managed-shadow-sync-import"]'
-    ) as HTMLButtonElement | null;
-    expect(syncImportButton).to.exist;
-    syncImportButton?.click();
     await element.updateComplete;
 
     await waitUntil(
@@ -4736,11 +4545,13 @@ describe("HtLocationInspector WIAB configuration", () => {
 
   it("supports multiple lighting actions in a single rule save payload", async () => {
     const createCalls: Array<Record<string, any>> = [];
+    let listCalls = 0;
     let persistedRules: Array<Record<string, any>> = [];
 
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>): Promise<T> => {
         if (request.type === "topomation/actions/rules/list") {
+          listCalls += 1;
           return { rules: persistedRules } as T;
         }
         if (request.type === "topomation/actions/rules/create") {
@@ -4857,6 +4668,7 @@ describe("HtLocationInspector WIAB configuration", () => {
       includeToggles[1].dispatchEvent(new Event("change", { bubbles: true, composed: true }));
     }
     await element.updateComplete;
+    const listCallsBeforeSave = listCalls;
 
     const saveRuleButton = Array.from(
       element.shadowRoot?.querySelectorAll(".dusk-block-footer button") || []
@@ -4874,6 +4686,8 @@ describe("HtLocationInspector WIAB configuration", () => {
       (action) => action.entity_id === "light.kitchen_ceiling"
     );
     expect(ceilingAction?.only_if_off).to.equal(true);
+    await new Promise((resolve) => window.setTimeout(resolve, 350));
+    expect(listCalls).to.equal(listCallsBeforeSave);
   });
 
   it("uses card-local lifecycle controls for persisted and draft lighting rules", async () => {

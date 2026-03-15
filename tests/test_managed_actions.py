@@ -634,3 +634,48 @@ def test_apply_topomation_grouping_uses_topomation_labels_and_category(
         "automation": "category_topomation",
     }
     assert captured["area_id"] == "area_kitchen"
+
+
+def test_apply_topomation_grouping_skips_registry_write_when_metadata_is_unchanged(
+    hass: HomeAssistant,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Grouping should not emit registry churn when labels/category/area already match."""
+    manager = TopomationManagedActions(hass)
+    update_calls: list[dict[str, object]] = []
+
+    registry_entry = SimpleNamespace(
+        labels=("existing_label", "label_topomation", "label_occupied"),
+        categories={"diagnostic": "category_existing", "automation": "category_topomation"},
+        area_id="area_kitchen",
+    )
+
+    class _FakeRegistry:
+        def async_get(self, entity_id: str) -> SimpleNamespace | None:
+            if entity_id == "automation.kitchen_occupied":
+                return registry_entry
+            return None
+
+        def async_update_entity(self, entity_id: str, **kwargs: object) -> None:
+            update_calls.append({"entity_id": entity_id, **kwargs})
+
+    fake_registry = _FakeRegistry()
+
+    def _ensure_label(name: str) -> str:
+        if name == "TopoMation":
+            return "label_topomation"
+        if name == "TopoMation - On Occupied":
+            return "label_occupied"
+        return "label_unknown"
+
+    monkeypatch.setattr("custom_components.topomation.managed_actions.er.async_get", lambda _: fake_registry)
+    monkeypatch.setattr(manager, "_ensure_label", _ensure_label)
+    monkeypatch.setattr(manager, "_ensure_automation_category", lambda _: "category_topomation")
+
+    manager._apply_topomation_grouping(  # noqa: SLF001
+        "automation.kitchen_occupied",
+        "on_occupied",
+        area_id="area_kitchen",
+    )
+
+    assert update_calls == []

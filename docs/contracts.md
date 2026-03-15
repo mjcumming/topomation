@@ -349,7 +349,8 @@ Additional save points:
 - Inspector IA contract:
   - top-level tabs: `Detection`, `Ambient`, `Lighting`, `Media`, `HVAC`
   - no top-level `Advanced` tab and no generic `Actions` tab
-  - advanced occupancy controls are rendered inside `Detection`.
+  - advanced occupancy relationship controls are hidden from the active
+    `Detection` UI until the workflow is revalidated.
 - Workspace mode controls contract:
   - `Configure` and `Assign Devices` are top-level workspace tabs (shared tab affordance pattern),
     not mixed-mode button toggles.
@@ -472,3 +473,32 @@ Additional save points:
 - Active docs that summarize current behavior (`docs/current-work.md`,
   `docs/work-tracking.md`, active issue checklists, and release/live validation
   docs) must stay aligned in the same change set.
+
+## C-021 Inspector Explainability Contract
+
+- The Detection inspector includes a bottom-of-panel explainability section for
+  occupancy v1.
+- This section is not a raw debug log. It answers:
+  - why the room is in its current occupancy state now
+  - what meaningful occupancy-related changes happened most recently
+- V1 explainability is occupancy-scoped only:
+  - current occupancy state
+  - active contributors
+  - next vacancy/timeout when available
+  - recent source-level signal events and room-level occupied/vacant transitions
+- V1 does not require raw internal engine traces or lock/unlock timeline
+  history.
+- A separate global runtime event log is not exposed in the primary workspace
+  for occupancy v1.
+- Occupancy entity attributes must expose a small recent-change buffer as
+  `recent_changes` for inspector rendering.
+- `recent_changes` entries are newest-first and normalized with:
+  - `kind`: `signal | state`
+  - `event`: normalized event name
+  - `changed_at`: ISO timestamp
+  - optional `source_id`
+  - optional `signal_key`
+  - optional `reason`
+  - optional `occupied`
+- The section title and help text must describe explainability, not imply a
+  generic event log when only current-state contributors are shown.

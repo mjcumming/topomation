@@ -251,21 +251,13 @@ test("floor can move to root or building, but not to grounds", async ({ page }) 
   await expect.poll(() => getParent("second-floor")).toBe("main-building");
 });
 
-test("event log toggle shows and hides event log panel", async ({ page }) => {
+test("main workspace does not expose a separate event log affordance", async ({ page }) => {
   await page.goto("/mock-harness.html");
 
   const panel = page.locator("topomation-panel");
   await expect(panel).toBeVisible();
-
-  const eventLogButton = panel.locator('button:has-text("Event Log")');
-  await expect(eventLogButton).toBeVisible();
-
-  await eventLogButton.click();
-  await expect(panel.locator(".event-log")).toBeVisible();
-  await expect(panel.locator(".event-log-header")).toContainText("Runtime Event Log");
-
-  await panel.locator('button:has-text("Hide Log")').click();
-  await expect(panel.locator(".event-log")).not.toBeVisible();
+  await expect(panel.getByRole("button", { name: "Event Log" })).toHaveCount(0);
+  await expect(panel.locator(".event-log")).toHaveCount(0);
 });
 
 test("selecting location shows occupancy inspector with area sensors", async ({ page }) => {

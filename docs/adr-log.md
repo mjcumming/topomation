@@ -2881,6 +2881,93 @@ model for how changes were being made and validated.
 
 ---
 
+### ADR-HA-064: Inspector Explainability over Raw Occupancy Logging (2026-03-15)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+
+The Detection inspector had a bottom card labeled `Recent Occupancy Events`, but
+the implementation was only a compact list of current occupancy contributors.
+That mismatch made the panel weak at the job users actually need while testing a
+ room:
+
+1. understand why the room is occupied or vacant right now
+2. confirm what just happened when a sensor fired or cleared
+3. debug timing surprises without exposing raw internal telemetry
+
+The question was whether to keep a generic log window, remove it, or define a
+more explicit user-facing purpose.
+
+**Decision**:
+
+Adopt an inspector explainability model for occupancy v1:
+
+1. Keep the section in the inspector.
+2. Treat it as explainability, not a raw debug/event dump.
+3. Split the content into:
+   - `Current state`
+   - `Recent changes`
+4. `Current state` shows why the room is occupied/vacant now, active
+   contributors, and next vacancy/timeout information when available.
+5. `Recent changes` shows a small newest-first timeline of meaningful
+   occupancy-related changes:
+   - source-level `occupancy.signal` events
+   - room-level occupied/vacant transitions
+6. V1 scope is occupancy only. Lock/unlock timeline history and deeper engine
+   traces are explicitly future work.
+
+**Rationale**:
+
+1. Users need a gut check while testing rooms, not a raw engineering log.
+2. Current-state explainability and recent changes solve different questions and
+   should not be collapsed into one mislabeled list.
+3. A small normalized event buffer is enough for v1 and keeps the contract
+   simple.
+4. This keeps the inspector honest about what it can explain today while
+   preserving room to add deeper traces later.
+
+**Consequences**:
+
+- ✅ The inspector now has a user-facing purpose for this section.
+- ✅ Recent source activity that does not flip occupancy can still appear in the
+  timeline.
+- ✅ The UI contract aligns with the data model instead of pretending a
+  contributor list is an event log.
+- ⚠️ Recent-change history is intentionally shallow and optimized for operator
+  understanding, not full forensic replay.
+- ⚠️ Lock/unlock timeline history remains out of scope for v1.
+
+**Alternatives Considered**:
+
+- Keep the old panel as-is: rejected because the label and behavior did not
+  match.
+- Remove the section entirely: rejected because users still need state
+  explainability in the inspector.
+- Build a full raw diagnostic trace first: rejected for v1 because it is more
+  expensive and less operator-friendly than the needed explainability surface.
+
+### Follow-up note: runtime event log hard-disabled in primary workspace
+
+The temporary header-level runtime event log affordance was later removed from
+the main panel workspace.
+
+Reasoning:
+
+1. It competed with `Room Explainability` while serving a different audience.
+2. It made the primary tree/inspector workflow feel debug-first.
+3. The v1 contract is explainability, not a generic runtime log.
+
+Policy:
+
+1. `Room Explainability` remains the only user-facing occupancy diagnostic
+   surface in the primary workspace.
+2. Re-enabling a broader runtime log remains allowed in the future, but only as
+   a clearly secondary diagnostics surface with its own explicit product
+   rationale.
+
+---
+
 ## How to Use This Log
 
 ### When to Create an ADR
