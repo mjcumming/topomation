@@ -44,7 +44,11 @@ echo "==> Release gate: real Home Assistant managed-action contract (local/test)
 
 echo "==> Release gate: live Home Assistant browser workflow"
 cd "${FRONTEND_DIR}"
-HA_URL="${HA_URL}" HA_TOKEN="${HA_TOKEN}" \
+# Use real panel at /topomation when targeting production (avoids static live-harness download issue)
+if [[ "${HA_TARGET}" == "prod" ]]; then
+  export LIVE_PANEL_PATH="/topomation"
+fi
+HA_URL="${HA_URL}" HA_TOKEN="${HA_TOKEN}" LIVE_PANEL_PATH="${LIVE_PANEL_PATH:-}" \
   npx playwright test --config playwright.live.config.ts playwright/live-automation-ui.spec.ts
 
 echo "==> Release gate complete (local + live)"

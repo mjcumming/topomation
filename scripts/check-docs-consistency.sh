@@ -4,6 +4,25 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
+# Use ripgrep if available; otherwise fall back to grep -E so the script runs in minimal envs
+if ! command -v rg &>/dev/null; then
+  echo "Note: rg (ripgrep) not found; using grep -E for doc consistency checks."
+  rg() {
+    local args=("$@")
+    local pattern="" start=0 i
+    for ((i=0; i<${#args[@]}; i++)); do
+      if [[ "${args[i]}" == "-e" && $((i+1)) -lt ${#args[@]} ]]; then
+        pattern="${args[i+1]}"
+        start=$((i+2))
+        break
+      fi
+    done
+    [[ -z "$pattern" ]] && return 0
+    grep -n -E "$pattern" "${args[@]:start}" 2>/dev/null || true
+  }
+  export -f rg 2>/dev/null || true
+fi
+
 fail=0
 
 check_matches() {
@@ -77,7 +96,11 @@ check_matches \
   "${POLICY_DOCS[@]}"
 
 # Active policy docs should not use deprecated automation UX labels/controls.
-sync_rooms_output="$(rg -n -e "\\bSync Rooms\\b" "${POLICY_DOCS[@]}" | rg -v 'not `Sync Rooms`' || true)"
+if command -v rg &>/dev/null; then
+  sync_rooms_output="$(rg -n -e "\\bSync Rooms\\b" "${POLICY_DOCS[@]}" | rg -v 'not `Sync Rooms`' || true)"
+else
+  sync_rooms_output="$(grep -n -E "\\bSync Rooms\\b" "${POLICY_DOCS[@]}" 2>/dev/null | grep -v 'not `Sync Rooms`' || true)"
+fi
 if [[ -n "$sync_rooms_output" ]]; then
   echo "[FAIL] No deprecated Sync Rooms label in active policy docs"
   echo "$sync_rooms_output"
@@ -112,10 +135,11 @@ check_matches \
   "migration compatibility.*dusk_dawn|may be present during migration|Target-state Lighting rule persistence is HA automation entities" \
   "docs/contracts.md" "docs/automation-ui-guide.md" "docs/architecture.md"
 
-legacy_automation_tabs_output="$(
-  rg -n -e 'Lighting`, `Appliances`, `Media`, and `HVAC`|Detection`, `Ambient`, `Lighting`, `Appliances`, `Media`, `HVAC`|`Appliances` -> `switch\\.\\*`|/topomation-appliances' \
-    "${POLICY_DOCS[@]}" || true
-)"
+if command -v rg &>/dev/null; then
+  legacy_automation_tabs_output="$(rg -n -e 'Lighting`, `Appliances`, `Media`, and `HVAC`|Detection`, `Ambient`, `Lighting`, `Appliances`, `Media`, `HVAC`|`Appliances` -> `switch\\.\\*`|/topomation-appliances' "${POLICY_DOCS[@]}" || true)"
+else
+  legacy_automation_tabs_output="$(grep -n -E 'Lighting`, `Appliances`, `Media`, and `HVAC`|Detection`, `Ambient`, `Lighting`, `Appliances`, `Media`, `HVAC`|`Appliances` -> `switch\.\*`|/topomation-appliances' "${POLICY_DOCS[@]}" 2>/dev/null || true)"
+fi
 if [[ -n "$legacy_automation_tabs_output" ]]; then
   echo "[FAIL] No legacy Appliances-first automation IA in active policy docs"
   echo "$legacy_automation_tabs_output"
@@ -195,10 +219,11 @@ require_match \
   "^\\*\\*Delivery Status\\*\\*:" \
   "project/issues/issue-058-automation-ui-contract-implementation.md"
 
-automation_live_pending="$(
-  rg -n -e "^- \\[ \\] Repeat these checks on a live HA runtime \\(outside mock harness\\) and record outcome\\." \
-    "docs/live-ha-validation-checklist.md" || true
-)"
+if command -v rg &>/dev/null; then
+  automation_live_pending="$(rg -n -e "^- \\[ \\] Repeat these checks on a live HA runtime \\(outside mock harness\\) and record outcome\\." "docs/live-ha-validation-checklist.md" || true)"
+else
+  automation_live_pending="$(grep -n -E "^- \\[ \\] Repeat these checks on a live HA runtime \\(outside mock harness\\) and record outcome\\." "docs/live-ha-validation-checklist.md" 2>/dev/null || true)"
+fi
 
 if [[ -n "$automation_live_pending" ]]; then
   check_matches \

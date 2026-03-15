@@ -408,7 +408,30 @@ class TopomationManagedActions:
             action_step_data = action_target.get("data")
             if isinstance(action_step_data, Mapping) and action_step_data:
                 action_step["data"] = dict(action_step_data)
-            config_actions.append(action_step)
+            only_if_off = (
+                bool(action_target.get("only_if_off"))
+                if self._action_supports_only_if_off(action_entity, action_service_name)
+                else False
+            )
+            if only_if_off:
+                config_actions.append(
+                    {
+                        "choose": [
+                            {
+                                "conditions": [
+                                    {
+                                        "condition": "state",
+                                        "entity_id": action_entity,
+                                        "state": "off",
+                                    }
+                                ],
+                                "sequence": [action_step],
+                            }
+                        ]
+                    }
+                )
+            else:
+                config_actions.append(action_step)
 
         config_payload: dict[str, Any] = {
             CONF_ID: automation_id,
@@ -695,6 +718,10 @@ class TopomationManagedActions:
             raw_data = action.get("data")
             if isinstance(raw_data, Mapping) and raw_data:
                 entry["data"] = dict(raw_data)
+            if self._action_supports_only_if_off(entry["entity_id"], entry["service"]):
+                only_if_off = action.get("only_if_off")
+                if isinstance(only_if_off, bool):
+                    entry["only_if_off"] = only_if_off
             if entry["entity_id"] and entry["service"]:
                 normalized_actions.append(entry)
 
@@ -1126,6 +1153,15 @@ class TopomationManagedActions:
         for raw_action in action_entries:
             if not isinstance(raw_action, Mapping):
                 continue
+            choose_entries = raw_action.get("choose")
+            if isinstance(choose_entries, list):
+                parsed_choose = self._extract_only_if_off_choose_action(raw_action)
+                if parsed_choose is not None:
+                    choose_entity_id = str(parsed_choose["entity_id"])
+                    if choose_entity_id not in seen_entity_ids:
+                        normalized_actions.append(parsed_choose)
+                        seen_entity_ids.add(choose_entity_id)
+                continue
             raw_service = raw_action.get("action") or raw_action.get("service")
             if not isinstance(raw_service, str) or not raw_service.strip():
                 continue
@@ -1198,11 +1234,17 @@ class TopomationManagedActions:
             raw_service = str(raw_action.get("service", "")).strip()
             service = raw_service or self._default_action_service_for_trigger(entity_id, trigger_type)
             data = self._normalize_action_data(raw_action.get("data"))
+            only_if_off = (
+                raw_action.get("only_if_off")
+                if self._action_supports_only_if_off(entity_id, service)
+                else None
+            )
             normalized.append(
                 {
                     "entity_id": entity_id,
                     "service": service,
                     **({"data": data} if data else {}),
+                    **({"only_if_off": bool(only_if_off)} if isinstance(only_if_off, bool) else {}),
                 }
             )
             seen_entity_ids.add(entity_id)
@@ -1223,6 +1265,51 @@ class TopomationManagedActions:
             )
 
         return normalized
+
+    @staticmethod
+    def _action_supports_only_if_off(entity_id: str, service: str) -> bool:
+        """Return True when one action target supports the only-if-off guard."""
+        return entity_id.startswith("light.") and service == "turn_on"
+
+    def _extract_only_if_off_choose_action(
+        self,
+        raw_action: Mapping[str, Any],
+    ) -> dict[str, Any] | None:
+        """Extract one Topomation choose wrapper that guards a light turn_on action."""
+        choose_entries = raw_action.get("choose")
+        if not isinstance(choose_entries, list) or len(choose_entries) != 1:
+            return None
+        choose_entry = choose_entries[0]
+        if not isinstance(choose_entry, Mapping):
+            return None
+        conditions = choose_entry.get("conditions")
+        sequence = choose_entry.get("sequence")
+        if not isinstance(conditions, list) or len(conditions) != 1:
+            return None
+        if not isinstance(sequence, list) or len(sequence) != 1:
+            return None
+        condition = conditions[0]
+        action_step = sequence[0]
+        if not isinstance(condition, Mapping) or not isinstance(action_step, Mapping):
+            return None
+        if (
+            condition.get("condition") != "state"
+            or condition.get("state") != "off"
+            or not isinstance(condition.get("entity_id"), str)
+        ):
+            return None
+        parsed_actions = self._extract_actions({"actions": [action_step]})
+        if len(parsed_actions) != 1:
+            return None
+        extracted = dict(parsed_actions[0])
+        entity_id = str(extracted.get("entity_id", "")).strip()
+        service = str(extracted.get("service", "")).strip()
+        if entity_id != str(condition.get("entity_id")).strip():
+            return None
+        if not self._action_supports_only_if_off(entity_id, service):
+            return None
+        extracted["only_if_off"] = True
+        return extracted
 
     def _normalize_action_data(self, raw_data: Any) -> dict[str, Any] | None:
         """Normalize managed action data payload for service call compatibility."""

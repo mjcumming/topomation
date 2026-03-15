@@ -150,6 +150,7 @@ export interface TopomationActionRule {
     entity_id: string;
     service: string;
     data?: Record<string, unknown>;
+    only_if_off?: boolean;
   }>;
   action_entity_id?: string;
   action_service?: string;

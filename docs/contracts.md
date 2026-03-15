@@ -402,15 +402,16 @@ Additional save points:
 - Lighting trigger-derived condition contract:
   - `on_dark` and `on_bright` imply the matching ambient condition and do not
     render a separate ambient-condition row.
-  - `on_occupied` locks `must_be_occupied=true` and renders it as
-    derived/read-only.
-  - `on_vacant` locks `must_be_occupied=false` and renders it as
-    derived/read-only.
-  - `on_vacant` locks `must_be_occupied=false` (displayed as `Must be vacant`)
-    and renders it as derived/read-only.
+  - `on_occupied` implies occupancy and does not render a separate
+    occupancy-condition row.
+  - `on_vacant` implies occupancy and does not render a separate
+    occupancy-condition row.
 - Lighting multi-action contract:
   - one Lighting rule may include multiple action targets.
   - persistence writes those targets as ordered HA automation action steps.
+  - individual `light.turn_on` targets may carry `only_if_off=true`, which
+    persists as a per-action guard and skips only that light when it is already
+    on.
   - response/list payloads include full action target list (`actions[]`) plus
     first-action summary fields for compatibility (`action_entity_id`,
     `action_service`, `action_data`).

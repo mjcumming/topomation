@@ -2255,6 +2255,7 @@ async def handle_action_rules_create(
                 connection.send_error(msg["id"], "invalid_payload", f"actions[{index}].entity_id is required")
                 return
             service = str(raw_action.get("service", "")).strip()
+            only_if_off_raw = raw_action.get("only_if_off")
             data_raw = raw_action.get("data")
             normalized_data: dict[str, Any] | None = None
             if data_raw is not None:
@@ -2288,6 +2289,13 @@ async def handle_action_rules_create(
                     "entity_id": entity_id,
                     "service": service,
                     **({"data": normalized_data} if normalized_data else {}),
+                    **(
+                        {"only_if_off": bool(only_if_off_raw)}
+                        if entity_id.startswith("light.")
+                        and service == "turn_on"
+                        and isinstance(only_if_off_raw, bool)
+                        else {}
+                    ),
                 }
             )
 

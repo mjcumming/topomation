@@ -7,6 +7,7 @@ export interface TopomationRuleAction {
   entity_id: string;
   service: string;
   data?: Record<string, unknown>;
+  only_if_off?: boolean;
 }
 
 export interface TopomationActionRule {
@@ -139,6 +140,10 @@ function normalizeActionData(raw: unknown): Record<string, unknown> | undefined 
   return Object.keys(data).length > 0 ? data : undefined;
 }
 
+function actionSupportsOnlyIfOff(entityId: string, service: string): boolean {
+  return entityId.startsWith("light.") && service === "turn_on";
+}
+
 function normalizeRuleActionsFromPayload(
   rule: Partial<TopomationActionRule>,
   fallbackTriggerType: ActionTriggerType
@@ -151,10 +156,15 @@ function normalizeRuleActionsFromPayload(
       if (!entityId) return undefined;
       const serviceRaw = String((action as any).service || "").trim();
       const service = serviceRaw || defaultActionServiceForTrigger(entityId, fallbackTriggerType);
+      const onlyIfOff =
+        actionSupportsOnlyIfOff(entityId, service) && typeof (action as any).only_if_off === "boolean"
+          ? Boolean((action as any).only_if_off)
+          : undefined;
       return {
         entity_id: entityId,
         service,
         ...(normalizeActionData((action as any).data) ? { data: normalizeActionData((action as any).data) } : {}),
+        ...(typeof onlyIfOff === "boolean" ? { only_if_off: onlyIfOff } : {}),
       } satisfies TopomationRuleAction;
     })
     .filter((action): action is TopomationRuleAction => !!action);

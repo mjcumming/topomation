@@ -297,25 +297,20 @@ test("live automation lighting workflow matches contracted lifecycle controls", 
     await triggerSelect.selectOption("on_occupied");
     await expect(
       draftRule.locator(".dusk-conditions .config-row", { hasText: "Must be occupied" })
-    ).toContainText("Must be occupied");
-    await expect(
-      draftRule.locator(".dusk-conditions .config-row", { hasText: "Must be occupied" })
-    ).toContainText("Set by trigger");
+    ).toHaveCount(0);
 
     await triggerSelect.selectOption("on_vacant");
     await expect(
       draftRule.locator(".dusk-conditions .config-row", { hasText: "Must be vacant" })
-    ).toContainText("Must be vacant");
-    await expect(
-      draftRule.locator(".dusk-conditions .config-row", { hasText: "Must be vacant" })
-    ).toContainText("Set by trigger");
+    ).toHaveCount(0);
 
     await triggerSelect.selectOption("on_occupied");
 
     const firstTwoLightRows = draftRule.locator(".dusk-light-action-row");
     await expect(firstTwoLightRows).toHaveCount(Math.max(2, location.lightIds.length));
-    await firstTwoLightRows.nth(0).locator("input[type='checkbox']").check();
-    await firstTwoLightRows.nth(1).locator("input[type='checkbox']").check();
+    await firstTwoLightRows.nth(0).locator('[data-testid*="-device-include-0"]').check();
+    await firstTwoLightRows.nth(1).locator('[data-testid*="-device-include-1"]').check();
+    await firstTwoLightRows.nth(0).locator('[data-testid*="-device-only-if-off-0"]').check();
 
     const firstSlider = firstTwoLightRows.nth(0).locator("input[type='range']").first();
     const secondSlider = firstTwoLightRows.nth(1).locator("input[type='range']").first();
@@ -330,6 +325,8 @@ test("live automation lighting workflow matches contracted lifecycle controls", 
     const createdRule = await waitForCreatedRule(page, location.id, existingRuleIds);
     createdRuleId = String(createdRule.id || "").trim();
     expect(createdRuleId).toBeTruthy();
+    expect(Array.isArray(createdRule.actions)).toBeTruthy();
+    expect(createdRule.actions[0]?.only_if_off).toBe(true);
 
     await expect(draftRule.getByRole("button", { name: "Save rule" })).toHaveCount(0);
     await expect(draftRule.getByRole("button", { name: "Update rule" })).toHaveCount(0);

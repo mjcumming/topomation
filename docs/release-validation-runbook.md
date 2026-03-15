@@ -1,6 +1,6 @@
 # Release Validation Runbook
 
-**Last reviewed**: 2026-02-27
+**Last reviewed**: 2026-03-06
 **Scope**: release-candidate validation before bumping `manifest.json` version.
 
 ## 0) Declare touched workflows first
@@ -75,6 +75,12 @@ gate now fails fast when it is missing.
 This gate must cover the exact workflows listed in
 `docs/touched-workflow-release-gate.md`.
 
+**UI workflows:** For any touched workflow that involves a user action in the
+panel (e.g. Lighting rule create/update/delete), the **only** path to
+`Live-validated` is a passed live gate that performs that action in real HA
+(e.g. `playwright/live-automation-ui.spec.ts`). Backend-only or mock-harness
+evidence does not substitute (see `docs/working-agreement.md` §5).
+
 Delivery status mapping for behavior-changing work:
 
 1. `Implemented`: code/docs/tests landed locally.
@@ -143,6 +149,7 @@ That command now runs:
 1. `./scripts/test-comprehensive.sh`
 2. `./tests/run-live-tests.sh tests/test-live-managed-actions-contract.py`
 3. `cd custom_components/topomation/frontend && HA_URL=... HA_TOKEN=... npx playwright test --config playwright.live.config.ts playwright/live-automation-ui.spec.ts`
+   - When running against production (`HA_TARGET=prod`), the script sets `LIVE_PANEL_PATH=/topomation` so the browser uses the real panel URL (e.g. `http://homeassistant:8123/topomation`) instead of the static live harness, avoiding "Download is starting" on instances that serve the harness as a download.
 
 ## 4) Release cut checklist
 

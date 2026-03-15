@@ -155,8 +155,8 @@ Rule-card requirements:
 4. Trigger-derived behavior:
    - `On dark` implies the dark ambient condition and does not render an ambient row.
    - `On bright` implies the bright ambient condition and does not render an ambient row.
-   - `On occupied` enforces `Must be occupied` and renders that condition as derived/read-only.
-   - `On vacant` enforces `Must be vacant` and renders that condition as derived/read-only.
+   - `On occupied` implies occupancy and does not render a separate occupancy row.
+   - `On vacant` implies occupancy and does not render a separate occupancy row.
    - when ambient condition is `Ignore ambient`, do not render an ambient row.
    - when occupancy condition is `Doesn't matter`, do not render an occupancy row.
    - `On dark` / `On bright` default occupancy to `Doesn't matter`.
@@ -169,6 +169,9 @@ Rule-card requirements:
      `turn_on` with `brightness_pct`)
    - non-dimmable rows use an action mode select (`Turn on` / `Turn off` /
      `Toggle`)
+   - `light.turn_on` rows may expose an `Only if off` checkbox; when checked,
+     that individual light action is skipped if the light is already on
+   - do not show `Only if off` for `turn_off`; do not preserve it for `toggle`
    - do not render a separate top-level `Device` + `Action` dropdown pair for
      Lighting rules.
 7. Rule lifecycle controls:

@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.29] - 2026-03-15
+
+### Added
+
+- Lighting rules now support a per-light `Only turn on if off` option, so one
+  automation can skip changing lights that are already on while still applying
+  the rule to other selected targets.
+
+### Changed
+
+- Updated the active Lighting rule contract and release-gate policy docs to
+  formalize per-target guarded light actions and require live HA browser
+  validation for touched UI workflows.
+
+### Fixed
+
+- Managed lighting rule persistence now round-trips per-target `only_if_off`
+  metadata through the frontend payload, WebSocket layer, HA automation config,
+  and rule reload path.
+
 ## [0.2.26] - 2026-03-06
 
 ### Added

@@ -307,6 +307,41 @@ def test_private_helpers_parse_and_mutate_config() -> None:
     )
     assert extracted_actions == [{"entity_id": "light.bathroom", "service": "turn_on"}]
 
+    extracted_only_if_off_actions = manager._extract_actions(  # noqa: SLF001
+        {
+            "actions": [
+                {
+                    "choose": [
+                        {
+                            "conditions": [
+                                {
+                                    "condition": "state",
+                                    "entity_id": "light.bathroom",
+                                    "state": "off",
+                                }
+                            ],
+                            "sequence": [
+                                {
+                                    "action": "light.turn_on",
+                                    "target": {"entity_id": "light.bathroom"},
+                                    "data": {"brightness_pct": 25},
+                                }
+                            ],
+                        }
+                    ]
+                }
+            ]
+        }
+    )
+    assert extracted_only_if_off_actions == [
+        {
+            "entity_id": "light.bathroom",
+            "service": "turn_on",
+            "data": {"brightness_pct": 25},
+            "only_if_off": True,
+        }
+    ]
+
     fallback_actions = manager._extract_actions(  # noqa: SLF001
         {
             "action": {
@@ -436,6 +471,111 @@ async def test_async_create_rule_rolls_back_when_registration_does_not_converge(
     assert '"run_on_startup": true' in str(api_calls[0][2]["description"]).lower()
     assert api_calls[1] == ("DELETE", api_calls[0][1], None)
     assert manager._recent_rule_snapshots == {}  # noqa: SLF001
+
+
+@pytest.mark.asyncio
+async def test_async_create_rule_wraps_only_if_off_light_turn_on_action(
+    hass: HomeAssistant,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Only-if-off light turn_on actions should persist as guarded choose blocks."""
+    manager = TopomationManagedActions(hass)
+    api_calls: list[tuple[str, str, dict[str, object] | None]] = []
+
+    async def _fake_validate(
+        _hass: HomeAssistant,
+        automation_id: str,
+        config_payload: dict[str, object],
+    ) -> dict[str, object]:
+        assert automation_id == config_payload[CONF_ID]
+        return config_payload
+
+    async def _fake_call(
+        method: str,
+        automation_id: str,
+        payload: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        api_calls.append((method, automation_id, payload))
+        return {}
+
+    async def _fake_resolve_entity_id(
+        automation_id: str,
+        *,
+        max_attempts: int,
+        wait_seconds: float,
+    ) -> str | None:
+        assert max_attempts > 0
+        assert wait_seconds > 0
+        return f"automation.{automation_id}"
+
+    monkeypatch.setattr(
+        "custom_components.topomation.managed_actions.async_validate_config_item",
+        _fake_validate,
+    )
+    monkeypatch.setattr(manager, "_call_automation_config_api", _fake_call)
+    monkeypatch.setattr(manager, "_resolve_created_entity_id", _fake_resolve_entity_id)
+    monkeypatch.setattr(manager, "_apply_topomation_grouping", lambda *args, **kwargs: None)
+
+    location = SimpleNamespace(id="kitchen", name="Kitchen", modules={})
+
+    rule = await manager.async_create_rule(
+        location=location,
+        name="Kitchen dark",
+        trigger_type="on_dark",
+        actions=[
+            {
+                "entity_id": "light.kitchen_ceiling",
+                "service": "turn_on",
+                "data": {"brightness_pct": 40},
+                "only_if_off": True,
+            },
+            {
+                "entity_id": "light.kitchen_island",
+                "service": "turn_off",
+            },
+        ],
+    )
+
+    assert rule["actions"] == [
+        {
+            "entity_id": "light.kitchen_ceiling",
+            "service": "turn_on",
+            "data": {"brightness_pct": 40},
+            "only_if_off": True,
+        },
+        {
+            "entity_id": "light.kitchen_island",
+            "service": "turn_off",
+        },
+    ]
+    assert len(api_calls) == 1
+    assert api_calls[0][0] == "POST"
+    payload = cast(dict[str, object], api_calls[0][2])
+    actions = cast(list[dict[str, object]], payload["actions"])
+    assert actions[0] == {
+        "choose": [
+            {
+                "conditions": [
+                    {
+                        "condition": "state",
+                        "entity_id": "light.kitchen_ceiling",
+                        "state": "off",
+                    }
+                ],
+                "sequence": [
+                    {
+                        "action": "light.turn_on",
+                        "target": {"entity_id": "light.kitchen_ceiling"},
+                        "data": {"brightness_pct": 40},
+                    }
+                ],
+            }
+        ]
+    }
+    assert actions[1] == {
+        "action": "light.turn_off",
+        "target": {"entity_id": "light.kitchen_island"},
+    }
 
 
 def test_apply_topomation_grouping_uses_topomation_labels_and_category(

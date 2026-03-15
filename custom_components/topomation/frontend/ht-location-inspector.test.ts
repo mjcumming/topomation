@@ -3985,7 +3985,7 @@ describe("HtLocationInspector WIAB configuration", () => {
     );
   });
 
-  it("expands recent occupancy events when Show all is toggled", async () => {
+  it("renders the recent occupancy events drawer and expands when Show all is toggled", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>) => {
         if (request.type === "config/entity_registry/list") return [] as T;
@@ -4036,10 +4036,11 @@ describe("HtLocationInspector WIAB configuration", () => {
     `);
     await element.updateComplete;
 
-    const sections = Array.from(
-      element.shadowRoot?.querySelectorAll(".card-section .section-title") || []
-    ).map((node) => (node.textContent || "").trim());
-    expect(sections[sections.length - 1]).to.equal("Recent Occupancy Events");
+    const drawer = element.shadowRoot?.querySelector(
+      '[data-testid="recent-occupancy-events-drawer"]'
+    ) as HTMLElement | null;
+    expect(drawer).to.exist;
+    expect(drawer?.textContent || "").to.include("Recent Occupancy Events");
 
     const initialRows = element.shadowRoot?.querySelectorAll(".occupancy-event") || [];
     expect(initialRows.length).to.equal(1);
@@ -4053,6 +4054,14 @@ describe("HtLocationInspector WIAB configuration", () => {
 
     const expandedRows = element.shadowRoot?.querySelectorAll(".occupancy-event") || [];
     expect(expandedRows.length).to.equal(2);
+
+    const collapseToggle = element.shadowRoot?.querySelector(
+      '[data-testid="recent-events-collapse-toggle"]'
+    ) as HTMLButtonElement | null;
+    expect(collapseToggle).to.exist;
+    collapseToggle?.click();
+    await element.updateComplete;
+    expect(drawer?.className || "").to.include("collapsed");
   });
 
   it("runs Sync Import from managed system area remediation control", async () => {
@@ -4825,6 +4834,14 @@ describe("HtLocationInspector WIAB configuration", () => {
       "expected one draft lighting rule row"
     );
 
+    const firstOnlyIfOffToggle = element.shadowRoot?.querySelector(
+      '[data-testid*="-device-only-if-off-0"]'
+    ) as HTMLInputElement | null;
+    expect(firstOnlyIfOffToggle).to.exist;
+    firstOnlyIfOffToggle!.checked = true;
+    firstOnlyIfOffToggle!.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+    await element.updateComplete;
+
     const secondIncludeToggle = element.shadowRoot?.querySelector(
       '[data-testid="action-rule-action_rule_1-device-include-1"]'
     ) as HTMLInputElement | null;
@@ -4853,6 +4870,10 @@ describe("HtLocationInspector WIAB configuration", () => {
     expect(payload.actions.length).to.equal(2);
     const entityIds = (payload.actions as Array<{ entity_id: string }>).map((action) => action.entity_id);
     expect(new Set(entityIds)).to.deep.equal(new Set(["light.kitchen_ceiling", "light.kitchen_island"]));
+    const ceilingAction = (payload.actions as Array<{ entity_id: string; only_if_off?: boolean }>).find(
+      (action) => action.entity_id === "light.kitchen_ceiling"
+    );
+    expect(ceilingAction?.only_if_off).to.equal(true);
   });
 
   it("uses card-local lifecycle controls for persisted and draft lighting rules", async () => {
@@ -4951,9 +4972,7 @@ describe("HtLocationInspector WIAB configuration", () => {
     const persistedOccupancyRow = Array.from(
       persistedRow?.querySelectorAll(".config-row") || []
     ).find((row) => (row.textContent || "").includes("Occupancy must be")) as HTMLElement | undefined;
-    expect(persistedOccupancyRow).to.exist;
-    expect(persistedOccupancyRow?.querySelector("input[type='checkbox']")).to.equal(null);
-    expect((persistedOccupancyRow?.textContent || "").includes("Set by trigger")).to.equal(true);
+    expect(persistedOccupancyRow).to.equal(undefined);
     expect(element.shadowRoot?.querySelector('[data-testid="action-rule-add"]')).to.equal(null);
 
     await waitUntil(

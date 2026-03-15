@@ -8,6 +8,14 @@ current branch state were rerun and recorded.
 This gate exists because broad test passes and older live runs did not protect
 the exact workflow that changed.
 
+**UI workflows:** For any workflow that involves a user action in the panel
+(e.g. "Save rule", "Discard changes", "Sync Locations"), "done" means that
+**the user can perform that action in real Home Assistant** and we have a
+recorded pass. The required evidence must include the **live browser path**
+(e.g. Playwright spec that clicks Save in the panel and asserts the rule
+exists in HA)—backend-only or mock-only evidence does not substitute. See
+`docs/working-agreement.md` §5 (Definition of Done for UI Workflows).
+
 ## 1. Rule
 
 If a change touches behavior, UI, persistence, or error handling for a workflow,
@@ -55,7 +63,7 @@ Run the rows that match the touched workflow.
 | Backend contract/runtime change | targeted `pytest` for touched modules/contracts |
 | Frontend state/renderer change | `npm run test:unit` plus relevant Web Test Runner/component tests |
 | Shared inspector/rule-card change | `ht-location-inspector.test.ts` plus relevant Playwright workflow specs |
-| Managed rule create/update/delete change | targeted backend tests, Playwright rule workflow coverage, and live HA rerun before any release claim |
+| Managed rule create/update/delete change | targeted backend tests, **and** live HA browser workflow that performs the user gesture (e.g. `playwright/live-automation-ui.spec.ts`: click Save rule in panel, assert rule appears in HA). Backend-only evidence does not satisfy this row. |
 | Release-candidate behavior change | full local gate plus live HA gate for touched workflows |
 
 ## 5. Exact-Branch Rules
@@ -66,6 +74,10 @@ Run the rows that match the touched workflow.
 3. If a later commit changes the touched workflow, rerun the gate.
 4. If the workflow changed after the last live HA pass, delivery returns to
    `Implemented`.
+5. **Cadence:** After a workflow’s live gate has passed and been recorded, do
+   not add further behavior changes to that workflow without re-running the
+   gate and re-recording. Otherwise previous evidence is stale (see
+   `docs/working-agreement.md` §6).
 
 ## 6. Blocking Outcomes
 

@@ -72,7 +72,34 @@ Stop and ask the user before continuing when any of these are true:
 5. If the touched workflow changed after a prior live run, status returns to
    `Implemented` until rerun.
 
-## 5. Session Checklist
+## 5. Definition of Done for UI Workflows
+
+For any work that touches a **user-facing workflow** (e.g. rule create/update/delete
+from the panel, save/discard, sync locations):
+
+- **Done** means: the user can perform the **exact contracted action** in **real
+  Home Assistant** (not just mocks), and we have a **recorded pass** for that
+  action on the **exact branch and bundle** in the touched-workflow gate.
+- Passing unit tests, backend contract tests, or mock-harness tests do **not**
+  substitute for this. The live gate (e.g. `playwright/live-automation-ui.spec.ts`
+  or the manual live checklist for that workflow) must pass and be recorded.
+- Do not claim `Live-validated` or close the issue for that workflow until this
+  criterion is met.
+
+## 6. Cadence Rule (Prevent Evidence Drift)
+
+After a workflow’s **live gate has passed** and been recorded:
+
+- Do **not** add further behavior changes to that same workflow (e.g. “cleanup,”
+  “align to contract,” “surface errors”) without **re-running the live gate** and
+  **re-recording** the outcome for the new branch state.
+- If you add such changes, treat the previous live evidence as **stale** and
+  block any release/live claim until the gate is rerun and recorded again.
+
+This keeps “we passed the gate” aligned with “this branch state is what we
+validated.”
+
+## 7. Session Checklist
 
 Before changing behavior:
 
@@ -83,6 +110,7 @@ Before changing behavior:
 Before closing work:
 
 1. Update canonical docs.
-2. Run the touched-workflow validation matrix.
+2. Run the touched-workflow validation matrix (for UI workflows: include the
+   live gate that performs the user action in real HA).
 3. Update status docs honestly.
 4. Push only after the exact branch state is proven.

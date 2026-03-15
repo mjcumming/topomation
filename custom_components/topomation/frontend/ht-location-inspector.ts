@@ -71,6 +71,7 @@ type RuleActionTarget = {
   entity_id: string;
   service: string;
   data?: Record<string, unknown>;
+  only_if_off?: boolean;
 };
 
 // Dev UX: custom elements cannot be hot-replaced. On HMR updates, force a quick reload.
@@ -137,6 +138,8 @@ export class HtLocationInspector extends LitElement {
   @state() private _syncImportInProgress = false;
   @state() private _showAdvancedAdjacency = false;
   @state() private _showRecentOccupancyEvents = false;
+  @state() private _recentEventsDrawerOpen = true;
+  @state() private _recentEventsDrawerHeight: "compact" | "medium" | "tall" = "medium";
   @state() private _adjacencyNeighborId = "";
   @state() private _adjacencyBoundaryType = "door";
   @state() private _adjacencyDirection = "bidirectional";
@@ -181,7 +184,83 @@ export class HtLocationInspector extends LitElement {
 
       .inspector-container {
         padding: var(--spacing-md);
-        padding-bottom: calc(var(--spacing-xl) + 80px);
+        padding-bottom: calc(var(--spacing-xl) + 220px);
+      }
+
+      .inspector-main {
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+      }
+
+      .recent-events-drawer {
+        position: sticky;
+        bottom: 0;
+        z-index: 4;
+        margin-top: var(--spacing-lg);
+        border: 1px solid var(--divider-color);
+        border-radius: 14px 14px 0 0;
+        background: rgba(var(--rgb-card-background-color, 255, 255, 255), 0.96);
+        backdrop-filter: blur(8px);
+        box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.08);
+        overflow: hidden;
+      }
+
+      .recent-events-drawer.collapsed .recent-events-drawer-body {
+        display: none;
+      }
+
+      .recent-events-drawer.compact .recent-events-drawer-body {
+        max-height: 140px;
+      }
+
+      .recent-events-drawer.medium .recent-events-drawer-body {
+        max-height: 240px;
+      }
+
+      .recent-events-drawer.tall .recent-events-drawer-body {
+        max-height: 360px;
+      }
+
+      .recent-events-drawer-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 10px 14px;
+        background: rgba(var(--rgb-primary-color), 0.05);
+        border-bottom: 1px solid var(--divider-color);
+      }
+
+      .recent-events-drawer-title {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      .recent-events-drawer-controls {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .recent-events-drawer-body {
+        padding: 12px 14px 14px;
+        overflow: auto;
+      }
+
+      .recent-events-drawer-help {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 8px;
+        margin-bottom: 8px;
+        color: var(--text-secondary-color);
+        font-size: 12px;
       }
 
       .header {
@@ -363,6 +442,13 @@ export class HtLocationInspector extends LitElement {
       }
 
       .dusk-light-action-grid select {
+        width: 100%;
+      }
+
+      .dusk-light-action-switch {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
         width: 100%;
       }
 
@@ -2044,8 +2130,11 @@ export class HtLocationInspector extends LitElement {
 
     return html`
       <div class="inspector-container">
-        ${this._renderHeader()} ${this._renderTabs()}
-        ${this._renderContent()}
+        <div class="inspector-main">
+          ${this._renderHeader()} ${this._renderTabs()}
+          ${this._renderContent()}
+          ${this._renderRecentOccupancyEventsDrawer()}
+        </div>
       </div>
     `;
   }
@@ -3212,12 +3301,18 @@ export class HtLocationInspector extends LitElement {
         ${this._renderWiabSection(config)}
         ${this._renderAdjacencyAdvancedSection(config)}
         ${this._isManagedShadowHost() ? this._renderManagedShadowAreaSection() : ""}
-        ${this._renderRecentOccupancyEventsSection(config)}
       </div>
     `;
   }
 
-  private _renderRecentOccupancyEventsSection(config: OccupancyConfig) {
+  private _nextRecentEventsDrawerHeight(): "compact" | "medium" | "tall" {
+    if (this._recentEventsDrawerHeight === "compact") return "medium";
+    if (this._recentEventsDrawerHeight === "medium") return "tall";
+    return "compact";
+  }
+
+  private _renderRecentOccupancyEventsDrawer() {
+    const config = this._getOccupancyConfig();
     const occupancyActivity = this._occupancyContributions(config);
     if (occupancyActivity.length === 0) return "";
     const occupancyEventsToRender = this._showRecentOccupancyEvents
@@ -3225,43 +3320,75 @@ export class HtLocationInspector extends LitElement {
       : occupancyActivity.slice(0, 1);
 
     return html`
-      <div class="card-section" data-testid="recent-occupancy-events-section">
-        <div class="section-title">
-          <ha-icon .icon=${"mdi:clock-outline"}></ha-icon>
-          Recent Occupancy Events
+      <div
+        class="recent-events-drawer ${this._recentEventsDrawerOpen ? this._recentEventsDrawerHeight : "collapsed"}"
+        data-testid="recent-occupancy-events-drawer"
+      >
+        <div class="recent-events-drawer-header">
+          <div class="recent-events-drawer-title">
+            <ha-icon .icon=${"mdi:timeline-clock-outline"}></ha-icon>
+            Recent Occupancy Events
+          </div>
+          <div class="recent-events-drawer-controls">
+            <button
+              class="button button-secondary"
+              type="button"
+              style="padding: 2px 8px; font-size: 11px;"
+              data-testid="recent-events-height-toggle"
+              ?disabled=${!this._recentEventsDrawerOpen}
+              @click=${() => {
+                this._recentEventsDrawerHeight = this._nextRecentEventsDrawerHeight();
+              }}
+            >
+              ${this._recentEventsDrawerHeight === "compact"
+                ? "Small"
+                : this._recentEventsDrawerHeight === "medium"
+                  ? "Medium"
+                  : "Tall"}
+            </button>
+            <button
+              class="button button-secondary"
+              type="button"
+              style="padding: 2px 8px; font-size: 11px;"
+              data-testid="recent-events-collapse-toggle"
+              @click=${() => {
+                this._recentEventsDrawerOpen = !this._recentEventsDrawerOpen;
+              }}
+            >
+              ${this._recentEventsDrawerOpen ? "Collapse" : "Open"}
+            </button>
+          </div>
         </div>
-        <div
-          class="sources-inline-help"
-          style="margin-bottom: 8px; display: flex; justify-content: space-between; align-items: baseline; gap: 8px;"
-        >
-          Sources currently contributing to occupancy.
-          ${occupancyActivity.length > 1
-            ? html`
-                <button
-                  class="button button-secondary"
-                  type="button"
-                  style="padding: 2px 8px; font-size: 11px;"
-                  data-testid="recent-events-toggle"
-                  @click=${() => {
-                    this._showRecentOccupancyEvents = !this._showRecentOccupancyEvents;
-                    this.requestUpdate();
-                  }}
-                >
-                  ${this._showRecentOccupancyEvents ? "Show less" : "Show all"}
-                </button>
+        <div class="recent-events-drawer-body">
+          <div class="recent-events-drawer-help">
+            <span>Sources currently contributing to occupancy.</span>
+            ${occupancyActivity.length > 1
+              ? html`
+                  <button
+                    class="button button-secondary"
+                    type="button"
+                    style="padding: 2px 8px; font-size: 11px;"
+                    data-testid="recent-events-toggle"
+                    @click=${() => {
+                      this._showRecentOccupancyEvents = !this._showRecentOccupancyEvents;
+                    }}
+                  >
+                    ${this._showRecentOccupancyEvents ? "Show less" : "Show all"}
+                  </button>
+                `
+              : ""}
+          </div>
+          <div class="occupancy-events">
+            ${occupancyEventsToRender.map(
+              (item) => html`
+                <div class="occupancy-event">
+                  <span class="occupancy-event-source">${item.sourceLabel}</span>
+                  <span class="occupancy-event-meta">${item.stateLabel}</span>
+                  ${item.relativeTime ? html`<span class="occupancy-event-meta">${item.relativeTime}</span>` : ""}
+                </div>
               `
-            : ""}
-        </div>
-        <div class="occupancy-events">
-          ${occupancyEventsToRender.map(
-            (item) => html`
-              <div class="occupancy-event">
-                <span class="occupancy-event-source">${item.sourceLabel}</span>
-                <span class="occupancy-event-meta">${item.stateLabel}</span>
-                ${item.relativeTime ? html`<span class="occupancy-event-meta">${item.relativeTime}</span>` : ""}
-              </div>
-            `
-          )}
+            )}
+          </div>
         </div>
       </div>
     `;
@@ -5977,10 +6104,16 @@ export class HtLocationInspector extends LitElement {
         entityId,
         service
       );
+      const onlyIfOff =
+        this._actionSupportsOnlyIfOff(entityId, service) &&
+        typeof (rawTarget as { only_if_off?: unknown }).only_if_off === "boolean"
+          ? Boolean((rawTarget as { only_if_off?: unknown }).only_if_off)
+          : undefined;
       normalized.push({
         entity_id: entityId,
         service,
         ...(data ? { data } : {}),
+        ...(typeof onlyIfOff === "boolean" ? { only_if_off: onlyIfOff } : {}),
       });
       seenEntityIds.add(entityId);
     }
@@ -6089,6 +6222,10 @@ export class HtLocationInspector extends LitElement {
       return "turn_off";
     }
     return "turn_on";
+  }
+
+  private _actionSupportsOnlyIfOff(entityId: string, service: string): boolean {
+    return entityId.startsWith("light.") && service === "turn_on";
   }
 
   private _tabSupportsActionAmbient(tab: DeviceAutomationTab): boolean {
@@ -6520,6 +6657,9 @@ export class HtLocationInspector extends LitElement {
       entity_id: target.entity_id,
       service: target.service,
       data: this._normalizeActionDataForRule(target.data, target.entity_id, target.service) || {},
+      only_if_off: this._actionSupportsOnlyIfOff(target.entity_id, target.service)
+        ? Boolean(target.only_if_off)
+        : undefined,
     }));
     return JSON.stringify({
       name: this._resolveActionRuleName(rule, index),
@@ -7190,6 +7330,8 @@ export class HtLocationInspector extends LitElement {
             (targetData as { brightness_pct?: unknown } | undefined)?.brightness_pct,
             30
           );
+          const canUseOnlyIfOff = this._actionSupportsOnlyIfOff(entityId, activeService);
+          const onlyIfOff = canUseOnlyIfOff ? Boolean(target?.only_if_off) : false;
           const modeValue = included
             ? activeService === "turn_off"
               ? "off"
@@ -7222,6 +7364,10 @@ export class HtLocationInspector extends LitElement {
               entity_id: entityId,
               service: nextService,
               ...(nextData ? { data: nextData } : {}),
+              ...(this._actionSupportsOnlyIfOff(entityId, nextService) &&
+              typeof (patch.only_if_off ?? baseTarget.only_if_off) === "boolean"
+                ? { only_if_off: Boolean(patch.only_if_off ?? baseTarget.only_if_off) }
+                : {}),
             };
             if (targetIndex >= 0) {
               nextTargets[targetIndex] = nextTarget;
@@ -7304,26 +7450,65 @@ export class HtLocationInspector extends LitElement {
                         />
                         <span class="dusk-level-value">${level}%</span>
                       </label>
+                      ${included && canUseOnlyIfOff
+                        ? html`
+                            <label class="dusk-off-only-toggle">
+                              <input
+                                type="checkbox"
+                                .checked=${onlyIfOff}
+                                ?disabled=${busy}
+                                data-testid=${`action-rule-${ruleId}-device-only-if-off-${index}`}
+                                @change=${(ev: Event) => {
+                                  upsertTarget({
+                                    only_if_off: (ev.target as HTMLInputElement).checked,
+                                  });
+                                }}
+                              />
+                              <span>Only turn on if off</span>
+                            </label>
+                          `
+                        : html``}
                     `
                   : html`
-                      <select
-                        .value=${modeValue}
-                        ?disabled=${busy || !included}
-                        data-testid=${`action-rule-${ruleId}-device-action-${index}`}
-                        @change=${(ev: Event) => {
-                          const mode = String((ev.target as HTMLSelectElement).value || "on");
-                          const service =
-                            mode === "off" ? "turn_off" : mode === "toggle" ? "toggle" : "turn_on";
-                          upsertTarget({
-                            service,
-                            data: {},
-                          });
-                        }}
-                      >
-                        <option value="on">Turn on</option>
-                        <option value="off">Turn off</option>
-                        <option value="toggle">Toggle</option>
-                      </select>
+                      <div class="dusk-light-action-switch">
+                        <select
+                          .value=${modeValue}
+                          ?disabled=${busy || !included}
+                          data-testid=${`action-rule-${ruleId}-device-action-${index}`}
+                          @change=${(ev: Event) => {
+                            const mode = String((ev.target as HTMLSelectElement).value || "on");
+                            const service =
+                              mode === "off" ? "turn_off" : mode === "toggle" ? "toggle" : "turn_on";
+                            upsertTarget({
+                              service,
+                              data: {},
+                              ...(service === "turn_on" ? {} : { only_if_off: undefined }),
+                            });
+                          }}
+                        >
+                          <option value="on">Turn on</option>
+                          <option value="off">Turn off</option>
+                          <option value="toggle">Toggle</option>
+                        </select>
+                        ${included && canUseOnlyIfOff
+                          ? html`
+                              <label class="dusk-off-only-toggle">
+                                <input
+                                  type="checkbox"
+                                  .checked=${onlyIfOff}
+                                  ?disabled=${busy}
+                                  data-testid=${`action-rule-${ruleId}-device-only-if-off-${index}`}
+                                  @change=${(ev: Event) => {
+                                    upsertTarget({
+                                      only_if_off: (ev.target as HTMLInputElement).checked,
+                                    });
+                                  }}
+                                />
+                                <span>Only turn on if off</span>
+                              </label>
+                            `
+                          : html``}
+                      </div>
                     `}
                 <span class="text-muted">-</span>
                 <span class="text-muted">-</span>
@@ -7413,7 +7598,7 @@ export class HtLocationInspector extends LitElement {
                   triggerType
                 );
                 const showAmbientConditionRow = supportsAmbientCondition && !ambientLocked;
-                const showOccupancyConditionRow = tab === "lighting";
+                const showOccupancyConditionRow = tab === "lighting" && !mustBeOccupiedLocked;
                 const occupancyConditionLabel = mustBeOccupied ? "Must be occupied" : "Must be vacant";
                 const persistedRule = this._persistedActionRuleForDraft(rule);
                 const isPersisted = Boolean(persistedRule);
