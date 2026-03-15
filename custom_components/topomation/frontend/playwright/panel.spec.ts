@@ -522,7 +522,20 @@ test("on occupied/on vacant triggers map to on/off occupancy state transitions",
     .locator("select")
     .selectOption("media_player.kitchen_speaker");
   await occupiedRule.locator(".dusk-rule-row", { hasText: "Action" }).locator("select").selectOption("media_play");
-  await occupiedRule.getByRole("button", { name: "Save rule" }).click();
+  const saveOccupiedRule = occupiedRule.getByRole("button", { name: "Save rule" });
+  await saveOccupiedRule.scrollIntoViewIfNeeded();
+  await saveOccupiedRule.evaluate((button) => (button as HTMLButtonElement).click());
+  await expect
+    .poll(async () => {
+      const summaries = await kitchenTopomationActionSummaries(page);
+      return summaries.some(
+        (summary) =>
+          summary.trigger_type === "on_occupied" &&
+          summary.trigger_to === "on" &&
+          summary.action === "media_player.media_play"
+      );
+    })
+    .toBe(true);
 
   await inspector.getByRole("button", { name: "Add rule" }).click();
   const vacantRule = inspector
@@ -534,7 +547,9 @@ test("on occupied/on vacant triggers map to on/off occupancy state transitions",
     .locator("select")
     .selectOption("media_player.kitchen_speaker");
   await vacantRule.locator(".dusk-rule-row", { hasText: "Action" }).locator("select").selectOption("media_stop");
-  await vacantRule.getByRole("button", { name: "Save rule" }).click();
+  const saveVacantRule = vacantRule.getByRole("button", { name: "Save rule" });
+  await saveVacantRule.scrollIntoViewIfNeeded();
+  await saveVacantRule.evaluate((button) => (button as HTMLButtonElement).click());
   await expect
     .poll(async () => {
       const summaries = await kitchenTopomationActionSummaries(page);
