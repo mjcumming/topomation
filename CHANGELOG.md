@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.31] - 2026-03-16
+
+### Added
+
+- Added a docked `Room Explainability` panel under the location tree so the
+  selected room's current occupancy state, active contributors, and recent
+  changes stay visible without floating over the editor workspace.
+
+### Changed
+
+- Reworked Lighting rules around plain-English situation cards (`Event` + `Only
+  when`) with a single optional time window, per-light outputs, `Only turn on
+  if off`, and a `Duplicate rule` workflow for adjacent time-based variants.
+- Updated the active UI contracts, architecture notes, and design mockups to
+  treat Lighting authoring as room-behavior configuration instead of raw
+  trigger/condition mechanics.
+
+### Fixed
+
+- Aligned managed-rule normalization, browser suites, and live Home Assistant
+  coverage with the new Lighting rule editor and docked explainability layout.
+- Fixed the new explainability component runtime path so browser-based harnesses
+  and Playwright suites load the panel reliably from the committed frontend
+  bundle.
+
 ## [0.2.30] - 2026-03-15
 
 ### Added

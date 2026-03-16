@@ -15,6 +15,7 @@ import { isSystemShadowLocation, managedShadowLocationIdSet } from "./shadow-loc
 import "./ht-location-tree";
 import "./ht-location-inspector";
 import "./ht-location-dialog";
+import "./ht-room-explainability";
 
 type ManagerView =
   | "location"
@@ -464,6 +465,11 @@ export class TopomationPanel extends LitElement {
         min-height: 0;
       }
 
+      ht-room-explainability {
+        flex: 0 0 auto;
+        min-height: 0;
+      }
+
       ht-location-inspector {
         flex: 1 1 auto;
         min-height: 0;
@@ -849,6 +855,16 @@ export class TopomationPanel extends LitElement {
             @location-delete=${this._handleLocationDelete}
             @entity-dropped=${this._handleEntityDropped}
           ></ht-location-tree>
+          ${selectedLocation
+            ? html`
+                <ht-room-explainability
+                  .hass=${this.hass}
+                  .location=${selectedLocation}
+                  .occupancyStates=${this._occupancyStateByLocation}
+                  .occupancyTransitions=${this._occupancyTransitionByLocation}
+                ></ht-room-explainability>
+              `
+            : ""}
         </div>
 
         <div

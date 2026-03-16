@@ -2,6 +2,12 @@ import type { HomeAssistant, Location } from "./types";
 
 export type ActionTriggerType = "on_occupied" | "on_vacant" | "on_dark" | "on_bright";
 export type ActionAmbientCondition = "any" | "dark" | "bright";
+const ACTION_TRIGGER_ORDER: ActionTriggerType[] = [
+  "on_occupied",
+  "on_vacant",
+  "on_dark",
+  "on_bright",
+];
 
 export interface TopomationRuleAction {
   entity_id: string;
@@ -15,6 +21,7 @@ export interface TopomationActionRule {
   entity_id: string;
   name: string;
   trigger_type: ActionTriggerType;
+  trigger_types?: ActionTriggerType[];
   rule_uuid?: string;
   actions?: TopomationRuleAction[];
   action_entity_id?: string;
@@ -97,14 +104,37 @@ function normalizeTriggerType(raw: unknown): ActionTriggerType | null {
   return null;
 }
 
-function defaultAmbientCondition(triggerType: ActionTriggerType): ActionAmbientCondition {
-  if (triggerType === "on_dark") return "dark";
-  if (triggerType === "on_bright") return "bright";
+function normalizeTriggerTypes(
+  rawValue: unknown,
+  fallbackTriggerType?: ActionTriggerType
+): ActionTriggerType[] {
+  const next = new Set<ActionTriggerType>();
+  if (Array.isArray(rawValue)) {
+    for (const item of rawValue) {
+      const normalized = normalizeTriggerType(item);
+      if (normalized) next.add(normalized);
+    }
+  }
+  if (next.size === 0 && fallbackTriggerType) {
+    next.add(fallbackTriggerType);
+  }
+  return ACTION_TRIGGER_ORDER.filter((triggerType) => next.has(triggerType));
+}
+
+function primaryTriggerType(triggerTypes: ActionTriggerType[]): ActionTriggerType {
+  return triggerTypes[0] || "on_occupied";
+}
+
+function defaultAmbientCondition(triggerTypes: ActionTriggerType[]): ActionAmbientCondition {
+  const hasDark = triggerTypes.includes("on_dark");
+  const hasBright = triggerTypes.includes("on_bright");
+  if (hasDark && !hasBright) return "dark";
+  if (hasBright && !hasDark) return "bright";
   return "any";
 }
 
 function normalizeAmbientCondition(
-  triggerType: ActionTriggerType,
+  triggerTypes: ActionTriggerType[],
   rawAmbientCondition: unknown,
   requireDark: boolean
 ): ActionAmbientCondition {
@@ -115,7 +145,7 @@ function normalizeAmbientCondition(
     return normalized;
   }
   if (requireDark) return "dark";
-  return defaultAmbientCondition(triggerType);
+  return defaultAmbientCondition(triggerTypes);
 }
 
 function normalizeActionData(raw: unknown): Record<string, unknown> | undefined {
@@ -212,11 +242,13 @@ export async function listTopomationActionRules(
     if (Array.isArray(response?.rules)) {
       return response.rules
         .map((rule) => {
-          const triggerType = normalizeTriggerType(rule.trigger_type);
-          if (!triggerType) return null;
+          const singleTriggerType = normalizeTriggerType(rule.trigger_type);
+          const triggerTypes = normalizeTriggerTypes(rule.trigger_types, singleTriggerType || undefined);
+          if (triggerTypes.length === 0) return null;
+          const triggerType = primaryTriggerType(triggerTypes);
           const requireDark = Boolean(rule.require_dark);
           const ambientCondition = normalizeAmbientCondition(
-            triggerType,
+            triggerTypes,
             rule.ambient_condition,
             requireDark
           );
@@ -225,6 +257,7 @@ export async function listTopomationActionRules(
           return {
             ...rule,
             trigger_type: triggerType,
+            trigger_types: triggerTypes,
             actions,
             ambient_condition: ambientCondition,
             must_be_occupied: normalizeMustBeOccupied(rule.must_be_occupied),
@@ -264,6 +297,7 @@ export async function createTopomationActionRule(
     location: Location;
     name: string;
     trigger_type: ActionTriggerType;
+    trigger_types?: ActionTriggerType[];
     actions?: TopomationRuleAction[];
     action_entity_id?: string;
     action_service?: string;
@@ -280,6 +314,8 @@ export async function createTopomationActionRule(
   },
   entryId?: string
 ): Promise<TopomationActionRule> {
+  const normalizedTriggerTypes = normalizeTriggerTypes(args.trigger_types, args.trigger_type);
+  const primaryTrigger = primaryTriggerType(normalizedTriggerTypes);
   const normalizedActions = normalizeRuleActionsFromPayload(
     {
       actions: args.actions,
@@ -287,7 +323,7 @@ export async function createTopomationActionRule(
       action_service: args.action_service,
       action_data: args.action_data,
     },
-    args.trigger_type
+    primaryTrigger
   );
   const primaryAction = normalizedActions[0];
   if (!primaryAction) {
@@ -301,7 +337,8 @@ export async function createTopomationActionRule(
       type: WS_TYPE_ACTION_RULES_CREATE,
       location_id: args.location.id,
       name: args.name,
-      trigger_type: args.trigger_type,
+      trigger_type: primaryTrigger,
+      trigger_types: normalizedTriggerTypes,
       action_entity_id: primaryAction.entity_id,
       action_service: primaryAction.service,
       action_data: primaryAction.data,
@@ -321,10 +358,14 @@ export async function createTopomationActionRule(
     });
 
     if (response?.rule) {
-      const normalizedTrigger = normalizeTriggerType(response.rule.trigger_type) || args.trigger_type;
+      const normalizedTriggerTypes = normalizeTriggerTypes(
+        response.rule.trigger_types,
+        normalizeTriggerType(response.rule.trigger_type) || primaryTrigger
+      );
+      const normalizedTrigger = primaryTriggerType(normalizedTriggerTypes);
       const requireDark = Boolean(response.rule.require_dark);
       const ambientCondition = normalizeAmbientCondition(
-        normalizedTrigger,
+        normalizedTriggerTypes,
         response.rule.ambient_condition,
         requireDark
       );
@@ -333,6 +374,7 @@ export async function createTopomationActionRule(
       return {
         ...response.rule,
         trigger_type: normalizedTrigger,
+        trigger_types: normalizedTriggerTypes,
         rule_uuid:
           typeof response.rule.rule_uuid === "string" && response.rule.rule_uuid.trim().length > 0
             ? response.rule.rule_uuid.trim()

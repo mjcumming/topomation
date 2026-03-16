@@ -317,6 +317,9 @@ shared location tree selection context.
   - if contracts, design guide, issue requirements, or live behavior conflict,
     implementation must stop and request user decision before coding that area.
 - `Lighting` rules follow HA-canonical managed automation ownership.
+- `Lighting` rules support multi-trigger wake-up semantics (`On occupied`,
+  `On vacant`, `On dark`, `On bright`) within one rule card; shared actions and
+  conditions are evaluated after any selected trigger fires.
 - `Media` / `HVAC` rules are authored as native Home Assistant automations via
   `topomation/actions/rules/*`.
 - Topomation tags those automations with panel metadata + labels/category so each location tab can filter only its own rules.

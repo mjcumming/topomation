@@ -107,3 +107,21 @@ Outcome:
 - <workflow 1>: PASS/FAIL
 - <workflow 2>: PASS/FAIL
 ```
+
+## 8. Current Release Candidate Record
+
+Commit under test: release-candidate worktree after the `0.2.31` bump on top of `f8ed9a356a4d1dd38afaaff02502a9c9e656e095`
+Frontend bundle rebuilt from same commit: yes
+
+Touched workflows:
+- Lighting rule card create/update/delete
+- Lighting situation editing, time-window editing, and per-light guarded actions
+- Detection room explainability docked panel
+
+Commands run:
+- `make test-release-live`
+
+Outcome:
+- Lighting rule card create/update/delete: PASS
+- Lighting situation editing, time-window editing, and per-light guarded actions: PASS
+- Detection room explainability docked panel: PASS

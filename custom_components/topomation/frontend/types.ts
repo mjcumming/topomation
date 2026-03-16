@@ -145,6 +145,7 @@ export interface TopomationActionRule {
   entity_id: string;
   name: string;
   trigger_type: "on_occupied" | "on_vacant" | "on_dark" | "on_bright";
+  trigger_types?: Array<"on_occupied" | "on_vacant" | "on_dark" | "on_bright">;
   rule_uuid?: string;
   actions?: Array<{
     entity_id: string;

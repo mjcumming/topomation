@@ -298,34 +298,10 @@ test("live automation lighting workflow matches contracted lifecycle controls", 
     await expect(draftRule.getByRole("button", { name: "Remove rule" })).toBeVisible();
     await expect(draftRule.getByRole("button", { name: "Delete rule" })).toHaveCount(0);
 
-    const triggerSelect = draftRule.locator(".dusk-rule-row", { hasText: "Trigger" }).locator("select");
-    await triggerSelect.selectOption("on_dark");
-    await expect(
-      draftRule.locator(".dusk-conditions .config-row", { hasText: "Ambient must be" })
-    ).toHaveCount(0);
-    await expect(
-      draftRule.locator(".dusk-conditions .config-row", { hasText: "Occupancy must be" })
-    ).toBeVisible();
-
-    await triggerSelect.selectOption("on_bright");
-    await expect(
-      draftRule.locator(".dusk-conditions .config-row", { hasText: "Ambient must be" })
-    ).toHaveCount(0);
-    await expect(
-      draftRule.locator(".dusk-conditions .config-row", { hasText: "Occupancy must be" })
-    ).toBeVisible();
-
-    await triggerSelect.selectOption("on_occupied");
-    await expect(
-      draftRule.locator(".dusk-conditions .config-row", { hasText: "Must be occupied" })
-    ).toHaveCount(0);
-
-    await triggerSelect.selectOption("on_vacant");
-    await expect(
-      draftRule.locator(".dusk-conditions .config-row", { hasText: "Must be vacant" })
-    ).toHaveCount(0);
-
-    await triggerSelect.selectOption("on_occupied");
+    const firstSituation = draftRule.locator(".lighting-situation-card").first();
+    await expect(firstSituation).toBeVisible();
+    await expect(firstSituation).toContainText("Room becomes occupied");
+    await expect(firstSituation).toContainText("It is dark");
 
     const firstTwoLightRows = draftRule.locator(".dusk-light-action-row");
     await expect(firstTwoLightRows).toHaveCount(Math.max(2, location.lightIds.length));
@@ -375,10 +351,11 @@ test("live automation lighting workflow matches contracted lifecycle controls", 
     await expect(persistedRule.getByRole("button", { name: "Update rule" })).toHaveCount(0);
     await expect(persistedRule.getByRole("button", { name: "Discard edits" })).toHaveCount(0);
 
-    await persistedRule
-      .locator(".dusk-rule-row", { hasText: "Trigger" })
-      .locator("select")
-      .selectOption("on_dark");
+    const persistedSituation = persistedRule.locator(".lighting-situation-card").first();
+    const brightRequirement = persistedSituation.locator(".choice-pill", {
+      hasText: "It is bright",
+    });
+    await brightRequirement.click();
     await expect(persistedRule.getByRole("button", { name: "Update rule" })).toBeVisible();
     await expect(persistedRule.getByRole("button", { name: "Discard edits" })).toBeVisible();
     await expect(persistedRule.getByRole("button", { name: "Delete rule" })).toBeVisible();
@@ -387,6 +364,13 @@ test("live automation lighting workflow matches contracted lifecycle controls", 
     await expect(persistedRule.getByRole("button", { name: "Update rule" })).toHaveCount(0);
     await expect(persistedRule.getByRole("button", { name: "Discard edits" })).toHaveCount(0);
     await expect(persistedRule.getByRole("button", { name: "Delete rule" })).toBeVisible();
+    await expect(
+      persistedSituation
+        .locator(".lighting-situation-row")
+        .nth(1)
+        .locator(".choice-pill.active")
+        .filter({ hasText: "It is dark" })
+    ).toHaveCount(1);
 
     const persistedSelectedCount = await persistedRule
       .locator(".dusk-light-action-row input[type='checkbox']:checked")
@@ -408,28 +392,37 @@ test("live detection explainability updates on occupied and vacant transitions",
   const location = await selectLightingLocation(page);
 
   const inspector = page.locator("ht-location-inspector");
+  const explainability = page.locator("ht-room-explainability").getByTestId("room-explainability-panel");
+  const currentStatePanel = explainability.locator(".occupancy-explainability-panel").first();
+  const activeContributorsPanel = explainability.locator(".occupancy-explainability-panel").nth(1);
   await openDetectionTab(page);
 
-  const explainability = inspector.getByTestId("recent-occupancy-events-drawer");
   await expect(explainability).toBeVisible();
   await expect(explainability).toContainText("Room Explainability");
   await expect(inspector.getByTestId("adjacency-advanced-toggle")).toHaveCount(0);
   await expect(inspector.getByText("Advanced Occupancy Relationships")).toHaveCount(0);
 
-  const sourceId = "live_explainability_test";
+  const sourceId = `live_explainability_test_${Date.now()}`;
+  await callTopomationService("clear", {
+    location_id: location.id,
+    source_id: sourceId,
+    trailing_timeout: 0,
+  });
   await callTopomationService("vacate_area", {
     location_id: location.id,
     source_id: sourceId,
     include_locked: true,
   });
-  await expect(explainability).toContainText("Vacant", { timeout: 10000 });
+  await expect(activeContributorsPanel).toContainText("No active contributors", { timeout: 10000 });
+  await expect(explainability).toContainText("Room became vacant", { timeout: 10000 });
 
   await callTopomationService("trigger", {
     location_id: location.id,
     source_id: sourceId,
     timeout: 300,
   });
-  await expect(explainability).toContainText("Occupied", { timeout: 10000 });
+  await expect(currentStatePanel).toContainText("Occupied", { timeout: 10000 });
+  await expect(activeContributorsPanel).toContainText(sourceId, { timeout: 10000 });
   await expect(explainability).toContainText("Room became occupied", { timeout: 10000 });
 
   await callTopomationService("clear", {
@@ -437,6 +430,6 @@ test("live detection explainability updates on occupied and vacant transitions",
     source_id: sourceId,
     trailing_timeout: 0,
   });
-  await expect(explainability).toContainText("Vacant", { timeout: 10000 });
+  await expect(activeContributorsPanel).toContainText("No active contributors", { timeout: 10000 });
   await expect(explainability).toContainText("Room became vacant", { timeout: 10000 });
 });

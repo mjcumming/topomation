@@ -82,6 +82,13 @@ type RuleActionTarget = {
   data?: Record<string, unknown>;
   only_if_off?: boolean;
 };
+type LightingSituationFamily = "occupancy" | "ambient";
+type LightingSituationRequirement = "any" | "dark" | "bright" | "occupied" | "vacant";
+type LightingSituationRow = {
+  family: LightingSituationFamily;
+  event: TopomationActionRule["trigger_type"];
+  requirement: LightingSituationRequirement;
+};
 
 // Dev UX: custom elements cannot be hot-replaced. On HMR updates, force a quick reload.
 try {
@@ -189,11 +196,12 @@ export class HtLocationInspector extends LitElement {
         display: block;
         height: 100%;
         overflow-y: auto;
+        --inspector-content-max-width: 1120px;
       }
 
       .inspector-container {
         padding: var(--spacing-md);
-        padding-bottom: calc(var(--spacing-xl) + 220px);
+        padding-bottom: var(--spacing-xl);
       }
 
       .inspector-main {
@@ -202,11 +210,20 @@ export class HtLocationInspector extends LitElement {
         gap: 0;
       }
 
+      .header,
+      .tabs,
+      .tab-content,
+      .recent-events-drawer {
+        width: min(100%, var(--inspector-content-max-width));
+      }
+
       .recent-events-drawer {
         position: sticky;
         bottom: 0;
         z-index: 4;
         margin-top: var(--spacing-lg);
+        width: min(100%, var(--inspector-content-max-width));
+        align-self: flex-start;
         border: 1px solid var(--divider-color);
         border-radius: 14px 14px 0 0;
         background: rgba(var(--rgb-card-background-color, 255, 255, 255), 0.96);
@@ -550,6 +567,140 @@ export class HtLocationInspector extends LitElement {
         margin-top: 12px;
       }
 
+      .dusk-trigger-groups {
+        display: grid;
+        gap: 10px;
+        width: 100%;
+      }
+
+      .dusk-trigger-group {
+        display: grid;
+        grid-template-columns: minmax(140px, 180px) minmax(220px, 1fr);
+        gap: 10px;
+        align-items: center;
+      }
+
+      .dusk-trigger-group-label {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--secondary-text-color);
+      }
+
+      .lighting-situation-list {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        margin-top: 10px;
+      }
+
+      .lighting-situation-card {
+        border: 1px solid var(--divider-color);
+        border-radius: 12px;
+        padding: 14px;
+        background: rgba(var(--rgb-primary-color), 0.02);
+      }
+
+      .lighting-situation-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 10px;
+      }
+
+      .lighting-situation-title {
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--primary-text-color);
+      }
+
+      .lighting-situation-body {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .lighting-situation-row {
+        display: grid;
+        grid-template-columns: minmax(150px, 190px) minmax(260px, 1fr);
+        gap: 12px;
+        align-items: center;
+      }
+
+      .lighting-situation-toolbar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-top: 12px;
+      }
+
+      .lighting-situation-help {
+        margin-top: 8px;
+      }
+
+      .lighting-time-window {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        margin-top: 10px;
+      }
+
+      .toggle-choice-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+        width: 100%;
+      }
+
+      .toggle-choice-enable {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 112px;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--primary-text-color);
+      }
+
+      .toggle-choice-enable input,
+      .choice-pill input {
+        margin: 0;
+        accent-color: var(--primary-color);
+      }
+
+      .choice-pill-group {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .choice-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 7px 12px;
+        border: 1px solid var(--divider-color);
+        border-radius: 999px;
+        background: var(--card-background-color);
+        color: var(--primary-text-color);
+        font-size: 13px;
+        cursor: pointer;
+        user-select: none;
+      }
+
+      .choice-pill.active {
+        border-color: rgba(var(--rgb-primary-color), 0.45);
+        background: rgba(var(--rgb-primary-color), 0.08);
+      }
+
+      .choice-pill.disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+
       .dusk-section-heading {
         margin-top: 18px;
         margin-bottom: 8px;
@@ -791,7 +942,7 @@ export class HtLocationInspector extends LitElement {
         display: flex;
         flex-direction: column;
         gap: 16px;
-        max-width: 900px;
+        width: 100%;
       }
 
       .occupancy-explainability-grid {
@@ -949,7 +1100,7 @@ export class HtLocationInspector extends LitElement {
       }
 
       .runtime-summary {
-        max-width: 900px;
+        width: 100%;
         margin-bottom: var(--spacing-md);
         padding: 10px 12px;
         border: 1px solid var(--divider-color);
@@ -1017,7 +1168,7 @@ export class HtLocationInspector extends LitElement {
         border: 1px solid var(--divider-color);
         padding: var(--spacing-md);
         margin-bottom: var(--spacing-md);
-        max-width: 900px;
+        width: 100%;
       }
 
       .section-title {
@@ -1033,7 +1184,7 @@ export class HtLocationInspector extends LitElement {
       }
 
       .section-title-row {
-        max-width: 900px;
+        width: 100%;
         display: flex;
         align-items: center;
         justify-content: space-between;
@@ -1057,7 +1208,7 @@ export class HtLocationInspector extends LitElement {
 
       .sources-heading {
         margin-bottom: var(--spacing-sm);
-        max-width: 820px;
+        width: 100%;
         display: flex;
         align-items: baseline;
         justify-content: space-between;
@@ -1116,7 +1267,7 @@ export class HtLocationInspector extends LitElement {
       }
 
       .settings-grid {
-        max-width: 620px;
+        max-width: min(620px, 100%);
       }
 
       .config-row:last-child {
@@ -1172,7 +1323,7 @@ export class HtLocationInspector extends LitElement {
       }
 
       .startup-inline {
-        max-width: 900px;
+        width: 100%;
         margin-bottom: var(--spacing-md);
         padding: 10px 12px;
         border: 1px solid var(--divider-color);
@@ -1214,7 +1365,7 @@ export class HtLocationInspector extends LitElement {
 
       .sources-list {
         margin-top: var(--spacing-md);
-        max-width: 820px;
+        width: 100%;
       }
 
       .contribution-summary {
@@ -1224,7 +1375,7 @@ export class HtLocationInspector extends LitElement {
         border-radius: var(--border-radius);
         background: rgba(var(--rgb-primary-color), 0.05);
         font-size: 12px;
-        max-width: 820px;
+        width: 100%;
       }
 
       .contribution-grid {
@@ -1260,13 +1411,13 @@ export class HtLocationInspector extends LitElement {
         border: 1px solid var(--divider-color);
         border-radius: var(--border-radius);
         margin-bottom: var(--spacing-sm);
-        max-width: 820px;
+        width: 100%;
       }
 
       .action-device-list {
         display: grid;
         gap: var(--spacing-sm);
-        max-width: 820px;
+        width: 100%;
       }
 
       .action-device-row.enabled {
@@ -1507,7 +1658,7 @@ export class HtLocationInspector extends LitElement {
       .subsection-header {
         margin-top: var(--spacing-md);
         margin-bottom: var(--spacing-sm);
-        max-width: 820px;
+        width: 100%;
         display: flex;
         align-items: center;
         justify-content: space-between;
@@ -1517,7 +1668,7 @@ export class HtLocationInspector extends LitElement {
       .candidate-list {
         display: grid;
         gap: var(--spacing-sm);
-        max-width: 820px;
+        width: 100%;
       }
 
       .source-card {
@@ -1540,13 +1691,13 @@ export class HtLocationInspector extends LitElement {
         margin-bottom: var(--spacing-sm);
         color: var(--text-secondary-color);
         font-size: 12px;
-        max-width: 820px;
+        width: 100%;
       }
 
       .linked-location-list {
         display: grid;
         gap: 8px;
-        max-width: 820px;
+        width: 100%;
       }
 
       .linked-location-row {
@@ -1595,14 +1746,14 @@ export class HtLocationInspector extends LitElement {
       .advanced-toggle-row {
         display: flex;
         justify-content: flex-end;
-        max-width: 820px;
+        width: 100%;
       }
 
       .adjacency-list {
         display: grid;
         gap: 8px;
         margin-bottom: 12px;
-        max-width: 820px;
+        width: 100%;
       }
 
       .adjacency-row {
@@ -1644,7 +1795,7 @@ export class HtLocationInspector extends LitElement {
       .adjacency-form {
         display: grid;
         gap: 10px;
-        max-width: 820px;
+        width: 100%;
       }
 
       .adjacency-form-grid {
@@ -1684,7 +1835,7 @@ export class HtLocationInspector extends LitElement {
       .handoff-trace-list {
         display: grid;
         gap: 8px;
-        max-width: 820px;
+        width: 100%;
       }
 
       .handoff-trace-row {
@@ -1956,14 +2107,14 @@ export class HtLocationInspector extends LitElement {
 
       .sources-actions {
         margin-top: 10px;
-        max-width: 820px;
+        width: 100%;
       }
 
       .external-source-section {
         margin-top: var(--spacing-md);
         padding-top: var(--spacing-md);
         border-top: 1px solid var(--divider-color);
-        max-width: 820px;
+        width: 100%;
       }
 
       .external-source-section .subsection-title {
@@ -1979,7 +2130,7 @@ export class HtLocationInspector extends LitElement {
         grid-template-columns: minmax(180px, 240px) minmax(220px, 1fr) auto;
         gap: 8px;
         align-items: end;
-        max-width: 820px;
+        width: 100%;
         margin-bottom: 10px;
       }
 
@@ -1990,7 +2141,7 @@ export class HtLocationInspector extends LitElement {
       .wiab-config {
         display: grid;
         gap: 10px;
-        max-width: 820px;
+        width: 100%;
       }
 
       .wiab-grid {
@@ -2156,6 +2307,10 @@ export class HtLocationInspector extends LitElement {
           grid-template-columns: 1fr;
         }
 
+        .lighting-situation-row {
+          grid-template-columns: 1fr;
+        }
+
         .dusk-wide-select {
           min-width: 0;
           width: 100%;
@@ -2187,6 +2342,10 @@ export class HtLocationInspector extends LitElement {
 
         .dusk-light-action-grid {
           grid-template-columns: 1fr;
+        }
+
+        .toggle-choice-row {
+          align-items: flex-start;
         }
 
         .dusk-toolbar {
@@ -2246,9 +2405,7 @@ export class HtLocationInspector extends LitElement {
     return html`
       <div class="inspector-container">
         <div class="inspector-main">
-          ${this._renderHeader()} ${this._renderTabs()}
-          ${this._renderContent()}
-          ${this._renderRecentOccupancyEventsDrawer()}
+          ${this._renderHeader()} ${this._renderTabs()} ${this._renderContent()}
         </div>
       </div>
     `;
@@ -2405,6 +2562,10 @@ export class HtLocationInspector extends LitElement {
         name: String(rule.name || ""),
         rule_uuid: String(rule.rule_uuid || ""),
         trigger_type: String(rule.trigger_type || ""),
+        trigger_types: this._normalizeActionTriggerTypes(
+          rule.trigger_types,
+          this._normalizeActionTriggerType(rule.trigger_type)
+        ),
         action_entity_id: String(rule.action_entity_id || ""),
         action_service: String(rule.action_service || ""),
         ambient_condition: String(rule.ambient_condition || ""),
@@ -6136,11 +6297,306 @@ export class HtLocationInspector extends LitElement {
     return "on_occupied";
   }
 
+  private _normalizeActionTriggerTypes(
+    rawValue: unknown,
+    fallbackTriggerType?: TopomationActionRule["trigger_type"]
+  ): TopomationActionRule["trigger_type"][] {
+    let occupancyTrigger: TopomationActionRule["trigger_type"] | undefined;
+    let ambientTrigger: TopomationActionRule["trigger_type"] | undefined;
+    if (Array.isArray(rawValue)) {
+      rawValue.forEach((value) => {
+        const triggerType = this._normalizeActionTriggerType(value);
+        if ((triggerType === "on_occupied" || triggerType === "on_vacant") && !occupancyTrigger) {
+          occupancyTrigger = triggerType;
+        }
+        if ((triggerType === "on_dark" || triggerType === "on_bright") && !ambientTrigger) {
+          ambientTrigger = triggerType;
+        }
+      });
+    }
+    if (!occupancyTrigger && !ambientTrigger && fallbackTriggerType) {
+      const triggerType = this._normalizeActionTriggerType(fallbackTriggerType);
+      if (triggerType === "on_occupied" || triggerType === "on_vacant") {
+        occupancyTrigger = triggerType;
+      } else {
+        ambientTrigger = triggerType;
+      }
+    }
+    const ordered: TopomationActionRule["trigger_type"][] = [
+      "on_occupied",
+      "on_vacant",
+      "on_dark",
+      "on_bright",
+    ];
+    return ordered.filter(
+      (triggerType) => triggerType === occupancyTrigger || triggerType === ambientTrigger
+    );
+  }
+
+  private _primaryActionTriggerType(
+    triggerTypes: TopomationActionRule["trigger_type"][]
+  ): TopomationActionRule["trigger_type"] {
+    return triggerTypes[0] || "on_occupied";
+  }
+
+  private _occupancyTriggerForRule(
+    triggerTypes: TopomationActionRule["trigger_type"][]
+  ): "on_occupied" | "on_vacant" | undefined {
+    if (triggerTypes.includes("on_occupied")) return "on_occupied";
+    if (triggerTypes.includes("on_vacant")) return "on_vacant";
+    return undefined;
+  }
+
+  private _ambientTriggerForRule(
+    triggerTypes: TopomationActionRule["trigger_type"][]
+  ): "on_dark" | "on_bright" | undefined {
+    if (triggerTypes.includes("on_dark")) return "on_dark";
+    if (triggerTypes.includes("on_bright")) return "on_bright";
+    return undefined;
+  }
+
+  private _lightingSituationEventLabel(event: TopomationActionRule["trigger_type"]): string {
+    if (event === "on_occupied") return "Room becomes occupied";
+    if (event === "on_vacant") return "Room becomes vacant";
+    if (event === "on_bright") return "It becomes bright";
+    return "It becomes dark";
+  }
+
+  private _lightingSituationRequirement(
+    rule: Partial<TopomationActionRule>,
+    family: LightingSituationFamily,
+    triggerTypes?: TopomationActionRule["trigger_type"][]
+  ): LightingSituationRequirement {
+    if (family === "occupancy") {
+      const ambientCondition = this._normalizeActionAmbientCondition(
+        rule.ambient_condition,
+        triggerTypes ?? this._normalizeActionTriggerTypes(rule.trigger_types, rule.trigger_type)
+      );
+      if (ambientCondition === "dark" || ambientCondition === "bright") {
+        return ambientCondition;
+      }
+      return "any";
+    }
+
+    if (rule.must_be_occupied === true) return "occupied";
+    if (rule.must_be_occupied === false) return "vacant";
+    return "any";
+  }
+
+  private _lightingSituationRows(rule: Partial<TopomationActionRule>): LightingSituationRow[] {
+    const triggerTypes = this._normalizeActionTriggerTypes(rule.trigger_types, rule.trigger_type);
+    const rows: LightingSituationRow[] = [];
+    const occupancyTrigger = this._occupancyTriggerForRule(triggerTypes);
+    const ambientTrigger = this._ambientTriggerForRule(triggerTypes);
+
+    if (occupancyTrigger) {
+      rows.push({
+        family: "occupancy",
+        event: occupancyTrigger,
+        requirement: this._lightingSituationRequirement(rule, "occupancy", triggerTypes),
+      });
+    }
+    if (ambientTrigger) {
+      rows.push({
+        family: "ambient",
+        event: ambientTrigger,
+        requirement: this._lightingSituationRequirement(rule, "ambient", triggerTypes),
+      });
+    }
+    return rows;
+  }
+
+  private _setLightingSituationEvent(
+    ruleId: string,
+    family: LightingSituationFamily,
+    nextEvent: TopomationActionRule["trigger_type"]
+  ): void {
+    const rule = this._workingActionRules().find((candidate) => String(candidate.id || "") === ruleId);
+    if (!rule) return;
+    const triggerTypes = this._normalizeActionTriggerTypes(rule.trigger_types, rule.trigger_type);
+    const occupancyTrigger = this._occupancyTriggerForRule(triggerTypes);
+    const ambientTrigger = this._ambientTriggerForRule(triggerTypes);
+    const nextPatch: Partial<TopomationActionRule> = {
+      trigger_types: this._composeLightingTriggerTypes({
+        occupancyTrigger:
+          family === "occupancy"
+            ? (nextEvent as "on_occupied" | "on_vacant")
+            : occupancyTrigger,
+        ambientTrigger:
+          family === "ambient" ? (nextEvent as "on_dark" | "on_bright") : ambientTrigger,
+      }),
+    };
+
+    if (family === "occupancy" && occupancyTrigger) {
+      const currentRequirement = this._lightingSituationRequirement(rule, "ambient", triggerTypes);
+      const previousRequirement = occupancyTrigger === "on_occupied" ? "occupied" : "vacant";
+      if (currentRequirement === previousRequirement) {
+        nextPatch.must_be_occupied = nextEvent === "on_occupied";
+      }
+    }
+
+    if (family === "ambient" && ambientTrigger) {
+      const currentRequirement = this._lightingSituationRequirement(rule, "occupancy", triggerTypes);
+      const previousRequirement = ambientTrigger === "on_bright" ? "bright" : "dark";
+      if (currentRequirement === previousRequirement) {
+        nextPatch.ambient_condition = nextEvent === "on_bright" ? "bright" : "dark";
+      }
+    }
+
+    this._updateActionRule(ruleId, nextPatch);
+  }
+
+  private _setLightingSituationRequirement(
+    ruleId: string,
+    family: LightingSituationFamily,
+    requirement: LightingSituationRequirement
+  ): void {
+    if (family === "occupancy") {
+      this._updateActionRule(ruleId, {
+        ambient_condition: requirement === "dark" || requirement === "bright" ? requirement : "any",
+      });
+      return;
+    }
+
+    this._updateActionRule(ruleId, {
+      must_be_occupied:
+        requirement === "occupied" ? true : requirement === "vacant" ? false : undefined,
+    });
+  }
+
+  private _addLightingSituation(ruleId: string): void {
+    const rule = this._workingActionRules().find((candidate) => String(candidate.id || "") === ruleId);
+    if (!rule) return;
+    const triggerTypes = this._normalizeActionTriggerTypes(rule.trigger_types, rule.trigger_type);
+    const occupancyTrigger = this._occupancyTriggerForRule(triggerTypes);
+    const ambientTrigger = this._ambientTriggerForRule(triggerTypes);
+    if (occupancyTrigger && ambientTrigger) return;
+
+    if (!occupancyTrigger) {
+      const existingAmbientRequirement = this._lightingSituationRequirement(rule, "ambient", triggerTypes);
+      const nextOccupancyTrigger =
+        existingAmbientRequirement === "vacant" ? "on_vacant" : "on_occupied";
+      const nextPatch: Partial<TopomationActionRule> = {
+        trigger_types: this._composeLightingTriggerTypes({
+          occupancyTrigger: nextOccupancyTrigger,
+          ambientTrigger,
+        }),
+      };
+      if (ambientTrigger === "on_dark") nextPatch.ambient_condition = "dark";
+      if (ambientTrigger === "on_bright") nextPatch.ambient_condition = "bright";
+      if (this._lightingSituationRequirement(rule, "occupancy", triggerTypes) === "any") {
+        if (ambientTrigger === "on_dark") nextPatch.ambient_condition = "dark";
+        if (ambientTrigger === "on_bright") nextPatch.ambient_condition = "bright";
+      }
+      this._updateActionRule(ruleId, nextPatch);
+      return;
+    }
+
+    const existingOccupancyRequirement = this._lightingSituationRequirement(rule, "occupancy", triggerTypes);
+    const nextAmbientTrigger =
+      existingOccupancyRequirement === "bright" ? "on_bright" : "on_dark";
+    const nextPatch: Partial<TopomationActionRule> = {
+      trigger_types: this._composeLightingTriggerTypes({
+        occupancyTrigger,
+        ambientTrigger: nextAmbientTrigger,
+      }),
+    };
+    if (occupancyTrigger === "on_occupied") {
+      nextPatch.must_be_occupied = true;
+    } else if (occupancyTrigger === "on_vacant") {
+      nextPatch.must_be_occupied = false;
+    }
+    if (this._lightingSituationRequirement(rule, "ambient", triggerTypes) === "any") {
+      nextPatch.must_be_occupied = occupancyTrigger === "on_occupied";
+    }
+    this._updateActionRule(ruleId, nextPatch);
+  }
+
+  private _removeLightingSituation(ruleId: string, family: LightingSituationFamily): void {
+    const rule = this._workingActionRules().find((candidate) => String(candidate.id || "") === ruleId);
+    if (!rule) return;
+    const triggerTypes = this._normalizeActionTriggerTypes(rule.trigger_types, rule.trigger_type);
+    const occupancyTrigger =
+      family === "occupancy" ? undefined : this._occupancyTriggerForRule(triggerTypes);
+    const ambientTrigger =
+      family === "ambient" ? undefined : this._ambientTriggerForRule(triggerTypes);
+    if (!occupancyTrigger && !ambientTrigger) return;
+
+    this._updateActionRule(ruleId, {
+      trigger_types: this._composeLightingTriggerTypes({
+        occupancyTrigger,
+        ambientTrigger,
+      }),
+      ...(family === "occupancy" ? { ambient_condition: "any" } : { must_be_occupied: undefined }),
+    });
+  }
+
+  private _composeLightingTriggerTypes({
+    occupancyTrigger,
+    ambientTrigger,
+  }: {
+    occupancyTrigger?: "on_occupied" | "on_vacant";
+    ambientTrigger?: "on_dark" | "on_bright";
+  }): TopomationActionRule["trigger_type"][] {
+    return this._normalizeActionTriggerTypes(
+      [
+        ...(occupancyTrigger ? [occupancyTrigger] : []),
+        ...(ambientTrigger ? [ambientTrigger] : []),
+      ],
+      occupancyTrigger || ambientTrigger || "on_occupied"
+    );
+  }
+
+  private _setLightingOccupancyTrigger(
+    ruleId: string,
+    enabled: boolean,
+    currentOccupancyTrigger: "on_occupied" | "on_vacant" | undefined,
+    currentAmbientTrigger: "on_dark" | "on_bright" | undefined,
+    nextOccupancyTrigger?: "on_occupied" | "on_vacant"
+  ): void {
+    const occupancyTrigger = enabled
+      ? nextOccupancyTrigger || currentOccupancyTrigger || "on_occupied"
+      : undefined;
+    if (!occupancyTrigger && !currentAmbientTrigger) return;
+    this._updateActionRule(ruleId, {
+      trigger_types: this._composeLightingTriggerTypes({
+        occupancyTrigger,
+        ambientTrigger: currentAmbientTrigger,
+      }),
+    });
+  }
+
+  private _setLightingAmbientTrigger(
+    ruleId: string,
+    enabled: boolean,
+    currentOccupancyTrigger: "on_occupied" | "on_vacant" | undefined,
+    currentAmbientTrigger: "on_dark" | "on_bright" | undefined,
+    nextAmbientTrigger?: "on_dark" | "on_bright"
+  ): void {
+    const ambientTrigger = enabled
+      ? nextAmbientTrigger || currentAmbientTrigger || "on_dark"
+      : undefined;
+    if (!currentOccupancyTrigger && !ambientTrigger) return;
+    this._updateActionRule(ruleId, {
+      trigger_types: this._composeLightingTriggerTypes({
+        occupancyTrigger: currentOccupancyTrigger,
+        ambientTrigger,
+      }),
+    });
+  }
+
   private _defaultActionAmbientConditionForTrigger(
-    triggerType: TopomationActionRule["trigger_type"]
+    triggerTypeOrTypes:
+      | TopomationActionRule["trigger_type"]
+      | TopomationActionRule["trigger_type"][]
   ): "any" | "dark" | "bright" {
-    if (triggerType === "on_dark") return "dark";
-    if (triggerType === "on_bright") return "bright";
+    const triggerTypes = Array.isArray(triggerTypeOrTypes)
+      ? this._normalizeActionTriggerTypes(triggerTypeOrTypes)
+      : this._normalizeActionTriggerTypes([], triggerTypeOrTypes);
+    const hasDark = triggerTypes.includes("on_dark");
+    const hasBright = triggerTypes.includes("on_bright");
+    if (hasDark && !hasBright) return "dark";
+    if (hasBright && !hasDark) return "bright";
     return "any";
   }
 
@@ -6179,6 +6635,29 @@ export class HtLocationInspector extends LitElement {
     return "On dark";
   }
 
+  private _renderChoicePill(
+    name: string,
+    value: string,
+    label: string,
+    checked: boolean,
+    disabled: boolean,
+    onChange: () => void
+  ) {
+    return html`
+      <label class="choice-pill ${checked ? "active" : ""} ${disabled ? "disabled" : ""}">
+        <input
+          type="radio"
+          name=${name}
+          value=${value}
+          .checked=${checked}
+          ?disabled=${disabled}
+          @change=${() => onChange()}
+        />
+        <span>${label}</span>
+      </label>
+    `;
+  }
+
   private _serviceLabel(actionService?: string): string {
     const raw = String(actionService || "").trim();
     if (!raw) return "";
@@ -6186,7 +6665,8 @@ export class HtLocationInspector extends LitElement {
   }
 
   private _autoActionRuleName(rule: TopomationActionRule, index: number): string {
-    const triggerType = this._normalizeActionTriggerType(rule.trigger_type);
+    const triggerTypes = this._normalizeActionTriggerTypes(rule.trigger_types, rule.trigger_type);
+    const triggerType = this._primaryActionTriggerType(triggerTypes);
     let name = this._actionTriggerLabel(triggerType);
     const targets = this._actionTargetsForRule(rule);
     const primaryAction = targets[0];
@@ -6228,29 +6708,23 @@ export class HtLocationInspector extends LitElement {
 
   private _normalizeActionAmbientCondition(
     value: unknown,
-    triggerType: TopomationActionRule["trigger_type"]
+    triggerTypeOrTypes:
+      | TopomationActionRule["trigger_type"]
+      | TopomationActionRule["trigger_type"][]
   ): "any" | "dark" | "bright" {
-    const lockedAmbient = this._lockedActionAmbientConditionForTrigger(triggerType);
-    if (lockedAmbient !== undefined) {
-      return lockedAmbient;
-    }
     const normalized = String(value || "")
       .trim()
       .toLowerCase();
     if (normalized === "any" || normalized === "dark" || normalized === "bright") {
       return normalized;
     }
-    return this._defaultActionAmbientConditionForTrigger(triggerType);
+    return this._defaultActionAmbientConditionForTrigger(triggerTypeOrTypes);
   }
 
   private _normalizeActionMustBeOccupied(
     value: unknown,
-    triggerType: TopomationActionRule["trigger_type"]
+    _triggerType: TopomationActionRule["trigger_type"]
   ): boolean | undefined {
-    const lockedMustBeOccupied = this._lockedActionMustBeOccupiedForTrigger(triggerType);
-    if (lockedMustBeOccupied !== undefined) {
-      return lockedMustBeOccupied;
-    }
     return typeof value === "boolean" ? value : undefined;
   }
 
@@ -6289,7 +6763,9 @@ export class HtLocationInspector extends LitElement {
   }
 
   private _actionTargetsForRule(rule: Partial<TopomationActionRule>): RuleActionTarget[] {
-    const triggerType = this._normalizeActionTriggerType(rule.trigger_type);
+    const triggerType = this._primaryActionTriggerType(
+      this._normalizeActionTriggerTypes(rule.trigger_types, rule.trigger_type)
+    );
     const normalizedTargets = this._normalizeActionTargets(
       (rule as { actions?: unknown }).actions,
       triggerType
@@ -6316,7 +6792,9 @@ export class HtLocationInspector extends LitElement {
     rule: Partial<TopomationActionRule>,
     nextTargetsRaw: RuleActionTarget[]
   ): Pick<TopomationActionRule, "actions" | "action_entity_id" | "action_service" | "action_data"> {
-    const triggerType = this._normalizeActionTriggerType(rule.trigger_type);
+    const triggerType = this._primaryActionTriggerType(
+      this._normalizeActionTriggerTypes(rule.trigger_types, rule.trigger_type)
+    );
     const nextTargets = this._normalizeActionTargets(nextTargetsRaw, triggerType);
     const primary = nextTargets[0];
     return {
@@ -6422,7 +6900,7 @@ export class HtLocationInspector extends LitElement {
     }
     return this._normalizeActionAmbientCondition(
       rule.ambient_condition,
-      this._normalizeActionTriggerType(rule.trigger_type)
+      this._normalizeActionTriggerTypes(rule.trigger_types, rule.trigger_type)
     );
   }
 
@@ -6679,7 +7157,11 @@ export class HtLocationInspector extends LitElement {
     rule: Partial<TopomationActionRule>,
     index: number
   ): TopomationActionRule {
-    const triggerType = this._normalizeActionTriggerType(rule.trigger_type);
+    const triggerTypes = this._normalizeActionTriggerTypes(
+      rule.trigger_types,
+      this._normalizeActionTriggerType(rule.trigger_type)
+    );
+    const triggerType = this._primaryActionTriggerType(triggerTypes);
     const id =
       typeof rule.id === "string" && rule.id.trim().length > 0
         ? rule.id
@@ -6703,13 +7185,14 @@ export class HtLocationInspector extends LitElement {
           : "New rule",
       rule_uuid: ruleUuid,
       trigger_type: triggerType,
+      trigger_types: triggerTypes,
       actions,
       action_entity_id: actionEntityId || undefined,
       action_service: actionService || undefined,
       action_data: actionData,
       ambient_condition: this._normalizeActionAmbientCondition(
         rule.ambient_condition,
-        triggerType
+        triggerTypes
       ),
       must_be_occupied: this._normalizeActionMustBeOccupied(rule.must_be_occupied, triggerType),
       time_condition_enabled: Boolean(rule.time_condition_enabled),
@@ -6717,7 +7200,7 @@ export class HtLocationInspector extends LitElement {
       end_time: this._normalizeActionTime(rule.end_time, "23:59"),
       run_on_startup: false,
       enabled: rule.enabled !== false,
-      require_dark: this._normalizeActionAmbientCondition(rule.ambient_condition, triggerType) === "dark",
+      require_dark: this._normalizeActionAmbientCondition(rule.ambient_condition, triggerTypes) === "dark",
     };
   }
 
@@ -6832,6 +7315,7 @@ export class HtLocationInspector extends LitElement {
     return JSON.stringify({
       name: this._resolveActionRuleName(rule, index),
       trigger_type: this._normalizeActionTriggerType(rule.trigger_type),
+      trigger_types: this._normalizeActionTriggerTypes(rule.trigger_types, rule.trigger_type),
       actions,
       ambient_condition: this._effectiveAmbientConditionForRule(rule),
       must_be_occupied:
@@ -6987,7 +7471,8 @@ export class HtLocationInspector extends LitElement {
     const rules = this._workingActionRules();
     const candidates = this._actionRuleTargetEntities(tab);
     const actionEntityId = candidates[0] || "";
-    const triggerType: TopomationActionRule["trigger_type"] = tab === "lighting" ? "on_dark" : "on_occupied";
+    const triggerTypes: TopomationActionRule["trigger_type"][] = ["on_occupied"];
+    const triggerType = this._primaryActionTriggerType(triggerTypes);
     const nextRuleId = `action_rule_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
     this._actionRuleTabById[nextRuleId] = tab;
     const nextRule: TopomationActionRule = {
@@ -6996,6 +7481,7 @@ export class HtLocationInspector extends LitElement {
       name: "New rule",
       rule_uuid: this._generateRuleUuid(),
       trigger_type: triggerType,
+      trigger_types: triggerTypes,
       actions: actionEntityId
         ? [
             {
@@ -7006,8 +7492,14 @@ export class HtLocationInspector extends LitElement {
         : [],
       action_entity_id: actionEntityId || undefined,
       action_service: this._defaultActionServiceForTrigger(actionEntityId, triggerType),
-      ambient_condition: this._defaultActionAmbientConditionForTrigger(triggerType),
-      must_be_occupied: this._normalizeActionMustBeOccupied(undefined, triggerType),
+      ambient_condition:
+        tab === "lighting"
+          ? "dark"
+          : this._defaultActionAmbientConditionForTrigger(triggerTypes),
+      must_be_occupied:
+        tab === "lighting"
+          ? undefined
+          : this._normalizeActionMustBeOccupied(undefined, triggerType),
       time_condition_enabled: false,
       start_time: "18:00",
       end_time: "23:59",
@@ -7023,30 +7515,41 @@ export class HtLocationInspector extends LitElement {
   ): void {
     const rules = this._workingActionRules().map((rule, index) => {
       if (rule.id !== ruleId) return this._normalizeActionRule(rule, index);
-      const previousTriggerType = this._normalizeActionTriggerType(rule.trigger_type);
+      const previousTriggerTypes = this._normalizeActionTriggerTypes(
+        rule.trigger_types,
+        rule.trigger_type
+      );
       const merged = {
         ...rule,
         ...patch,
       };
       let mergedTargets = this._actionTargetsForRule(merged);
-      if (Object.prototype.hasOwnProperty.call(patch, "trigger_type")) {
-        const triggerType = this._normalizeActionTriggerType(patch.trigger_type);
+      if (
+        Object.prototype.hasOwnProperty.call(patch, "trigger_type") ||
+        Object.prototype.hasOwnProperty.call(patch, "trigger_types")
+      ) {
+        const triggerTypes = this._normalizeActionTriggerTypes(
+          Object.prototype.hasOwnProperty.call(patch, "trigger_types")
+            ? patch.trigger_types
+            : Object.prototype.hasOwnProperty.call(patch, "trigger_type")
+              ? []
+              : merged.trigger_types,
+          Object.prototype.hasOwnProperty.call(patch, "trigger_type")
+            ? this._normalizeActionTriggerType(patch.trigger_type)
+            : this._normalizeActionTriggerType(merged.trigger_type)
+        );
+        const triggerType = this._primaryActionTriggerType(triggerTypes);
         merged.trigger_type = triggerType;
+        merged.trigger_types = triggerTypes;
         if (!Object.prototype.hasOwnProperty.call(patch, "ambient_condition")) {
-          const movedOffAmbientDerivedTrigger =
-            this._isActionAmbientConditionLockedByTrigger(previousTriggerType) &&
-            !this._isActionAmbientConditionLockedByTrigger(triggerType);
-          merged.ambient_condition = movedOffAmbientDerivedTrigger
-            ? this._defaultActionAmbientConditionForTrigger(triggerType)
-            : this._normalizeActionAmbientCondition(merged.ambient_condition, triggerType);
-        }
-        if (!Object.prototype.hasOwnProperty.call(patch, "must_be_occupied")) {
-          const movedOffOccupancyDerivedTrigger =
-            this._isActionMustBeOccupiedLockedByTrigger(previousTriggerType) &&
-            !this._isActionMustBeOccupiedLockedByTrigger(triggerType);
-          merged.must_be_occupied = movedOffOccupancyDerivedTrigger
-            ? this._normalizeActionMustBeOccupied(undefined, triggerType)
-            : this._normalizeActionMustBeOccupied(merged.must_be_occupied, triggerType);
+          const previousDefaultAmbient =
+            this._defaultActionAmbientConditionForTrigger(previousTriggerTypes);
+          const nextDefaultAmbient = this._defaultActionAmbientConditionForTrigger(triggerTypes);
+          merged.ambient_condition =
+            this._normalizeActionAmbientCondition(merged.ambient_condition, previousTriggerTypes) ===
+            previousDefaultAmbient
+              ? nextDefaultAmbient
+              : this._normalizeActionAmbientCondition(merged.ambient_condition, triggerTypes);
         }
         if (
           !Object.prototype.hasOwnProperty.call(patch, "action_service") &&
@@ -7070,7 +7573,9 @@ export class HtLocationInspector extends LitElement {
       if (Object.prototype.hasOwnProperty.call(patch, "actions")) {
         mergedTargets = this._normalizeActionTargets(
           patch.actions as unknown,
-          this._normalizeActionTriggerType(merged.trigger_type)
+          this._primaryActionTriggerType(
+            this._normalizeActionTriggerTypes(merged.trigger_types, merged.trigger_type)
+          )
         );
       }
       if (Object.prototype.hasOwnProperty.call(patch, "action_entity_id")) {
@@ -7080,7 +7585,9 @@ export class HtLocationInspector extends LitElement {
         } else if (mergedTargets.length === 0) {
           const nextService = this._defaultActionServiceForTrigger(
             entityId,
-            this._normalizeActionTriggerType(merged.trigger_type)
+            this._primaryActionTriggerType(
+              this._normalizeActionTriggerTypes(merged.trigger_types, merged.trigger_type)
+            )
           );
           mergedTargets = [{ entity_id: entityId, service: nextService }];
         } else {
@@ -7088,7 +7595,9 @@ export class HtLocationInspector extends LitElement {
           if (!Object.prototype.hasOwnProperty.call(patch, "action_service")) {
             firstTarget.service = this._defaultActionServiceForTrigger(
               entityId,
-              this._normalizeActionTriggerType(merged.trigger_type)
+              this._primaryActionTriggerType(
+                this._normalizeActionTriggerTypes(merged.trigger_types, merged.trigger_type)
+              )
             );
           }
           firstTarget.data = this._normalizeActionDataForRule(
@@ -7173,6 +7682,44 @@ export class HtLocationInspector extends LitElement {
     this._setActionRulesDraft(rules);
   }
 
+  private _duplicateActionRule(ruleId: string): void {
+    const rules = this._workingActionRules();
+    const ruleIndex = rules.findIndex((rule) => String(rule.id || "") === ruleId);
+    if (ruleIndex < 0) return;
+
+    const sourceRule = this._normalizeActionRule(rules[ruleIndex], ruleIndex);
+    const duplicateId = `action_rule_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+    const duplicateTargets = this._actionTargetsForRule(sourceRule).map((target) => ({
+      entity_id: target.entity_id,
+      service: target.service,
+      ...(target.data ? { data: { ...target.data } } : {}),
+      ...(typeof target.only_if_off === "boolean" ? { only_if_off: target.only_if_off } : {}),
+    }));
+    const duplicateName = `${this._resolveActionRuleName(sourceRule, ruleIndex)} copy`;
+    const duplicateRule = this._normalizeActionRule(
+      {
+        ...sourceRule,
+        id: duplicateId,
+        entity_id: "",
+        name: duplicateName,
+        rule_uuid: this._generateRuleUuid(),
+        actions: duplicateTargets,
+      },
+      rules.length
+    );
+    const nextRules = [
+      ...rules.slice(0, ruleIndex + 1),
+      duplicateRule,
+      ...rules.slice(ruleIndex + 1),
+    ];
+    const sourceTab = this._ruleTabForEditing(sourceRule);
+    if (sourceTab) {
+      this._actionRuleTabById[duplicateId] = sourceTab;
+    }
+    this._setActionRulesDraft(nextRules);
+    this._startActionRuleNameEdit(duplicateId, duplicateName);
+  }
+
   private _startActionRuleNameEdit(ruleId: string, currentName: string): void {
     this._editingActionRuleNameId = ruleId;
     this._editingActionRuleNameValue = currentName;
@@ -7195,6 +7742,10 @@ export class HtLocationInspector extends LitElement {
     const hhmmPattern = /^([01]\d|2[0-3]):([0-5]\d)$/;
     rules.forEach((rule, index) => {
       const label = rule.name?.trim() || "New rule";
+      const triggerTypes = this._normalizeActionTriggerTypes(rule.trigger_types, rule.trigger_type);
+      if (triggerTypes.length === 0) {
+        errors.push(`${label}: select at least one trigger.`);
+      }
       const targets = this._actionTargetsForRule(rule);
       if (targets.length === 0) {
         errors.push(`${label}: select at least one target device.`);
@@ -7271,6 +7822,7 @@ export class HtLocationInspector extends LitElement {
             rule_uuid: normalizedRule.rule_uuid,
             automation_id: automationId || undefined,
             trigger_type: normalizedRule.trigger_type,
+            trigger_types: normalizedRule.trigger_types,
             actions: ruleTargets,
             action_entity_id: primaryAction.entity_id,
             action_service: primaryAction.service,
@@ -7372,6 +7924,7 @@ export class HtLocationInspector extends LitElement {
           rule_uuid: rule.rule_uuid,
           automation_id: persistedRule ? String(persistedRule.id || "").trim() || undefined : undefined,
           trigger_type: rule.trigger_type,
+          trigger_types: rule.trigger_types,
           actions: ruleTargets,
           action_entity_id: primaryAction.entity_id,
           action_service: primaryAction.service,
@@ -7464,6 +8017,136 @@ export class HtLocationInspector extends LitElement {
     };
   }
 
+  private _renderLightingSituationRows(
+    ruleId: string,
+    rule: TopomationActionRule,
+    busy: boolean
+  ) {
+    const situations = this._lightingSituationRows(rule);
+    return html`
+      <div class="dusk-rule-section-title">When any of these happen</div>
+      <div class="lighting-situation-list">
+        ${situations.map((situation, index) => {
+          const canRemove = situations.length > 1;
+          const eventOptions =
+            situation.family === "occupancy"
+              ? ([
+                  {
+                    value: "on_occupied" as const,
+                    label: this._lightingSituationEventLabel("on_occupied"),
+                  },
+                  {
+                    value: "on_vacant" as const,
+                    label: this._lightingSituationEventLabel("on_vacant"),
+                  },
+                ] satisfies Array<{ value: TopomationActionRule["trigger_type"]; label: string }>)
+              : ([
+                  {
+                    value: "on_dark" as const,
+                    label: this._lightingSituationEventLabel("on_dark"),
+                  },
+                  {
+                    value: "on_bright" as const,
+                    label: this._lightingSituationEventLabel("on_bright"),
+                  },
+                ] satisfies Array<{ value: TopomationActionRule["trigger_type"]; label: string }>);
+          const requirementOptions =
+            situation.family === "occupancy"
+              ? ([
+                  { value: "any", label: "Always" },
+                  { value: "dark", label: "It is dark" },
+                  { value: "bright", label: "It is bright" },
+                ] satisfies Array<{ value: LightingSituationRequirement; label: string }>)
+              : ([
+                  { value: "any", label: "Always" },
+                  { value: "occupied", label: "Room is occupied" },
+                  { value: "vacant", label: "Room is vacant" },
+                ] satisfies Array<{ value: LightingSituationRequirement; label: string }>);
+
+          return html`
+            <div
+              class="lighting-situation-card"
+              data-testid=${`action-rule-${ruleId}-situation-${index}`}
+            >
+              <div class="lighting-situation-head">
+                <div class="lighting-situation-title">Situation ${index + 1}</div>
+                <button
+                  type="button"
+                  class="button button-secondary"
+                  ?disabled=${busy || !canRemove}
+                  data-testid=${`action-rule-${ruleId}-situation-${index}-remove`}
+                  @click=${() => this._removeLightingSituation(ruleId, situation.family)}
+                >
+                  Remove
+                </button>
+              </div>
+              <div class="lighting-situation-body">
+                <div class="lighting-situation-row">
+                  <span class="config-label">Event</span>
+                  <div class="choice-pill-group">
+                    ${eventOptions.map((option) =>
+                      this._renderChoicePill(
+                        `lighting-situation-event-${ruleId}-${situation.family}`,
+                        option.value,
+                        option.label,
+                        situation.event === option.value,
+                        busy,
+                        () =>
+                          this._setLightingSituationEvent(
+                            ruleId,
+                            situation.family,
+                            option.value
+                          )
+                      )
+                    )}
+                  </div>
+                </div>
+                <div class="lighting-situation-row">
+                  <span class="config-label">Only when</span>
+                  <div class="choice-pill-group">
+                    ${requirementOptions.map((option) =>
+                      this._renderChoicePill(
+                        `lighting-situation-requirement-${ruleId}-${situation.family}`,
+                        option.value,
+                        option.label,
+                        situation.requirement === option.value,
+                        busy,
+                        () =>
+                          this._setLightingSituationRequirement(
+                            ruleId,
+                            situation.family,
+                            option.value
+                          )
+                      )
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          `;
+        })}
+      </div>
+      ${situations.length < 2
+        ? html`
+            <div class="lighting-situation-toolbar">
+              <button
+                class="button button-secondary"
+                type="button"
+                data-testid=${`action-rule-${ruleId}-add-situation`}
+                ?disabled=${busy}
+                @click=${() => this._addLightingSituation(ruleId)}
+              >
+                Add situation
+              </button>
+            </div>
+          `
+        : ""}
+      <div class="config-help lighting-situation-help">
+        Examples: Occupied while dark, Dark while occupied, Vacant, Bright.
+      </div>
+    `;
+  }
+
   private _renderLightingRuleActionRows(
     ruleId: string,
     rule: TopomationActionRule,
@@ -7488,7 +8171,12 @@ export class HtLocationInspector extends LitElement {
           const target = targetByEntity.get(entityId);
           const included = Boolean(target);
           const dimmable = this._isDimmableEntity(entityId);
-          const defaultService = this._defaultActionServiceForTrigger(entityId, rule.trigger_type);
+          const defaultService = this._defaultActionServiceForTrigger(
+            entityId,
+            this._primaryActionTriggerType(
+              this._normalizeActionTriggerTypes(rule.trigger_types, rule.trigger_type)
+            )
+          );
           const activeService = String(target?.service || defaultService);
           const targetData = this._normalizeActionDataForRule(target?.data, entityId, activeService);
           const brightnessPct = this._normalizeActionBrightnessPct(
@@ -7685,24 +8373,100 @@ export class HtLocationInspector extends LitElement {
     `;
   }
 
+  private _renderLightingRuleEditor(
+    ruleId: string,
+    rule: TopomationActionRule,
+    busy: boolean,
+    entityOptions: string[]
+  ) {
+    return html`
+      ${this._renderLightingSituationRows(ruleId, rule, busy)}
+
+      <div class="dusk-rule-section-title">Time window</div>
+      <div class="lighting-time-window">
+        <div class="config-row">
+          <div>
+            <div class="config-label">Rule timing</div>
+            <div class="config-help">
+              Limit this rule to a time range. Crossing midnight is supported.
+            </div>
+          </div>
+          <div class="config-value">
+            <label class="dusk-off-only-toggle">
+              <input
+                type="checkbox"
+                class="switch-input"
+                .checked=${Boolean(rule.time_condition_enabled)}
+                ?disabled=${busy}
+                @change=${(ev: Event) =>
+                  this._updateActionRule(ruleId, {
+                    time_condition_enabled: (ev.target as HTMLInputElement).checked,
+                  })}
+              />
+              <span>Limit this rule to a time range</span>
+            </label>
+          </div>
+        </div>
+
+        ${rule.time_condition_enabled
+          ? html`
+              <div class="dusk-time-fields">
+                <label class="dusk-time-field">
+                  <span class="config-label">Begin</span>
+                  <input
+                    type="time"
+                    class="input"
+                    .value=${String(rule.start_time || "18:00")}
+                    ?disabled=${busy}
+                    @change=${(ev: Event) =>
+                      this._updateActionRule(ruleId, {
+                        start_time: this._normalizeActionTime(
+                          (ev.target as HTMLInputElement).value,
+                          "18:00"
+                        ),
+                      })}
+                  />
+                </label>
+                <label class="dusk-time-field">
+                  <span class="config-label">End</span>
+                  <input
+                    type="time"
+                    class="input"
+                    .value=${String(rule.end_time || "23:59")}
+                    ?disabled=${busy}
+                    @change=${(ev: Event) =>
+                      this._updateActionRule(ruleId, {
+                        end_time: this._normalizeActionTime(
+                          (ev.target as HTMLInputElement).value,
+                          "23:59"
+                        ),
+                      })}
+                  />
+                </label>
+              </div>
+            `
+          : ""}
+      </div>
+
+      <div class="dusk-rule-section-title">Set room lights to</div>
+      ${this._renderLightingRuleActionRows(ruleId, rule, busy, entityOptions)}
+      <div class="config-help" style="margin-top: 12px;">
+        One optional time window per rule. Use Duplicate rule to create
+        evening, overnight, or cooking variants.
+      </div>
+    `;
+  }
+
   private _renderDeviceAutomationTab(tab: DeviceAutomationTab) {
     if (!this.location) return "";
     const busy = this._savingActionRules || this._loadingActionRules;
     const meta = this._deviceAutomationTabMeta(tab);
     const rules = this._rulesForDeviceAutomationTab(tab);
     const entityOptions = this._actionRuleTargetEntities(tab);
-    const triggerOptions =
-      tab === "lighting"
-        ? [
-            { value: "on_dark", label: "On dark" },
-            { value: "on_bright", label: "On bright" },
-            { value: "on_occupied", label: "On occupied" },
-            { value: "on_vacant", label: "On vacant" },
-          ]
-        : [
-            { value: "on_occupied", label: "On occupied" },
-            { value: "on_vacant", label: "On vacant" },
-          ];
+    const triggerOptions = [
+      { value: "on_occupied", label: "On occupied" },
+      { value: "on_vacant", label: "On vacant" },
+    ];
     const compatibleDeviceLabel =
       tab === "lighting"
         ? "light"
@@ -7743,28 +8507,22 @@ export class HtLocationInspector extends LitElement {
                 const ruleId = String(rule.id || "");
                 const editingName = this._editingActionRuleNameId === ruleId;
                 const label = rule.name?.trim() || `Rule ${index + 1}`;
-                const triggerType = this._normalizeActionTriggerType(rule.trigger_type);
-                const supportsAmbientCondition = this._tabSupportsActionAmbient(tab);
+                const triggerTypes = this._normalizeActionTriggerTypes(
+                  rule.trigger_types,
+                  rule.trigger_type
+                );
+                const triggerType = this._primaryActionTriggerType(triggerTypes);
                 const selectedActionEntityId = String(rule.action_entity_id || "").trim();
                 const normalizedActionData = this._normalizeActionDataForRule(
                   rule.action_data,
                   selectedActionEntityId,
                   String(rule.action_service || "")
                 );
-                const ambientLocked = this._isActionAmbientConditionLockedByTrigger(triggerType);
                 const ambientCondition = this._normalizeActionAmbientCondition(
                   rule.ambient_condition,
-                  triggerType
+                  triggerTypes
                 );
-                const mustBeOccupiedLocked =
-                  this._isActionMustBeOccupiedLockedByTrigger(triggerType);
-                const mustBeOccupied = this._normalizeActionMustBeOccupied(
-                  rule.must_be_occupied,
-                  triggerType
-                );
-                const showAmbientConditionRow = supportsAmbientCondition && !ambientLocked;
-                const showOccupancyConditionRow = tab === "lighting" && !mustBeOccupiedLocked;
-                const occupancyConditionLabel = mustBeOccupied ? "Must be occupied" : "Must be vacant";
+                const showAmbientConditionRow = this._tabSupportsActionAmbient(tab);
                 const persistedRule = this._persistedActionRuleForDraft(rule);
                 const isPersisted = Boolean(persistedRule);
                 const hasRuleEdits = this._isActionRuleDirty(rule, index, persistedRule);
@@ -7830,184 +8588,161 @@ export class HtLocationInspector extends LitElement {
                           `}
                     </div>
 
-                    <div class="dusk-rule-row">
-                      <span class="config-label">Trigger</span>
-                      <select
-                        class="dusk-wide-select"
-                        ?disabled=${busy}
-                        @change=${(ev: Event) =>
-                          this._updateActionRule(ruleId, {
-                            trigger_type: this._normalizeActionTriggerType(
-                              (ev.target as HTMLSelectElement).value
-                            ),
-                          })}
-                      >
-                        ${triggerOptions.map(
-                          (option) => html`
-                            <option
-                              value=${option.value}
-                              ?selected=${option.value === triggerType}
+                    ${tab === "lighting"
+                      ? this._renderLightingRuleEditor(ruleId, rule, busy, entityOptions)
+                      : html`
+                          <div class="dusk-rule-row">
+                            <span class="config-label">Trigger</span>
+                            <select
+                              class="dusk-wide-select"
+                              ?disabled=${busy}
+                              @change=${(ev: Event) =>
+                                this._updateActionRule(ruleId, {
+                                  trigger_type: this._normalizeActionTriggerType(
+                                    (ev.target as HTMLSelectElement).value
+                                  ),
+                                })}
                             >
-                              ${option.label}
-                            </option>
-                          `
-                        )}
-                      </select>
-                    </div>
+                              ${triggerOptions.map(
+                                (option) => html`
+                                  <option
+                                    value=${option.value}
+                                    ?selected=${option.value === triggerType}
+                                  >
+                                    ${option.label}
+                                  </option>
+                                `
+                              )}
+                            </select>
+                          </div>
 
-                    <div class="dusk-rule-section-title">Conditions</div>
-                    <div class="dusk-conditions">
-                      ${showAmbientConditionRow
-                        ? html`
+                          <div class="dusk-rule-section-title">Conditions</div>
+                          <div class="dusk-conditions">
+                            ${showAmbientConditionRow
+                              ? html`
+                                  <div class="config-row">
+                                    <div>
+                                      <div class="config-label">Ambient must be</div>
+                                      <div class="config-help">
+                                        Optional ambient filter at trigger time.
+                                      </div>
+                                    </div>
+                                    <div class="config-value">
+                                      <div class="choice-pill-group">
+                                        ${this._renderChoicePill(
+                                          `lighting-ambient-condition-${ruleId}`,
+                                          "any",
+                                          "Ignore",
+                                          ambientCondition === "any",
+                                          busy,
+                                          () =>
+                                            this._updateActionRule(ruleId, {
+                                              ambient_condition:
+                                                this._normalizeActionAmbientCondition(
+                                                  "any",
+                                                  triggerTypes
+                                                ),
+                                            })
+                                        )}
+                                        ${this._renderChoicePill(
+                                          `lighting-ambient-condition-${ruleId}`,
+                                          "dark",
+                                          "Must be dark",
+                                          ambientCondition === "dark",
+                                          busy,
+                                          () =>
+                                            this._updateActionRule(ruleId, {
+                                              ambient_condition:
+                                                this._normalizeActionAmbientCondition(
+                                                  "dark",
+                                                  triggerTypes
+                                                ),
+                                            })
+                                        )}
+                                        ${this._renderChoicePill(
+                                          `lighting-ambient-condition-${ruleId}`,
+                                          "bright",
+                                          "Must be bright",
+                                          ambientCondition === "bright",
+                                          busy,
+                                          () =>
+                                            this._updateActionRule(ruleId, {
+                                              ambient_condition:
+                                                this._normalizeActionAmbientCondition(
+                                                  "bright",
+                                                  triggerTypes
+                                                ),
+                                            })
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                `
+                              : ""}
+
                             <div class="config-row">
                               <div>
-                                <div class="config-label">Ambient must be</div>
-                                <div class="config-help">Optional ambient filter at trigger time.</div>
-                              </div>
-                              <div class="config-value">
-                                <select
-                                  class="dusk-wide-select"
-                                  .value=${ambientCondition}
-                                  ?disabled=${busy}
-                                  @change=${(ev: Event) =>
-                                    this._updateActionRule(ruleId, {
-                                      ambient_condition: this._normalizeActionAmbientCondition(
-                                        (ev.target as HTMLSelectElement).value,
-                                        triggerType
-                                      ),
-                                    })}
-                                >
-                                  <option value="any">Ignore ambient</option>
-                                  <option value="dark">Must be dark</option>
-                                  <option value="bright">Must be bright</option>
-                                </select>
-                              </div>
-                            </div>
-                          `
-                        : ""}
-
-                      ${showOccupancyConditionRow
-                        ? html`
-                            <div class="config-row">
-                              <div>
-                                <div class="config-label">Occupancy must be</div>
+                                <div class="config-label">Use time window</div>
                                 <div class="config-help">
-                                  ${mustBeOccupiedLocked
-                                    ? "Derived from trigger."
-                                    : "Require the location to be occupied or vacant at trigger time."}
+                                  Limit this rule to a time range. Crossing midnight is supported.
                                 </div>
                               </div>
                               <div class="config-value">
-                                ${mustBeOccupiedLocked
-                                  ? html`
-                                      <div class="dusk-condition-derived">
-                                        <span>${occupancyConditionLabel}</span>
-                                        <span class="dusk-condition-derived-note">Set by trigger</span>
-                                      </div>
-                                    `
-                                  : html`
-                                      <select
-                                        class="dusk-wide-select"
-                                        .value=${typeof mustBeOccupied === "boolean"
-                                          ? mustBeOccupied
-                                            ? "occupied"
-                                            : "vacant"
-                                          : "ignore"}
-                                        ?disabled=${busy}
-                                        @change=${(ev: Event) => {
-                                          const nextValue = String(
-                                            (ev.target as HTMLSelectElement).value || "ignore"
-                                          ).trim();
-                                          this._updateActionRule(ruleId, {
-                                            must_be_occupied:
-                                              nextValue === "occupied"
-                                                ? true
-                                                : nextValue === "vacant"
-                                                  ? false
-                                                  : undefined,
-                                          });
-                                        }}
-                                      >
-                                        <option value="ignore">Doesn't matter</option>
-                                        <option value="occupied">Must be occupied</option>
-                                        <option value="vacant">Must be vacant</option>
-                                      </select>
-                                    `}
+                                <input
+                                  type="checkbox"
+                                  class="switch-input"
+                                  .checked=${Boolean(rule.time_condition_enabled)}
+                                  ?disabled=${busy}
+                                  @change=${(ev: Event) =>
+                                    this._updateActionRule(ruleId, {
+                                      time_condition_enabled: (ev.target as HTMLInputElement)
+                                        .checked,
+                                    })}
+                                />
                               </div>
                             </div>
-                          `
-                        : ""}
 
-                      <div class="config-row">
-                        <div>
-                          <div class="config-label">Use time window</div>
-                          <div class="config-help">
-                            Limit this rule to a time range. Crossing midnight is supported.
+                            ${rule.time_condition_enabled
+                              ? html`
+                                  <div class="dusk-time-fields" style="margin-top: 8px;">
+                                    <label class="dusk-time-field">
+                                      <span class="config-label">Begin</span>
+                                      <input
+                                        type="time"
+                                        class="input"
+                                        .value=${String(rule.start_time || "18:00")}
+                                        ?disabled=${busy}
+                                        @change=${(ev: Event) =>
+                                          this._updateActionRule(ruleId, {
+                                            start_time: this._normalizeActionTime(
+                                              (ev.target as HTMLInputElement).value,
+                                              "18:00"
+                                            ),
+                                          })}
+                                      />
+                                    </label>
+                                    <label class="dusk-time-field">
+                                      <span class="config-label">End</span>
+                                      <input
+                                        type="time"
+                                        class="input"
+                                        .value=${String(rule.end_time || "23:59")}
+                                        ?disabled=${busy}
+                                        @change=${(ev: Event) =>
+                                          this._updateActionRule(ruleId, {
+                                            end_time: this._normalizeActionTime(
+                                              (ev.target as HTMLInputElement).value,
+                                              "23:59"
+                                            ),
+                                          })}
+                                      />
+                                    </label>
+                                  </div>
+                                `
+                              : ""}
                           </div>
-                        </div>
-                        <div class="config-value">
-                          <input
-                            type="checkbox"
-                            class="switch-input"
-                            .checked=${Boolean(rule.time_condition_enabled)}
-                            ?disabled=${busy}
-                            @change=${(ev: Event) =>
-                              this._updateActionRule(ruleId, {
-                                time_condition_enabled: (ev.target as HTMLInputElement).checked,
-                              })}
-                          />
-                        </div>
-                      </div>
 
-                      ${rule.time_condition_enabled
-                        ? html`
-                            <div class="dusk-time-fields" style="margin-top: 8px;">
-                              <label class="dusk-time-field">
-                                <span class="config-label">Begin</span>
-                                <input
-                                  type="time"
-                                  class="input"
-                                  .value=${String(rule.start_time || "18:00")}
-                                  ?disabled=${busy}
-                                  @change=${(ev: Event) =>
-                                    this._updateActionRule(ruleId, {
-                                      start_time: this._normalizeActionTime(
-                                        (ev.target as HTMLInputElement).value,
-                                        "18:00"
-                                      ),
-                                    })}
-                                />
-                              </label>
-                              <label class="dusk-time-field">
-                                <span class="config-label">End</span>
-                                <input
-                                  type="time"
-                                  class="input"
-                                  .value=${String(rule.end_time || "23:59")}
-                                  ?disabled=${busy}
-                                  @change=${(ev: Event) =>
-                                    this._updateActionRule(ruleId, {
-                                      end_time: this._normalizeActionTime(
-                                        (ev.target as HTMLInputElement).value,
-                                        "23:59"
-                                      ),
-                                    })}
-                                />
-                              </label>
-                            </div>
-                          `
-                        : ""}
-                    </div>
-
-                    <div class="dusk-rule-section-title">Actions</div>
-                    ${tab === "lighting"
-                      ? this._renderLightingRuleActionRows(
-                          ruleId,
-                          rule,
-                          busy,
-                          entityOptions
-                        )
-                      : html`
+                          <div class="dusk-rule-section-title">Actions</div>
                           <div class="dusk-rule-row">
                             <span class="config-label">Target device</span>
                             <select
@@ -8015,7 +8750,9 @@ export class HtLocationInspector extends LitElement {
                               .value=${selectedActionEntityId}
                               ?disabled=${busy}
                               @change=${(ev: Event) => {
-                                const entityId = String((ev.target as HTMLSelectElement).value || "").trim();
+                                const entityId = String(
+                                  (ev.target as HTMLSelectElement).value || ""
+                                ).trim();
                                 if (!entityId) {
                                   this._updateActionRule(ruleId, {
                                     action_entity_id: undefined,
@@ -8026,7 +8763,7 @@ export class HtLocationInspector extends LitElement {
                                 }
                                 const nextService = this._defaultActionServiceForTrigger(
                                   entityId,
-                                  rule.trigger_type
+                                  triggerType
                                 );
                                 this._updateActionRule(ruleId, {
                                   action_entity_id: entityId,
@@ -8036,11 +8773,13 @@ export class HtLocationInspector extends LitElement {
                               }}
                             >
                               <option value="">Select device...</option>
-                              ${entityOptions.map((entityId) => html`
-                                <option value=${entityId}>
-                                  ${this._entityName(entityId)}
-                                </option>
-                              `)}
+                              ${entityOptions.map(
+                                (entityId) => html`
+                                  <option value=${entityId}>
+                                    ${this._entityName(entityId)}
+                                  </option>
+                                `
+                              )}
                             </select>
                           </div>
                           <div class="dusk-rule-row">
@@ -8056,7 +8795,7 @@ export class HtLocationInspector extends LitElement {
                                 const nextAction = this._actionServiceSelection(
                                   nextSelection,
                                   selectedActionEntityId,
-                                  rule.trigger_type
+                                  triggerType
                                 );
                                 this._updateActionRule(ruleId, {
                                   action_service: nextAction.service,
@@ -8067,7 +8806,8 @@ export class HtLocationInspector extends LitElement {
                               ${!selectedActionEntityId
                                 ? html`<option value="">Select device first...</option>`
                                 : serviceOptions.map(
-                                    (option) => html`<option value=${option.value}>${option.label}</option>`
+                                    (option) =>
+                                      html`<option value=${option.value}>${option.label}</option>`
                                   )}
                             </select>
                           </div>
@@ -8082,7 +8822,9 @@ export class HtLocationInspector extends LitElement {
                                         min="0"
                                         max="100"
                                         step="1"
-                                        .value=${String(this._mediaVolumePercent(normalizedActionData))}
+                                        .value=${String(
+                                          this._mediaVolumePercent(normalizedActionData)
+                                        )}
                                         ?disabled=${busy}
                                         @input=${(ev: Event) => {
                                           const percent = this._normalizeActionPercent(
@@ -8155,6 +8897,19 @@ export class HtLocationInspector extends LitElement {
                             >
                               Remove rule
                             </button>
+                            ${tab === "lighting"
+                              ? html`
+                                  <button
+                                    class="button button-secondary"
+                                    type="button"
+                                    data-testid=${`action-rule-${ruleId}-duplicate`}
+                                    ?disabled=${busy}
+                                    @click=${() => this._duplicateActionRule(ruleId)}
+                                  >
+                                    Duplicate rule
+                                  </button>
+                                `
+                              : ""}
                           `
                         : hasRuleEdits
                           ? html`
@@ -8185,6 +8940,19 @@ export class HtLocationInspector extends LitElement {
                               >
                                 Delete rule
                               </button>
+                              ${tab === "lighting"
+                                ? html`
+                                    <button
+                                      class="button button-secondary"
+                                      type="button"
+                                      data-testid=${`action-rule-${ruleId}-duplicate`}
+                                      ?disabled=${busy}
+                                      @click=${() => this._duplicateActionRule(ruleId)}
+                                    >
+                                      Duplicate rule
+                                    </button>
+                                  `
+                                : ""}
                             `
                           : html`
                               <button
@@ -8196,6 +8964,19 @@ export class HtLocationInspector extends LitElement {
                               >
                                 Delete rule
                               </button>
+                              ${tab === "lighting"
+                                ? html`
+                                    <button
+                                      class="button button-secondary"
+                                      type="button"
+                                      data-testid=${`action-rule-${ruleId}-duplicate`}
+                                      ?disabled=${busy}
+                                      @click=${() => this._duplicateActionRule(ruleId)}
+                                    >
+                                      Duplicate rule
+                                    </button>
+                                  `
+                                : ""}
                             `}
                     </div>
                   </div>

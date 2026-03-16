@@ -2791,6 +2791,7 @@ async def test_action_rules_create_uses_managed_runtime(hass: HomeAssistant) -> 
         location=location,
         name="Bathroom Vacant: Bathroom Light (turn off)",
         trigger_type="on_vacant",
+        trigger_types=["on_vacant"],
         action_entity_id="light.bathroom",
         action_service="turn_off",
         actions=[{"entity_id": "light.bathroom", "service": "turn_off"}],
@@ -2868,6 +2869,7 @@ async def test_action_rules_create_forwards_rule_conditions(hass: HomeAssistant)
         location=location,
         name="Kitchen dark safety",
         trigger_type="on_dark",
+        trigger_types=["on_dark"],
         action_entity_id="fan.kitchen_fan",
         action_service="turn_on",
         actions=[{"entity_id": "fan.kitchen_fan", "service": "turn_on"}],
@@ -2945,6 +2947,7 @@ async def test_action_rules_create_forwards_action_data_and_normalizes_brightnes
         location=location,
         name="Kitchen Occupied: Ceiling on",
         trigger_type="on_occupied",
+        trigger_types=["on_occupied"],
         action_entity_id="light.kitchen_ceiling",
         action_service="turn_on",
         actions=[
@@ -3034,6 +3037,7 @@ async def test_action_rules_create_forwards_multi_actions_payload(
         location=location,
         name="Kitchen dark multi",
         trigger_type="on_dark",
+        trigger_types=["on_dark"],
         action_entity_id=None,
         action_service=None,
         actions=[

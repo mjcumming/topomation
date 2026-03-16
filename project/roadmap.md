@@ -1,6 +1,6 @@
 # Roadmap - topomation
 
-**Last Updated**: 2026-02-24
+**Last Updated**: 2026-03-16
 **Purpose**: strategic release direction and milestone sequencing.
 
 Detailed execution status is tracked in `docs/work-tracking.md` and `project/issues/`.
@@ -33,6 +33,7 @@ Focus areas:
 - HACS readiness and release automation
 - User-facing documentation completeness
 - Validation with real user environments
+- Cross-system modes/activities layer for context-aware lighting, media, and HVAC behavior
 
 ## Sequencing
 

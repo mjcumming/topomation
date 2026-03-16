@@ -1,0 +1,1053 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Topomation | Lighting Behavior Spike</title>
+    <style>
+      :root,
+      [data-theme="light"] {
+        --primary-color: #0f7b6c;
+        --primary-background-color: #f4f5f0;
+        --secondary-background-color: #e7ebe3;
+        --card-background-color: #ffffff;
+        --primary-text-color: #1f2b2a;
+        --secondary-text-color: #667573;
+        --divider-color: #d6ddd7;
+        --success-color: #2e8b57;
+        --warning-color: #b26a00;
+        --sidebar-background-color: #ffffff;
+        --sidebar-text-color: #1f2b2a;
+        color-scheme: light;
+      }
+
+      [data-theme="dark"] {
+        --primary-color: #64c5b1;
+        --primary-background-color: #111713;
+        --secondary-background-color: #18201b;
+        --card-background-color: #1a221d;
+        --primary-text-color: #e3ebe7;
+        --secondary-text-color: #9fb0ab;
+        --divider-color: #314139;
+        --success-color: #6cc48e;
+        --warning-color: #f0ae57;
+        --sidebar-background-color: #151c18;
+        --sidebar-text-color: #e3ebe7;
+        color-scheme: dark;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+        background: var(--primary-background-color);
+        color: var(--primary-text-color);
+      }
+
+      .page {
+        display: grid;
+        grid-template-columns: 300px 1fr;
+        min-height: 100vh;
+      }
+
+      .controls {
+        border-right: 1px solid var(--divider-color);
+        background: var(--sidebar-background-color);
+        padding: 20px 18px;
+      }
+
+      .controls-title {
+        font-size: 18px;
+        font-weight: 700;
+        margin: 0 0 6px;
+      }
+
+      .controls-subtitle {
+        margin: 0 0 18px;
+        color: var(--secondary-text-color);
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .control-section {
+        margin-bottom: 18px;
+      }
+
+      .control-label {
+        margin: 0 0 8px;
+        color: var(--secondary-text-color);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .control-stack {
+        display: grid;
+        gap: 8px;
+      }
+
+      .control-btn {
+        width: 100%;
+        padding: 10px 12px;
+        border: 1px solid var(--divider-color);
+        border-radius: 10px;
+        background: var(--card-background-color);
+        color: var(--primary-text-color);
+        text-align: left;
+        font-size: 13px;
+        cursor: pointer;
+      }
+
+      .control-btn.active {
+        border-color: var(--primary-color);
+        background: color-mix(in srgb, var(--primary-color) 12%, var(--card-background-color));
+      }
+
+      .main {
+        padding: 22px;
+      }
+
+      .topline {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 18px;
+      }
+
+      .topline-title {
+        font-size: 22px;
+        font-weight: 700;
+      }
+
+      .topline-copy {
+        color: var(--secondary-text-color);
+        font-size: 13px;
+      }
+
+      .workspace {
+        display: grid;
+        grid-template-columns: 340px minmax(760px, 1fr);
+        gap: 18px;
+        min-height: calc(100vh - 96px);
+      }
+
+      .panel {
+        background: var(--card-background-color);
+        border: 1px solid var(--divider-color);
+        border-radius: 18px;
+        overflow: hidden;
+      }
+
+      .panel-head {
+        padding: 18px 20px;
+        border-bottom: 1px solid var(--divider-color);
+      }
+
+      .panel-head-title {
+        font-size: 18px;
+        font-weight: 700;
+        margin: 0 0 4px;
+      }
+
+      .panel-head-subtitle {
+        margin: 0;
+        color: var(--secondary-text-color);
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .tree-shell {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        min-height: 720px;
+      }
+
+      .tree-list {
+        flex: 1 1 auto;
+        padding: 18px 14px 10px 14px;
+      }
+
+      .tree-node {
+        display: block;
+        padding: 10px 12px;
+        border-radius: 12px;
+        font-size: 14px;
+        margin-bottom: 6px;
+      }
+
+      .tree-node.root {
+        font-weight: 700;
+      }
+
+      .tree-node.child {
+        margin-left: 18px;
+      }
+
+      .tree-node.selected {
+        background: color-mix(in srgb, var(--primary-color) 10%, var(--card-background-color));
+        border: 1px solid color-mix(in srgb, var(--primary-color) 40%, var(--divider-color));
+      }
+
+      .explainability {
+        flex: 0 0 250px;
+        border-top: 1px solid var(--divider-color);
+        background: color-mix(in srgb, var(--primary-color) 5%, var(--card-background-color));
+        padding: 16px 14px 18px;
+      }
+
+      .section-kicker {
+        margin: 0 0 10px;
+        color: var(--secondary-text-color);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .status-pill {
+        display: inline-flex;
+        align-items: center;
+        padding: 5px 10px;
+        border-radius: 999px;
+        background: color-mix(in srgb, var(--success-color) 16%, var(--card-background-color));
+        color: var(--success-color);
+        font-size: 12px;
+        font-weight: 700;
+        margin-bottom: 12px;
+      }
+
+      .explain-row {
+        margin-bottom: 12px;
+      }
+
+      .explain-label {
+        color: var(--secondary-text-color);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        margin-bottom: 3px;
+      }
+
+      .explain-value {
+        font-size: 14px;
+        line-height: 1.4;
+      }
+
+      .explain-list {
+        display: grid;
+        gap: 8px;
+        margin-top: 10px;
+      }
+
+      .explain-item {
+        border: 1px solid var(--divider-color);
+        border-radius: 10px;
+        padding: 8px 10px;
+        background: var(--card-background-color);
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      .inspector {
+        padding: 18px 20px 22px;
+      }
+
+      .header-card {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 18px;
+        padding: 18px 20px;
+        background: color-mix(in srgb, var(--primary-color) 8%, var(--card-background-color));
+        border: 1px solid var(--divider-color);
+        border-radius: 16px;
+        margin-bottom: 18px;
+      }
+
+      .header-main {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+
+      .header-icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        background: var(--card-background-color);
+        border: 1px solid var(--divider-color);
+      }
+
+      .header-name {
+        font-size: 18px;
+        font-weight: 700;
+        margin-bottom: 6px;
+      }
+
+      .header-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        font-size: 12px;
+        color: var(--secondary-text-color);
+      }
+
+      .meta-code {
+        font-family: "Consolas", "SFMono-Regular", monospace;
+        font-size: 12px;
+        text-align: right;
+      }
+
+      .tabs {
+        display: flex;
+        gap: 16px;
+        border-bottom: 1px solid var(--divider-color);
+        margin-bottom: 18px;
+      }
+
+      .tab {
+        padding: 10px 4px 12px;
+        border-bottom: 2px solid transparent;
+        color: var(--secondary-text-color);
+        font-size: 14px;
+      }
+
+      .tab.active {
+        border-bottom-color: var(--primary-color);
+        color: var(--primary-color);
+        font-weight: 700;
+      }
+
+      .rule-card {
+        border: 1px solid var(--divider-color);
+        border-radius: 18px;
+        padding: 20px;
+        background: var(--card-background-color);
+      }
+
+      .rule-topline {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 18px;
+      }
+
+      .rule-title {
+        font-size: 20px;
+        font-weight: 700;
+      }
+
+      .rule-chip {
+        padding: 6px 10px;
+        border: 1px solid var(--divider-color);
+        border-radius: 999px;
+        color: var(--secondary-text-color);
+        font-size: 12px;
+      }
+
+      .editor-section {
+        margin-bottom: 22px;
+      }
+
+      .editor-title {
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        margin: 0 0 12px;
+      }
+
+      .situation-card {
+        border: 1px solid var(--divider-color);
+        border-radius: 14px;
+        padding: 14px;
+        margin-bottom: 10px;
+        background: color-mix(in srgb, var(--primary-color) 3%, var(--card-background-color));
+      }
+
+      .situation-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 12px;
+      }
+
+      .situation-name {
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .mini-btn {
+        padding: 6px 10px;
+        border: 1px solid var(--divider-color);
+        border-radius: 10px;
+        background: var(--card-background-color);
+        color: var(--primary-text-color);
+        font-size: 12px;
+      }
+
+      .field-grid {
+        display: grid;
+        grid-template-columns: 170px 1fr;
+        gap: 10px 16px;
+        align-items: start;
+      }
+
+      .field-label {
+        color: var(--secondary-text-color);
+        font-size: 12px;
+        font-weight: 700;
+        padding-top: 10px;
+      }
+
+      .input-shell,
+      .requirements-shell,
+      .time-shell {
+        border: 1px solid var(--divider-color);
+        border-radius: 12px;
+        background: var(--card-background-color);
+        min-height: 42px;
+        padding: 9px 12px;
+        font-size: 14px;
+      }
+
+      .requirements-shell {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .requirement-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: color-mix(in srgb, var(--primary-color) 10%, var(--card-background-color));
+        font-size: 13px;
+      }
+
+      .requirement-pill .x {
+        color: var(--secondary-text-color);
+      }
+
+      .situation-actions {
+        display: flex;
+        gap: 10px;
+        margin-top: 12px;
+      }
+
+      .situation-helper {
+        margin-top: 10px;
+        color: var(--secondary-text-color);
+        font-size: 12px;
+      }
+
+      .time-row {
+        display: grid;
+        grid-template-columns: 170px 1fr;
+        gap: 10px 16px;
+        align-items: center;
+      }
+
+      .time-values {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .checkbox-row {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 14px;
+      }
+
+      .light-list {
+        display: grid;
+        gap: 10px;
+      }
+
+      .light-row {
+        display: grid;
+        grid-template-columns: minmax(180px, 220px) minmax(100px, 140px) minmax(120px, 160px) minmax(150px, 180px);
+        gap: 10px;
+        align-items: center;
+        border: 1px solid var(--divider-color);
+        border-radius: 14px;
+        padding: 12px 14px;
+      }
+
+      .light-name {
+        font-size: 14px;
+        font-weight: 700;
+      }
+
+      .light-meta {
+        color: var(--secondary-text-color);
+        font-size: 12px;
+        margin-top: 2px;
+      }
+
+      .select-shell,
+      .slider-shell {
+        border: 1px solid var(--divider-color);
+        border-radius: 12px;
+        background: var(--card-background-color);
+        padding: 9px 12px;
+        font-size: 13px;
+      }
+
+      .slider-shell {
+        position: relative;
+      }
+
+      .slider-bar {
+        height: 8px;
+        border-radius: 999px;
+        background: linear-gradient(
+          90deg,
+          color-mix(in srgb, var(--primary-color) 78%, white) 0%,
+          color-mix(in srgb, var(--primary-color) 78%, white) var(--fill, 0%),
+          var(--secondary-background-color) var(--fill, 0%),
+          var(--secondary-background-color) 100%
+        );
+      }
+
+      .slider-copy {
+        margin-top: 8px;
+        color: var(--secondary-text-color);
+        font-size: 12px;
+      }
+
+      .guard-shell {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 42px;
+        padding: 9px 12px;
+        border: 1px solid var(--divider-color);
+        border-radius: 12px;
+        background: var(--card-background-color);
+        font-size: 13px;
+      }
+
+      .guard-shell.muted {
+        color: var(--secondary-text-color);
+      }
+
+      .rule-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-top: 22px;
+      }
+
+      .footer-actions {
+        display: flex;
+        gap: 10px;
+      }
+
+      .primary-btn,
+      .secondary-btn {
+        padding: 10px 14px;
+        border-radius: 12px;
+        border: 1px solid var(--divider-color);
+        font-size: 13px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      .primary-btn {
+        border-color: var(--primary-color);
+        background: var(--primary-color);
+        color: #ffffff;
+      }
+
+      .secondary-btn {
+        background: var(--card-background-color);
+        color: var(--primary-text-color);
+      }
+
+      .footer-note {
+        color: var(--secondary-text-color);
+        font-size: 12px;
+      }
+
+      @media (max-width: 1280px) {
+        .workspace {
+          grid-template-columns: 320px 1fr;
+        }
+
+        .light-row {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+
+      @media (max-width: 980px) {
+        .page {
+          grid-template-columns: 1fr;
+        }
+
+        .controls {
+          border-right: 0;
+          border-bottom: 1px solid var(--divider-color);
+        }
+
+        .workspace {
+          grid-template-columns: 1fr;
+        }
+
+        .field-grid,
+        .time-row {
+          grid-template-columns: 1fr;
+        }
+
+        .rule-footer {
+          flex-direction: column;
+          align-items: stretch;
+        }
+      }
+    </style>
+  </head>
+  <body data-theme="light">
+    <div class="page">
+      <aside class="controls">
+        <h1 class="controls-title">Lighting Behavior Spike</h1>
+        <p class="controls-subtitle">
+          Visual-only design spike for the next Lighting rule model and the
+          docked Explainability panel.
+        </p>
+
+        <section class="control-section">
+          <p class="control-label">Scenario</p>
+          <div class="control-stack" id="scenario-buttons"></div>
+        </section>
+
+        <section class="control-section">
+          <p class="control-label">Theme</p>
+          <div class="control-stack">
+            <button class="control-btn active" data-theme-btn="light">Light</button>
+            <button class="control-btn" data-theme-btn="dark">Dark</button>
+          </div>
+        </section>
+
+        <section class="control-section">
+          <p class="control-label">What to Review</p>
+          <div class="control-stack">
+            <button class="control-btn">Situation rows feel understandable</button>
+            <button class="control-btn">One time window per rule feels enough</button>
+            <button class="control-btn">Duplicate rule reads like the right fast path</button>
+            <button class="control-btn">Explainability belongs under the tree</button>
+          </div>
+        </section>
+      </aside>
+
+      <main class="main">
+        <div class="topline">
+          <div>
+            <div class="topline-title">Mockup A Preview</div>
+            <div class="topline-copy">
+              Situation-based rule editing with one optional time window and a
+              docked Explainability panel.
+            </div>
+          </div>
+        </div>
+
+        <div class="workspace">
+          <section class="panel tree-shell">
+            <div class="panel-head">
+              <h2 class="panel-head-title">Locations</h2>
+              <p class="panel-head-subtitle">
+                Explainability is anchored under the selected room instead of
+                floating in the editor.
+              </p>
+            </div>
+
+            <div class="tree-list" id="tree-list"></div>
+
+            <div class="explainability">
+              <p class="section-kicker">Room Explainability</p>
+              <div class="status-pill" id="exp-status">Occupied</div>
+
+              <div class="explain-row">
+                <div class="explain-label">Why</div>
+                <div class="explain-value" id="exp-why"></div>
+              </div>
+
+              <div class="explain-row">
+                <div class="explain-label">Current rule</div>
+                <div class="explain-value" id="exp-rule"></div>
+              </div>
+
+              <div class="explain-row">
+                <div class="explain-label">Recent changes</div>
+                <div class="explain-list" id="exp-list"></div>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="inspector">
+              <div class="header-card">
+                <div class="header-main">
+                  <div class="header-icon"></div>
+                  <div>
+                    <div class="header-name" id="header-name"></div>
+                    <div class="header-meta">
+                      <span>Occupied</span>
+                      <span>Unlocked</span>
+                      <span id="header-ambient"></span>
+                    </div>
+                  </div>
+                </div>
+                <div class="meta-code" id="header-code"></div>
+              </div>
+
+              <div class="tabs">
+                <div class="tab">Detection</div>
+                <div class="tab">Ambient</div>
+                <div class="tab active">Lighting</div>
+                <div class="tab">Media</div>
+                <div class="tab">HVAC</div>
+              </div>
+
+              <div class="rule-card">
+                <div class="rule-topline">
+                  <div class="rule-title" id="rule-title"></div>
+                  <div class="rule-chip">Lighting rule</div>
+                </div>
+
+                <section class="editor-section">
+                  <h3 class="editor-title">When any of these happen</h3>
+                  <div id="situations"></div>
+                  <div class="situation-actions">
+                    <button class="secondary-btn">Add situation</button>
+                  </div>
+                  <div class="situation-helper">
+                    Examples: Occupied while dark, Dark while occupied, Vacant,
+                    Bright.
+                  </div>
+                </section>
+
+                <section class="editor-section">
+                  <h3 class="editor-title">Time window</h3>
+                  <div class="time-row">
+                    <div class="field-label">Rule timing</div>
+                    <div class="time-values">
+                      <label class="checkbox-row">
+                        <input type="checkbox" checked />
+                        <span>Limit this rule to a time range</span>
+                      </label>
+                    </div>
+                  </div>
+                  <div class="time-row" style="margin-top: 12px;">
+                    <div class="field-label">Begin / End</div>
+                    <div class="time-values">
+                      <div class="time-shell" id="time-begin"></div>
+                      <span>to</span>
+                      <div class="time-shell" id="time-end"></div>
+                    </div>
+                  </div>
+                </section>
+
+                <section class="editor-section">
+                  <h3 class="editor-title">Set room lights to</h3>
+                  <div class="light-list" id="light-list"></div>
+                </section>
+
+                <div class="rule-footer">
+                  <div class="footer-note">
+                    One optional time window per rule. Use Duplicate rule to
+                    create evening, overnight, or cooking variants.
+                  </div>
+                  <div class="footer-actions">
+                    <button class="primary-btn">Save rule</button>
+                    <button class="secondary-btn">Remove rule</button>
+                    <button class="secondary-btn">Duplicate rule</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </main>
+    </div>
+
+    <script>
+      const scenarios = {
+        family_evening: {
+          button: "Family room evening",
+          roomName: "Family Room",
+          locationId: "area_family_room",
+          ambient: "Ambient: 8.0 lx",
+          ruleTitle: "Family room evening",
+          begin: "6:00 PM",
+          end: "11:00 PM",
+          tree: [
+            { label: "Home", root: true },
+            { label: "Main floor", child: true },
+            { label: "Family Room", child: true, selected: true },
+            { label: "Kitchen", child: true },
+            { label: "Dining Room", child: true }
+          ],
+          situations: [
+            {
+              label: "Situation 1",
+              event: "Room becomes occupied",
+              requirements: ["It is dark"]
+            },
+            {
+              label: "Situation 2",
+              event: "It becomes dark",
+              requirements: ["Room is occupied"]
+            }
+          ],
+          lights: [
+            { name: "Floor lamp", meta: "light.family_room_floor_lamp", action: "On", level: "60%", fill: "60%", onlyIfOff: true },
+            { name: "Ceiling cans", meta: "light.family_room_ceiling", action: "On", level: "100%", fill: "100%", onlyIfOff: false },
+            { name: "TV bias light", meta: "light.family_room_tv_bias", action: "Off", level: "Off", fill: "0%" }
+          ],
+          explain: {
+            status: "Occupied",
+            why: "Dark while occupied fired, then the evening rule applied.",
+            rule: "Family room evening",
+            recent: [
+              "6:14 PM: It became dark.",
+              "6:14 PM: Family room evening applied.",
+              "6:29 PM: Family room occupancy refreshed."
+            ]
+          }
+        },
+        kitchen_overnight: {
+          button: "Kitchen overnight",
+          roomName: "Kitchen",
+          locationId: "area_kitchen",
+          ambient: "Ambient: 0.3 lx",
+          ruleTitle: "Kitchen overnight",
+          begin: "12:00 AM",
+          end: "6:00 AM",
+          tree: [
+            { label: "Home", root: true },
+            { label: "Main floor", child: true },
+            { label: "Kitchen", child: true, selected: true },
+            { label: "Pantry", child: true },
+            { label: "Mudroom", child: true }
+          ],
+          situations: [
+            {
+              label: "Situation 1",
+              event: "Room becomes occupied",
+              requirements: ["It is dark"]
+            },
+            {
+              label: "Situation 2",
+              event: "It becomes dark",
+              requirements: ["Room is occupied"]
+            }
+          ],
+          lights: [
+            { name: "Sink light", meta: "light.kitchen_sink", action: "On", level: "15%", fill: "15%", onlyIfOff: true },
+            { name: "Ceiling cans", meta: "light.kitchen_ceiling", action: "Off", level: "Off", fill: "0%" },
+            { name: "Pantry accent", meta: "light.pantry_accent", action: "On", level: "10%", fill: "10%", onlyIfOff: true }
+          ],
+          explain: {
+            status: "Occupied",
+            why: "Occupied while dark matched during the overnight window.",
+            rule: "Kitchen overnight",
+            recent: [
+              "4:02 AM: Kitchen became occupied.",
+              "4:02 AM: Kitchen overnight applied.",
+              "4:05 AM: Pantry accent turned on at 10%."
+            ]
+          }
+        },
+        exterior_dusk: {
+          button: "Exterior dusk",
+          roomName: "Front Porch",
+          locationId: "area_front_porch",
+          ambient: "Ambient: 1.6 lx",
+          ruleTitle: "Front porch dusk",
+          begin: "4:00 PM",
+          end: "11:59 PM",
+          tree: [
+            { label: "Home", root: true },
+            { label: "Grounds", child: true },
+            { label: "Front Porch", child: true, selected: true },
+            { label: "Driveway", child: true },
+            { label: "Back Deck", child: true }
+          ],
+          situations: [
+            {
+              label: "Situation 1",
+              event: "It becomes dark",
+              requirements: []
+            }
+          ],
+          lights: [
+            { name: "Porch lanterns", meta: "light.front_porch_lanterns", action: "On", level: "100%", fill: "100%", onlyIfOff: false },
+            { name: "Path lights", meta: "light.front_path", action: "On", level: "100%", fill: "100%", onlyIfOff: false },
+            { name: "Door sidelight", meta: "light.front_sidelight", action: "On", level: "40%", fill: "40%", onlyIfOff: true }
+          ],
+          explain: {
+            status: "Occupied",
+            why: "Dusk event matched the porch lighting rule.",
+            rule: "Front porch dusk",
+            recent: [
+              "5:01 PM: It became dark.",
+              "5:01 PM: Front porch dusk applied.",
+              "5:01 PM: Path lights turned on."
+            ]
+          }
+        }
+      };
+
+      const scenarioButtons = document.getElementById("scenario-buttons");
+      const treeList = document.getElementById("tree-list");
+      const headerName = document.getElementById("header-name");
+      const headerAmbient = document.getElementById("header-ambient");
+      const headerCode = document.getElementById("header-code");
+      const ruleTitle = document.getElementById("rule-title");
+      const situations = document.getElementById("situations");
+      const timeBegin = document.getElementById("time-begin");
+      const timeEnd = document.getElementById("time-end");
+      const lightList = document.getElementById("light-list");
+      const expStatus = document.getElementById("exp-status");
+      const expWhy = document.getElementById("exp-why");
+      const expRule = document.getElementById("exp-rule");
+      const expList = document.getElementById("exp-list");
+
+      function renderScenarioButtons(activeKey) {
+        scenarioButtons.innerHTML = "";
+        Object.entries(scenarios).forEach(([key, scenario]) => {
+          const button = document.createElement("button");
+          button.className = `control-btn ${key === activeKey ? "active" : ""}`;
+          button.textContent = scenario.button;
+          button.addEventListener("click", () => render(activeKey === key ? key : key));
+          scenarioButtons.appendChild(button);
+        });
+      }
+
+      function renderTree(nodes) {
+        treeList.innerHTML = "";
+        nodes.forEach((node) => {
+          const div = document.createElement("div");
+          const classes = ["tree-node"];
+          if (node.root) classes.push("root");
+          if (node.child) classes.push("child");
+          if (node.selected) classes.push("selected");
+          div.className = classes.join(" ");
+          div.textContent = node.label;
+          treeList.appendChild(div);
+        });
+      }
+
+      function renderSituations(items) {
+        situations.innerHTML = "";
+        items.forEach((item) => {
+          const card = document.createElement("div");
+          card.className = "situation-card";
+          const requirements = item.requirements.length
+            ? item.requirements
+                .map(
+                  (requirement) =>
+                    `<span class="requirement-pill">${requirement}<span class="x">x</span></span>`
+                )
+                .join("")
+            : `<span class="requirement-pill">No extra requirements</span>`;
+
+          card.innerHTML = `
+            <div class="situation-head">
+              <div class="situation-name">${item.label}</div>
+              <button class="mini-btn">Remove</button>
+            </div>
+            <div class="field-grid">
+              <div class="field-label">Event</div>
+              <div class="input-shell">${item.event}</div>
+              <div class="field-label">Requirements</div>
+              <div class="requirements-shell">${requirements}</div>
+            </div>
+          `;
+          situations.appendChild(card);
+        });
+      }
+
+      function renderLights(items) {
+        lightList.innerHTML = "";
+        items.forEach((item) => {
+          const row = document.createElement("div");
+          row.className = "light-row";
+          const guard =
+            item.action === "On"
+              ? `<label class="guard-shell"><input type="checkbox" ${item.onlyIfOff ? "checked" : ""} /> <span>Only if off</span></label>`
+              : `<div class="guard-shell muted">No guard</div>`;
+          row.innerHTML = `
+            <div>
+              <div class="light-name">${item.name}</div>
+              <div class="light-meta">${item.meta}</div>
+            </div>
+            <div class="select-shell">${item.action}</div>
+            <div class="slider-shell" style="--fill: ${item.fill};">
+              <div class="slider-bar"></div>
+              <div class="slider-copy">${item.level}</div>
+            </div>
+            ${guard}
+          `;
+          lightList.appendChild(row);
+        });
+      }
+
+      function renderExplain(explain) {
+        expStatus.textContent = explain.status;
+        expWhy.textContent = explain.why;
+        expRule.textContent = explain.rule;
+        expList.innerHTML = "";
+        explain.recent.forEach((item) => {
+          const row = document.createElement("div");
+          row.className = "explain-item";
+          row.textContent = item;
+          expList.appendChild(row);
+        });
+      }
+
+      function render(key) {
+        const scenario = scenarios[key];
+        renderScenarioButtons(key);
+        renderTree(scenario.tree);
+        renderSituations(scenario.situations);
+        renderLights(scenario.lights);
+        renderExplain(scenario.explain);
+        headerName.textContent = scenario.roomName;
+        headerAmbient.textContent = scenario.ambient;
+        headerCode.textContent = `LOCATION ID ${scenario.locationId}`;
+        ruleTitle.textContent = scenario.ruleTitle;
+        timeBegin.textContent = scenario.begin;
+        timeEnd.textContent = scenario.end;
+      }
+
+      document.querySelectorAll("[data-theme-btn]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const theme = button.getAttribute("data-theme-btn");
+          document.body.setAttribute("data-theme", theme);
+          document.querySelectorAll("[data-theme-btn]").forEach((candidate) => {
+            candidate.classList.toggle(
+              "active",
+              candidate.getAttribute("data-theme-btn") === theme
+            );
+          });
+        });
+      });
+
+      render("family_evening");
+    </script>
+  </body>
+</html>

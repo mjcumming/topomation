@@ -84,6 +84,36 @@ def _normalize_action_trigger_type(raw_value: Any) -> str:
     raise ValueError(f"Invalid action trigger_type '{raw_value}'")
 
 
+def _normalize_action_trigger_types(
+    raw_values: Any,
+    *,
+    fallback_trigger_type: Any = None,
+) -> list[str]:
+    """Normalize one-or-many trigger aliases to canonical values."""
+    normalized: list[str] = []
+    seen: set[str] = set()
+
+    values: list[Any] = []
+    if isinstance(raw_values, list):
+        values.extend(raw_values)
+    if fallback_trigger_type is not None:
+        values.append(fallback_trigger_type)
+
+    for raw_value in values:
+        trigger_type = _normalize_action_trigger_type(raw_value)
+        if trigger_type in seen:
+            continue
+        normalized.append(trigger_type)
+        seen.add(trigger_type)
+
+    if not normalized:
+        raise ValueError("At least one trigger_type is required")
+
+    order = ["on_occupied", "on_vacant", "on_dark", "on_bright"]
+    normalized.sort(key=order.index)
+    return normalized
+
+
 def _remember_connection_entry_hint(
     connection: websocket_api.ActiveConnection,
     entry_id: str,
@@ -2148,6 +2178,18 @@ async def handle_action_rules_list(
                 "on_bright",
             )
         ),
+        vol.Optional("trigger_types"): [
+            vol.In(
+                (
+                    "occupied",
+                    "vacant",
+                    "on_occupied",
+                    "on_vacant",
+                    "on_dark",
+                    "on_bright",
+                )
+            )
+        ],
         vol.Optional("action_entity_id"): str,
         vol.Optional("action_service"): str,
         vol.Optional("action_data"): dict,
@@ -2187,10 +2229,14 @@ async def handle_action_rules_create(
         return
 
     try:
-        trigger_type = _normalize_action_trigger_type(msg.get("trigger_type"))
+        trigger_types = _normalize_action_trigger_types(
+            msg.get("trigger_types"),
+            fallback_trigger_type=msg.get("trigger_type"),
+        )
     except ValueError as err:
         connection.send_error(msg["id"], "invalid_payload", str(err))
         return
+    trigger_type = trigger_types[0]
 
     ambient_condition_raw = msg.get("ambient_condition")
     ambient_condition = (
@@ -2317,6 +2363,7 @@ async def handle_action_rules_create(
             location=location,
             name=msg["name"],
             trigger_type=trigger_type,
+            trigger_types=trigger_types,
             action_entity_id=action_entity_id or None,
             action_service=action_service or None,
             actions=actions,

@@ -2968,6 +2968,83 @@ Policy:
 
 ---
 
+### ADR-HA-065: Lighting Rules Use Multi-Trigger Wake-Up Semantics (2026-03-15)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+
+Lighting rule editing previously treated trigger choice as a single-select field.
+That model breaks common real-world occupancy lighting patterns:
+
+1. turn lights on when a room becomes occupied while it is already dark
+2. turn lights on when a room becomes dark while it is already occupied
+
+Those are not two different user intents. They are one rule with one action set
+and two valid wake-up events.
+
+The single-trigger model forced either:
+
+- duplicate rules with duplicated actions, or
+- incomplete behavior where one of the two wake-up paths was missing.
+
+**Decision**:
+
+1. Lighting rules support multi-trigger wake-up semantics.
+2. The Lighting editor presents triggers as two grouped families under a plain
+   `Triggers` label:
+   - `Occupancy`:
+     - `On occupied`
+     - `On vacant`
+   - `Ambient`:
+     - `On dark`
+     - `On bright`
+3. A rule may include at most one trigger from each family.
+4. The rule fires when any selected trigger occurs.
+5. Lighting conditions remain explicit user-editable filters:
+   - ambient
+   - occupancy
+   - optional time window
+6. Lighting no longer treats occupancy/ambient conditions as trigger-derived
+   locked UI rows.
+7. Media and HVAC remain single-trigger rule workflows in this phase.
+
+**Rationale**:
+
+1. It matches the real automation model: one intent, multiple wake-up events.
+2. It avoids duplicated rule cards whose actions must stay manually in sync.
+3. Grouping triggers by family preserves the strong engine model while avoiding
+   nonsensical pairings like `On dark` + `On bright`.
+4. It scales better than inventing many hybrid trigger labels.
+5. It preserves a clean `Wake up when` -> `Only if` -> `Do this` authoring
+   mental model.
+
+**Consequences**:
+
+- ✅ Common arrival/darken lighting scenarios fit naturally in one rule.
+- ✅ Lighting actions stay shared across all selected wake-up events.
+- ✅ The UI prevents conflicting trigger combinations instead of validating them
+  after the fact.
+- ✅ Conditions remain visible and understandable instead of being hidden by
+  trigger-derived rules.
+- ⚠️ Lighting persistence metadata now needs a trigger-set representation, not
+  just one trigger token.
+- ⚠️ Existing single-trigger Lighting rules need backward-compatible parsing and
+  normalization.
+- ⚠️ Media/HVAC remain intentionally narrower until their own rule model is
+  revisited.
+
+**Alternatives Considered**:
+
+- Keep single-trigger rules and ask users to create duplicate sibling rules:
+  rejected because it duplicates actions and creates drift risk.
+- Add a preset that silently creates two rules:
+  rejected because it hides the underlying model problem instead of fixing it.
+- Create synthetic hybrid trigger labels:
+  rejected because it becomes combinatorial and harder to explain.
+
+---
+
 ## How to Use This Log
 
 ### When to Create an ADR

@@ -2984,6 +2984,7 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(typeof payload.rule_uuid).to.equal("string");
     expect(String(payload.rule_uuid || "").length).to.be.greaterThan(0);
     expect(payload.trigger_type).to.equal("on_vacant");
+    expect(payload.trigger_types).to.deep.equal(["on_vacant"]);
     expect(payload.ambient_condition).to.equal("any");
     expect(payload.must_be_occupied).to.equal(false);
     expect(payload.time_condition_enabled).to.equal(true);
@@ -3848,36 +3849,11 @@ describe("HtLocationInspector WIAB configuration", () => {
     const drawer = element.shadowRoot?.querySelector(
       '[data-testid="recent-occupancy-events-drawer"]'
     ) as HTMLElement | null;
-    expect(drawer).to.exist;
-    expect(drawer?.textContent || "").to.include("Room Explainability");
-    expect(drawer?.textContent || "").to.include("Current state");
-    expect(drawer?.textContent || "").to.include("Room became occupied");
+    expect(drawer).to.equal(null);
     expect(drawer?.textContent || "").to.not.include("Advanced Occupancy Relationships");
     expect(
       element.shadowRoot?.querySelector('[data-testid="adjacency-advanced-toggle"]')
     ).to.equal(null);
-
-    const recentRows = Array.from(element.shadowRoot?.querySelectorAll(".occupancy-event") || []);
-    expect(recentRows.length).to.be.greaterThan(5);
-
-    const toggle = element.shadowRoot?.querySelector(
-      '[data-testid="recent-events-toggle"]'
-    ) as HTMLButtonElement | null;
-    expect(toggle).to.exist;
-    toggle?.click();
-    await element.updateComplete;
-
-    const expandedText = drawer?.textContent || "";
-    expect(expandedText).to.include("Source cleared");
-    expect(expandedText).to.include("Source triggered");
-
-    const collapseToggle = element.shadowRoot?.querySelector(
-      '[data-testid="recent-events-collapse-toggle"]'
-    ) as HTMLButtonElement | null;
-    expect(collapseToggle).to.exist;
-    collapseToggle?.click();
-    await element.updateComplete;
-    expect(drawer?.className || "").to.include("collapsed");
   });
 
   it("auto-runs Sync Import when managed system area mapping needs repair", async () => {
@@ -4503,25 +4479,14 @@ describe("HtLocationInspector WIAB configuration", () => {
     expect((draftTitle?.textContent || "").trim()).to.equal("New rule");
     expect(element.shadowRoot?.querySelector('[data-testid="action-rule-add"]')).to.equal(null);
 
-    const triggerSelect = element.shadowRoot?.querySelector(
-      ".dusk-block-row select.dusk-wide-select"
-    ) as HTMLSelectElement | null;
-    expect(triggerSelect).to.exist;
-    triggerSelect!.value = "on_bright";
-    triggerSelect!.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
-    await element.updateComplete;
-
     const draftRule = element.shadowRoot?.querySelector(".dusk-block-row") as HTMLElement | null;
     expect(draftRule).to.exist;
-    expect((draftRule?.textContent || "")).to.not.include("Ambient must be");
-    expect((draftRule?.textContent || "")).to.include("Occupancy must be");
-    const occupancySelect = Array.from(
-      draftRule?.querySelectorAll(".dusk-conditions select.dusk-wide-select") || []
-    ).find((select) =>
-      Array.from((select as HTMLSelectElement).options).some((option) => option.value === "ignore")
-    ) as HTMLSelectElement | undefined;
-    expect(occupancySelect).to.exist;
-    expect(occupancySelect?.value).to.equal("ignore");
+    expect((draftRule?.textContent || "")).to.include("When any of these happen");
+    expect((draftRule?.textContent || "")).to.include("Set room lights to");
+    expect(draftRule?.querySelectorAll(".lighting-situation-card").length || 0).to.equal(1);
+    expect(
+      draftRule?.querySelector('[data-testid$="-add-situation"]')
+    ).to.exist;
 
     const saveButton = element.shadowRoot?.querySelector(
       '[data-testid^="action-rule-"][data-testid$="-save"]'
@@ -4532,11 +4497,13 @@ describe("HtLocationInspector WIAB configuration", () => {
 
     await waitUntil(() => createCalls.length === 1, "expected managed lighting create call");
     const payload = createCalls[0];
-    expect(payload.trigger_type).to.equal("on_bright");
+    expect(payload.trigger_type).to.equal("on_occupied");
+    expect(payload.trigger_types).to.deep.equal(["on_occupied"]);
     expect(Array.isArray(payload.actions)).to.equal(true);
     expect(payload.actions.length).to.equal(1);
     expect(payload.action_entity_id).to.equal("light.kitchen_ceiling");
-    expect(payload.action_service).to.equal("turn_off");
+    expect(payload.action_service).to.equal("turn_on");
+    expect(payload.ambient_condition).to.equal("dark");
     expect(payload.must_be_occupied).to.equal(undefined);
     expect(typeof payload.rule_uuid).to.equal("string");
     expect(String(payload.rule_uuid || "").length).to.be.greaterThan(0);
@@ -4772,21 +4739,17 @@ describe("HtLocationInspector WIAB configuration", () => {
       '[data-testid="action-rule-rule_existing"]'
     ) as HTMLElement | null;
     expect(persistedRow).to.exist;
-    expect((persistedRow?.textContent || "")).to.not.include("Ambient must be");
+    expect((persistedRow?.textContent || "")).to.include("When any of these happen");
+    expect(
+      element.shadowRoot?.querySelector('[data-testid="action-rule-rule_existing-duplicate"]')
+    ).to.exist;
 
-    const triggerRow = Array.from(
-      persistedRow?.querySelectorAll(".dusk-rule-row") || []
-    ).find((row) => (row.textContent || "").includes("Trigger")) as HTMLElement | undefined;
-    const triggerSelect = triggerRow?.querySelector("select") as HTMLSelectElement | null;
-    expect(triggerSelect).to.exist;
-    triggerSelect!.value = "on_occupied";
-    triggerSelect!.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+    const addSituationButton = element.shadowRoot?.querySelector(
+      '[data-testid="action-rule-rule_existing-add-situation"]'
+    ) as HTMLButtonElement | null;
+    expect(addSituationButton).to.exist;
+    addSituationButton!.click();
     await element.updateComplete;
-
-    const persistedOccupancyRow = Array.from(
-      persistedRow?.querySelectorAll(".config-row") || []
-    ).find((row) => (row.textContent || "").includes("Occupancy must be")) as HTMLElement | undefined;
-    expect(persistedOccupancyRow).to.equal(undefined);
     expect(element.shadowRoot?.querySelector('[data-testid="action-rule-add"]')).to.equal(null);
 
     await waitUntil(
@@ -4798,6 +4761,9 @@ describe("HtLocationInspector WIAB configuration", () => {
     ).to.exist;
     expect(
       element.shadowRoot?.querySelector('[data-testid="action-rule-rule_existing-delete"]')
+    ).to.exist;
+    expect(
+      element.shadowRoot?.querySelector('[data-testid="action-rule-rule_existing-duplicate"]')
     ).to.exist;
     expect(
       element.shadowRoot?.querySelector('[data-testid="action-rule-rule_existing-save"]')
@@ -4837,15 +4803,19 @@ describe("HtLocationInspector WIAB configuration", () => {
     const saveRuleCount = footerButtons.filter(
       (button) => (button.textContent || "").trim() === "Save rule"
     ).length;
+    const duplicateRuleCount = footerButtons.filter(
+      (button) => (button.textContent || "").trim() === "Duplicate rule"
+    ).length;
     const deleteRuleCount = footerButtons.filter(
       (button) => (button.textContent || "").trim() === "Delete rule"
     ).length;
     expect(removeRuleCount).to.equal(1);
     expect(saveRuleCount).to.equal(1);
+    expect(duplicateRuleCount).to.equal(2);
     expect(deleteRuleCount).to.equal(1);
   });
 
-  it("shows the ambient condition selector for on occupied rules", async () => {
+  it("shows situation requirement choices for occupancy-based lighting rules", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>): Promise<T> => {
         if (request.type === "topomation/actions/rules/list") {
@@ -4906,27 +4876,17 @@ describe("HtLocationInspector WIAB configuration", () => {
     addRuleButton!.click();
     await element.updateComplete;
 
-    const triggerSelect = element.shadowRoot?.querySelector(
-      ".dusk-block-row select.dusk-wide-select"
-    ) as HTMLSelectElement | null;
-    expect(triggerSelect).to.exist;
-    triggerSelect!.value = "on_occupied";
-    triggerSelect!.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
-    await element.updateComplete;
-
-    const draftRule = element.shadowRoot?.querySelector(".dusk-block-row") as HTMLElement | null;
-    expect(draftRule).to.exist;
-    expect((draftRule?.textContent || "")).to.include("Ambient must be");
-    const ambientSelect = Array.from(
-      draftRule?.querySelectorAll(".dusk-conditions select.dusk-wide-select") || []
-    ).find((select) =>
-      Array.from((select as HTMLSelectElement).options).some((option) => option.value === "bright")
-    ) as HTMLSelectElement | undefined;
-    expect(ambientSelect).to.exist;
-    expect(ambientSelect?.value).to.equal("any");
+    const firstSituation = element.shadowRoot?.querySelector(
+      ".lighting-situation-card"
+    ) as HTMLElement | null;
+    expect(firstSituation).to.exist;
+    expect((firstSituation?.textContent || "")).to.include("Room becomes occupied");
+    expect((firstSituation?.textContent || "")).to.include("It is dark");
+    expect((firstSituation?.textContent || "")).to.include("It is bright");
+    expect((firstSituation?.textContent || "")).to.include("Always");
   });
 
-  it("resets trigger-derived conditionals when switching trigger families", async () => {
+  it("keeps paired common-case requirements in sync when a lighting situation changes", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>): Promise<T> => {
         if (request.type === "topomation/actions/rules/list") {
@@ -4937,10 +4897,11 @@ describe("HtLocationInspector WIAB configuration", () => {
                 entity_id: "automation.rule_existing",
                 name: "Existing",
                 trigger_type: "on_occupied",
+                trigger_types: ["on_occupied", "on_dark"],
                 rule_uuid: "rule_existing_uuid",
                 action_entity_id: "light.storage_light",
                 action_service: "turn_on",
-                ambient_condition: "any",
+                ambient_condition: "dark",
                 must_be_occupied: true,
                 time_condition_enabled: false,
                 enabled: true,
@@ -5006,30 +4967,25 @@ describe("HtLocationInspector WIAB configuration", () => {
     ) as HTMLElement | null;
     expect(persistedRow).to.exist;
 
-    const triggerSelect = persistedRow?.querySelector(
-      ".dusk-rule-row select"
-    ) as HTMLSelectElement | null;
-    expect(triggerSelect).to.exist;
-    triggerSelect!.value = "on_dark";
-    triggerSelect!.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+    const brightEventInput = persistedRow?.querySelector(
+      'input[name="lighting-situation-event-rule_existing-ambient"][value="on_bright"]'
+    ) as HTMLInputElement | null;
+    expect(brightEventInput).to.exist;
+    brightEventInput!.click();
     await element.updateComplete;
 
     const updatedRow = element.shadowRoot?.querySelector(
       '[data-testid="action-rule-rule_existing"]'
     ) as HTMLElement | null;
     expect(updatedRow).to.exist;
-    expect((updatedRow?.textContent || "")).to.not.include("Set by trigger");
-
-    const occupancySelect = Array.from(
-      updatedRow?.querySelectorAll(".dusk-conditions select.dusk-wide-select") || []
-    ).find((select) =>
-      Array.from((select as HTMLSelectElement).options).some((option) => option.value === "ignore")
-    ) as HTMLSelectElement | undefined;
-    expect(occupancySelect).to.exist;
-    expect(occupancySelect?.value).to.equal("ignore");
+    const brightRequirementInput = updatedRow?.querySelector(
+      'input[name="lighting-situation-requirement-rule_existing-occupancy"][value="bright"]'
+    ) as HTMLInputElement | null;
+    expect(brightRequirementInput).to.exist;
+    expect(brightRequirementInput?.checked).to.equal(true);
   });
 
-  it("hydrates the trigger select from a loaded legacy trigger payload", async () => {
+  it("hydrates lighting situations from a loaded legacy trigger payload", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>): Promise<T> => {
         if (request.type === "topomation/actions/rules/list") {
@@ -5104,10 +5060,14 @@ describe("HtLocationInspector WIAB configuration", () => {
       "expected persisted lighting rule row to render"
     );
 
-    const triggerSelect = element.shadowRoot?.querySelector(
-      '[data-testid="action-rule-rule_existing"] .dusk-rule-row select'
-    ) as HTMLSelectElement | null;
-    expect(triggerSelect).to.exist;
-    expect(triggerSelect?.value).to.equal("on_occupied");
+    const situationRow = element.shadowRoot?.querySelector(
+      '[data-testid="action-rule-rule_existing-situation-0"]'
+    ) as HTMLElement | null;
+    expect(situationRow).to.exist;
+    expect((situationRow?.textContent || "")).to.include("Room becomes occupied");
+    expect((situationRow?.textContent || "")).to.include("Always");
+    expect(
+      element.shadowRoot?.querySelector('[data-testid="action-rule-rule_existing-add-situation"]')
+    ).to.exist;
   });
 });

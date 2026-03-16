@@ -1,6 +1,6 @@
 # Contracts
 
-**Last reviewed**: 2026-03-06
+**Last reviewed**: 2026-03-16
 **Purpose**: canonical behavior contracts for Topomation runtime and panel actions.
 
 Use this file as the quick contract surface. Keep it synchronized with:
@@ -269,6 +269,33 @@ Additional save points:
   - non-room topology nodes (for example `floor`, `building`, `grounds`) are
     excluded from the picker.
 
+## C-014A Lighting Rule Authoring Contract
+
+- Lighting rule authoring is situation-based in the panel UI.
+- A Lighting rule is expressed as:
+  - one or two situation rows
+  - one optional time window
+  - one room-lighting action set
+- Supported situation events are:
+  - `Room becomes occupied`
+  - `Room becomes vacant`
+  - `It becomes dark`
+  - `It becomes bright`
+- Situation requirements are cross-dimension only:
+  - occupancy events allow `Always`, `It is dark`, `It is bright`
+  - ambient events allow `Always`, `Room is occupied`, `Room is vacant`
+- Current backend-backed Lighting rules support at most:
+  - one occupancy-family situation
+  - one ambient-family situation
+- `Duplicate rule` is the primary path for authoring multiple time-window variants
+  of the same room behavior.
+- A Lighting rule may include one optional time window only.
+- Overlapping Lighting rule windows are allowed by design.
+- Lighting action rows remain capability-based and may persist multiple target
+  light actions in one rule.
+- `only_if_off` is valid only for `light.turn_on` actions and must not be
+  preserved for `turn_off` or `toggle`.
+
 ## C-014 Managed Shadow Area Contract
 
 - Aggregate topology nodes requiring HA-native `area_id` interoperability must
@@ -400,13 +427,24 @@ Additional save points:
 - Startup behavior contract:
   - `Lighting`, `Media`, and `HVAC` do not expose tab-global startup reapply
     toggles.
-- Lighting trigger-derived condition contract:
-  - `on_dark` and `on_bright` imply the matching ambient condition and do not
-    render a separate ambient-condition row.
-  - `on_occupied` implies occupancy and does not render a separate
-    occupancy-condition row.
-  - `on_vacant` implies occupancy and does not render a separate
-    occupancy-condition row.
+- Lighting multi-trigger contract:
+  - a Lighting rule may include up to one occupancy-edge trigger and up to one
+    ambient-edge trigger.
+  - valid occupancy-edge triggers: `on_occupied`, `on_vacant`.
+  - valid ambient-edge triggers: `on_dark`, `on_bright`.
+  - the rule fires when any configured trigger occurs.
+  - conflicting triggers within the same family are invalid:
+    - `on_occupied` + `on_vacant`
+    - `on_dark` + `on_bright`
+  - persistence writes all selected triggers into the managed HA automation.
+  - compatibility payloads may still expose a primary `trigger_type`, but the
+    canonical Lighting trigger surface is the full trigger set.
+- Lighting condition contract:
+  - Lighting renders explicit ambient and occupancy condition rows.
+  - ambient and occupancy conditions are not locked or hidden solely because a
+    matching trigger is selected.
+  - Lighting may default condition values from the selected trigger set, but
+    users retain explicit control of those condition rows.
 - Lighting multi-action contract:
   - one Lighting rule may include multiple action targets.
   - persistence writes those targets as ordered HA automation action steps.
@@ -476,8 +514,9 @@ Additional save points:
 
 ## C-021 Inspector Explainability Contract
 
-- The Detection inspector includes a bottom-of-panel explainability section for
-  occupancy v1.
+- Explainability is rendered as a docked panel under the location tree in the
+  left workspace rail.
+- The panel follows the currently selected location.
 - This section is not a raw debug log. It answers:
   - why the room is in its current occupancy state now
   - what meaningful occupancy-related changes happened most recently

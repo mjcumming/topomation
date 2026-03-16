@@ -47,6 +47,12 @@ _AUTOMATION_API_REFRESH_TOKEN_KEY = "_automation_api_refresh_token"  # noqa: S10
 _ENTITY_RESOLVE_MAX_ATTEMPTS = 20
 _ENTITY_RESOLVE_WAIT_SECONDS = 0.25
 _VALID_TRIGGER_TYPES = frozenset({"on_occupied", "on_vacant", "on_dark", "on_bright"})
+_TRIGGER_TYPE_ORDER: tuple[ActionTriggerType, ...] = (
+    "on_occupied",
+    "on_vacant",
+    "on_dark",
+    "on_bright",
+)
 _VALID_AMBIENT_CONDITIONS = frozenset({"any", "dark", "bright"})
 _AUTOMATION_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_]+$")
 _RULE_UUID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{7,63}$")
@@ -61,6 +67,7 @@ class _TopomationMetadata:
 
     location_id: str
     trigger_type: ActionTriggerType
+    trigger_types: tuple[ActionTriggerType, ...]
     ambient_condition: ActionAmbientCondition
     must_be_occupied: bool | None
     time_condition_enabled: bool
@@ -78,6 +85,7 @@ class _RecentRuleSnapshot:
     location_id: str
     name: str
     trigger_type: ActionTriggerType
+    trigger_types: tuple[ActionTriggerType, ...]
     ambient_condition: ActionAmbientCondition
     must_be_occupied: bool | None
     time_condition_enabled: bool
@@ -193,6 +201,7 @@ class TopomationManagedActions:
                         "entity_id": entity_id,
                         "name": recent_snapshot.name,
                         "trigger_type": recent_snapshot.trigger_type,
+                        "trigger_types": list(recent_snapshot.trigger_types),
                         "actions": [dict(action) for action in recent_snapshot.actions],
                         "action_entity_id": recent_snapshot.action_entity_id,
                         "action_service": recent_snapshot.action_service,
@@ -255,6 +264,7 @@ class TopomationManagedActions:
                     "entity_id": entity_id,
                     "name": name,
                     "trigger_type": metadata.trigger_type,
+                    "trigger_types": list(metadata.trigger_types),
                     "actions": actions,
                     "action_entity_id": action_entity_id,
                     "action_service": action_service,
@@ -281,6 +291,7 @@ class TopomationManagedActions:
         location: Any,
         name: str,
         trigger_type: str,
+        trigger_types: list[str] | tuple[str, ...] | None = None,
         action_entity_id: str | None = None,
         action_service: str | None = None,
         actions: list[Mapping[str, Any]] | None = None,
@@ -301,10 +312,13 @@ class TopomationManagedActions:
         if not location_id:
             raise ValueError("Location id is required")
 
-        normalized_trigger = self._normalize_trigger_type(trigger_type)
+        normalized_trigger_types = self._normalize_trigger_types(
+            trigger_types, fallback_trigger_type=trigger_type
+        )
+        normalized_trigger = normalized_trigger_types[0]
         normalized_ambient_condition = self._normalize_ambient_condition(
             ambient_condition=ambient_condition,
-            trigger_type=normalized_trigger,
+            trigger_types=normalized_trigger_types,
             require_dark=require_dark,
         )
         normalized_start_time = self._normalize_time_hhmm(start_time, "18:00")
@@ -327,7 +341,10 @@ class TopomationManagedActions:
 
         occupancy_entity_id: str | None = None
         requires_occupancy_entity = (
-            normalized_trigger in {"on_occupied", "on_vacant"}
+            any(
+                current_trigger in {"on_occupied", "on_vacant"}
+                for current_trigger in normalized_trigger_types
+            )
             or isinstance(must_be_occupied, bool)
         )
         if requires_occupancy_entity:
@@ -345,7 +362,7 @@ class TopomationManagedActions:
         if not automation_id:
             automation_id = self._build_stable_automation_id(
                 location_id,
-                normalized_trigger,
+                normalized_trigger_types,
                 primary_action_entity_id,
                 name,
                 normalized_rule_uuid,
@@ -354,7 +371,7 @@ class TopomationManagedActions:
             normalized_rule_uuid = self._rule_uuid_from_automation_id(automation_id)
 
         triggers = self._build_trigger_definitions(
-            trigger_type=normalized_trigger,
+            trigger_types=normalized_trigger_types,
             occupancy_entity_id=occupancy_entity_id,
             ambient_config=ambient_config,
         )
@@ -375,6 +392,7 @@ class TopomationManagedActions:
             "version": 4,
             "location_id": location_id,
             "trigger_type": normalized_trigger,
+            "trigger_types": list(normalized_trigger_types),
             "ambient_condition": normalized_ambient_condition,
             **(
                 {"must_be_occupied": must_be_occupied}
@@ -463,6 +481,7 @@ class TopomationManagedActions:
             location_id=location_id,
             name=name,
             trigger_type=normalized_trigger,
+            trigger_types=normalized_trigger_types,
             ambient_condition=normalized_ambient_condition,
             must_be_occupied=must_be_occupied,
             time_condition_enabled=bool(time_condition_enabled),
@@ -531,6 +550,7 @@ class TopomationManagedActions:
             "entity_id": entity_id or f"automation.{automation_id}",
             "name": name,
             "trigger_type": normalized_trigger,
+            "trigger_types": list(normalized_trigger_types),
             "actions": normalized_actions,
             "action_entity_id": primary_action_entity_id,
             "action_service": primary_action_service,
@@ -657,6 +677,39 @@ class TopomationManagedActions:
             raise ValueError(f"Invalid trigger_type '{trigger_type}'")
         return cast(ActionTriggerType, normalized)
 
+    def _normalize_trigger_types(
+        self,
+        trigger_types: list[str] | tuple[str, ...] | None,
+        *,
+        fallback_trigger_type: str | None = None,
+    ) -> tuple[ActionTriggerType, ...]:
+        """Normalize one-or-many trigger types to a stable canonical tuple."""
+        normalized: list[ActionTriggerType] = []
+        seen: set[ActionTriggerType] = set()
+
+        raw_values: list[str] = []
+        if isinstance(trigger_types, (list, tuple)):
+            raw_values.extend(str(value or "") for value in trigger_types)
+        if fallback_trigger_type:
+            raw_values.append(str(fallback_trigger_type))
+
+        for raw_value in raw_values:
+            trigger_type = self._normalize_trigger_type(raw_value)
+            if trigger_type in seen:
+                continue
+            normalized.append(trigger_type)
+            seen.add(trigger_type)
+
+        if not normalized:
+            raise ValueError("At least one trigger_type is required")
+
+        ordered = sorted(normalized, key=_TRIGGER_TYPE_ORDER.index)
+        if "on_occupied" in ordered and "on_vacant" in ordered:
+            raise ValueError("Lighting rules cannot include both on_occupied and on_vacant")
+        if "on_dark" in ordered and "on_bright" in ordered:
+            raise ValueError("Lighting rules cannot include both on_dark and on_bright")
+        return tuple(ordered)
+
     def _prune_recent_rule_snapshots(self) -> None:
         """Drop expired snapshot entries."""
         now = monotonic()
@@ -694,6 +747,7 @@ class TopomationManagedActions:
         location_id: str,
         name: str,
         trigger_type: ActionTriggerType,
+        trigger_types: tuple[ActionTriggerType, ...],
         ambient_condition: ActionAmbientCondition,
         must_be_occupied: bool | None,
         time_condition_enabled: bool,
@@ -730,6 +784,7 @@ class TopomationManagedActions:
             location_id=location_id,
             name=name,
             trigger_type=trigger_type,
+            trigger_types=trigger_types,
             ambient_condition=ambient_condition,
             must_be_occupied=must_be_occupied,
             time_condition_enabled=time_condition_enabled,
@@ -746,11 +801,11 @@ class TopomationManagedActions:
 
     def _default_ambient_condition_for_trigger(
         self,
-        trigger_type: ActionTriggerType,
+        trigger_types: tuple[ActionTriggerType, ...],
     ) -> ActionAmbientCondition:
-        if trigger_type == "on_dark":
+        if "on_dark" in trigger_types:
             return "dark"
-        if trigger_type == "on_bright":
+        if "on_bright" in trigger_types:
             return "bright"
         return "any"
 
@@ -758,7 +813,7 @@ class TopomationManagedActions:
         self,
         *,
         ambient_condition: str | None,
-        trigger_type: ActionTriggerType,
+        trigger_types: tuple[ActionTriggerType, ...],
         require_dark: bool,
     ) -> ActionAmbientCondition:
         if isinstance(ambient_condition, str):
@@ -767,7 +822,7 @@ class TopomationManagedActions:
                 return normalized  # type: ignore[return-value]
         if require_dark:
             return "dark"
-        return self._default_ambient_condition_for_trigger(trigger_type)
+        return self._default_ambient_condition_for_trigger(trigger_types)
 
     def _normalize_time_hhmm(self, value: str | None, fallback: str) -> str:
         raw = str(value or "").strip()
@@ -817,52 +872,53 @@ class TopomationManagedActions:
     def _build_trigger_definitions(
         self,
         *,
-        trigger_type: ActionTriggerType,
+        trigger_types: tuple[ActionTriggerType, ...],
         occupancy_entity_id: str | None,
         ambient_config: Mapping[str, Any],
     ) -> list[dict[str, Any]]:
         """Build Home Assistant trigger definitions for one managed action rule."""
         triggers: list[dict[str, Any]] = []
-        if trigger_type in {"on_occupied", "on_vacant"}:
-            if not occupancy_entity_id:
-                raise ValueError("Occupancy trigger requested but no occupancy entity was found")
-            triggers.append(
-                {
-                    "trigger": "state",
-                    "entity_id": occupancy_entity_id,
-                    "to": "on" if trigger_type == "on_occupied" else "off",
-                }
-            )
-            return triggers
-
-        lux_sensor = ambient_config.get("lux_sensor")
-        if isinstance(lux_sensor, str) and lux_sensor:
-            if trigger_type == "on_dark":
+        for trigger_type in trigger_types:
+            if trigger_type in {"on_occupied", "on_vacant"}:
+                if not occupancy_entity_id:
+                    raise ValueError("Occupancy trigger requested but no occupancy entity was found")
                 triggers.append(
                     {
-                        "trigger": "numeric_state",
-                        "entity_id": lux_sensor,
-                        "below": float(ambient_config.get("dark_threshold", 50.0)),
+                        "trigger": "state",
+                        "entity_id": occupancy_entity_id,
+                        "to": "on" if trigger_type == "on_occupied" else "off",
                     }
                 )
-            elif trigger_type == "on_bright":
+                continue
+
+            lux_sensor = ambient_config.get("lux_sensor")
+            if isinstance(lux_sensor, str) and lux_sensor:
+                if trigger_type == "on_dark":
+                    triggers.append(
+                        {
+                            "trigger": "numeric_state",
+                            "entity_id": lux_sensor,
+                            "below": float(ambient_config.get("dark_threshold", 50.0)),
+                        }
+                    )
+                elif trigger_type == "on_bright":
+                    triggers.append(
+                        {
+                            "trigger": "numeric_state",
+                            "entity_id": lux_sensor,
+                            "above": float(ambient_config.get("bright_threshold", 500.0)),
+                        }
+                    )
+
+            fallback_to_sun = bool(ambient_config.get("fallback_to_sun", True))
+            if fallback_to_sun or not isinstance(lux_sensor, str) or not lux_sensor:
                 triggers.append(
                     {
-                        "trigger": "numeric_state",
-                        "entity_id": lux_sensor,
-                        "above": float(ambient_config.get("bright_threshold", 500.0)),
+                        "trigger": "state",
+                        "entity_id": "sun.sun",
+                        "to": "below_horizon" if trigger_type == "on_dark" else "above_horizon",
                     }
                 )
-
-        fallback_to_sun = bool(ambient_config.get("fallback_to_sun", True))
-        if fallback_to_sun or not triggers:
-            triggers.append(
-                {
-                    "trigger": "state",
-                    "entity_id": "sun.sun",
-                    "to": "below_horizon" if trigger_type == "on_dark" else "above_horizon",
-                }
-            )
         return triggers
 
     def _ambient_condition_clause(
@@ -952,24 +1008,25 @@ class TopomationManagedActions:
     def _build_stable_automation_id(
         self,
         location_id: str,
-        trigger_type: ActionTriggerType,
+        trigger_types: tuple[ActionTriggerType, ...],
         action_entity_id: str,
         rule_name: str,
         rule_uuid: str | None = None,
     ) -> str:
         """Build a stable Topomation automation id so saves update in place."""
         loc_slug = self._slugify(location_id)
+        trigger_slug = "_".join(trigger_type.removeprefix("on_") for trigger_type in trigger_types)
         action_slug = self._slugify(action_entity_id)
         if rule_uuid:
             uuid_slug = self._slugify(rule_uuid)[:24]
             return (
                 f"{_TOPOMATION_AUTOMATION_ID_PREFIX}"
-                f"{loc_slug}_{trigger_type}_{action_slug}_{uuid_slug}"
+                f"{loc_slug}_{trigger_slug}_{action_slug}_{uuid_slug}"
             )
         name_slug = self._slugify(rule_name)[:40]
         return (
             f"{_TOPOMATION_AUTOMATION_ID_PREFIX}"
-            f"{loc_slug}_{trigger_type}_{action_slug}_{name_slug}"
+            f"{loc_slug}_{trigger_slug}_{action_slug}_{name_slug}"
         )
 
     def _normalize_existing_automation_id(self, value: str | None) -> str | None:
@@ -1047,10 +1104,15 @@ class TopomationManagedActions:
                 return None
 
             raw_trigger_type = parsed.get("trigger_type")
+            raw_trigger_types = parsed.get("trigger_types")
             try:
-                trigger_type = self._normalize_trigger_type(str(raw_trigger_type or ""))
+                trigger_types = self._normalize_trigger_types(
+                    raw_trigger_types if isinstance(raw_trigger_types, (list, tuple)) else None,
+                    fallback_trigger_type=str(raw_trigger_type or ""),
+                )
             except ValueError:
                 return None
+            trigger_type = trigger_types[0]
 
             ambient_condition = self._normalize_ambient_condition(
                 ambient_condition=(
@@ -1058,7 +1120,7 @@ class TopomationManagedActions:
                     if isinstance(parsed, Mapping)
                     else None
                 ),
-                trigger_type=trigger_type,
+                trigger_types=trigger_types,
                 require_dark=bool(parsed.get("require_dark", False)),
             )
             raw_must_be_occupied = (
@@ -1094,6 +1156,7 @@ class TopomationManagedActions:
             return _TopomationMetadata(
                 location_id=location_id,
                 trigger_type=trigger_type,
+                trigger_types=trigger_types,
                 ambient_condition=ambient_condition,
                 must_be_occupied=must_be_occupied,
                 time_condition_enabled=time_condition_enabled,

@@ -1,6 +1,6 @@
 # Current work
 
-**Last updated**: 2026-03-06
+**Last updated**: 2026-03-16
 **Purpose**: short live context for parallel work, handoff, and branch safety.
 
 Status markers:
@@ -15,6 +15,7 @@ Status markers:
 - Active focus: automation UX + persistence realignment (ADR-HA-054/055/056/060/061/062/063): the active rule UI is scoped to Lighting/Media/HVAC, runs dev-mode without legacy migration fallbacks, and cannot regain a release/live claim until the exact current branch state is rerun through the touched-workflow gate on live HA.
 - Active execution checklist: `project/issues/issue-058-automation-ui-contract-implementation.md`.
 - New planning track: ambient light v1 design baseline captured in `docs/ambient-light-v1-design.md` before dusk/dawn coupling work.
+- Future work captured: a house-wide modes/activities context layer (for example `watching_tv`, `evening`, `overnight`, `party`, `bedtime`) that can modulate lighting/media/HVAC behavior is promising, but is intentionally deferred until the simpler lighting-behavior UX lands.
 - Recently completed: Tree DnD now uses explicit drop targets (before/inside/after/outdent) from pointer Y and optional outdent strip; zone-only resolver; heuristic x-offset logic removed. User order preserved by existing backend (`manual_order` + A-Z until first reorder).
 - Contract source set: `docs/working-agreement.md`, `docs/contracts.md`, `docs/automation-ui-guide.md`, `docs/architecture.md`, `docs/adr-log.md`.
 
@@ -57,3 +58,5 @@ Status markers:
 2. Optionally add CI enforcement for contract/doc timestamp freshness.
 3. Do not resume release-candidate testing until the touched-workflow gate is
    recorded for the exact current main branch state.
+4. Revisit a house-wide modes/activities layer after lighting rules move from
+   raw trigger mechanics to named behaviors and time/profile overrides.

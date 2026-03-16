@@ -1,6 +1,6 @@
 # Automation UI Guide (Workspace + Inspector)
 
-**Last reviewed**: 2026-03-06  
+**Last reviewed**: 2026-03-16  
 **Status**: Active (design baseline)  
 **Authority**: ADR-HA-054, ADR-HA-055, ADR-HA-056, ADR-HA-060 + `docs/contracts.md`
 
@@ -12,13 +12,17 @@ automation workspace and inspector tabs.
 1. Right-panel mode selection uses top-level tabs:
    - `Configure`
    - `Assign Devices`
-2. `Configure` hosts inspector tabs:
+2. Left panel hosts:
+   - structure header/actions
+   - location tree
+   - docked `Room Explainability` panel tied to the selected location
+3. `Configure` hosts inspector tabs:
    - `Detection`
    - `Ambient`
    - `Lighting`
    - `Media`
    - `HVAC`
-3. `Assign Devices` is a dedicated workflow tab, not a secondary button mode.
+4. `Assign Devices` is a dedicated workflow tab, not a secondary button mode.
 
 ## 2. Header Status Behavior
 
@@ -34,7 +38,8 @@ Top-to-bottom layout order:
 2. Add-source composer
 3. Sync section (`Sync Locations`)
 4. WIAB controls
-5. Room explainability section (`Current state` + `Recent changes`) at the bottom
+5. Detection no longer owns the Explainability renderer; that panel is docked
+   under the tree on the left and follows the selected location.
 
 ## 4. Sync Locations Scope
 
@@ -99,13 +104,16 @@ Top-to-bottom layout order:
 1. Unsaved draft rule card:
    - show `Save rule`
    - show `Remove rule`
+   - `Lighting` also shows `Duplicate rule`
    - do not show `Delete rule`.
 2. Persisted rule card with edits:
    - show `Update rule`
    - show `Discard edits`
    - show `Delete rule`.
+   - `Lighting` also shows `Duplicate rule`.
 3. Persisted rule card with no edits:
-   - show `Delete rule` only.
+   - show `Delete rule` only for `Media` / `HVAC`.
+   - `Lighting` shows `Delete rule` + `Duplicate rule`.
 4. Rule lifecycle controls are colocated on the rule card.
 
 ## 8. Lighting Persistence Direction
@@ -145,24 +153,32 @@ Deviation policy:
 Rule-card requirements:
 
 1. Rule title supports inline rename.
-2. Trigger options:
-   - `On occupied`
-   - `On vacant`
-   - `On dark`
-   - `On bright`
-3. Conditions group includes:
-   - `Use time window` toggle
-4. Trigger-derived behavior:
-   - `On dark` implies the dark ambient condition and does not render an ambient row.
-   - `On bright` implies the bright ambient condition and does not render an ambient row.
-   - `On occupied` implies occupancy and does not render a separate occupancy row.
-   - `On vacant` implies occupancy and does not render a separate occupancy row.
-   - when ambient condition is `Ignore ambient`, do not render an ambient row.
-   - when occupancy condition is `Doesn't matter`, do not render an occupancy row.
-   - `On dark` / `On bright` default occupancy to `Doesn't matter`.
-   - `On occupied` / `On vacant` default ambient to `Ignore ambient`.
-5. Time-window inputs (`Begin`, `End`) appear only when enabled.
-6. Actions editor uses a capability-based light device list:
+2. Lighting rules are situation-based, not raw trigger-family based.
+3. The first section is `When any of these happen`.
+4. A situation row contains:
+   - one `Event`
+   - one cross-dimension `Only when` requirement
+5. Supported events are:
+   - `Room becomes occupied`
+   - `Room becomes vacant`
+   - `It becomes dark`
+   - `It becomes bright`
+6. Supported `Only when` values are:
+   - for occupancy events: `Always`, `It is dark`, `It is bright`
+   - for ambient events: `Always`, `Room is occupied`, `Room is vacant`
+7. Current backend-backed Lighting rules support at most:
+   - one occupancy-family situation
+   - one ambient-family situation
+8. `Add situation` adds the missing family when available.
+9. `Remove` is per situation and is disabled when it would leave the rule with no
+   situations.
+10. `Time window` is a separate section with one optional toggle plus `Begin` /
+    `End` inputs.
+11. One rule supports one optional time window only.
+12. Multi-band behavior is authored as multiple rules, typically via
+    `Duplicate rule`.
+13. Overlapping time windows are allowed.
+14. Actions editor uses a capability-based light device list:
    - one row per compatible local `light.*` entity
    - row include toggles are multi-select and define the ordered action list for the rule
    - dimmable rows use a brightness slider (`0` -> `turn_off`, `>0` ->
@@ -174,27 +190,31 @@ Rule-card requirements:
    - do not show `Only if off` for `turn_off`; do not preserve it for `toggle`
    - do not render a separate top-level `Device` + `Action` dropdown pair for
      Lighting rules.
-7. Rule lifecycle controls:
+15. Rule lifecycle controls:
    - unsaved draft rows show `Save rule` + `Remove rule`
+   - all Lighting rule cards also show `Duplicate rule`
    - persisted edited rows show `Update rule` + `Discard edits` + `Delete rule`
-   - persisted clean rows show `Delete rule`.
-8. Rule lifecycle controls are card-local; they are not split between tab-level
+   - persisted clean rows show `Delete rule` + `Duplicate rule`
+16. Rule lifecycle controls are card-local; they are not split between tab-level
    buttons and rule-card buttons.
 
 Acceptance checks:
 
 1. Single top `Lighting rules` header.
 2. Inline rule rename behavior works.
-3. `Use time window` reveals `Begin` and `End`.
-4. `On dark` / `On bright` enforce matching ambient condition semantics without a separate ambient row.
-5. `On occupied` / `On vacant` enforce matching occupancy condition semantics.
-6. Unsaved draft rule hides `Delete rule`.
-7. Persisted edited rule shows `Update rule`, `Discard edits`, and `Delete rule`.
-8. Persisted clean rule shows `Delete rule`.
-9. Save/discard is explicit; no silent auto-save.
-10. Lighting actions render capability-based device rows (dimmer/switch style),
+3. Lighting renders situation cards instead of trigger-family controls.
+4. Lighting supports one occupancy situation plus one ambient situation in a
+   single rule.
+5. `Add situation` is hidden once both situation families are present.
+6. `Time window` reveals `Begin` and `End`.
+7. Unsaved draft rule hides `Delete rule`.
+8. Persisted edited rule shows `Update rule`, `Discard edits`, `Delete rule`,
+   and `Duplicate rule`.
+9. Persisted clean rule shows `Delete rule` + `Duplicate rule`.
+10. Save/discard is explicit; no silent auto-save.
+11. Lighting actions render capability-based device rows (dimmer/switch style),
    not a single `Device` + `Action` dropdown editor.
-11. One lighting rule can persist multiple action targets.
+12. One lighting rule can persist multiple action targets.
 
 ## 11. Human Approval Gate for Ambiguity
 

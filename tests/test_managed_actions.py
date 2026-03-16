@@ -286,12 +286,16 @@ def test_private_helpers_parse_and_mutate_config() -> None:
 
     generated_id = manager._build_stable_automation_id(  # noqa: SLF001
         "kitchen",
-        "on_dark",
+        ("on_dark",),
         "fan.kitchen_hood",
         "Kitchen dark safety",
         "rule_abc12345",
     )
     assert generated_id.endswith("_rule_abc12345")
+    with pytest.raises(ValueError, match="cannot include both on_dark and on_bright"):
+        manager._normalize_trigger_types(["on_dark", "on_bright"])  # noqa: SLF001
+    with pytest.raises(ValueError, match="cannot include both on_occupied and on_vacant"):
+        manager._normalize_trigger_types(["on_occupied", "on_vacant"])  # noqa: SLF001
     assert manager._normalize_existing_automation_id("automation.kitchen dark safety") == "kitchen_dark_safety"  # noqa: SLF001
     assert manager._normalize_rule_uuid("Rule-ABC_12345678") == "rule-abc_12345678"  # noqa: SLF001
 
@@ -441,7 +445,7 @@ async def test_async_create_rule_rolls_back_when_registration_does_not_converge(
         max_attempts: int,
         wait_seconds: float,
     ) -> str | None:
-        assert automation_id.startswith("topomation_kitchen_on_dark")
+        assert automation_id.startswith("topomation_kitchen_dark")
         assert max_attempts > 0
         assert wait_seconds > 0
         return None
