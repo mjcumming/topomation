@@ -155,6 +155,7 @@ export class TopomationPanel extends LitElement {
   private _lastKnownEntryId?: string;
   private _opQueueByLocationId = new Map<string, Promise<void>>();
   private _panelResizePointerId?: number;
+  private _resumeRefreshQueued = false;
 
   private _enqueueLocationOp(locationId: string, op: () => Promise<void>): Promise<void> {
     const prev = this._opQueueByLocationId.get(locationId) ?? Promise.resolve();
@@ -203,6 +204,9 @@ export class TopomationPanel extends LitElement {
     // Keyboard shortcuts
     this._handleKeyDown = this._handleKeyDown.bind(this);
     document.addEventListener('keydown', this._handleKeyDown);
+    document.addEventListener("visibilitychange", this._handleVisibilityChange);
+    window.addEventListener("focus", this._handleWindowFocus);
+    window.addEventListener("pageshow", this._handlePageShow as EventListener);
   }
 
   protected updated(changedProps: PropertyValues): void {
@@ -212,6 +216,9 @@ export class TopomationPanel extends LitElement {
   disconnectedCallback(): void {
     super.disconnectedCallback();
     document.removeEventListener('keydown', this._handleKeyDown);
+    document.removeEventListener("visibilitychange", this._handleVisibilityChange);
+    window.removeEventListener("focus", this._handleWindowFocus);
+    window.removeEventListener("pageshow", this._handlePageShow as EventListener);
     this._stopPanelSplitterDrag();
 
     if (this._pendingLoadTimer) {
@@ -424,6 +431,18 @@ export class TopomationPanel extends LitElement {
         display: flex;
         gap: var(--spacing-sm);
         flex-wrap: wrap;
+      }
+
+      .icon-button {
+        min-width: 40px;
+        width: 40px;
+        height: 40px;
+        padding: 0;
+        justify-content: center;
+      }
+
+      .icon-button ha-icon {
+        --mdc-icon-size: 22px;
       }
 
       .right-panel-modes {
@@ -812,11 +831,13 @@ export class TopomationPanel extends LitElement {
               ${this._isSplitStackedLayout()
                 ? html`
                     <button
-                      class="button button-secondary"
+                      class="button button-secondary icon-button"
                       @click=${this._handleOpenSidebar}
+                      data-testid="mobile-sidebar-button"
                       aria-label="Open Home Assistant sidebar"
+                      title="Open Home Assistant sidebar"
                     >
-                      Sidebar
+                      <ha-icon .icon=${"mdi:menu"}></ha-icon>
                     </button>
                   `
                 : ""}
@@ -1971,6 +1992,34 @@ export class TopomationPanel extends LitElement {
         detail: { open: true },
       })
     );
+  };
+
+  private _queueResumeRefresh(): void {
+    if (this._resumeRefreshQueued || !this.isConnected || !this.hass) return;
+    this._resumeRefreshQueued = true;
+    window.setTimeout(() => {
+      this._resumeRefreshQueued = false;
+      if (!this.isConnected || !this.hass) return;
+      void this._subscribeToUpdates();
+      this._scheduleReload(true);
+      if (this._rightPanelMode === "assign") {
+        void this._ensureEntityAreaIndex(true);
+      }
+    }, 0);
+  }
+
+  private _handleVisibilityChange = (): void => {
+    if (document.visibilityState === "visible") {
+      this._queueResumeRefresh();
+    }
+  };
+
+  private _handleWindowFocus = (): void => {
+    this._queueResumeRefresh();
+  };
+
+  private _handlePageShow = (): void => {
+    this._queueResumeRefresh();
   };
 
   private _isSplitStackedLayout(): boolean {

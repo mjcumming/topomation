@@ -90,7 +90,10 @@ export class HtRoomExplainability extends LitElement {
 
       .dock-body {
         padding: 12px;
-        max-height: 280px;
+        height: clamp(180px, 280px, 60vh);
+        min-height: 180px;
+        max-height: 60vh;
+        resize: vertical;
         overflow: auto;
       }
 
@@ -185,6 +188,52 @@ export class HtRoomExplainability extends LitElement {
         display: flex;
         flex-direction: column;
         gap: 6px;
+      }
+
+      .occupancy-contributors {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .occupancy-contributor {
+        border: 1px solid var(--divider-color);
+        border-radius: 8px;
+        padding: 10px 12px;
+        background: rgba(var(--rgb-primary-color), 0.03);
+      }
+
+      .occupancy-contributor-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .occupancy-contributor-source {
+        font-weight: 600;
+        color: var(--primary-text-color);
+        overflow-wrap: anywhere;
+      }
+
+      .occupancy-contributor-state {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        padding: 3px 8px;
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        background: rgba(var(--rgb-success-color), 0.1);
+        color: var(--success-color);
+        white-space: nowrap;
+      }
+
+      .occupancy-contributor-meta {
+        margin-top: 6px;
+        font-size: 12px;
+        color: var(--text-secondary-color);
       }
 
       .occupancy-event {
@@ -358,21 +407,25 @@ export class HtRoomExplainability extends LitElement {
                               </div>
                               ${currentState.contributors.length
                                 ? html`
-                                    <div class="occupancy-events">
+                                    <div class="occupancy-contributors">
                                       ${currentState.contributors.map(
                                         (item) => html`
-                                          <div class="occupancy-event">
-                                            <div class="occupancy-event-time">
-                                              ${item.relativeTime}
-                                            </div>
-                                            <div class="occupancy-event-copy">
-                                              <div class="occupancy-event-source">
+                                          <div class="occupancy-contributor">
+                                            <div class="occupancy-contributor-head">
+                                              <div class="occupancy-contributor-source">
                                                 ${item.sourceLabel}
                                               </div>
-                                              <div class="occupancy-event-meta">
+                                              <div class="occupancy-contributor-state">
                                                 ${item.stateLabel}
                                               </div>
                                             </div>
+                                            ${item.timeLabel
+                                              ? html`
+                                                  <div class="occupancy-contributor-meta">
+                                                    Last update ${item.timeLabel}
+                                                  </div>
+                                                `
+                                              : ""}
                                           </div>
                                         `
                                       )}
@@ -523,10 +576,10 @@ export class HtRoomExplainability extends LitElement {
     if (!locationId) return undefined;
     const transition = this.occupancyTransitions?.[locationId];
     if (transition?.occupied === false) {
-      const formatted = this._formatOccupancyReason(transition.reason);
+      const formatted = this._formatOccupancyReason(transition.reason, "vacancy");
       if (formatted) return formatted;
     }
-    return this._formatOccupancyReason(occupancyState?.attributes?.reason);
+    return this._formatOccupancyReason(occupancyState?.attributes?.reason, "vacancy");
   }
 
   private _resolveOccupiedReason(
@@ -538,34 +591,62 @@ export class HtRoomExplainability extends LitElement {
     if (!locationId) return undefined;
     const transition = this.occupancyTransitions?.[locationId];
     if (transition?.occupied === true) {
-      const formatted = this._formatOccupancyReason(transition.reason);
+      const formatted = this._formatOccupancyReason(transition.reason, "occupied");
       if (formatted) return formatted;
     }
-    const occupancyReason = this._formatOccupancyReason(occupancyState?.attributes?.reason);
+    const occupancyReason = this._formatOccupancyReason(
+      occupancyState?.attributes?.reason,
+      "occupied"
+    );
     if (occupancyReason) return occupancyReason;
     const contributors = this._occupancyContributions(this._getOccupancyConfig(), true);
     if (!contributors.length) return "Active source events detected";
-    return `Contributed by ${contributors[0].sourceLabel}`;
+    return `Currently held by ${contributors[0].sourceLabel}`;
   }
 
-  private _formatOccupancyReason(reason: unknown): string | undefined {
+  private _formatOccupancyReason(
+    reason: unknown,
+    mode?: "occupied" | "vacancy"
+  ): string | undefined {
     if (typeof reason !== "string") return undefined;
     const rawReason = reason.trim();
     if (!rawReason) return undefined;
     const normalized = rawReason.toLowerCase();
-    if (normalized === "timeout") return "Vacated by timeout";
-    if (normalized === "propagation:parent") return "Vacated by parent propagation";
-    if (normalized.startsWith("propagation:child:")) return "Vacated by child propagation";
+    if (normalized === "timeout") {
+      return mode === "occupied" ? undefined : "Vacated by timeout";
+    }
+    if (normalized === "propagation:parent") {
+      return mode === "occupied" ? undefined : "Vacated by parent propagation";
+    }
+    if (normalized.startsWith("propagation:child:")) {
+      return mode === "occupied" ? undefined : "Vacated by child propagation";
+    }
     if (normalized.startsWith("event:")) {
       const eventType = normalized.split(":", 2)[1];
-      if (eventType === "clear") return "Vacated by clear event";
-      if (eventType === "vacate") return "Vacated explicitly";
-      if (eventType) return this._formatOccupancyEventReason(eventType, "vacancy");
+      if (eventType === "clear") return mode === "occupied" ? undefined : "Vacated by clear event";
+      if (eventType === "vacate") return mode === "occupied" ? undefined : "Vacated explicitly";
+      if (eventType === "trigger" || eventType === "handoff" || eventType === "inherit") {
+        return mode === "vacancy"
+          ? undefined
+          : this._formatOccupancyEventReason(eventType, "occupied");
+      }
+      if (eventType) {
+        return this._formatOccupancyEventReason(
+          eventType,
+          mode === "occupied" ? "occupied" : "vacancy"
+        );
+      }
     }
     if (normalized.startsWith("occupancy:")) {
       const eventType = normalized.split(":", 2)[1];
-      if (eventType) return this._formatOccupancyEventReason(eventType, "occupied");
+      if (eventType) {
+        return mode === "vacancy"
+          ? undefined
+          : this._formatOccupancyEventReason(eventType, "occupied");
+      }
     }
+    if (mode === "occupied") return `Occupied: ${rawReason}`;
+    if (mode === "vacancy") return `Vacated: ${rawReason}`;
     return `Reason: ${rawReason}`;
   }
 
@@ -575,7 +656,7 @@ export class HtRoomExplainability extends LitElement {
         why: string;
         nextChange?: string;
         lockedSummary?: string;
-        contributors: Array<{ sourceLabel: string; stateLabel: string; relativeTime: string }>;
+        contributors: Array<{ sourceLabel: string; stateLabel: string; timeLabel?: string }>;
       }
     | undefined {
     const occupancyState = this._getOccupancyState();
@@ -678,7 +759,10 @@ export class HtRoomExplainability extends LitElement {
 
   private _explainabilityChangeDescription(item: ExplainabilityChange, sourceLabel?: string): string {
     if (item.kind === "state") {
-      const reason = this._formatOccupancyReason(item.reason);
+      const reason = this._formatOccupancyReason(
+        item.reason,
+        item.event === "occupied" ? "occupied" : "vacancy"
+      );
       return reason || (item.event === "occupied" ? "Occupancy turned on" : "Occupancy turned off");
     }
     const sourceText = sourceLabel
@@ -701,7 +785,7 @@ export class HtRoomExplainability extends LitElement {
   private _occupancyContributions(
     config: OccupancyConfig,
     onlyActive = false
-  ): Array<{ sourceLabel: string; sourceId: string; stateLabel: string; relativeTime: string }> {
+  ): Array<{ sourceLabel: string; sourceId: string; stateLabel: string; timeLabel?: string }> {
     const occupancyState = this._getOccupancyState();
     if (!occupancyState) return [];
     const attrs = occupancyState.attributes || {};
@@ -730,11 +814,7 @@ export class HtRoomExplainability extends LitElement {
           sourceLabel,
           sourceId: rawSourceId,
           stateLabel: state,
-          relativeTime: timestamp
-            ? `${this._formatElapsedDuration(timestamp)} ago`
-            : active
-              ? "active"
-              : "inactive",
+          timeLabel: timestamp ? `${this._formatElapsedDuration(timestamp)} ago` : undefined,
           timestampMs: timestamp ? timestamp.getTime() : this._nowEpochMs,
           active,
         };
@@ -746,7 +826,7 @@ export class HtRoomExplainability extends LitElement {
           sourceLabel: string;
           sourceId: string;
           stateLabel: string;
-          relativeTime: string;
+          timeLabel?: string;
           timestampMs: number;
           active: boolean;
         } => Boolean(item)
@@ -757,11 +837,11 @@ export class HtRoomExplainability extends LitElement {
       });
 
     const filtered = onlyActive ? rows.filter((item) => item.active) : rows;
-    return filtered.map(({ sourceLabel, stateLabel, relativeTime, sourceId }) => ({
+    return filtered.map(({ sourceLabel, stateLabel, timeLabel, sourceId }) => ({
       sourceLabel: `${sourceLabel}${sourceLabel === sourceId ? "" : ` (${sourceId})`}`,
       sourceId,
       stateLabel,
-      relativeTime,
+      timeLabel,
     }));
   }
 

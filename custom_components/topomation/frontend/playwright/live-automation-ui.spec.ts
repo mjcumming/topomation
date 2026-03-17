@@ -98,6 +98,106 @@ async function selectLightingLocation(page: any): Promise<{ id: string; lightIds
   return selected;
 }
 
+async function listLocations(): Promise<any[]> {
+  const response = await callHaWs({
+    type: "topomation/locations/list",
+  });
+  return Array.isArray(response?.locations) ? response.locations : [];
+}
+
+async function expandTreeAncestors(page: any, locationId: string): Promise<void> {
+  if (!isRealPanel()) return;
+  const locations = await listLocations();
+  const byId = new Map(locations.map((location) => [String(location.id), location]));
+  const ancestorIds: string[] = [];
+  let parentId = byId.get(locationId)?.parent_id ?? null;
+  while (typeof parentId === "string" && parentId) {
+    ancestorIds.push(parentId);
+    parentId = byId.get(parentId)?.parent_id ?? null;
+  }
+  await page.evaluate((ids: string[]) => {
+    const panel = document.querySelector("topomation-panel") as any;
+    const tree = panel?.shadowRoot?.querySelector("ht-location-tree") as any;
+    if (!tree) throw new Error("ht-location-tree not found");
+    const next = new Set<string>(Array.from(tree._expandedIds || []));
+    for (const id of ids) {
+      next.add(String(id));
+    }
+    tree._expandedIds = next;
+    tree.requestUpdate?.();
+  }, ancestorIds);
+}
+
+async function selectLocationById(page: any, locationId: string): Promise<void> {
+  if (isRealPanel()) {
+    await expandTreeAncestors(page, locationId);
+    const treeRow = page.locator(`ht-location-tree .tree-item[data-id="${locationId}"]`).first();
+    await expect(treeRow).toBeVisible({ timeout: 5000 });
+    await treeRow.click();
+    return;
+  }
+
+  await page.evaluate(async (targetLocationId) => {
+    const harness = (window as any).topomationLiveHarness;
+    await harness.waitForReady();
+    await harness.selectLocation(targetLocationId);
+  }, locationId);
+}
+
+async function findSharedSpaceCandidate(): Promise<{
+  locationId: string;
+  peerId: string;
+  originalLocationConfig: Record<string, unknown>;
+  originalPeerConfig: Record<string, unknown>;
+}> {
+  const locations = await listLocations();
+  const byId = new Map(locations.map((location) => [String(location.id), location]));
+  const byParent = new Map<string | null, any[]>();
+  for (const location of locations) {
+    const key = location.parent_id ?? null;
+    if (!byParent.has(key)) {
+      byParent.set(key, []);
+    }
+    byParent.get(key)!.push(location);
+  }
+
+  for (const location of locations) {
+    const locationType = String(location?.modules?._meta?.type || "");
+    const parentType = String(byId.get(location.parent_id)?.modules?._meta?.type || "");
+    const isEligibleArea =
+      locationType === "area" && ["area", "floor", "building"].includes(parentType);
+    const isEligibleFloor = locationType === "floor" && parentType === "building";
+    if (!isEligibleArea && !isEligibleFloor) continue;
+
+    const siblings = (byParent.get(location.parent_id ?? null) || []).filter((candidate) => {
+      if (candidate.id === location.id) return false;
+      return String(candidate?.modules?._meta?.type || "") === locationType;
+    });
+    if (!siblings.length) continue;
+
+    return {
+      locationId: String(location.id),
+      peerId: String(siblings[0].id),
+      originalLocationConfig: JSON.parse(JSON.stringify(location?.modules?.occupancy || {})),
+      originalPeerConfig: JSON.parse(JSON.stringify(siblings[0]?.modules?.occupancy || {})),
+    };
+  }
+
+  throw new Error("No live location with an eligible Shared Space peer was found");
+}
+
+async function setOccupancyConfig(
+  locationId: string,
+  config: Record<string, unknown>
+): Promise<void> {
+  await callHaWs({
+    type: "topomation/locations/set_module_config",
+    location_id: locationId,
+    module_id: "occupancy",
+    config,
+  });
+}
+
 async function openLightingTab(page: any): Promise<void> {
   const inspector = page.locator("ht-location-inspector");
   await expect(inspector).toBeVisible();
@@ -432,4 +532,69 @@ test("live detection explainability updates on occupied and vacant transitions",
   });
   await expect(activeContributorsPanel).toContainText("No active contributors", { timeout: 10000 });
   await expect(explainability).toContainText("Room became vacant", { timeout: 10000 });
+});
+
+test("live detection shared space saves reciprocal membership", async ({ page }) => {
+  await openLiveHarness(page);
+  const candidate = await findSharedSpaceCandidate();
+  await selectLocationById(page, candidate.locationId);
+
+  const inspector = page.locator("ht-location-inspector");
+  await openDetectionTab(page);
+
+  const sharedSpaceSection = inspector.getByTestId("shared-space-section");
+  const sharedSpaceCheckbox = inspector.getByTestId(`shared-space-location-${candidate.peerId}`);
+  await expect(sharedSpaceSection).toBeVisible();
+  await expect(sharedSpaceCheckbox).toBeVisible();
+
+  try {
+    const originallyChecked = await sharedSpaceCheckbox.isChecked();
+    if (originallyChecked) {
+      await sharedSpaceCheckbox.uncheck();
+    } else {
+      await sharedSpaceCheckbox.check();
+    }
+
+    await inspector.getByTestId("detection-save-button").click();
+
+    await expect
+      .poll(async () => {
+        const locations = await listLocations();
+        const current = locations.find((location) => location.id === candidate.locationId);
+        const peer = locations.find((location) => location.id === candidate.peerId);
+        const currentSync = Array.isArray(current?.modules?.occupancy?.sync_locations)
+          ? current.modules.occupancy.sync_locations
+          : [];
+        const peerSync = Array.isArray(peer?.modules?.occupancy?.sync_locations)
+          ? peer.modules.occupancy.sync_locations
+          : [];
+        return currentSync.includes(candidate.peerId) && peerSync.includes(candidate.locationId);
+      })
+      .toBe(!originallyChecked);
+  } finally {
+    await setOccupancyConfig(candidate.locationId, candidate.originalLocationConfig);
+    await setOccupancyConfig(candidate.peerId, candidate.originalPeerConfig);
+  }
+});
+
+test("live panel reloads cleanly after leaving the browser and returning", async ({ page }) => {
+  await openLiveHarness(page);
+  const location = await selectLightingLocation(page);
+  await openDetectionTab(page);
+
+  await expect(page.locator("topomation-panel")).toBeVisible();
+  await page.goto("about:blank");
+  await page.goBack({ waitUntil: "domcontentloaded" });
+
+  if (isRealPanel()) {
+    await expect(page.locator("topomation-panel")).toBeVisible({ timeout: 15000 });
+    await selectLocationById(page, location.id);
+  } else {
+    await expect(page.getByTestId("live-harness-status")).toHaveAttribute("data-state", "ready");
+    await selectLocationById(page, location.id);
+  }
+
+  await expect(page.locator("topomation-panel")).toBeVisible();
+  await expect(page.locator("ht-location-tree .tree-item").first()).toBeVisible();
+  await expect(page.locator("ht-location-inspector")).toBeVisible();
 });

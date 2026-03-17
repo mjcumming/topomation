@@ -304,7 +304,8 @@ shared location tree selection context.
   - `HVAC`
 - Advanced occupancy relationship controls are currently hidden from the active
   `Detection` inspector until that workflow is revalidated.
-- Detection's primary sync workflow is `Sync Locations` with explicit sibling scope.
+- Detection's primary occupancy relationship workflow is `Shared Space`, with
+  borrowed coverage handled by `Add Source`.
 - Editable tab behavior is explicit-save:
   - `Detection` and `Ambient` use tab-level draft + explicit save/discard.
   - rule-authoring tabs (`Lighting`, `Media`, `HVAC`) use

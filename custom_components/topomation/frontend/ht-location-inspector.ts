@@ -294,10 +294,14 @@ export class HtLocationInspector extends LitElement {
         align-items: center;
         justify-content: space-between;
         gap: var(--spacing-md);
+        position: sticky;
+        top: var(--spacing-md);
+        z-index: 3;
         margin-bottom: var(--spacing-lg);
         padding: var(--spacing-md);
         background: rgba(var(--rgb-primary-color), 0.05);
         border-radius: var(--border-radius);
+        box-shadow: 0 1px 0 rgba(0, 0, 0, 0.08);
       }
 
       .header-main {
@@ -4125,15 +4129,15 @@ export class HtLocationInspector extends LitElement {
   }
 
   private _syncIneligibleMessage(): string {
-    if (!this.location) return "Sync Locations is unavailable for this selection.";
+    if (!this.location) return "Shared Space is unavailable for this selection.";
     const currentType = getLocationType(this.location);
     if (currentType === "area") {
-      return "Sync Locations is available for area locations whose parent is an area, floor, or building.";
+      return "Shared Space is available for area locations whose parent is an area, floor, or building.";
     }
     if (currentType === "floor") {
-      return "Sync Locations is available for floor locations that are siblings under the same building.";
+      return "Shared Space is available for floor locations that are siblings under the same building.";
     }
-    return "Sync Locations is available only for eligible area/floor sibling sets.";
+    return "Shared Space is available only for eligible area/floor sibling sets.";
   }
 
   private _syncLocationCandidates(): Location[] {
@@ -4394,7 +4398,7 @@ export class HtLocationInspector extends LitElement {
         <div class="card-section">
           <div class="section-title">
             <ha-icon .icon=${"mdi:link-lock"}></ha-icon>
-            Sync Locations
+            Shared Space
           </div>
           <div class="subsection-help">
             ${this._syncIneligibleMessage()}
@@ -4404,23 +4408,24 @@ export class HtLocationInspector extends LitElement {
     }
 
     const candidates = this._syncLocationCandidates();
-    const synced = this._syncLocationIds(config);
-    const syncedSet = new Set(synced);
-    const syncedLabel = synced.length
-      ? synced.map((locationId) => this._locationName(locationId)).join(", ")
-      : "None";
+    const sharedSpaceMemberIds = this._syncLocationGroupMemberIds(this.location.id);
+    const sharedPeerIds = sharedSpaceMemberIds.filter((locationId) => locationId !== this.location!.id);
+    const sharedSet = new Set(sharedPeerIds);
+    const sharedSpaceLabel = sharedSpaceMemberIds
+      .map((locationId) => this._locationName(locationId))
+      .join(", ");
 
     return html`
-      <div class="card-section" data-testid="sync-locations-section">
+      <div class="card-section" data-testid="shared-space-section">
         <div class="section-title">
           <ha-icon .icon=${"mdi:link-lock"}></ha-icon>
-          Sync Locations
+          Shared Space
         </div>
         <div class="subsection-help">
-          <strong>Recommended:</strong> synced locations share the same occupancy state and timeout.
-          Any occupancy change in one synced location is mirrored to all others.
+          Treat these locations as one occupied space. If any location in the space is occupied,
+          they all stay occupied until the whole space clears.
         </div>
-        <div class="linked-location-meta">Synced with: ${syncedLabel}</div>
+        <div class="linked-location-meta">This space: ${sharedSpaceLabel}</div>
         ${candidates.length === 0
           ? html`
               <div class="adjacency-empty">
@@ -4432,13 +4437,13 @@ export class HtLocationInspector extends LitElement {
           : html`
               <div class="linked-location-list">
                 ${candidates.map((candidate) => {
-                  const checked = syncedSet.has(candidate.id);
+                  const checked = sharedSet.has(candidate.id);
                   return html`
                     <div class="linked-location-row">
                       <label class="linked-location-left">
                         <input
                           type="checkbox"
-                          data-testid=${`sync-location-${candidate.id}`}
+                          data-testid=${`shared-space-location-${candidate.id}`}
                           .checked=${checked}
                           @change=${(event: Event) => {
                             const target = event.target as HTMLInputElement;

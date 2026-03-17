@@ -1,8 +1,8 @@
 # Automation UI Guide (Workspace + Inspector)
 
-**Last reviewed**: 2026-03-16  
+**Last reviewed**: 2026-03-17  
 **Status**: Active (design baseline)  
-**Authority**: ADR-HA-054, ADR-HA-055, ADR-HA-056, ADR-HA-060 + `docs/contracts.md`
+**Authority**: ADR-HA-055, ADR-HA-056, ADR-HA-060, ADR-HA-066 + `docs/contracts.md`
 
 This guide defines the intended user interaction model for Topomation's
 automation workspace and inspector tabs.
@@ -36,19 +36,24 @@ Top-to-bottom layout order:
 
 1. Source configuration and editing controls
 2. Add-source composer
-3. Sync section (`Sync Locations`)
+3. Shared-space section (`Shared Space`)
 4. WIAB controls
 5. Detection no longer owns the Explainability renderer; that panel is docked
    under the tree on the left and follows the selected location.
 
-## 4. Sync Locations Scope
+## 4. Shared Space Scope
 
-1. Sync is sibling-scoped (same `parent_id`).
-2. Allowed sync pairings:
+1. `Shared Space` edits one occupancy group, not one local directional link.
+2. Saving normalizes membership across all selected members of that group.
+3. Shared-space membership is sibling-scoped (same `parent_id`).
+4. Allowed shared-space pairings:
    - `area` with sibling `area` when parent type is `area`, `floor`, or `building`
    - `floor` with sibling `floor` when parent type is `building`
-3. Primary UI label is `Sync Locations`.
-4. Directional linked contributors remain a separate advanced model.
+5. Primary UI label is `Shared Space`.
+6. Borrowed coverage remains in `Add Source`; users should not need a separate
+   directional relationship editor for common room-coverage workflows.
+7. Directional linked contributors remain hidden from the active Detection UI
+   until that workflow is revalidated.
 
 ## 5. Managed System Area Messaging
 

@@ -9,7 +9,7 @@ This gate exists because broad test passes and older live runs did not protect
 the exact workflow that changed.
 
 **UI workflows:** For any workflow that involves a user action in the panel
-(e.g. "Save rule", "Discard changes", "Sync Locations"), "done" means that
+(e.g. "Save rule", "Discard changes", "Shared Space"), "done" means that
 **the user can perform that action in real Home Assistant** and we have a
 recorded pass. The required evidence must include the **live browser path**
 (e.g. Playwright spec that clicks Save in the panel and asserts the rule
@@ -110,18 +110,18 @@ Outcome:
 
 ## 8. Current Release Candidate Record
 
-Commit under test: release-candidate worktree after the `0.2.31` bump on top of `f8ed9a356a4d1dd38afaaff02502a9c9e656e095`
+Commit under test: release-candidate worktree after the `0.2.32` bump on top of `1e01a07b80a6d45bf6d86e8aa96c4b6154a16b32`
 Frontend bundle rebuilt from same commit: yes
 
 Touched workflows:
-- Lighting rule card create/update/delete
-- Lighting situation editing, time-window editing, and per-light guarded actions
-- Detection room explainability docked panel
+- Detection shared-space membership editing
+- Detection room explainability docked panel presentation and occupied/vacant updates
+- Panel reload after leaving the browser and returning
 
 Commands run:
 - `make test-release-live`
 
 Outcome:
-- Lighting rule card create/update/delete: PASS
-- Lighting situation editing, time-window editing, and per-light guarded actions: PASS
-- Detection room explainability docked panel: PASS
+- Detection shared-space membership editing: PASS
+- Detection room explainability docked panel presentation and occupied/vacant updates: PASS
+- Panel reload after leaving the browser and returning: PASS

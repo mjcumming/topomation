@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.32] - 2026-03-17
+
+### Changed
+
+- Detection now presents reciprocal occupancy grouping as `Shared Space`, with
+  the UI normalizing effective membership across sibling locations instead of
+  exposing implementation-oriented sync wording.
+- The inspector keeps the selected room header sticky while you scroll, and the
+  docked `Room Explainability` panel supports vertical resize with clearer
+  contributor cards and current-state copy.
+
+### Fixed
+
+- The panel now reloads its live data when the browser tab/window regains
+  focus, preventing the empty workspace state that previously required a manual
+  refresh after leaving and returning.
+- Mobile stacked layout now uses a Home Assistant-style hamburger affordance for
+  reopening the sidebar instead of a text `Sidebar` button.
+
 ## [0.2.31] - 2026-03-16
 
 ### Added

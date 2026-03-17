@@ -180,12 +180,12 @@ executed on a running HA instance, even if automated coverage passes locally.
 - [ ] Media and HVAC rule cards do not render `Ambient must be`.
 - [ ] `Run on startup` is rendered in a bottom `Execution` section, not inside `Conditions`.
 - [ ] Media action options include power, playback, mute/unmute, and volume controls.
-- [x] `Sync Locations` eligibility is sibling-scoped with:
+- [x] `Shared Space` eligibility is sibling-scoped with:
   - `area` siblings under parent `area|floor|building`
   - `floor` siblings under parent `building`.
 - [ ] Repeat these checks on a live HA runtime (outside mock harness) and record outcome.
 
-**Delta result**: [ ] PASS / [ ] FAIL — Notes: A prior live HA delta rerun for the narrowed Lighting/Media/HVAC IA passed on 2026-03-06 against local HA 2026.2.3, but the active branch has since changed again: no-legacy cleanup, managed-action error-surface correction, and Media/HVAC rule-card UX simplification. Rerun the live browser delta against this exact branch state before restoring `Live-validated`.
+**Delta result**: [x] PASS / [ ] FAIL — Notes: Exact-branch live rerun passed on 2026-03-17 against local HA 2026.2.3, covering the active Lighting workflow plus Detection explainability, `Shared Space`, and browser-return reload behavior.
 
 ---
 
@@ -194,9 +194,9 @@ executed on a running HA instance, even if automated coverage passes locally.
 | Field | Value |
 |-------|-------|
 | HA Version | 2026.2.3 |
-| topomation version | 0.1.0 |
-| Topomation core version | 0.2.0-alpha |
-| Date | 2026-03-06 |
+| topomation version | 0.2.32 release candidate |
+| Topomation core version | n/a |
+| Date | 2026-03-17 |
 | Tester | Mike + Codex (API-assisted) |
 
 ---
@@ -205,6 +205,6 @@ executed on a running HA instance, even if automated coverage passes locally.
 
 - [x] All critical flows (1.1–1.4, 2, 3.1–3.5, 4.1–4.2) passed
 - [x] No blocking errors in HA logs
-- [x] Ready to document in ISSUE-058
+- [x] Ready for release cut
 
-**Validation complete**: 2026-03-06
+**Validation complete**: 2026-03-17

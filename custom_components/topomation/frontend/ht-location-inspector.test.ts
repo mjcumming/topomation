@@ -1213,6 +1213,38 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(lockDirectiveText).to.include("Subtree");
   });
 
+  it("keeps the location header sticky while inspector content scrolls", async () => {
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>) => {
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        return [] as T;
+      },
+      connection: {},
+      states: {},
+      areas: {},
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_back_hallway";
+    location.name = "Back Hallway";
+    location.modules._meta = { type: "area" };
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${location}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    const header = element.shadowRoot!.querySelector(".header") as HTMLElement | null;
+    expect(header).to.exist;
+    expect(getComputedStyle(header!).position).to.equal("sticky");
+  });
+
   it("keeps vacancy reason out of the header status row", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>) => {
@@ -1623,7 +1655,7 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(element.shadowRoot?.querySelector('[data-testid="linked-location-area_dining_room"]')).to.equal(null);
   });
 
-  it("sync locations writes reciprocal config updates", async () => {
+  it("shared space writes reciprocal config updates", async () => {
     const callWsRequests: Array<Record<string, any>> = [];
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>) => {
@@ -1702,7 +1734,7 @@ describe("HtLocationInspector occupancy source composer", () => {
     await switchTopTab(element, "Advanced");
 
     const syncCheckbox = element.shadowRoot!.querySelector(
-      '[data-testid="sync-location-area_family_room"]'
+      '[data-testid="shared-space-location-area_family_room"]'
     ) as HTMLInputElement;
     expect(syncCheckbox).to.exist;
     expect(syncCheckbox.checked).to.equal(false);
@@ -1758,7 +1790,7 @@ describe("HtLocationInspector occupancy source composer", () => {
     }, "reverse sync remove request not observed");
   });
 
-  it("shows sync locations in Detection tab for floor-rooted areas", async () => {
+  it("shows shared space in Detection tab for floor-rooted areas", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>) => {
         if (request.type === "config/entity_registry/list") return [] as T;
@@ -1830,17 +1862,103 @@ describe("HtLocationInspector occupancy source composer", () => {
     `);
     await element.updateComplete;
 
-    const syncSections = element.shadowRoot!.querySelectorAll('[data-testid="sync-locations-section"]');
-    const syncSection = element.shadowRoot!.querySelector('[data-testid="sync-locations-section"]');
+    const syncSections = element.shadowRoot!.querySelectorAll('[data-testid="shared-space-section"]');
+    const syncSection = element.shadowRoot!.querySelector('[data-testid="shared-space-section"]');
     const syncCheckbox = element.shadowRoot!.querySelector(
-      '[data-testid="sync-location-area_family_room"]'
+      '[data-testid="shared-space-location-area_family_room"]'
     ) as HTMLInputElement | null;
     expect(syncSections.length).to.equal(1);
     expect(syncSection).to.exist;
     expect(syncCheckbox).to.exist;
+    expect(syncSection?.textContent || "").to.include("Shared Space");
+    expect(syncSection?.textContent || "").to.include("This space: Kitchen");
   });
 
-  it("normalizes sync locations as a full group across all selected members", async () => {
+  it("renders effective shared space membership from reciprocal declarations", async () => {
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>) => {
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        return {} as T;
+      },
+      connection: {},
+      states: {},
+      areas: {},
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_kitchen";
+    location.name = "Kitchen";
+    location.parent_id = "floor_main";
+    location.modules._meta = { type: "area" };
+    location.modules.occupancy = {
+      enabled: true,
+      default_timeout: 300,
+      default_trailing_timeout: 120,
+      occupancy_sources: [],
+      linked_locations: [],
+      sync_locations: [],
+    };
+
+    const allLocations: Location[] = [
+      location,
+      {
+        ...structuredClone(baseLocation),
+        id: "area_family_room",
+        name: "Family Room",
+        parent_id: "floor_main",
+        modules: {
+          _meta: { type: "area" },
+          occupancy: {
+            enabled: true,
+            default_timeout: 300,
+            default_trailing_timeout: 120,
+            occupancy_sources: [],
+            linked_locations: [],
+            sync_locations: ["area_kitchen"],
+          },
+        },
+      },
+      {
+        ...structuredClone(baseLocation),
+        id: "floor_main",
+        name: "Main Floor",
+        parent_id: "building_main",
+        modules: { _meta: { type: "floor" } },
+      },
+      {
+        ...structuredClone(baseLocation),
+        id: "building_main",
+        name: "Main Building",
+        parent_id: null,
+        modules: { _meta: { type: "building" } },
+      },
+    ];
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${location}
+        .allLocations=${allLocations}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    const familyCheckbox = element.shadowRoot!.querySelector(
+      '[data-testid="shared-space-location-area_family_room"]'
+    ) as HTMLInputElement | null;
+    const sharedSpaceSection = element.shadowRoot!.querySelector(
+      '[data-testid="shared-space-section"]'
+    ) as HTMLElement | null;
+
+    expect(familyCheckbox).to.exist;
+    expect(familyCheckbox?.checked).to.equal(true);
+    expect(sharedSpaceSection?.textContent || "").to.include("This space: Family Room, Kitchen");
+  });
+
+  it("normalizes shared space as a full group across all selected members", async () => {
     const callWsRequests: Array<Record<string, any>> = [];
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>) => {
@@ -1936,7 +2054,7 @@ describe("HtLocationInspector occupancy source composer", () => {
     await switchTopTab(element, "Advanced");
 
     const hallwayCheckbox = element.shadowRoot!.querySelector(
-      '[data-testid="sync-location-area_back_hallway"]'
+      '[data-testid="shared-space-location-area_back_hallway"]'
     ) as HTMLInputElement;
     expect(hallwayCheckbox).to.exist;
     hallwayCheckbox.click();
@@ -1980,7 +2098,7 @@ describe("HtLocationInspector occupancy source composer", () => {
     }, "full sync group writes were not observed");
   });
 
-  it("shows floor sync candidates for sibling floors under one building", async () => {
+  it("shows shared space floor candidates for sibling floors under one building", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>) => {
         if (request.type === "config/entity_registry/list") return [] as T;
@@ -2045,15 +2163,15 @@ describe("HtLocationInspector occupancy source composer", () => {
     `);
     await element.updateComplete;
 
-    const syncSection = element.shadowRoot!.querySelector('[data-testid="sync-locations-section"]');
+    const syncSection = element.shadowRoot!.querySelector('[data-testid="shared-space-section"]');
     const syncCheckbox = element.shadowRoot!.querySelector(
-      '[data-testid="sync-location-floor_second"]'
+      '[data-testid="shared-space-location-floor_second"]'
     ) as HTMLInputElement | null;
     expect(syncSection).to.exist;
     expect(syncCheckbox).to.exist;
   });
 
-  it("sync locations excludes managed shadow sibling areas", async () => {
+  it("shared space excludes managed shadow sibling areas", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>) => {
         if (request.type === "config/entity_registry/list") return [] as T;
@@ -2151,10 +2269,10 @@ describe("HtLocationInspector occupancy source composer", () => {
     await switchTopTab(element, "Advanced");
 
     const familyCheckbox = element.shadowRoot!.querySelector(
-      '[data-testid="sync-location-area_family_room"]'
+      '[data-testid="shared-space-location-area_family_room"]'
     ) as HTMLInputElement | null;
     const managedShadowCheckbox = element.shadowRoot!.querySelector(
-      '[data-testid="sync-location-area_main_floor_shadow"]'
+      '[data-testid="shared-space-location-area_main_floor_shadow"]'
     ) as HTMLInputElement | null;
 
     expect(familyCheckbox).to.exist;
@@ -2294,7 +2412,7 @@ describe("HtLocationInspector occupancy source composer", () => {
     const linkedRows = element.shadowRoot!.querySelectorAll('[data-testid^="linked-location-"]');
     expect(linkedRows.length).to.equal(0);
     expect(element.shadowRoot!.textContent || "").to.include(
-      "Sync Locations is available only for eligible area/floor sibling sets."
+      "Shared Space is available only for eligible area/floor sibling sets."
     );
   });
 

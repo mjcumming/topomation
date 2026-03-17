@@ -3045,6 +3045,70 @@ The single-trigger model forced either:
 
 ---
 
+### ADR-HA-066: Detection Uses Shared Space as the Primary Occupancy Relationship Model (2026-03-17)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+
+The Detection tab currently frames reciprocal room grouping as `Sync Locations`.
+That language is implementation-oriented and nudges users toward thinking in
+low-level mirroring instead of household behavior. In practice, the common
+occupancy relationship needs are simpler:
+
+1. treat adjacent/open-plan rooms as one occupied space
+2. borrow sensor coverage from a nearby area via `Add Source`
+
+Directional room-to-room contributor workflows are real, but they are rarer and
+unnecessary in the primary authoring path for most homes.
+
+**Decision**:
+
+1. Replace the primary Detection relationship label `Sync Locations` with
+   `Shared Space`.
+2. Define the checklist as editing membership of one shared occupancy group, not
+   local one-way links.
+3. Saving shared-space edits normalizes membership across all selected members.
+4. `Add Source` remains the answer for borrowed sensor coverage.
+5. Keep the persisted config key `sync_locations` and existing reciprocal
+   runtime propagation behavior for backward compatibility.
+6. Hide directional linked contributors from the active Detection UI until that
+   workflow is revalidated.
+
+**Rationale**:
+
+1. `Shared Space` matches how people think about open-plan areas in a house.
+2. It keeps the common case understandable without asking users to reason about
+   reciprocity, reverse setup, or sync internals.
+3. Borrowed sensors are a different problem and already have a clearer place in
+   the UI.
+4. Retaining the underlying config/runtime avoids unnecessary migration churn.
+
+**Consequences**:
+
+- ✅ The primary occupancy relationship workflow now matches real household intent.
+- ✅ Shared-space membership is presented consistently from any member page.
+- ✅ Borrowed coverage stays separate from room-group semantics.
+- ✅ Existing saved `sync_locations` data continues to work.
+- ⚠️ Internal naming still uses `sync_locations`, so docs must be explicit about
+  UI label vs stored config.
+- ⚠️ Hidden directional contributor runtime remains in code until a future
+  advanced workflow is deliberately reintroduced.
+
+**Alternatives Considered**:
+
+- Keep `Sync Locations` as the primary label:
+  rejected because it over-exposes implementation language and leads users
+  toward the wrong mental model.
+- Reinterpret `Sync Locations` as one-way propagation:
+  rejected because it conflates shared-space grouping with directional
+  contribution.
+- Add a separate group-creation manager:
+  rejected because the existing checklist can author shared space membership
+  directly with less UI overhead.
+
+---
+
 ## How to Use This Log
 
 ### When to Create an ADR

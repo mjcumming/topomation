@@ -1,6 +1,7 @@
 /**
- * E2E regression for tree DnD explicit drop zones (C-011, ADR-HA-039).
- * Asserts that drop outcome matches the zone (before/inside/after) under the pointer.
+ * Browser regression for tree DnD explicit drop zones (C-011, ADR-HA-039).
+ * The pointer-band math itself is unit-tested in ht-location-tree.test.ts.
+ * Here we verify that each resolved zone intent produces the correct persisted move.
  */
 import { expect, test } from "@playwright/test";
 
@@ -25,6 +26,26 @@ async function getLocations(page: any): Promise<any[]> {
   });
 }
 
+async function simulateZoneDrop(
+  page: any,
+  draggedId: string,
+  relatedId: string,
+  zone: "before" | "inside" | "after"
+): Promise<void> {
+  await page.evaluate(
+    ({ draggedId: sourceId, relatedId: targetId, zone: dropZone }) => {
+      const panel = document.querySelector("topomation-panel") as any;
+      const tree = panel?.shadowRoot?.querySelector("ht-location-tree") as any;
+      const row = tree?.shadowRoot?.querySelector(`.tree-item[data-id='${sourceId}']`) as HTMLElement | null;
+      if (!tree) throw new Error("ht-location-tree not found");
+      if (!row) throw new Error(`tree row not found for ${sourceId}`);
+      tree._activeDropTarget = { relatedId: targetId, zone: dropZone };
+      tree._handleDragEnd({ item: row });
+    },
+    { draggedId, relatedId, zone }
+  );
+}
+
 test.describe("Tree DnD explicit zones", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/mock-harness.html");
@@ -32,18 +53,10 @@ test.describe("Tree DnD explicit zones", () => {
     await expandTreeNodes(page, ["main-building", "main-floor"]);
   });
 
-  test("drop on middle third of row (inside zone) reparents as child", async ({ page }) => {
-    const dragHandle = page.locator("ht-location-tree .tree-item[data-id='bathroom'] .drag-handle").first();
-    const targetRow = page.locator("ht-location-tree .tree-item[data-id='second-floor']").first();
-    await expect(dragHandle).toBeVisible();
-    await expect(targetRow).toBeVisible();
-
-    const box = await targetRow.boundingBox();
-    if (!box) throw new Error("target row has no bounding box");
-    const targetPosition = { x: box.width / 2, y: box.height / 2 };
-
-    await dragHandle.dragTo(targetRow, { targetPosition });
-    await page.waitForTimeout(300);
+  test("inside zone reparents as child", async ({ page }) => {
+    await expect(page.locator("ht-location-tree .tree-item[data-id='bathroom']").first()).toBeVisible();
+    await expect(page.locator("ht-location-tree .tree-item[data-id='second-floor']").first()).toBeVisible();
+    await simulateZoneDrop(page, "bathroom", "second-floor", "inside");
 
     await expect
       .poll(async () => {
@@ -53,18 +66,10 @@ test.describe("Tree DnD explicit zones", () => {
       .toBe("second-floor");
   });
 
-  test("drop on top third of row (before zone) inserts as previous sibling", async ({ page }) => {
-    const dragHandle = page.locator("ht-location-tree .tree-item[data-id='bathroom'] .drag-handle").first();
-    const targetRow = page.locator("ht-location-tree .tree-item[data-id='living-room']").first();
-    await expect(dragHandle).toBeVisible();
-    await expect(targetRow).toBeVisible();
-
-    const box = await targetRow.boundingBox();
-    if (!box) throw new Error("target row has no bounding box");
-    const targetPosition = { x: box.width / 2, y: box.height / 6 };
-
-    await dragHandle.dragTo(targetRow, { targetPosition });
-    await page.waitForTimeout(300);
+  test("before zone inserts as previous sibling", async ({ page }) => {
+    await expect(page.locator("ht-location-tree .tree-item[data-id='bathroom']").first()).toBeVisible();
+    await expect(page.locator("ht-location-tree .tree-item[data-id='living-room']").first()).toBeVisible();
+    await simulateZoneDrop(page, "bathroom", "living-room", "before");
 
     await expect
       .poll(async () => {
@@ -83,18 +88,10 @@ test.describe("Tree DnD explicit zones", () => {
       .toBe(true);
   });
 
-  test("drop on bottom third of row (after zone) inserts as next sibling", async ({ page }) => {
-    const dragHandle = page.locator("ht-location-tree .tree-item[data-id='kitchen'] .drag-handle").first();
-    const targetRow = page.locator("ht-location-tree .tree-item[data-id='living-room']").first();
-    await expect(dragHandle).toBeVisible();
-    await expect(targetRow).toBeVisible();
-
-    const box = await targetRow.boundingBox();
-    if (!box) throw new Error("target row has no bounding box");
-    const targetPosition = { x: box.width / 2, y: (box.height * 5) / 6 };
-
-    await dragHandle.dragTo(targetRow, { targetPosition });
-    await page.waitForTimeout(300);
+  test("after zone inserts as next sibling", async ({ page }) => {
+    await expect(page.locator("ht-location-tree .tree-item[data-id='kitchen']").first()).toBeVisible();
+    await expect(page.locator("ht-location-tree .tree-item[data-id='living-room']").first()).toBeVisible();
+    await simulateZoneDrop(page, "kitchen", "living-room", "after");
 
     await expect
       .poll(async () => {

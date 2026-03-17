@@ -75,7 +75,7 @@ Stop and ask the user before continuing when any of these are true:
 ## 5. Definition of Done for UI Workflows
 
 For any work that touches a **user-facing workflow** (e.g. rule create/update/delete
-from the panel, save/discard, sync locations):
+from the panel, save/discard, shared space):
 
 - **Done** means: the user can perform the **exact contracted action** in **real
   Home Assistant** (not just mocks), and we have a **recorded pass** for that

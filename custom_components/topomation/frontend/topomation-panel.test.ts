@@ -237,7 +237,7 @@ describe('TopomationPanel integration (fake hass)', () => {
             friendly_name: "Kitchen Occupancy",
             device_class: "occupancy",
             location_id: "kitchen",
-            reason: "occupancy:trigger",
+            reason: "event:trigger",
             recent_changes: [
               {
                 kind: "state",
@@ -303,7 +303,13 @@ describe('TopomationPanel integration (fake hass)', () => {
     expect(panel?.textContent || "").to.include("Room Explainability");
     expect(panel?.textContent || "").to.include("Current state");
     expect(panel?.textContent || "").to.include("Kitchen Motion");
+    expect(panel?.textContent || "").to.include("Occupied by trigger");
+    expect(panel?.textContent || "").not.to.include("Vacated by trigger");
     expect(panel?.textContent || "").to.include("Room became occupied");
+
+    const dockBody = explainability?.shadowRoot?.querySelector(".dock-body") as HTMLElement | null;
+    expect(dockBody).to.exist;
+    expect(getComputedStyle(dockBody!).resize).to.equal("vertical");
   });
 
   it("skips managed shadow locations for default selection and dialog parent candidates", async () => {
@@ -698,7 +704,7 @@ describe('TopomationPanel integration (fake hass)', () => {
     expect((element as any)._locationDialogOpen).to.equal(true);
   });
 
-  it("dispatches hass-toggle-menu from mobile Sidebar button", async () => {
+  it("dispatches hass-toggle-menu from mobile sidebar hamburger button", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(req: Record<string, any>): Promise<T> => {
         if (req.type === "topomation/locations/list") {
@@ -731,11 +737,11 @@ describe('TopomationPanel integration (fake hass)', () => {
       receivedDetail = (ev as CustomEvent).detail;
     });
 
-    const buttons = Array.from(
-      element.shadowRoot!.querySelectorAll(".header-actions .button")
-    ) as HTMLButtonElement[];
-    const sidebarButton = buttons.find((btn) => (btn.textContent || "").includes("Sidebar"));
+    const sidebarButton = element.shadowRoot!.querySelector(
+      '[data-testid="mobile-sidebar-button"]'
+    ) as HTMLButtonElement | null;
     expect(sidebarButton).to.exist;
+    expect(sidebarButton?.getAttribute("aria-label")).to.equal("Open Home Assistant sidebar");
 
     sidebarButton!.click();
 
@@ -1526,6 +1532,65 @@ describe('TopomationPanel integration (fake hass)', () => {
         callWsCalls.filter((call) => call.type === "config/entity_registry/list").length >
         initialEntityRegistryCalls,
       "entity_registry/list was not refreshed after registry update"
+    );
+  });
+
+  it("reloads locations when the browser window regains focus", async () => {
+    const callWsCalls: Array<Record<string, any>> = [];
+    let useUpdatedData = false;
+
+    const initialLocations: Location[] = locations.map((loc) =>
+      loc.id === "kitchen" ? { ...loc, name: "Kitchen" } : { ...loc }
+    );
+    const updatedLocations: Location[] = locations.map((loc) =>
+      loc.id === "kitchen" ? { ...loc, name: "Kitchen Focus Refresh" } : { ...loc }
+    );
+
+    const hass: HomeAssistant = {
+      callWS: async <T>(req: Record<string, any>): Promise<T> => {
+        callWsCalls.push(req);
+        if (req.type === "topomation/locations/list") {
+          return { locations: useUpdatedData ? updatedLocations : initialLocations } as T;
+        }
+        if (req.type === "config/entity_registry/list") {
+          return [] as T;
+        }
+        if (req.type === "config/device_registry/list") {
+          return [] as T;
+        }
+        throw new Error("Unexpected WS call");
+      },
+      connection: {
+        subscribeEvents: async () => () => undefined,
+      } as any,
+      states: {},
+      areas: {},
+      floors: {},
+      config: { location_name: "Test Property" },
+      localize: (key: string) => key,
+    };
+
+    const element = await fixture<HTMLDivElement>(html`
+      <topomation-panel .hass=${hass}></topomation-panel>
+    `);
+
+    await waitUntil(() => (element as any)._loading === false, "panel did not finish loading");
+    const initialLocationCalls = callWsCalls.filter((call) => call.type === "topomation/locations/list").length;
+
+    useUpdatedData = true;
+    window.dispatchEvent(new Event("focus"));
+
+    await waitUntil(
+      () =>
+        callWsCalls.filter((call) => call.type === "topomation/locations/list").length >
+        initialLocationCalls,
+      "locations/list was not reloaded after window focus"
+    );
+    await waitUntil(
+      () =>
+        (element as any)._locations.find((loc: Location) => loc.id === "kitchen")?.name ===
+        "Kitchen Focus Refresh",
+      "focused reload did not update panel locations"
     );
   });
 

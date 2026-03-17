@@ -199,29 +199,51 @@ Additional save points:
   - non-sibling areas, child/subarea nodes, and non-HA-backed areas are excluded
   - `Any area / unassigned` is not offered in this sibling-scoped mode.
 
-## C-013 Linked Rooms + Advanced Adjacency Contract
+## C-013 Shared Space Contract
 
-- Detection supports primary location-sync peers via occupancy config key
+- Detection supports primary shared-space membership via occupancy config key
   `sync_locations: string[]`.
-- Primary sync UI/copy uses label `Sync Locations` (not `Sync Rooms`).
-- Sync semantics are reciprocal and state-aligned:
-  - checking a sync peer writes both directions (`A.sync_locations += B`,
-    `B.sync_locations += A`)
-  - any occupancy contributor change in one synced location is mirrored to peers
-    using synthetic sync sources (`sync:<origin>::<source>`) so occupancy state
-    and timeout windows remain aligned.
-- Sync candidate scope is explicit and sibling-scoped:
+- Primary Detection UI/copy uses label `Shared Space`.
+- Shared-space semantics are reciprocal and group-oriented:
+  - checking a location adds it to the same shared occupancy group as the
+    current location
+  - saving normalizes the full group across all selected members
+    (`A.sync_locations = [B, C]`, `B.sync_locations = [A, C]`,
+    `C.sync_locations = [A, B]`)
+  - any occupancy contributor change in one shared-space member is mirrored to
+    peers using synthetic sync sources (`sync:<origin>::<source>`) so the group
+    behaves like one occupied space
+  - effective UI checked state reflects the full shared group membership, not
+    only the current location's raw stored array.
+- Shared-space candidate scope is explicit and sibling-scoped:
   - selected location and candidates must share the same `parent_id`
-  - `area` <-> `area` sync is allowed when parent type is one of:
+  - `area` <-> `area` shared space is allowed when parent type is one of:
     - `area`
     - `floor`
     - `building`
-  - `floor` <-> `floor` sync is allowed only when parent type is `building`
-  - integration-owned/system nodes outside those scopes are excluded from sync
-    target/candidate roles.
-- Detection supports directional linked-room contributors via occupancy config key
-  `linked_locations: string[]`.
-- Semantics are directional:
+  - `floor` <-> `floor` shared space is allowed only when parent type is `building`
+  - integration-owned/system nodes outside those scopes are excluded from
+    shared-space target/candidate roles.
+- Borrowed coverage belongs in `Add Source`, not in shared-space membership.
+- Directional linked contributors remain supported in stored config key
+  `linked_locations: string[]`, but are hidden from the active Detection UI
+  until that workflow is revalidated.
+- Hidden directional contributor runtime remains source-scoped:
+  - if location `A` config includes `linked_locations: ["B"]`, occupancy of `B`
+    contributes to `A`
+  - occupied on source -> `occupancy.trigger(target, source_id="linked:<source>", timeout=None)`
+  - vacant on source -> `occupancy.clear(target, source_id="linked:<source>", trailing_timeout=0)`
+  - reciprocal links must not self-latch; runtime suppresses feedback when a
+    source location is currently occupied by the target's linked contribution
+    (`linked:<target>`).
+- Adjacency handoff controls are non-primary UX:
+  - Detection renders `Adjacent Locations` and `Handoff Trace` behind an explicit
+    advanced disclosure toggle.
+- Advanced adjacency neighbor picker scope is intentionally narrow:
+  - candidates must be room-level (`area`/`subarea`) locations
+  - candidates must share the same `parent_id` as the selected location
+  - non-room topology nodes (for example `floor`, `building`, `grounds`) are
+    excluded from the picker.
 
 ## C-014 Inspector Draft Bar Contract
 
@@ -237,37 +259,6 @@ Additional save points:
 - Save errors:
   - the sticky bar remains visible and an inline warning is shown above it.
 - `Lighting`, `Media`, and `HVAC` do not use this sticky draft bar; they keep per-rule lifecycle controls.
-  - If location `A` config includes `linked_locations: ["B"]`, occupancy of `B`
-    contributes to `A`.
-  - Checking a contributor row updates only that forward direction by default.
-- Linked-room editing must support multi-select sequencing:
-  - contributor checkboxes remain interactive while persistence is in flight
-  - persistence can queue sequential updates without forcing a full control lock.
-- Detection provides an optional reciprocal assist:
-  - each checked contributor row exposes a `2-way` toggle
-  - enabling `2-way` also writes reverse config on contributor location `B` to
-    include `A` in `B.linked_locations`
-  - disabling `2-way` removes only the reverse direction from `B` and keeps
-    the forward direction from `A` unless user unchecks the contributor row.
-- Linked-room scope is strict:
-  - target location must be an `area` directly under a `floor`
-  - contributors must be immediate sibling `area` locations under that same floor
-  - `building`, `grounds`, `floor`, and `subarea` nodes are excluded from linked-room
-    target/candidate roles.
-- Runtime propagation uses source-scoped occupancy contributions:
-  - occupied on source -> `occupancy.trigger(target, source_id="linked:<source>", timeout=None)`
-  - vacant on source -> `occupancy.clear(target, source_id="linked:<source>", trailing_timeout=0)`
-- Reciprocal links must not self-latch:
-  - runtime must suppress feedback when a source location is currently occupied
-    by the target's linked contribution (`linked:<target>`).
-- Adjacency handoff controls are non-primary UX:
-  - Detection renders `Adjacent Locations` and `Handoff Trace` behind an explicit
-    advanced disclosure toggle.
-- Advanced adjacency neighbor picker scope is intentionally narrow:
-  - candidates must be room-level (`area`/`subarea`) locations
-  - candidates must share the same `parent_id` as the selected location
-  - non-room topology nodes (for example `floor`, `building`, `grounds`) are
-    excluded from the picker.
 
 ## C-014A Lighting Rule Authoring Contract
 
