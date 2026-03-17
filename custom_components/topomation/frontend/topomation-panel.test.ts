@@ -312,6 +312,110 @@ describe('TopomationPanel integration (fake hass)', () => {
     expect(getComputedStyle(dockBody!).resize).to.equal("vertical");
   });
 
+  it("shows aggregate occupancy explainability for a parent location with an occupied child", async () => {
+    const explainabilityLocations = locations.map((loc) =>
+      loc.id === "main_floor" || loc.id === "kitchen"
+        ? {
+            ...loc,
+            modules: {
+              ...loc.modules,
+              occupancy: {
+                enabled: true,
+                default_timeout: 300,
+                occupancy_sources: [],
+              },
+            },
+          }
+        : { ...loc }
+    );
+
+    const hass: HomeAssistant = {
+      callWS: async <T>(req: Record<string, any>): Promise<T> => {
+        if (req.type === "topomation/locations/list") {
+          return { locations: explainabilityLocations } as T;
+        }
+        if (req.type === "config/entity_registry/list") {
+          return [] as T;
+        }
+        if (req.type === "config/device_registry/list") {
+          return [] as T;
+        }
+        throw new Error("Unexpected WS call");
+      },
+      connection: {},
+      states: {
+        "binary_sensor.main_floor_occupancy": {
+          entity_id: "binary_sensor.main_floor_occupancy",
+          state: "off",
+          attributes: {
+            friendly_name: "Main Floor Occupancy",
+            device_class: "occupancy",
+            location_id: "main_floor",
+            reason: "timeout",
+            contributions: [],
+          },
+        },
+        "binary_sensor.kitchen_occupancy": {
+          entity_id: "binary_sensor.kitchen_occupancy",
+          state: "on",
+          attributes: {
+            friendly_name: "Kitchen Occupancy",
+            device_class: "occupancy",
+            location_id: "kitchen",
+            reason: "event:trigger",
+            contributions: [
+              {
+                source_id: "binary_sensor.kitchen_motion",
+                state: "active",
+                updated_at: new Date(Date.now() - 2_000).toISOString(),
+              },
+            ],
+          },
+        },
+        "binary_sensor.kitchen_motion": {
+          entity_id: "binary_sensor.kitchen_motion",
+          state: "on",
+          attributes: {
+            friendly_name: "Kitchen Motion",
+            device_class: "motion",
+          },
+        },
+      },
+      areas: {
+        kitchen: { area_id: "kitchen", name: "Kitchen" },
+        main_floor: { area_id: "main_floor", name: "Main Floor" },
+      } as any,
+      floors: {},
+      config: { location_name: "Test Property" },
+      localize: (key: string) => key,
+    };
+
+    const element = await fixture<HTMLDivElement>(html`
+      <topomation-panel .hass=${hass}></topomation-panel>
+    `);
+
+    await waitUntil(() => (element as any)._loading === false, "panel did not finish loading");
+    (element as any)._selectedId = "main_floor";
+    element.requestUpdate();
+    await (element as any).updateComplete;
+
+    const explainability = element.shadowRoot?.querySelector(
+      "ht-room-explainability"
+    ) as HTMLElement | null;
+    expect(explainability).to.exist;
+
+    await waitUntil(
+      () => Boolean(explainability?.shadowRoot?.querySelector('[data-testid="room-explainability-panel"]')),
+      "expected room explainability panel to render"
+    );
+
+    const panelText = (explainability?.shadowRoot?.textContent || "").trim();
+    expect(panelText).to.include("Occupied");
+    expect(panelText).to.include("Occupied via Kitchen: Kitchen Motion");
+    expect(panelText).to.include("Kitchen: Kitchen Motion");
+    expect(panelText).not.to.include("No active contributors are keeping this room occupied right now.");
+  });
+
   it("skips managed shadow locations for default selection and dialog parent candidates", async () => {
     const locationsWithShadowFirst: Location[] = [
       {

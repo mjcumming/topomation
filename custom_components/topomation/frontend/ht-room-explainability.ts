@@ -28,6 +28,7 @@ export class HtRoomExplainability extends LitElement {
   static properties = {
     hass: { attribute: false },
     location: { attribute: false },
+    locations: { attribute: false },
     occupancyStates: { attribute: false },
     occupancyTransitions: { attribute: false },
     _collapsed: { state: true },
@@ -37,6 +38,7 @@ export class HtRoomExplainability extends LitElement {
 
   public hass!: HomeAssistant;
   public location?: Location;
+  public locations: Location[] = [];
   public occupancyStates: Record<string, boolean> = {};
   public occupancyTransitions: Record<string, OccupancyTransitionState> = {};
 
@@ -501,6 +503,136 @@ export class HtRoomExplainability extends LitElement {
     return undefined;
   }
 
+  private _getOccupancyStateForLocation(locationId: string) {
+    const states = this.hass?.states || {};
+    for (const stateObj of Object.values(states)) {
+      const attrs = stateObj?.attributes || {};
+      if (attrs.device_class !== "occupancy") continue;
+      if (attrs.location_id !== locationId) continue;
+      return stateObj as Record<string, any>;
+    }
+    return undefined;
+  }
+
+  private _descendantLocationIds(locationId: string): string[] {
+    const childrenByParent = new Map<string, string[]>();
+    for (const loc of this.locations || []) {
+      if (!loc.parent_id) continue;
+      if (!childrenByParent.has(loc.parent_id)) childrenByParent.set(loc.parent_id, []);
+      childrenByParent.get(loc.parent_id)!.push(loc.id);
+    }
+
+    const result: string[] = [];
+    const stack = [...(childrenByParent.get(locationId) || [])];
+    while (stack.length) {
+      const current = stack.pop()!;
+      result.push(current);
+      stack.push(...(childrenByParent.get(current) || []));
+    }
+    return result;
+  }
+
+  private _aggregateOccupiedState(): boolean | undefined {
+    if (!this.location) return undefined;
+    const ownState = this._resolveOccupiedState(this._getOccupancyState());
+    if (ownState === true) return true;
+
+    const descendantIds = this._descendantLocationIds(this.location.id);
+    if (!descendantIds.length) return ownState;
+
+    const descendantStates = descendantIds
+      .map((locationId) => this.occupancyStates?.[locationId])
+      .filter((state): state is boolean => typeof state === "boolean");
+
+    if (descendantStates.includes(true)) return true;
+    if (ownState === false) return false;
+    if (descendantStates.length > 0 && descendantStates.every((state) => state === false)) {
+      return false;
+    }
+    return ownState;
+  }
+
+  private _aggregateContributors(): Array<{
+    sourceLabel: string;
+    sourceId: string;
+    stateLabel: string;
+    timeLabel?: string;
+  }> {
+    const direct = this._occupancyContributions(this._getOccupancyConfig(), true);
+    if (direct.length) return direct;
+    if (!this.location) return [];
+
+    const seen = new Set<string>();
+    const descendantRows = this._descendantLocationIds(this.location.id)
+      .flatMap((locationId) => {
+        if (this.occupancyStates?.[locationId] !== true) return [];
+        const childLocation = (this.locations || []).find((item) => item.id === locationId);
+        const childState = this._getOccupancyStateForLocation(locationId);
+        const childConfig = {
+          default_timeout: 300,
+          default_trailing_timeout: 120,
+          occupancy_sources: [],
+          ...((childLocation?.modules?.occupancy &&
+          typeof childLocation.modules.occupancy === "object"
+            ? childLocation.modules.occupancy
+            : {}) as OccupancyConfig),
+        };
+        const attrs = childState?.attributes || {};
+        const rawContributions = Array.isArray(attrs.contributions) ? attrs.contributions : [];
+        return rawContributions
+          .map((contribution: any) => {
+            if (!this._isContributionActive(contribution)) return undefined;
+            const sourceId =
+              typeof contribution?.source_id === "string" && contribution.source_id
+                ? contribution.source_id
+                : typeof contribution?.source === "string" && contribution.source
+                  ? contribution.source
+                  : "";
+            if (!sourceId) return undefined;
+            const dedupeKey = `${locationId}::${sourceId}`;
+            if (seen.has(dedupeKey)) return undefined;
+            seen.add(dedupeKey);
+            const timestamp =
+              this._parseDateValue(contribution?.updated_at) ||
+              this._parseDateValue(contribution?.changed_at) ||
+              this._parseDateValue(contribution?.last_changed) ||
+              this._parseDateValue(contribution?.timestamp);
+            const stateLabel =
+              String(contribution?.state || contribution?.state_value || "").trim() || "active";
+            return {
+              sourceLabel: `${childLocation?.name || locationId}: ${this._sourceLabelForSourceId(
+                childConfig,
+                sourceId
+              )}`,
+              sourceId,
+              stateLabel,
+              timeLabel: timestamp ? `${this._formatElapsedDuration(timestamp)} ago` : undefined,
+              timestampMs: timestamp ? timestamp.getTime() : this._nowEpochMs,
+            };
+          })
+          .filter(
+            (
+              item
+            ): item is {
+              sourceLabel: string;
+              sourceId: string;
+              stateLabel: string;
+              timeLabel?: string;
+              timestampMs: number;
+            } => Boolean(item)
+          );
+      })
+      .sort((left, right) => right.timestampMs - left.timestampMs)
+      .map(({ sourceLabel, sourceId, stateLabel, timeLabel }) => ({
+        sourceLabel,
+        sourceId,
+        stateLabel,
+        timeLabel,
+      }));
+
+    return descendantRows;
+  }
+
   private _resolveOccupiedState(occupancyState?: Record<string, any>): boolean | undefined {
     const locationId = this.location?.id;
     const override = locationId ? this.occupancyStates?.[locationId] : undefined;
@@ -662,14 +794,19 @@ export class HtRoomExplainability extends LitElement {
     const occupancyState = this._getOccupancyState();
     if (!occupancyState) return undefined;
 
-    const occupied = this._resolveOccupiedState(occupancyState) === true;
+    const aggregateOccupied = this._aggregateOccupiedState();
+    const occupied = aggregateOccupied === true;
     const attrs = occupancyState.attributes || {};
-    const contributors = this._occupancyContributions(this._getOccupancyConfig(), true);
+    const contributors = this._aggregateContributors();
     const vacantAt = this._resolveVacantAt(attrs, occupied);
     const lockState = this._getLockState();
-    const why = occupied
-      ? this._resolveOccupiedReason(occupancyState, true) || "Active source events detected"
-      : this._resolveVacancyReason(occupancyState, false) || "No active contributors remain";
+    const why =
+      aggregateOccupied === true
+        ? this._resolveOccupiedReason(occupancyState, this._resolveOccupiedState(occupancyState)) ||
+          (contributors.length
+            ? `Occupied via ${contributors[0].sourceLabel}`
+            : "Active source events detected")
+        : this._resolveVacancyReason(occupancyState, false) || "No active contributors remain";
 
     let nextChange: string | undefined;
     if (occupied) {

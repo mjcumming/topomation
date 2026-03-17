@@ -881,6 +881,7 @@ export class TopomationPanel extends LitElement {
                 <ht-room-explainability
                   .hass=${this.hass}
                   .location=${selectedLocation}
+                  .locations=${this._locations}
                   .occupancyStates=${this._occupancyStateByLocation}
                   .occupancyTransitions=${this._occupancyTransitionByLocation}
                 ></ht-room-explainability>
