@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.33] - 2026-03-17
+
+### Fixed
+
+- Room Explainability now treats floors/buildings as occupied when an occupied
+  descendant keeps the selected subtree active, matching the occupancy rollup
+  already shown in the topology tree.
+- Parent-location explainability now surfaces active descendant contributors
+  instead of incorrectly showing `Vacant` with no active contributors while a
+  child room is clearly occupied.
+
 ## [0.2.32] - 2026-03-17
 
 ### Changed

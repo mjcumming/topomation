@@ -244,9 +244,21 @@
       };
 
       const callApi = async (method, endpoint, parameters) => {
-        const url = `${baseUrl.replace(/\/+$/, "")}/api/${String(endpoint || "").replace(/^\/+/, "")}`;
+        const normalizedMethod = String(method || "get").toUpperCase();
+        const normalizedEndpoint = String(endpoint || "").replace(/^\/+/, "");
+
+        // Prefer HA websocket commands so the harness can be served locally
+        // without depending on cross-origin REST/CORS behavior.
+        if (normalizedMethod === "GET" && normalizedEndpoint === "config") {
+          return hass.callWS({ type: "get_config" });
+        }
+        if (normalizedMethod === "GET" && normalizedEndpoint === "states") {
+          return hass.callWS({ type: "get_states" });
+        }
+
+        const url = `${baseUrl.replace(/\/+$/, "")}/api/${normalizedEndpoint}`;
         const request = {
-          method: String(method || "get").toUpperCase(),
+          method: normalizedMethod,
           headers: {
             Authorization: `Bearer ${token}`,
           },

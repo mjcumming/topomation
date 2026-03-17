@@ -110,18 +110,27 @@ Outcome:
 
 ## 8. Current Release Candidate Record
 
-Commit under test: release-candidate worktree after the `0.2.32` bump on top of `1e01a07b80a6d45bf6d86e8aa96c4b6154a16b32`
+Commit under test: release-candidate worktree for `0.2.33` on top of `7560d53` (`Fix aggregate room explainability occupancy`)
 Frontend bundle rebuilt from same commit: yes
 
 Touched workflows:
-- Detection shared-space membership editing
-- Detection room explainability docked panel presentation and occupied/vacant updates
-- Panel reload after leaving the browser and returning
+- Detection room explainability docked panel current-state occupancy rollup for parent locations
+- Detection room explainability active contributor presentation for occupied descendant areas
 
 Commands run:
+- `npm test -- --runInBand topomation-panel.test.ts`
+- `./scripts/test-comprehensive.sh`
 - `make test-release-live`
+- `TOPOMATION_PREFER_LOCAL_HA=0 make test-release-live`
+- `cd custom_components/topomation/frontend && HA_URL="$HA_URL_DEV" HA_TOKEN="$HA_TOKEN_DEV" LIVE_PANEL_PATH=/topomation npx playwright test --config playwright.live.config.ts playwright/live-automation-ui.spec.ts`
 
 Outcome:
-- Detection shared-space membership editing: PASS
-- Detection room explainability docked panel presentation and occupied/vacant updates: PASS
-- Panel reload after leaving the browser and returning: PASS
+- Detection room explainability docked panel current-state occupancy rollup for parent locations: local PASS, live browser PASS
+- Detection room explainability active contributor presentation for occupied descendant areas: local PASS, live browser PASS
+
+Notes:
+- Local comprehensive gate passed on the `0.2.33` release-candidate worktree.
+- Live managed-action contract tests against configured dev HA passed.
+- Live browser gate passed after serving `live-harness.html` from the Playwright
+  Vite web server and switching harness config/state bootstrap calls to the HA
+  websocket API.
