@@ -24,7 +24,7 @@ const baseLocation: Location = {
 const switchTopTab = async (
   element: HtLocationInspector,
   label:
-    | "Detection"
+    | "Occupancy"
     | "Ambient"
     | "Lighting"
     | "Media"
@@ -42,6 +42,19 @@ const switchTopTab = async (
   expect(tab, `${label} tab did not render`).to.exist;
   tab!.click();
   await element.updateComplete;
+};
+
+const openExternalSourceDialog = async (element: HtLocationInspector): Promise<void> => {
+  const openButton = element.shadowRoot?.querySelector(
+    '[data-testid="open-external-source-dialog"]'
+  ) as HTMLButtonElement | null;
+  expect(openButton, "Add Source button did not render").to.exist;
+  openButton!.click();
+  await element.updateComplete;
+  await waitUntil(
+    () => !!element.shadowRoot?.querySelector('[data-testid="external-source-dialog"]'),
+    "Add Source dialog did not open"
+  );
 };
 
 describe("HtLocationInspector occupancy source composer", () => {
@@ -222,6 +235,74 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(testOff.disabled).to.equal(true);
   });
 
+  it("hides on-timeout controls for state-held presence sources while keeping vacant delay controls", async () => {
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>): Promise<T> => {
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        return {} as T;
+      },
+      connection: {},
+      states: {
+        "binary_sensor.office_presence": {
+          entity_id: "binary_sensor.office_presence",
+          state: "on",
+          attributes: {
+            friendly_name: "Office Presence",
+            device_class: "presence",
+          },
+        },
+      },
+      areas: {
+        office: { area_id: "office", name: "Office" },
+      },
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_office";
+    location.name = "Office";
+    location.ha_area_id = "office";
+    location.modules._meta = { type: "area" };
+    location.modules.occupancy = {
+      enabled: true,
+      default_timeout: 300,
+      default_trailing_timeout: 120,
+      occupancy_sources: [
+        {
+          entity_id: "binary_sensor.office_presence",
+          source_id: "binary_sensor.office_presence",
+          mode: "specific_states",
+          on_event: "trigger",
+          on_timeout: null,
+          off_event: "clear",
+          off_trailing: 300,
+        },
+      ],
+    };
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${location}
+      ></ht-location-inspector>
+    `);
+
+    await waitUntil(
+      () => !!element.shadowRoot?.querySelector('[data-testid="source-on-state-held"]'),
+      "state-held presence note did not render"
+    );
+
+    const stateHeldNote = element.shadowRoot!.querySelector(
+      '[data-testid="source-on-state-held"]'
+    ) as HTMLElement | null;
+    expect(stateHeldNote?.textContent || "").to.include("state-held, not timed");
+    expect(element.shadowRoot!.querySelector("#source-on-timeout-0")).to.equal(null);
+    expect(element.shadowRoot!.textContent || "").to.not.include("Indefinite (until Not detected)");
+    expect(element.shadowRoot!.querySelector("#source-off-trailing-0")).to.exist;
+  });
+
   it("renders light power editor when source_id is keyed but signal_key is missing", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>): Promise<T> => {
@@ -355,6 +436,8 @@ describe("HtLocationInspector occupancy source composer", () => {
       "registry lookups were not requested"
     );
 
+    await openExternalSourceDialog(element);
+
     const areaSelect = element.shadowRoot!.querySelector(
       '[data-testid="external-source-area-select"]'
     ) as HTMLSelectElement;
@@ -436,6 +519,8 @@ describe("HtLocationInspector occupancy source composer", () => {
       ></ht-location-inspector>
     `);
     await element.updateComplete;
+
+    await openExternalSourceDialog(element);
 
     const areaSelect = element.shadowRoot!.querySelector(
       '[data-testid="external-source-area-select"]'
@@ -531,6 +616,8 @@ describe("HtLocationInspector occupancy source composer", () => {
       ></ht-location-inspector>
     `);
 
+    await openExternalSourceDialog(element);
+
     const areaSelect = element.shadowRoot!.querySelector(
       '[data-testid="external-source-area-select"]'
     ) as HTMLSelectElement;
@@ -616,6 +703,8 @@ describe("HtLocationInspector occupancy source composer", () => {
       ></ht-location-inspector>
     `);
 
+    await openExternalSourceDialog(element);
+
     const areaSelect = element.shadowRoot!.querySelector(
       '[data-testid="external-source-area-select"]'
     ) as HTMLSelectElement;
@@ -689,6 +778,8 @@ describe("HtLocationInspector occupancy source composer", () => {
       ></ht-location-inspector>
     `);
 
+    await openExternalSourceDialog(element);
+
     const areaSelect = element.shadowRoot!.querySelector(
       '[data-testid="external-source-area-select"]'
     ) as HTMLSelectElement;
@@ -713,7 +804,7 @@ describe("HtLocationInspector occupancy source composer", () => {
     await element.updateComplete;
 
     const addButton = element.shadowRoot!.querySelector(
-      '[data-testid="add-external-source-inline"]'
+      '[data-testid="confirm-add-external-source"]'
     ) as HTMLButtonElement;
     expect(addButton.disabled).to.equal(false);
     addButton.click();
@@ -1016,6 +1107,8 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(cardsText).to.not.include("Mudroom Heat");
     expect(cardsText).to.not.include("Main Floor Vacuum");
 
+    await openExternalSourceDialog(element);
+
     const areaSelect = element.shadowRoot!.querySelector(
       '[data-testid="external-source-area-select"]'
     ) as HTMLSelectElement;
@@ -1040,7 +1133,7 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(optionValues).to.not.include("binary_sensor.mudroom_occupancy");
   });
 
-  it("renders Detection/Ambient/Lighting/Media/HVAC top-level tabs", async () => {
+  it("renders Occupancy/Ambient/Lighting/Media/HVAC top-level tabs", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>() => [] as T,
       connection: {},
@@ -1063,7 +1156,7 @@ describe("HtLocationInspector occupancy source composer", () => {
       .map((el) => (el.textContent || "").trim())
       .filter(Boolean);
 
-    expect(tabLabels).to.include("Detection");
+    expect(tabLabels).to.include("Occupancy");
     expect(tabLabels).to.include("Ambient");
     expect(tabLabels).to.include("Lighting");
     expect(tabLabels).to.include("Media");
@@ -1213,7 +1306,7 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(lockDirectiveText).to.include("Subtree");
   });
 
-  it("keeps the location header sticky while inspector content scrolls", async () => {
+  it("keeps the location banner stack sticky while inspector content scrolls", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>) => {
         if (request.type === "config/entity_registry/list") return [] as T;
@@ -1240,9 +1333,9 @@ describe("HtLocationInspector occupancy source composer", () => {
     `);
     await element.updateComplete;
 
-    const header = element.shadowRoot!.querySelector(".header") as HTMLElement | null;
-    expect(header).to.exist;
-    expect(getComputedStyle(header!).position).to.equal("sticky");
+    const stickyTop = element.shadowRoot!.querySelector(".inspector-top") as HTMLElement | null;
+    expect(stickyTop).to.exist;
+    expect(getComputedStyle(stickyTop!).position).to.equal("sticky");
   });
 
   it("keeps vacancy reason out of the header status row", async () => {
@@ -1561,6 +1654,8 @@ describe("HtLocationInspector occupancy source composer", () => {
     `);
     await element.updateComplete;
 
+    await openExternalSourceDialog(element);
+
     const areaSelect = element.shadowRoot!.querySelector(
       '[data-testid="external-source-area-select"]'
     ) as HTMLSelectElement;
@@ -1570,8 +1665,8 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(optionValues).to.deep.equal(["", "__this_area__", "kitchen"]);
     expect(optionValues).to.not.include("__all__");
 
-    const panelText = element.shadowRoot?.textContent || "";
-    expect(panelText).to.include("Sibling areas on this floor are available, plus all compatible entities in this area.");
+    const dialogText = element.shadowRoot?.textContent || "";
+    expect(dialogText).to.include("Sibling areas on this floor are available, plus all compatible entities in this area.");
   });
 
   it("does not render linked-room contributor controls in the active inspector UI", async () => {

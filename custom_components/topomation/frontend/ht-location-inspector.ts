@@ -135,6 +135,7 @@ export class HtLocationInspector extends LitElement {
   @state() private _occupancySaveError?: string;
   @state() private _savingOccupancyDraft = false;
   @state() private _pendingOccupancyByLocation: Record<string, OccupancyConfig> = {};
+  @state() private _externalSourceDialogOpen = false;
   @state() private _externalAreaId = "";
   @state() private _externalEntityId = "";
   @state() private _entityAreaById: Record<string, string | null> = {};
@@ -200,21 +201,38 @@ export class HtLocationInspector extends LitElement {
       }
 
       .inspector-container {
-        padding: var(--spacing-md);
-        padding-bottom: var(--spacing-xl);
+        padding: 0 var(--spacing-md) var(--spacing-xl);
       }
 
       .inspector-main {
         display: flex;
         flex-direction: column;
         gap: 0;
+        min-width: 0;
       }
 
+      .inspector-top,
       .header,
       .tabs,
       .tab-content,
       .recent-events-drawer {
         width: min(100%, var(--inspector-content-max-width));
+      }
+
+      .inspector-top {
+        position: sticky;
+        top: 0;
+        z-index: 3;
+        align-self: flex-start;
+        isolation: isolate;
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-sm);
+        padding-top: var(--spacing-xs);
+        padding-bottom: var(--spacing-sm);
+        margin-bottom: var(--spacing-sm);
+        background: var(--card-background-color);
+        box-shadow: 0 10px 18px -18px rgba(0, 0, 0, 0.45);
       }
 
       .recent-events-drawer {
@@ -294,12 +312,14 @@ export class HtLocationInspector extends LitElement {
         align-items: center;
         justify-content: space-between;
         gap: var(--spacing-md);
-        position: sticky;
-        top: var(--spacing-md);
-        z-index: 3;
-        margin-bottom: var(--spacing-lg);
+        margin-bottom: 0;
         padding: var(--spacing-md);
-        background: rgba(var(--rgb-primary-color), 0.05);
+        background-color: var(--card-background-color);
+        background-image: linear-gradient(
+          rgba(var(--rgb-primary-color), 0.06),
+          rgba(var(--rgb-primary-color), 0.06)
+        );
+        border: 1px solid rgba(var(--rgb-primary-color), 0.08);
         border-radius: var(--border-radius);
         box-shadow: 0 1px 0 rgba(0, 0, 0, 0.08);
       }
@@ -1231,8 +1251,11 @@ export class HtLocationInspector extends LitElement {
       .tabs {
         display: flex;
         gap: var(--spacing-sm);
-        margin-bottom: var(--spacing-md);
+        margin-bottom: 0;
         border-bottom: 1px solid var(--divider-color);
+        position: relative;
+        z-index: 1;
+        background-color: var(--card-background-color);
       }
 
       .tab {
@@ -1257,7 +1280,7 @@ export class HtLocationInspector extends LitElement {
       }
 
       .tab-content {
-        padding: 8px 0 0;
+        padding: var(--spacing-sm) 0 0;
       }
 
       .config-row {
@@ -2102,6 +2125,15 @@ export class HtLocationInspector extends LitElement {
         font-size: 12px;
       }
 
+      .editor-note {
+        color: var(--text-secondary-color);
+        font-size: 12px;
+        line-height: 1.45;
+        padding: 8px 10px;
+        border-radius: 6px;
+        background: rgba(var(--rgb-primary-color), 0.04);
+      }
+
       .editor-actions {
         margin-top: 10px;
         display: flex;
@@ -2121,12 +2153,37 @@ export class HtLocationInspector extends LitElement {
         width: 100%;
       }
 
+      .external-source-section .section-title-row {
+        align-items: flex-start;
+        margin-bottom: 0;
+      }
+
       .external-source-section .subsection-title {
         margin-bottom: 4px;
       }
 
       .external-source-section .subsection-help {
-        margin-bottom: 10px;
+        margin-bottom: 0;
+      }
+
+      .external-source-launch {
+        flex: 0 0 auto;
+      }
+
+      ha-dialog {
+        --mdc-dialog-min-width: 540px;
+      }
+
+      .external-source-dialog-content {
+        display: grid;
+        gap: 12px;
+        min-width: min(520px, 100%);
+      }
+
+      .external-source-dialog-copy {
+        color: var(--text-secondary-color);
+        font-size: 13px;
+        line-height: 1.45;
       }
 
       .external-composer {
@@ -2136,6 +2193,18 @@ export class HtLocationInspector extends LitElement {
         align-items: end;
         width: 100%;
         margin-bottom: 10px;
+      }
+
+      .external-composer.is-dialog {
+        grid-template-columns: repeat(2, minmax(220px, 1fr));
+        align-items: start;
+        margin-bottom: 0;
+      }
+
+      .external-composer.is-dialog .runtime-note,
+      .external-composer.is-dialog .policy-warning {
+        grid-column: 1 / -1;
+        margin: 0;
       }
 
       .external-composer .editor-field {
@@ -2303,6 +2372,15 @@ export class HtLocationInspector extends LitElement {
           grid-template-columns: 1fr;
         }
 
+        .external-source-launch {
+          width: 100%;
+        }
+
+        .external-source-launch .button {
+          width: 100%;
+          justify-content: center;
+        }
+
         .dusk-block-grid {
           grid-template-columns: 1fr;
         }
@@ -2409,9 +2487,11 @@ export class HtLocationInspector extends LitElement {
     return html`
       <div class="inspector-container">
         <div class="inspector-main">
-          ${this._renderHeader()} ${this._renderTabs()} ${this._renderContent()}
+          <div class="inspector-top">${this._renderHeader()} ${this._renderTabs()}</div>
+          ${this._renderContent()}
         </div>
       </div>
+      ${this._renderExternalSourceDialog()}
     `;
   }
 
@@ -2456,6 +2536,7 @@ export class HtLocationInspector extends LitElement {
           window.clearTimeout(this._ambientReadingReloadTimer);
           this._ambientReadingReloadTimer = undefined;
         }
+        this._externalSourceDialogOpen = false;
         this._externalAreaId = "";
         this._externalEntityId = "";
         this._wiabShowAllEntities = false;
@@ -2793,10 +2874,10 @@ export class HtLocationInspector extends LitElement {
         candidate.modules.occupancy = update.config;
       }
       this._resetDetectionDraftFromLocation();
-      this._showToast("Detection settings updated", "success");
+      this._showToast("Occupancy settings updated", "success");
     } catch (err: any) {
-      console.error("Failed to update detection settings", err);
-      this._occupancySaveError = err?.message || "Failed to update detection settings";
+      console.error("Failed to update occupancy settings", err);
+      this._occupancySaveError = err?.message || "Failed to update occupancy settings";
       this._showToast(this._occupancySaveError, "error");
     } finally {
       this._savingOccupancyDraft = false;
@@ -2807,7 +2888,7 @@ export class HtLocationInspector extends LitElement {
   private _discardDetectionDraft(showToast = true): void {
     this._resetDetectionDraftFromLocation();
     if (showToast) {
-      this._showToast("Discarded detection changes", "success");
+      this._showToast("Discarded occupancy changes", "success");
     }
   }
 
@@ -3237,7 +3318,7 @@ export class HtLocationInspector extends LitElement {
           class="tab ${this._activeTab === "detection" ? "active" : ""}"
           @click=${() => this._handleTabChange("detection")}
         >
-          Detection
+          Occupancy
         </button>
         <button
           class="tab ${this._activeTab === "ambient" ? "active" : ""}"
@@ -3319,7 +3400,7 @@ export class HtLocationInspector extends LitElement {
     if (this._activeTab === nextTab) return;
     if (this._activeTab === "detection" && this._occupancyDraftDirty) {
       const discard = window.confirm(
-        "Detection changes are not saved. Discard changes and continue?"
+        "Occupancy changes are not saved. Discard changes and continue?"
       );
       if (!discard) return;
       this._discardDetectionDraft(false);
@@ -3330,6 +3411,9 @@ export class HtLocationInspector extends LitElement {
       );
       if (!discard) return;
       this._discardAmbientDraft(false);
+    }
+    if (this._externalSourceDialogOpen) {
+      this._closeExternalSourceDialog();
     }
     this._activeTab = nextTab;
     this.requestUpdate();
@@ -3557,15 +3641,28 @@ export class HtLocationInspector extends LitElement {
               `}
           ${this._renderAreaSensorList(config)}
           <div class="external-source-section">
-            <div class="subsection-title">Add Source</div>
-            <div class="subsection-help">
-              ${hasHaAreaLink
-                ? siblingAreaSourceScope
-                  ? "Need more coverage? Add a source from a sibling area or include all compatible entities from this area."
-                  : "Need more coverage? Add a source from another area or include all compatible entities from this area."
-                : "Add a source from any HA area (including unassigned entities)."}
+            <div class="section-title-row">
+              <div>
+                <div class="subsection-title">Add Source</div>
+                <div class="subsection-help">
+                  ${hasHaAreaLink
+                    ? siblingAreaSourceScope
+                      ? "Need more coverage? Add a source from a sibling area or include all compatible entities from this area."
+                      : "Need more coverage? Add a source from another area or include all compatible entities from this area."
+                    : "Add a source from any HA area (including unassigned entities)."}
+                </div>
+              </div>
+              <div class="external-source-launch">
+                <button
+                  class="button button-secondary"
+                  type="button"
+                  data-testid="open-external-source-dialog"
+                  @click=${() => this._openExternalSourceDialog()}
+                >
+                  Add Source
+                </button>
+              </div>
             </div>
-            ${this._renderExternalSourceComposer(config)}
           </div>
         </div>
         ${this._renderSyncLocationsSection(config)}
@@ -5609,12 +5706,8 @@ export class HtLocationInspector extends LitElement {
       : selectedAreaId === "__this_area__"
         ? (currentAreaId ? this._entitiesForArea(currentAreaId) : [])
         : this._entitiesForArea(selectedAreaId);
-    const entityId = this._externalEntityId || "";
     const existing = new Set(this._workingSources(config).map((source) => this._sourceKeyFromSource(source)));
-    const defaultSignalKey = entityId ? this._defaultSignalKeyForEntity(entityId) : undefined;
-    const selectedKey = entityId
-      ? this._sourceKey(entityId, defaultSignalKey)
-      : "";
+    const entityId = this._externalEntityId || "";
     const areaLabel = siblingAreaSourceScope
       ? "Sibling Area"
       : this.location?.ha_area_id
@@ -5623,7 +5716,7 @@ export class HtLocationInspector extends LitElement {
     const areaPlaceholder = siblingAreaSourceScope ? "Select sibling area..." : "Select area...";
 
     return html`
-      <div class="external-composer">
+      <div class="external-composer is-dialog">
         ${siblingAreaSourceScope
           ? html`<div class="runtime-note">Sibling areas on this floor are available, plus all compatible entities in this area.</div>`
           : ""}
@@ -5677,21 +5770,53 @@ export class HtLocationInspector extends LitElement {
             `)}
           </select>
         </div>
-
-        <button
-          class="button button-secondary"
-          data-testid="add-external-source-inline"
-          ?disabled=${this._savingOccupancyDraft || !entityId || (selectedKey ? existing.has(selectedKey) : false)}
-          @click=${() => {
-            this._addSourceWithDefaults(entityId, config, {
-              resetExternalPicker: true,
-              signalKey: this._defaultSignalKeyForEntity(entityId),
-            });
-          }}
-        >
-          + Add Source
-        </button>
       </div>
+    `;
+  }
+
+  private _renderExternalSourceDialog() {
+    if (!this._externalSourceDialogOpen || !this.location || this._effectiveTab() !== "detection") return "";
+    const config = this._getOccupancyConfig();
+    const siblingAreaSourceScope = this._isSiblingAreaSourceScope();
+    const hasHaAreaLink = Boolean(this.location.ha_area_id);
+
+    return html`
+      <ha-dialog
+        .open=${this._externalSourceDialogOpen}
+        .heading=${"Add Source"}
+        data-testid="external-source-dialog"
+        @closed=${() => this._closeExternalSourceDialog()}
+      >
+        <div class="external-source-dialog-content">
+          <div class="external-source-dialog-copy">
+            ${hasHaAreaLink
+              ? siblingAreaSourceScope
+                ? "Add another occupancy contributor from a sibling area or include another compatible entity from this area."
+                : "Add another occupancy contributor from another area or include another compatible entity from this area."
+              : "Add another occupancy contributor from any Home Assistant area, including unassigned entities."}
+          </div>
+          ${this._renderExternalSourceComposer(config)}
+        </div>
+        <button
+          slot="secondaryAction"
+          class="button button-secondary"
+          type="button"
+          data-testid="close-external-source-dialog"
+          @click=${() => this._closeExternalSourceDialog()}
+        >
+          Cancel
+        </button>
+        <button
+          slot="primaryAction"
+          class="button button-primary"
+          type="button"
+          data-testid="confirm-add-external-source"
+          ?disabled=${this._savingOccupancyDraft || !this._canAddSelectedExternalSource(config)}
+          @click=${() => this._confirmExternalSourceSelection(config)}
+        >
+          Add Source
+        </button>
+      </ha-dialog>
     `;
   }
 
@@ -6115,6 +6240,7 @@ export class HtLocationInspector extends LitElement {
     const labels = this._eventLabelsForSource(source);
     const sourceKey = this._sourceKeyFromSource(source);
     const supportsOffBehavior = this._supportsOffBehavior(source);
+    const stateHeldPresenceSource = this._isStateHeldPresenceSource(draft);
     const defaultTimeoutSeconds = config.default_timeout || 300;
     const rememberedOnTimeout = this._onTimeoutMemory[sourceKey];
     const onTimeoutSeconds = draft.on_timeout === null
@@ -6159,65 +6285,75 @@ export class HtLocationInspector extends LitElement {
           </div>
 
           <div class="editor-field">
-            <label for="source-on-timeout-${sourceIndex}">${labels.onTimeout}</label>
-            <div class="editor-timeout">
-              <input
-                id="source-on-timeout-${sourceIndex}"
-                type="range"
-                min="1"
-                max="120"
-                step="1"
-                .value=${String(onTimeoutMinutes)}
-                ?disabled=${draft.on_timeout === null}
-                @input=${(ev: Event) => {
-                  const minutes = Number((ev.target as HTMLInputElement).value) || 1;
-                  this._onTimeoutMemory = {
-                    ...this._onTimeoutMemory,
-                    [sourceKey]: minutes * 60,
-                  };
-                  this._updateSourceDraft(config, sourceIndex, { ...draft, on_timeout: minutes * 60 });
-                }}
-              />
-              <input
-                type="number"
-                min="1"
-                max="120"
-                .value=${String(onTimeoutMinutes)}
-                ?disabled=${draft.on_timeout === null}
-                @change=${(ev: Event) => {
-                  const minutes = Math.max(1, Math.min(120, Number((ev.target as HTMLInputElement).value) || 1));
-                  this._onTimeoutMemory = {
-                    ...this._onTimeoutMemory,
-                    [sourceKey]: minutes * 60,
-                  };
-                  this._updateSourceDraft(config, sourceIndex, { ...draft, on_timeout: minutes * 60 });
-                }}
-              />
-              <span class="text-muted">min</span>
-            </div>
-            <label class="editor-toggle">
-              <input
-                type="checkbox"
-                .checked=${draft.on_timeout === null}
-                @change=${(ev: Event) => {
-                  const checked = (ev.target as HTMLInputElement).checked;
-                  const remembered = this._onTimeoutMemory[sourceKey];
-                  const fallbackSeconds = onTimeoutMinutes * 60;
-                  const restoreSeconds = remembered ?? fallbackSeconds;
-                  if (checked) {
-                    this._onTimeoutMemory = {
-                      ...this._onTimeoutMemory,
-                      [sourceKey]: draft.on_timeout ?? restoreSeconds,
-                    };
-                  }
-                  this._updateSourceDraft(config, sourceIndex, {
-                    ...draft,
-                    on_timeout: checked ? null : restoreSeconds,
-                  });
-                }}
-              />
-              Indefinite (until ${labels.offState})
-            </label>
+            ${stateHeldPresenceSource
+              ? html`<label>${labels.onTimeout}</label>`
+              : html`<label for="source-on-timeout-${sourceIndex}">${labels.onTimeout}</label>`}
+            ${stateHeldPresenceSource
+              ? html`
+                  <div class="editor-note" data-testid="source-on-state-held">
+                    This source is state-held, not timed. Configure vacant behavior below.
+                  </div>
+                `
+              : html`
+                  <div class="editor-timeout">
+                    <input
+                      id="source-on-timeout-${sourceIndex}"
+                      type="range"
+                      min="1"
+                      max="120"
+                      step="1"
+                      .value=${String(onTimeoutMinutes)}
+                      ?disabled=${draft.on_timeout === null}
+                      @input=${(ev: Event) => {
+                        const minutes = Number((ev.target as HTMLInputElement).value) || 1;
+                        this._onTimeoutMemory = {
+                          ...this._onTimeoutMemory,
+                          [sourceKey]: minutes * 60,
+                        };
+                        this._updateSourceDraft(config, sourceIndex, { ...draft, on_timeout: minutes * 60 });
+                      }}
+                    />
+                    <input
+                      type="number"
+                      min="1"
+                      max="120"
+                      .value=${String(onTimeoutMinutes)}
+                      ?disabled=${draft.on_timeout === null}
+                      @change=${(ev: Event) => {
+                        const minutes = Math.max(1, Math.min(120, Number((ev.target as HTMLInputElement).value) || 1));
+                        this._onTimeoutMemory = {
+                          ...this._onTimeoutMemory,
+                          [sourceKey]: minutes * 60,
+                        };
+                        this._updateSourceDraft(config, sourceIndex, { ...draft, on_timeout: minutes * 60 });
+                      }}
+                    />
+                    <span class="text-muted">min</span>
+                  </div>
+                  <label class="editor-toggle">
+                    <input
+                      type="checkbox"
+                      .checked=${draft.on_timeout === null}
+                      @change=${(ev: Event) => {
+                        const checked = (ev.target as HTMLInputElement).checked;
+                        const remembered = this._onTimeoutMemory[sourceKey];
+                        const fallbackSeconds = onTimeoutMinutes * 60;
+                        const restoreSeconds = remembered ?? fallbackSeconds;
+                        if (checked) {
+                          this._onTimeoutMemory = {
+                            ...this._onTimeoutMemory,
+                            [sourceKey]: draft.on_timeout ?? restoreSeconds,
+                          };
+                        }
+                        this._updateSourceDraft(config, sourceIndex, {
+                          ...draft,
+                          on_timeout: checked ? null : restoreSeconds,
+                        });
+                      }}
+                    />
+                    Indefinite (until ${labels.offState})
+                  </label>
+                `}
           </div>
 
           ${supportsOffBehavior
@@ -9104,11 +9240,45 @@ export class HtLocationInspector extends LitElement {
     this._setWorkingSources(config, [...existing, source]);
 
     if (options?.resetExternalPicker) {
-      this._externalAreaId = "";
-      this._externalEntityId = "";
+      this._resetExternalSourceSelection();
       this.requestUpdate();
     }
     return true;
+  }
+
+  private _openExternalSourceDialog(): void {
+    this._externalSourceDialogOpen = true;
+    this.requestUpdate();
+  }
+
+  private _closeExternalSourceDialog(): void {
+    this._externalSourceDialogOpen = false;
+    this._resetExternalSourceSelection();
+    this.requestUpdate();
+  }
+
+  private _resetExternalSourceSelection(): void {
+    this._externalAreaId = "";
+    this._externalEntityId = "";
+  }
+
+  private _canAddSelectedExternalSource(config: OccupancyConfig): boolean {
+    const entityId = this._externalEntityId.trim();
+    if (!entityId) return false;
+    const existing = new Set(this._workingSources(config).map((source) => this._sourceKeyFromSource(source)));
+    return !existing.has(this._sourceKey(entityId, this._defaultSignalKeyForEntity(entityId)));
+  }
+
+  private _confirmExternalSourceSelection(config: OccupancyConfig): void {
+    const entityId = this._externalEntityId.trim();
+    if (!entityId) return;
+    const added = this._addSourceWithDefaults(entityId, config, {
+      resetExternalPicker: true,
+      signalKey: this._defaultSignalKeyForEntity(entityId),
+    });
+    if (!added) return;
+    this._externalSourceDialogOpen = false;
+    this.requestUpdate();
   }
 
   private _resetSourceDraftState(): void {
@@ -9933,6 +10103,27 @@ export class HtLocationInspector extends LitElement {
     return true;
   }
 
+  private _isDirectPresenceSource(source: OccupancySource): boolean {
+    const domain = source.entity_id.split(".", 1)[0];
+    if (domain === "person" || domain === "device_tracker") {
+      return true;
+    }
+
+    if (domain !== "binary_sensor") {
+      return false;
+    }
+
+    const stateObj = this.hass?.states?.[source.entity_id];
+    const deviceClass = String(stateObj?.attributes?.device_class || "").toLowerCase();
+    return ["presence", "occupancy"].includes(deviceClass);
+  }
+
+  private _isStateHeldPresenceSource(source: OccupancySource): boolean {
+    return this._isDirectPresenceSource(source)
+      && (source.on_event || "trigger") === "trigger"
+      && source.on_timeout === null;
+  }
+
   private _eventLabelsForSource(source: OccupancySource): {
     onState: string;
     offState: string;
@@ -9987,12 +10178,14 @@ export class HtLocationInspector extends LitElement {
       offState = "Off";
     }
 
+    const directPresenceSource = this._isDirectPresenceSource(source);
+
     return {
       onState,
       offState,
-      onBehavior: "When activity is detected",
-      onTimeout: "Occupied hold time",
-      offBehavior: "When activity stops",
+      onBehavior: directPresenceSource ? "When presence is detected" : "When activity is detected",
+      onTimeout: directPresenceSource ? "Occupied state" : "Occupied hold time",
+      offBehavior: directPresenceSource ? "When presence stops" : "When activity stops",
       offDelay: "Vacant delay",
     };
   }

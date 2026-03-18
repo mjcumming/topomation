@@ -1,6 +1,6 @@
 # Contracts
 
-**Last reviewed**: 2026-03-16
+**Last reviewed**: 2026-03-18
 **Purpose**: canonical behavior contracts for Topomation runtime and panel actions.
 
 Use this file as the quick contract surface. Keep it synchronized with:
@@ -34,15 +34,31 @@ Use this file as the quick contract surface. Keep it synchronized with:
 
 ## C-003A Source-off clear contract
 
-- For detection sources configured with `off_event=clear`:
+- For occupancy sources configured with `off_event=clear`:
   - `off_trailing <= 0` maps to immediate source release (`event_type=clear`, `timeout=0`)
   - `off_trailing > 0` maps to trailing source release (`event_type=clear`, `timeout=off_trailing`)
 - Inspector "Test Off" mirrors this:
   - always `service: topomation.clear(location_id, source_id, trailing_timeout)`
-- Detection source state changes must not emit location-level authoritative vacate.
+- Occupancy source state changes must not emit location-level authoritative vacate.
 - Authoritative vacate remains explicit-only (`topomation.vacate`, `topomation.vacate_area`,
   or policy actions that intentionally call vacate).
 - Lock directives remain authoritative (`block_vacant` may prevent transition to vacant).
+
+## C-003B Mixed-source additive occupancy contract
+
+- Occupancy contributions are additive per `source_id`; there is no implicit
+  source-class precedence between motion, presence, occupancy, door, media,
+  light, or other configured sources.
+- A direct-presence source turning off clears only that direct-presence
+  contribution. It does not cancel any still-active motion or other source
+  holds for the same location.
+- If motion has an active hold when presence clears, the location remains
+  occupied until that motion contribution clears or expires.
+- Configuring both presence and motion in one location is an intentional
+  additive-coverage decision, not a "presence rules" hierarchy.
+- If an operator wants presence to be authoritative for a location, they must
+  not also configure other sources that can independently keep that location
+  occupied.
 
 ## C-004 Service surface contract
 
@@ -179,7 +195,7 @@ Additional save points:
 
 ## C-012 Detection Source Enumeration Contract
 
-- The Detection tab core area list (entities already in the selected location) is intentionally curated to:
+- The Occupancy tab core area list (entities already in the selected location) is intentionally curated to:
   - `light.*` (including power/level/color signal variants as supported)
   - `fan.*`
   - `media_player.*` (playback/volume/mute signal variants)
@@ -187,13 +203,13 @@ Additional save points:
     - `device_class` is one of `motion`, `presence`, `occupancy`, `door`, `garage_door`, `opening`, `window`, `lock`, `vibration`, `sound`, or
     - `device_class` is absent (for integrations that emit semantic binary sensors such as camera person/motion variants)
   - `switch.*` only when explicitly light-classified (`device_class: light`)
-- The Detection tab must exclude Topomation-managed occupancy outputs from source selection
+- The Occupancy tab must exclude Topomation-managed occupancy outputs from source selection
   (`device_class: occupancy` with `location_id`), while allowing external occupancy-class sensors.
-- The Detection tab must exclude non-core appliance/control domains from core auto-enumeration
+- The Occupancy tab must exclude non-core appliance/control domains from core auto-enumeration
   (for example `climate`, `vacuum`, `cover`).
 - The explicit **Add Source** picker remains broader for edge cases and may include generic `switch.*`
   entities so users can opt into uncommon/manual workflows without cluttering core discovery.
-- For HA-backed `area` locations parented by a `floor`, the cross-area picker in Detection is
+- For HA-backed `area` locations parented by a `floor`, the cross-area picker in Occupancy is
   sibling-scoped:
   - candidate source areas must be immediate sibling `area` locations under the same floor
   - non-sibling areas, child/subarea nodes, and non-HA-backed areas are excluded
@@ -201,9 +217,9 @@ Additional save points:
 
 ## C-013 Shared Space Contract
 
-- Detection supports primary shared-space membership via occupancy config key
+- Occupancy supports primary shared-space membership via occupancy config key
   `sync_locations: string[]`.
-- Primary Detection UI/copy uses label `Shared Space`.
+- Primary Occupancy UI/copy uses label `Shared Space`.
 - Shared-space semantics are reciprocal and group-oriented:
   - checking a location adds it to the same shared occupancy group as the
     current location
@@ -237,7 +253,7 @@ Additional save points:
     shared-space target/candidate roles.
 - Borrowed coverage belongs in `Add Source`, not in shared-space membership.
 - Directional linked contributors remain supported in stored config key
-  `linked_locations: string[]`, but are hidden from the active Detection UI
+  `linked_locations: string[]`, but are hidden from the active Occupancy UI
   until that workflow is revalidated.
 - Hidden directional contributor runtime remains source-scoped:
   - if location `A` config includes `linked_locations: ["B"]`, occupancy of `B`
@@ -248,7 +264,7 @@ Additional save points:
     source location is currently occupied by the target's linked contribution
     (`linked:<target>`).
 - Adjacency handoff controls are non-primary UX:
-  - Detection renders `Adjacent Locations` and `Handoff Trace` behind an explicit
+  - Occupancy renders `Adjacent Locations` and `Handoff Trace` behind an explicit
     advanced disclosure toggle.
 - Advanced adjacency neighbor picker scope is intentionally narrow:
   - candidates must be room-level (`area`/`subarea`) locations
@@ -258,7 +274,7 @@ Additional save points:
 
 ## C-014 Inspector Draft Bar Contract
 
-- `Detection` and `Ambient` use one shared tab-level draft interaction model.
+- `Occupancy` and `Ambient` use one shared tab-level draft interaction model.
 - Clean state:
   - no `Save changes` / `Discard` controls are rendered.
 - Dirty state:
@@ -376,15 +392,17 @@ Additional save points:
 ## C-017 Automation Editing + Lighting Persistence Contract
 
 - Inspector IA contract:
-  - top-level tabs: `Detection`, `Ambient`, `Lighting`, `Media`, `HVAC`
+  - top-level tabs: `Occupancy`, `Ambient`, `Lighting`, `Media`, `HVAC`
   - no top-level `Advanced` tab and no generic `Actions` tab
   - advanced occupancy relationship controls are hidden from the active
-    `Detection` UI until the workflow is revalidated.
+    `Occupancy` UI until the workflow is revalidated.
 - Workspace mode controls contract:
-  - `Configure` and `Assign Devices` are top-level workspace tabs (shared tab affordance pattern),
-    not mixed-mode button toggles.
+  - the right panel opens directly into the inspector; the active workspace no
+    longer exposes separate `Configure` / `Assign Devices` tabs.
+  - the dedicated assignment workflow is currently mothballed: retaining code
+    for future reuse is allowed, but the active UI must not surface it.
 - Save/update behavior is explicit across editable automation surfaces:
-  - `Detection` and `Ambient` use tab-level draft state + explicit
+  - `Occupancy` and `Ambient` use tab-level draft state + explicit
     save/discard controls.
   - `Lighting`, `Media`, and `HVAC` use per-rule card lifecycle
     controls (`Save rule` / `Update rule` / `Discard edits` / `Remove rule` /

@@ -81,3 +81,35 @@ def test_shorter_trigger_does_not_shorten_existing_longer_timeout() -> None:
 
     effective_timeout = occupancy.get_effective_timeout("area_test", now=base + timedelta(seconds=600))
     assert effective_timeout == light_expiry
+
+
+def test_presence_clear_does_not_cancel_active_motion_hold() -> None:
+    """Presence OFF clears only presence while motion hold remains active."""
+    occupancy = _build_occupancy_module()
+    base = datetime(2026, 3, 3, 14, 0, tzinfo=UTC)
+
+    occupancy.trigger("area_test", "presence", None, now=base)
+    occupancy.trigger("area_test", "motion", 1800, now=base + timedelta(seconds=30))
+
+    occupancy.clear("area_test", "presence", 300, now=base + timedelta(seconds=60))
+
+    state_during_presence_delay = occupancy.get_location_state("area_test")
+    assert state_during_presence_delay is not None
+    assert state_during_presence_delay["occupied"] is True
+    assert {c["source_id"] for c in state_during_presence_delay["contributions"]} == {"motion", "presence"}
+
+    occupancy.check_timeouts(base + timedelta(seconds=361))
+
+    state_after_presence_clear = occupancy.get_location_state("area_test")
+    assert state_after_presence_clear is not None
+    assert state_after_presence_clear["occupied"] is True
+    assert {c["source_id"] for c in state_after_presence_clear["contributions"]} == {"motion"}
+
+    motion_expiry = _expires_at_for_source(state_after_presence_clear, "motion")
+    assert motion_expiry == base + timedelta(seconds=1830)
+
+    occupancy.check_timeouts(base + timedelta(seconds=1831))
+
+    state_after_motion_timeout = occupancy.get_location_state("area_test")
+    assert state_after_motion_timeout is not None
+    assert state_after_motion_timeout["occupied"] is False

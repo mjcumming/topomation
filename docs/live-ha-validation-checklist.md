@@ -164,9 +164,9 @@ Current evidence state for Section 5 / 5.1 (2026-03-06):
 Do not mark the delta section `PASS` until the unchecked items below are
 executed on a running HA instance, even if automated coverage passes locally.
 
-- [x] Detection edits require explicit `Save changes`; direct control edits no longer auto-persist.
-- [x] Detection `Discard` restores persisted state and clears dirty indicator.
-- [x] Configure inspector tabs are `Detection`, `Ambient`, `Lighting`, `Media`, and `HVAC` (no `Appliances` tab).
+- [x] Occupancy edits require explicit `Save changes`; direct control edits no longer auto-persist.
+- [x] Occupancy `Discard` restores persisted state and clears dirty indicator.
+- [x] Configure inspector tabs are `Occupancy`, `Ambient`, `Lighting`, `Media`, and `HVAC` (no `Appliances` tab).
 - [x] `Lighting`, `Media`, and `HVAC` tabs have no Topomation tab-global startup reapply toggle.
 - [x] Rule cards expose `Run on startup` and persist it as managed-rule metadata.
 - [x] Lighting unsaved draft rows show `Save rule` + `Remove rule` and hide `Delete rule`.
@@ -185,7 +185,7 @@ executed on a running HA instance, even if automated coverage passes locally.
   - `floor` siblings under parent `building`.
 - [ ] Repeat these checks on a live HA runtime (outside mock harness) and record outcome.
 
-**Delta result**: [x] PASS / [ ] FAIL — Notes: Exact-branch live rerun passed on 2026-03-17 against local HA 2026.2.3, covering the active Lighting workflow plus Detection explainability, `Shared Space`, and browser-return reload behavior.
+**Delta result**: [x] PASS / [ ] FAIL — Notes: Exact-branch live rerun passed on 2026-03-17 against local HA 2026.2.3, covering the active Lighting workflow plus Occupancy explainability, `Shared Space`, and browser-return reload behavior.
 
 ---
 

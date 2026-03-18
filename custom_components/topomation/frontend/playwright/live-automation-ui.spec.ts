@@ -208,7 +208,7 @@ async function openLightingTab(page: any): Promise<void> {
 async function openDetectionTab(page: any): Promise<void> {
   const inspector = page.locator("ht-location-inspector");
   await expect(inspector).toBeVisible();
-  await inspector.getByRole("button", { name: "Detection" }).click();
+  await inspector.getByRole("button", { name: "Occupancy" }).click();
 }
 
 function liveHaConfig(): { baseUrl: string; token: string } {
@@ -372,7 +372,7 @@ test("live automation lighting workflow matches contracted lifecycle controls", 
   const location = await selectLightingLocation(page);
 
   const inspector = page.locator("ht-location-inspector");
-  await expect(inspector.getByRole("button", { name: "Detection" })).toBeVisible();
+  await expect(inspector.getByRole("button", { name: "Occupancy" })).toBeVisible();
   await expect(inspector.getByRole("button", { name: "Ambient" })).toBeVisible();
   await expect(inspector.getByRole("button", { name: "Lighting" })).toBeVisible();
   await expect(inspector.getByRole("button", { name: "Media" })).toBeVisible();
@@ -595,4 +595,28 @@ test("live panel reloads cleanly after leaving the browser and returning", async
   await expect(page.locator("topomation-panel")).toBeVisible();
   await expect(page.locator("ht-location-tree .tree-item").first()).toBeVisible();
   await expect(page.locator("ht-location-inspector")).toBeVisible();
+});
+
+test("live occupancy add-source dialog opens from the simplified inspector shell", async ({ page }) => {
+  await openLiveHarness(page);
+  await selectLightingLocation(page);
+
+  const inspector = page.locator("ht-location-inspector");
+  await openDetectionTab(page);
+
+  await expect(inspector.getByRole("button", { name: "Configure" })).toHaveCount(0);
+  await expect(inspector.getByRole("button", { name: "Assign Devices" })).toHaveCount(0);
+
+  const addSourceButton = inspector.getByTestId("open-external-source-dialog");
+  await expect(addSourceButton).toBeVisible();
+  await addSourceButton.click();
+
+  const dialog = page.getByTestId("external-source-dialog");
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText("Add Source");
+  await expect(dialog.getByTestId("external-source-area-select")).toBeVisible();
+  await expect(dialog.getByTestId("external-source-entity-select")).toBeVisible();
+
+  await dialog.getByTestId("close-external-source-dialog").click();
+  await expect(dialog).toHaveCount(0);
 });

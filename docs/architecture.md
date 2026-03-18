@@ -1,7 +1,7 @@
 # Topomation Integration Architecture
 
 **Version**: 1.0
-**Date**: 2026-03-06
+**Date**: 2026-03-18
 **Purpose**: Define the architecture of the Home Assistant integration for Topomation
 
 > **Note**: This document focuses on **integration-specific** architecture. For core kernel architecture (LocationManager, EventBus, Modules), see the Topomation core library documentation.
@@ -267,6 +267,11 @@ def handle_locations_list(hass, connection, msg):
   - `test off` with `off_event=clear` -> `topomation.clear(location_id, source_id, trailing_timeout=max(0, off_trailing))`
 - Source activity contributes independently per `source_id`; effective vacancy follows
   the latest remaining contribution timeout (longest active hold wins).
+- No implicit precedence exists between direct presence and motion:
+  - presence `off` clears only the presence contribution
+  - an active motion hold remains in force until it clears or expires
+  - if presence should be authoritative, the location must not also configure
+    motion or other additive occupancy contributors
 - Locked locations are immutable for manual occupancy actions. The UI must reject the request and show a warning toast.
 
 ### 3.7 Frontend Panel (`frontend/`)
@@ -279,7 +284,7 @@ def handle_locations_list(hass, connection, msg):
 
 - `Location Manager` (`/topomation`) is the single visible sidebar entry.
 - Additional routes are explicit current views:
-  - `/topomation-occupancy` (defaults inspector to `Detection`)
+  - `/topomation-occupancy` (defaults inspector to `Occupancy`)
   - `/topomation-media` (defaults inspector to `Media`)
   - `/topomation-hvac` (defaults inspector to `HVAC`)
 
@@ -289,29 +294,30 @@ shared location tree selection context.
 **Workspace Behavior**:
 
 - Location tree is always present on the left; occupancy/actions use the same selected node context.
-- Workspace uses top-level right-panel tabs:
-  - `Configure`
-  - `Assign Devices`
+- Right panel opens directly into the selected location inspector.
+- The older dedicated device-assignment workspace is mothballed in the active
+  UI: code may remain for future reactivation, but the current runtime should
+  not expose it as a visible workspace mode.
 - Each non-root location row exposes two quick controls:
   - occupancy toggle icon (house): mark occupied/unoccupied
   - lock icon: lock/unlock location
 - Occupancy quick-controls are source-aware (`manual_ui`) and respect lock invariants (no mutation while locked).
 - Inspector IA is split into top-level tabs:
-  - `Detection`
+  - `Occupancy`
   - `Ambient`
   - `Lighting`
   - `Media`
   - `HVAC`
 - Advanced occupancy relationship controls are currently hidden from the active
-  `Detection` inspector until that workflow is revalidated.
-- Detection's primary occupancy relationship workflow is `Shared Space`, with
+  `Occupancy` inspector until that workflow is revalidated.
+- Occupancy's primary shared-space workflow is `Shared Space`, with
   borrowed coverage handled by `Add Source`.
 - Occupancy binary sensors remain the authoritative room-state API for both
   Home Assistant automations and the Topomation UI; frontend diagnostics may
   explain that state, but must not synthesize a contradictory occupied/vacant
   result.
 - Editable tab behavior is explicit-save:
-  - `Detection` and `Ambient` use tab-level draft + explicit save/discard.
+  - `Occupancy` and `Ambient` use tab-level draft + explicit save/discard.
   - rule-authoring tabs (`Lighting`, `Media`, `HVAC`) use
     card-local lifecycle controls (`Save rule` / `Update rule` /
     `Discard edits` / `Remove rule` / `Delete rule`) and no silent auto-save.
@@ -631,7 +637,7 @@ loc_mgr.set_module_config(
 - HA-backed wrappers (`sync_source=homeassistant`) keep HA-native linkage:
   - `floor_*` and `area_*` wrappers continue to import from HA registries.
   - Occupancy source discovery can use linked HA area entities.
-  - Detection core auto-enumeration is curated to keep the list relevant:
+  - Occupancy core auto-enumeration is curated to keep the list relevant:
     - `light.*` (power/level/color signals as supported)
     - `fan.*`
     - `media_player.*` (playback/volume/mute signals)

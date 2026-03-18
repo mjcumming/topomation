@@ -1467,7 +1467,7 @@ describe('TopomationPanel integration (fake hass)', () => {
     expect(updatedStatus).to.equal("Occupied");
   });
 
-  it("renders grouped device assignment list with unassigned and location buckets", async () => {
+  it("does not render separate right-panel workspace mode tabs", async () => {
     const locationsWithEntities: Location[] = locations.map((loc) =>
       loc.id === "kitchen"
         ? { ...loc, entity_ids: ["light.kitchen_main"] }
@@ -1524,29 +1524,10 @@ describe('TopomationPanel integration (fake hass)', () => {
     `);
 
     await waitUntil(() => (element as any)._loading === false, "panel did not finish loading");
-    const assignModeButton = element.shadowRoot!.querySelector(
-      '[data-testid="right-mode-assign"]'
-    ) as HTMLButtonElement | null;
-    expect(assignModeButton).to.exist;
-    assignModeButton!.click();
-    await (element as any).updateComplete;
-
-    const unassignedGroup = element.shadowRoot!.querySelector(
-      '[data-testid="device-group-unassigned"]'
-    );
-    const kitchenGroup = element.shadowRoot!.querySelector('[data-testid="device-group-kitchen"]');
-    const floorGroup = element.shadowRoot!.querySelector('[data-testid="device-group-main_floor"]');
-
-    expect(unassignedGroup?.textContent || "").to.contain("Spare Lamp");
-    expect(kitchenGroup?.textContent || "").to.contain("Kitchen");
-    expect(floorGroup?.textContent || "").to.contain("Main Floor");
-
-    (kitchenGroup?.querySelector(".device-group-header") as HTMLButtonElement | null)?.click();
-    (floorGroup?.querySelector(".device-group-header") as HTMLButtonElement | null)?.click();
-    await (element as any).updateComplete;
-
-    expect(kitchenGroup?.textContent || "").to.contain("Kitchen Main");
-    expect(floorGroup?.textContent || "").to.contain("Floor Fan");
+    expect(element.shadowRoot!.querySelector('[data-testid="right-mode-configure"]')).to.equal(null);
+    expect(element.shadowRoot!.querySelector('[data-testid="right-mode-assign"]')).to.equal(null);
+    expect(element.shadowRoot!.querySelector("ht-location-inspector")).to.exist;
+    expect(element.shadowRoot!.querySelector(".device-assignment-panel")).to.equal(null);
   });
 
   it("assigns a device when dropped on tree and calls assign websocket command", async () => {
@@ -1607,13 +1588,6 @@ describe('TopomationPanel integration (fake hass)', () => {
     element.requestUpdate();
     await (element as any).updateComplete;
 
-    const assignModeButton = element.shadowRoot!.querySelector(
-      '[data-testid="right-mode-assign"]'
-    ) as HTMLButtonElement | null;
-    expect(assignModeButton).to.exist;
-    assignModeButton!.click();
-    await (element as any).updateComplete;
-
     const tree = element.shadowRoot!.querySelector("ht-location-tree") as HTMLElement;
     expect(tree).to.exist;
 
@@ -1638,14 +1612,6 @@ describe('TopomationPanel integration (fake hass)', () => {
 
     const kitchen = (element as any)._locations.find((loc: Location) => loc.id === "kitchen");
     expect(kitchen?.entity_ids || []).to.include("light.unassigned");
-
-    await waitUntil(() => {
-      const firstGroup = element.shadowRoot!.querySelector(".device-group");
-      return firstGroup?.getAttribute("data-testid") === "device-group-kitchen";
-    }, "kitchen group was not surfaced after assignment");
-
-    const kitchenGroup = element.shadowRoot!.querySelector('[data-testid="device-group-kitchen"]');
-    expect(kitchenGroup?.textContent || "").to.contain("Spare Lamp");
   });
 
   it("refreshes locations and assignments when HA registry updates fire", async () => {
@@ -1713,13 +1679,6 @@ describe('TopomationPanel integration (fake hass)', () => {
     `);
 
     await waitUntil(() => (element as any)._loading === false, "panel did not finish loading");
-    const assignModeButton = element.shadowRoot!.querySelector(
-      '[data-testid="right-mode-assign"]'
-    ) as HTMLButtonElement | null;
-    expect(assignModeButton).to.exist;
-    assignModeButton!.click();
-    await (element as any).updateComplete;
-
     expect(eventCallbacks.has("entity_registry_updated")).to.equal(true);
     expect(eventCallbacks.has("device_registry_updated")).to.equal(true);
     expect(eventCallbacks.has("area_registry_updated")).to.equal(true);

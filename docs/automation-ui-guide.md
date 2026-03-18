@@ -1,28 +1,28 @@
 # Automation UI Guide (Workspace + Inspector)
 
-**Last reviewed**: 2026-03-17  
+**Last reviewed**: 2026-03-18  
 **Status**: Active (design baseline)  
-**Authority**: ADR-HA-055, ADR-HA-056, ADR-HA-060, ADR-HA-066 + `docs/contracts.md`
+**Authority**: ADR-HA-055, ADR-HA-056, ADR-HA-060, ADR-HA-066, ADR-HA-068 + `docs/contracts.md`
 
 This guide defines the intended user interaction model for Topomation's
 automation workspace and inspector tabs.
 
 ## 1. Workspace Information Architecture
 
-1. Right-panel mode selection uses top-level tabs:
-   - `Configure`
-   - `Assign Devices`
-2. Left panel hosts:
+1. Left panel hosts:
    - structure header/actions
    - location tree
    - docked `Room Explainability` panel tied to the selected location
-3. `Configure` hosts inspector tabs:
-   - `Detection`
+2. Right panel hosts the location inspector directly.
+   - the older dedicated device-assignment workspace is mothballed in the
+     active product UI; its implementation may remain in the repo but is not
+     user-exposed.
+3. The inspector tabs are:
+   - `Occupancy`
    - `Ambient`
    - `Lighting`
    - `Media`
    - `HVAC`
-4. `Assign Devices` is a dedicated workflow tab, not a secondary button mode.
 
 ## 2. Header Status Behavior
 
@@ -30,7 +30,7 @@ automation workspace and inspector tabs.
 2. Lock status uses warning emphasis only when locked.
 3. `Unlocked` should not visually dominate `Vacant/Occupied` or `Ambient`.
 
-## 3. Detection Tab Layout
+## 3. Occupancy Tab Layout
 
 Top-to-bottom layout order:
 
@@ -38,8 +38,11 @@ Top-to-bottom layout order:
 2. Add-source composer
 3. Shared-space section (`Shared Space`)
 4. WIAB controls
-5. Detection no longer owns the Explainability renderer; that panel is docked
+5. Occupancy no longer owns the Explainability renderer; that panel is docked
    under the tree on the left and follows the selected location.
+6. State-held direct-presence sources render `Occupied state` guidance and keep
+   `Vacant delay` controls visible; the UI should not show disabled ON-timeout
+   sliders for those sources.
 
 ## 4. Shared Space Scope
 
@@ -52,7 +55,7 @@ Top-to-bottom layout order:
 5. Primary UI label is `Shared Space`.
 6. Borrowed coverage remains in `Add Source`; users should not need a separate
    directional relationship editor for common room-coverage workflows.
-7. Directional linked contributors remain hidden from the active Detection UI
+7. Directional linked contributors remain hidden from the active Occupancy UI
    until that workflow is revalidated.
 
 ## 5. Managed System Area Messaging
@@ -68,7 +71,7 @@ Top-to-bottom layout order:
 
 1. Silent auto-save is not used for user-authored policy edits.
 2. Save controls must indicate dirty/clean state clearly.
-3. `Detection` and `Ambient` use tab-level draft controls:
+3. `Occupancy` and `Ambient` use tab-level draft controls:
    - controls render only while the tab has unsaved changes (or is actively saving / showing a save error)
    - controls are presented in a sticky bottom action bar within the inspector viewport
    - `Save changes` commits draft

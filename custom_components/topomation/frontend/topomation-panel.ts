@@ -399,10 +399,19 @@ export class TopomationPanel extends LitElement {
         flex-shrink: 0;
       }
 
+      .panel-right > .header {
+        padding-bottom: var(--spacing-xs);
+        border-bottom: none;
+      }
+
       .header-title {
         font-size: 20px;
         font-weight: 600;
         margin-bottom: var(--spacing-xs);
+      }
+
+      .panel-right > .header .header-title {
+        margin-bottom: 0;
       }
 
       .header-subtitle {
@@ -427,34 +436,6 @@ export class TopomationPanel extends LitElement {
 
       .icon-button ha-icon {
         --mdc-icon-size: 22px;
-      }
-
-      .right-panel-modes {
-        margin-top: var(--spacing-sm);
-        display: flex;
-        gap: var(--spacing-sm);
-        border-bottom: 1px solid var(--divider-color);
-      }
-
-      .workspace-tab {
-        padding: var(--spacing-sm) var(--spacing-md);
-        background: transparent;
-        border: none;
-        border-bottom: 2px solid transparent;
-        cursor: pointer;
-        font-size: 14px;
-        font-weight: 500;
-        color: var(--text-secondary-color);
-        transition: color var(--transition-speed), border-color var(--transition-speed);
-      }
-
-      .workspace-tab:hover {
-        color: var(--text-primary-color);
-      }
-
-      .workspace-tab.active {
-        color: var(--primary-color);
-        border-bottom-color: var(--primary-color);
       }
 
       .header-actions .button {
@@ -891,47 +872,23 @@ export class TopomationPanel extends LitElement {
         <div class="panel-right">
           <div class="header">
             <div class="header-title">${rightHeaderTitle}</div>
-            <div class="right-panel-modes" role="tablist" aria-label="Right panel mode">
-              <button
-                class="workspace-tab ${this._rightPanelMode === "inspector" ? "active" : ""}"
-                role="tab"
-                aria-selected=${this._rightPanelMode === "inspector"}
-                data-testid="right-mode-configure"
-                @click=${() => this._handleRightPanelModeChange("inspector")}
-              >
-                Configure
-              </button>
-              <button
-                class="workspace-tab ${this._rightPanelMode === "assign" ? "active" : ""}"
-                role="tab"
-                aria-selected=${this._rightPanelMode === "assign"}
-                data-testid="right-mode-assign"
-                @click=${() => this._handleRightPanelModeChange("assign")}
-              >
-                Assign Devices
-              </button>
-            </div>
           </div>
-          ${this._rightPanelMode === "assign"
-            ? this._renderDeviceAssignmentPanel(selectedLocation)
-            : html`
-                <ht-location-inspector
-                  .hass=${this.hass}
-                  .location=${selectedLocation}
-                  .allLocations=${this._locations}
-                  .adjacencyEdges=${this._adjacencyEdges}
-                  .entryId=${this._activeEntryId()}
-                  .entityRegistryRevision=${this._haRegistryRevision}
-                  .forcedTab=${forcedInspectorTab}
-                  .occupancyStates=${this._occupancyStateByLocation}
-                  .occupancyTransitions=${this._occupancyTransitionByLocation}
-                  .handoffTraces=${selectedLocation
-                    ? this._handoffTraceByLocation[selectedLocation.id] || []
-                    : []}
-                  @adjacency-changed=${this._handleAdjacencyChanged}
-                  @location-meta-changed=${this._handleLocationMetaChanged}
-                ></ht-location-inspector>
-              `}
+          <ht-location-inspector
+            .hass=${this.hass}
+            .location=${selectedLocation}
+            .allLocations=${this._locations}
+            .adjacencyEdges=${this._adjacencyEdges}
+            .entryId=${this._activeEntryId()}
+            .entityRegistryRevision=${this._haRegistryRevision}
+            .forcedTab=${forcedInspectorTab}
+            .occupancyStates=${this._occupancyStateByLocation}
+            .occupancyTransitions=${this._occupancyTransitionByLocation}
+            .handoffTraces=${selectedLocation
+              ? this._handoffTraceByLocation[selectedLocation.id] || []
+              : []}
+            @adjacency-changed=${this._handleAdjacencyChanged}
+            @location-meta-changed=${this._handleLocationMetaChanged}
+          ></ht-location-inspector>
         </div>
       </div>
 
@@ -2049,22 +2006,17 @@ export class TopomationPanel extends LitElement {
   }
 
   private _restoreRightPanelModePreference(): void {
+    this._rightPanelMode = "inspector";
     try {
-      const saved = window.localStorage?.getItem(RIGHT_PANEL_MODE_STORAGE_KEY);
-      if (saved === "assign" || saved === "inspector") {
-        this._rightPanelMode = saved;
-      }
+      window.localStorage?.removeItem(RIGHT_PANEL_MODE_STORAGE_KEY);
     } catch {
       // ignore storage failures
-    }
-    if (this._rightPanelMode === "assign") {
-      void this._ensureEntityAreaIndex();
     }
   }
 
   private _persistRightPanelModePreference(): void {
     try {
-      window.localStorage?.setItem(RIGHT_PANEL_MODE_STORAGE_KEY, this._rightPanelMode);
+      window.localStorage?.removeItem(RIGHT_PANEL_MODE_STORAGE_KEY);
     } catch {
       // ignore storage failures
     }

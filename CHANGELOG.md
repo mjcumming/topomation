@@ -9,6 +9,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.35] - 2026-03-18
+
+### Changed
+
+- Simplified the automation workspace by removing the visible `Configure` /
+  `Assign Devices` mode tabs; the right pane now opens directly into the
+  location inspector, and the former `Detection` tab is labeled `Occupancy`.
+- Mothballed the dedicated device-assignment workspace in the active UI: the
+  implementation is retained in the codebase for future reactivation, but it is
+  intentionally not exposed in the current panel.
+- Moved the Occupancy tab's external `Add Source` flow into an on-demand dialog
+  so the source list stays focused and the cross-area picker only appears when
+  requested.
+- Documented mixed-source occupancy semantics explicitly: presence and motion
+  are additive contributors, presence `off` clears only the presence source,
+  and operators who want presence to be authoritative should not also add
+  motion as a source for that location.
+
+### Fixed
+
+- Grouped the sticky room/area banner and tab strip into one inspector top
+  stack so scrolling content no longer bleeds behind the location banner.
+- Tightened the inspector header stack against the Automation title and removed
+  margin-based sticky gaps that let scrolled source cards show through.
+- Made the sticky occupancy hero/tabs surfaces fully opaque and restored a
+  small content offset under the tab row so scrolled source cards no longer
+  ghost through the sticky stack.
+- State-held presence sources no longer show disabled occupied-hold controls;
+  the inspector now renders them as `Occupied state` sources and keeps vacant
+  delay configuration visible.
+
 ## [0.2.34] - 2026-03-18
 
 ### Changed

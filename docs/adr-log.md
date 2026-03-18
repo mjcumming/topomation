@@ -3179,6 +3179,65 @@ the occupancy binary sensors directly. If `Kitchen` is part of a shared space,
 
 ---
 
+### ADR-HA-068: Mixed Presence + Motion Sources Use Additive Contribution Semantics (2026-03-18)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+
+The occupancy contract already established two important rules:
+
+1. source `off` behavior is source-scoped `clear`, not location-wide vacate
+2. occupancy remains active until the last active contribution clears or
+   expires
+
+That still left one operator-facing gap: the docs did not say explicitly what
+happens when a location config includes both a direct-presence source and a
+timed motion source. Users could reasonably assume presence should override
+motion, while the runtime was treating both as independent contributors.
+
+**Decision**:
+
+1. Mixed direct-presence and motion sources are additive contributors for one
+   location.
+2. When direct presence turns off, Topomation clears only that direct-presence
+   contribution.
+3. Any still-active motion contribution remains valid until it clears or its
+   hold expires.
+4. Topomation does not apply hidden source-class precedence such as "presence
+   always rules over motion."
+5. If a user wants direct presence to be authoritative for a location, they
+   must not also configure other occupancy sources that can independently hold
+   that location occupied.
+
+**Rationale**:
+
+1. This preserves one deterministic additive model for all source types.
+2. It avoids hidden precedence rules that users cannot see or reason about from
+   configuration.
+3. It matches the source-scoped clear contract already adopted in ADR-HA-050.
+4. It keeps occupancy behavior aligned with the explicit configured source set
+   instead of inventing special-case hierarchy after the fact.
+
+**Consequences**:
+
+- ✅ Mixed presence + motion rooms behave predictably under one additive model.
+- ✅ Presence `off` never silently wipes out unrelated active motion evidence.
+- ✅ Users have a clear configuration rule for authoritative presence rooms.
+- ⚠️ A room may remain occupied after presence turns off if another configured
+  source still has an active contribution.
+
+**Alternatives Considered**:
+
+- Make direct presence implicitly authoritative over motion:
+  rejected because it introduces hidden precedence and breaks the general
+  additive contribution model.
+- Add a per-location or per-source precedence setting:
+  rejected for now because the current product contract is intentionally
+  simpler, and source selection already gives operators the needed control.
+
+---
+
 ## How to Use This Log
 
 ### When to Create an ADR

@@ -56,12 +56,8 @@ The main workspace is split into:
 
 - the location tree on the left
 - a right-side inspector with:
-  - `Configure`
-  - `Assign Devices`
 
-Inside `Configure`, the current inspector tabs are:
-
-- `Detection`
+- `Occupancy`
 - `Ambient`
 - `Lighting`
 - `Media`
@@ -79,11 +75,13 @@ TopoMation does not replace Home Assistant floors and areas. It adds hierarchy o
 
 ### 4. Configure occupancy
 
-Select a location and use the `Detection` tab to:
+Select a location and use the `Occupancy` tab to:
 
 - add occupancy sources
 - define timeout behavior
 - configure sync relationships where needed
+- decide intentionally whether your sources are additive coverage or one
+  authoritative signal
 
 Useful source examples:
 
@@ -92,6 +90,15 @@ Useful source examples:
 - mmWave presence sensors
 - camera person-detection binary sensors
 - smart switches or other entity state changes
+
+Important mixed-source rule:
+
+- if you configure both presence and motion for one location, both sources can
+  keep that location occupied independently
+- when presence turns off, it clears only the presence contribution; an active
+  motion hold remains until its own timeout expires
+- if you want presence to be authoritative, do not also configure motion or
+  other occupancy contributors that can hold the room occupied
 
 ### 5. Configure ambient behavior
 
@@ -171,7 +178,7 @@ Starter blueprints are included in:
 ### Occupancy is not changing
 
 - Confirm the entity is assigned to the expected location.
-- Confirm it was added as a source in `Detection`.
+- Confirm it was added as a source in `Occupancy`.
 - For topology-only nodes such as `building`, `grounds`, and `subarea`, use explicit source assignment from the UI.
 
 ### Rule creation fails

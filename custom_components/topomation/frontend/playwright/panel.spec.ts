@@ -267,7 +267,7 @@ test("selecting location shows occupancy inspector with area sensors", async ({ 
   const inspector = page.locator("ht-location-inspector");
   await expect(inspector).toBeVisible();
   await expect(inspector).toContainText("Kitchen");
-  await expect(inspector).toContainText("Detection");
+  await expect(inspector).toContainText("Occupancy");
   await expect(inspector.locator(".candidate-list").first()).toBeVisible();
 });
 
@@ -323,7 +323,7 @@ test("media tab renders rule editor", async ({ page }) => {
   await selectKitchen(page);
 
   const inspector = page.locator("ht-location-inspector");
-  await expect(inspector.getByRole("button", { name: "Detection" })).toBeVisible();
+  await expect(inspector.getByRole("button", { name: "Occupancy" })).toBeVisible();
   await expect(inspector.getByRole("button", { name: "Ambient" })).toBeVisible();
   await expect(inspector.getByRole("button", { name: "Lighting" })).toBeVisible();
   await expect(inspector.getByRole("button", { name: "Media" })).toBeVisible();
@@ -584,8 +584,16 @@ test("integration-owned building shows explicit source composer guidance", async
   await expect(inspector).toBeVisible();
   await expect(inspector).toContainText("Main Building");
   await expect(inspector).toContainText("Integration-owned location");
-  await expect(inspector.locator('[data-testid="external-source-area-select"]')).toBeVisible();
-  await expect(inspector.locator('[data-testid="add-external-source-inline"]')).toBeVisible();
+  const addSourceButton = inspector.getByTestId("open-external-source-dialog");
+  await expect(addSourceButton).toBeVisible();
+
+  await addSourceButton.click();
+
+  const dialog = page.getByTestId("external-source-dialog");
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByTestId("external-source-area-select")).toBeVisible();
+  await expect(dialog.getByTestId("external-source-entity-select")).toBeVisible();
+  await expect(dialog.getByTestId("confirm-add-external-source")).toBeVisible();
 });
 
 test("panel header shows read-only lifecycle guidance", async ({ page }) => {

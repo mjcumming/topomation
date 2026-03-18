@@ -110,30 +110,30 @@ Outcome:
 
 ## 8. Current Release Candidate Record
 
-Commit under test: release-candidate worktree for `0.2.34` immediately before the final release commit
+Commit under test: release-candidate worktree for `0.2.35` immediately before the final release commit
 Frontend bundle rebuilt from same commit: yes
 
 Touched workflows:
-- Shared Space runtime propagation across the full connected sync group
-- Shared Space binary sensor authority for synced-area occupied/vacant state
-- Detection room explainability current-state/render sync during same-connection `hass` churn
+- Occupancy inspector shell simplification (remove `Configure` / `Assign Devices`, rename `Detection` to `Occupancy`, keep sticky hero/tabs stack opaque while scrolling)
+- Occupancy `Add Source` launch/dismiss flow via dialog instead of inline composer
+- Mixed direct-presence + motion additive contribution semantics
+- State-held direct-presence source editor copy/controls
 
 Commands run:
-- `pytest -q tests/test_init.py -k "sync_location" --no-cov`
-- `pytest -q tests/test_occupancy_timeout_semantics.py tests/test_binary_sensor.py --no-cov`
-- `cd custom_components/topomation/frontend && npm test -- --runInBand topomation-panel.test.ts`
-- `cd custom_components/topomation/frontend && npm run test:unit`
+- `pytest -q tests/test_occupancy_timeout_semantics.py --no-cov`
+- `cd custom_components/topomation/frontend && npm test -- ht-location-inspector.test.ts topomation-panel.test.ts`
 - `cd custom_components/topomation/frontend && npm run build`
-- `cd custom_components/topomation/frontend && HA_URL="$HA_URL_DEV" HA_TOKEN="$HA_TOKEN_DEV" npx playwright test --config playwright.live.config.ts playwright/live-automation-ui.spec.ts -g "live detection explainability reflects trigger activation and contributor removal"`
+- `cd custom_components/topomation/frontend && HA_URL="$HA_URL_DEV" HA_TOKEN="$HA_TOKEN_DEV" npx playwright test --config playwright.live.config.ts playwright/live-automation-ui.spec.ts -g "live occupancy add-source dialog opens from the simplified inspector shell"`
 - `./scripts/test-comprehensive.sh`
-- `TOPOMATION_PREFER_LOCAL_HA=0 make test-release-live`
+- `make test-release-live`
 
 Outcome:
-- Shared Space runtime propagation across the full connected sync group: backend targeted PASS, full local gate PASS, live browser shared-space save path PASS
-- Shared Space binary sensor authority for synced-area occupied/vacant state: backend targeted PASS, full local gate PASS
-- Detection room explainability current-state/render sync during same-connection `hass` churn: frontend targeted PASS, targeted live browser PASS, full release gate PASS
+- Occupancy inspector shell simplification (remove `Configure` / `Assign Devices`, rename `Detection` to `Occupancy`, keep sticky hero/tabs stack opaque while scrolling): targeted frontend PASS, targeted live browser PASS, full release gate PASS
+- Occupancy `Add Source` launch/dismiss flow via dialog instead of inline composer: targeted frontend PASS, targeted live browser PASS, full release gate PASS
+- Mixed direct-presence + motion additive contribution semantics: targeted backend PASS, full local gate PASS, full release gate PASS
+- State-held direct-presence source editor copy/controls: targeted frontend PASS, full local gate PASS, full release gate PASS
 
 Notes:
-- The backend shared-space fix moved authority back to the occupancy binary sensors.
-- The final frontend change for this release was not a shared-space workaround; it stabilized `topomation-panel` subscriptions so live occupancy state could not drift stale during reactive `hass` churn.
+- The occupancy shell release cut intentionally mothballs the older assignment workspace without deleting its implementation.
+- Mixed presence + motion rooms remain additive: presence `off` clears only the presence contribution while active motion holds continue until they clear or expire.
 - The final release commit adds this gate record to the already-validated branch state.
