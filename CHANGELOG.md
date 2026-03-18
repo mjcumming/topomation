@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.36] - 2026-03-18
+
+### Fixed
+
+- Reworked the Occupancy inspector shell so the room hero banner and tab strip
+  sit outside the scrollable content body instead of relying on a sticky stack.
+  This prevents source rows and section text from painting behind the banner or
+  tabs while the inspector body scrolls.
+- Added browser coverage for the inspector shell contract in both the mock
+  harness and live Home Assistant release gates so future layout regressions are
+  caught before release.
+
 ## [0.2.35] - 2026-03-18
 
 ### Changed

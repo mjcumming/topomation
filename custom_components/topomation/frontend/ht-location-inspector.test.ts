@@ -1306,7 +1306,7 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(lockDirectiveText).to.include("Subtree");
   });
 
-  it("keeps the location banner stack sticky while inspector content scrolls", async () => {
+  it("keeps the location banner stack outside a dedicated inspector scroll body", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>) => {
         if (request.type === "config/entity_registry/list") return [] as T;
@@ -1333,9 +1333,12 @@ describe("HtLocationInspector occupancy source composer", () => {
     `);
     await element.updateComplete;
 
-    const stickyTop = element.shadowRoot!.querySelector(".inspector-top") as HTMLElement | null;
-    expect(stickyTop).to.exist;
-    expect(getComputedStyle(stickyTop!).position).to.equal("sticky");
+    const inspectorTop = element.shadowRoot!.querySelector(".inspector-top") as HTMLElement | null;
+    const inspectorBody = element.shadowRoot!.querySelector(".inspector-body") as HTMLElement | null;
+    expect(inspectorTop).to.exist;
+    expect(inspectorBody).to.exist;
+    expect(getComputedStyle(inspectorTop!).position).to.equal("static");
+    expect(getComputedStyle(inspectorBody!).overflowY).to.equal("auto");
   });
 
   it("keeps vacancy reason out of the header status row", async () => {

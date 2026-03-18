@@ -596,6 +596,37 @@ test("integration-owned building shows explicit source composer guidance", async
   await expect(dialog.getByTestId("confirm-add-external-source")).toBeVisible();
 });
 
+test("occupancy inspector keeps the hero shell outside the scroll body", async ({ page }) => {
+  await page.goto("/mock-harness.html");
+  await selectKitchen(page);
+
+  const inspector = page.locator("ht-location-inspector");
+  const inspectorTop = inspector.locator(".inspector-top");
+  const inspectorBody = inspector.locator(".inspector-body");
+
+  await expect(inspectorTop).toBeVisible();
+  await expect(inspectorBody).toBeVisible();
+
+  const before = await inspectorTop.boundingBox();
+  expect(before).not.toBeNull();
+
+  const bodyMetrics = await inspectorBody.evaluate((element) => {
+    const node = element as HTMLElement;
+    node.scrollTop = Math.max(0, Math.min(320, node.scrollHeight));
+    return {
+      overflowY: getComputedStyle(node).overflowY,
+      scrollTop: node.scrollTop,
+    };
+  });
+
+  expect(bodyMetrics.overflowY).toBe("auto");
+  expect(bodyMetrics.scrollTop).toBeGreaterThan(0);
+
+  const after = await inspectorTop.boundingBox();
+  expect(after).not.toBeNull();
+  expect(Math.abs((after?.y ?? 0) - (before?.y ?? 0))).toBeLessThanOrEqual(1);
+});
+
 test("panel header shows read-only lifecycle guidance", async ({ page }) => {
   await page.goto("/mock-harness.html");
 

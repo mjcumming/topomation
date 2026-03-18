@@ -110,30 +110,23 @@ Outcome:
 
 ## 8. Current Release Candidate Record
 
-Commit under test: release-candidate worktree for `0.2.35` immediately before the final release commit
+Commit under test: release-candidate worktree for `0.2.36` immediately before the final release commit
 Frontend bundle rebuilt from same commit: yes
 
 Touched workflows:
-- Occupancy inspector shell simplification (remove `Configure` / `Assign Devices`, rename `Detection` to `Occupancy`, keep sticky hero/tabs stack opaque while scrolling)
-- Occupancy `Add Source` launch/dismiss flow via dialog instead of inline composer
-- Mixed direct-presence + motion additive contribution semantics
-- State-held direct-presence source editor copy/controls
+- Occupancy inspector shell layout now uses a fixed hero/tabs region with a dedicated scroll body so source rows and headings cannot paint behind the banner or tab strip
 
 Commands run:
-- `pytest -q tests/test_occupancy_timeout_semantics.py --no-cov`
 - `cd custom_components/topomation/frontend && npm test -- ht-location-inspector.test.ts topomation-panel.test.ts`
 - `cd custom_components/topomation/frontend && npm run build`
-- `cd custom_components/topomation/frontend && HA_URL="$HA_URL_DEV" HA_TOKEN="$HA_TOKEN_DEV" npx playwright test --config playwright.live.config.ts playwright/live-automation-ui.spec.ts -g "live occupancy add-source dialog opens from the simplified inspector shell"`
+- `cd custom_components/topomation/frontend && npx playwright test playwright/panel.spec.ts -g "occupancy inspector keeps the hero shell outside the scroll body"`
+- `source /workspaces/topomation/tests/ha-config.env && cd custom_components/topomation/frontend && HA_URL="${HA_URL_DEV:-$HA_URL_LOCAL}" HA_TOKEN="${HA_TOKEN_DEV:-$HA_TOKEN_LOCAL}" npx playwright test --config playwright.live.config.ts playwright/live-automation-ui.spec.ts -g "live occupancy inspector keeps the hero shell outside the scroll body"`
 - `./scripts/test-comprehensive.sh`
 - `make test-release-live`
 
 Outcome:
-- Occupancy inspector shell simplification (remove `Configure` / `Assign Devices`, rename `Detection` to `Occupancy`, keep sticky hero/tabs stack opaque while scrolling): targeted frontend PASS, targeted live browser PASS, full release gate PASS
-- Occupancy `Add Source` launch/dismiss flow via dialog instead of inline composer: targeted frontend PASS, targeted live browser PASS, full release gate PASS
-- Mixed direct-presence + motion additive contribution semantics: targeted backend PASS, full local gate PASS, full release gate PASS
-- State-held direct-presence source editor copy/controls: targeted frontend PASS, full local gate PASS, full release gate PASS
+- Occupancy inspector shell layout now uses a fixed hero/tabs region with a dedicated scroll body so source rows and headings cannot paint behind the banner or tab strip: targeted frontend PASS, targeted mock browser PASS, targeted live browser PASS, full local gate PASS, full release gate PASS
 
 Notes:
-- The occupancy shell release cut intentionally mothballs the older assignment workspace without deleting its implementation.
-- Mixed presence + motion rooms remain additive: presence `off` clears only the presence contribution while active motion holds continue until they clear or expire.
-- The final release commit adds this gate record to the already-validated branch state.
+- This release replaces the prior sticky-stack workaround with a structural split between the fixed inspector shell and the scrollable body.
+- The Auto Release workflow for this cut runs with the already-landed `actions/setup-node@v6` upgrade on `main`, so the release validation also confirms the Node 20 deprecation warning path is no longer tied to `setup-node@v4`.

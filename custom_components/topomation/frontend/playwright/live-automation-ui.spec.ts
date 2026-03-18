@@ -620,3 +620,42 @@ test("live occupancy add-source dialog opens from the simplified inspector shell
   await dialog.getByTestId("close-external-source-dialog").click();
   await expect(dialog).toHaveCount(0);
 });
+
+test("live occupancy inspector keeps the hero shell outside the scroll body", async ({ page }) => {
+  await openLiveHarness(page);
+  await selectLightingLocation(page);
+  await openDetectionTab(page);
+
+  const inspector = page.locator("ht-location-inspector");
+  const inspectorTop = inspector.locator(".inspector-top");
+  const inspectorBody = inspector.locator(".inspector-body");
+
+  await expect(inspectorTop).toBeVisible();
+  await expect(inspectorBody).toBeVisible();
+
+  const before = await inspectorTop.boundingBox();
+  expect(before).not.toBeNull();
+
+  const bodyMetrics = await inspectorBody.evaluate((element) => {
+    const node = element as HTMLElement;
+    const overflowY = getComputedStyle(node).overflowY;
+    const maxScroll = Math.max(0, node.scrollHeight - node.clientHeight);
+    if (maxScroll > 0) {
+      node.scrollTop = Math.min(320, maxScroll);
+    }
+    return {
+      overflowY,
+      scrollTop: node.scrollTop,
+      canScroll: maxScroll > 0,
+    };
+  });
+
+  expect(bodyMetrics.overflowY).toBe("auto");
+  if (bodyMetrics.canScroll) {
+    expect(bodyMetrics.scrollTop).toBeGreaterThan(0);
+  }
+
+  const after = await inspectorTop.boundingBox();
+  expect(after).not.toBeNull();
+  expect(Math.abs((after?.y ?? 0) - (before?.y ?? 0))).toBeLessThanOrEqual(1);
+});

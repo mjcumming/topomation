@@ -196,15 +196,20 @@ export class HtLocationInspector extends LitElement {
       :host {
         display: block;
         height: 100%;
-        overflow-y: auto;
+        min-height: 0;
+        overflow: hidden;
         --inspector-content-max-width: 1120px;
       }
 
       .inspector-container {
-        padding: 0 var(--spacing-md) var(--spacing-xl);
+        height: 100%;
+        min-height: 0;
+        padding: 0 var(--spacing-md);
       }
 
       .inspector-main {
+        height: 100%;
+        min-height: 0;
         display: flex;
         flex-direction: column;
         gap: 0;
@@ -212,6 +217,7 @@ export class HtLocationInspector extends LitElement {
       }
 
       .inspector-top,
+      .inspector-body-content,
       .header,
       .tabs,
       .tab-content,
@@ -220,19 +226,28 @@ export class HtLocationInspector extends LitElement {
       }
 
       .inspector-top {
-        position: sticky;
-        top: 0;
-        z-index: 3;
         align-self: flex-start;
-        isolation: isolate;
+        flex: 0 0 auto;
         display: flex;
         flex-direction: column;
         gap: var(--spacing-sm);
         padding-top: var(--spacing-xs);
         padding-bottom: var(--spacing-sm);
-        margin-bottom: var(--spacing-sm);
         background: var(--card-background-color);
         box-shadow: 0 10px 18px -18px rgba(0, 0, 0, 0.45);
+      }
+
+      .inspector-body {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+        overflow-x: hidden;
+        overscroll-behavior: contain;
+        padding-bottom: var(--spacing-xl);
+      }
+
+      .inspector-body-content {
+        align-self: flex-start;
       }
 
       .recent-events-drawer {
@@ -2488,7 +2503,9 @@ export class HtLocationInspector extends LitElement {
       <div class="inspector-container">
         <div class="inspector-main">
           <div class="inspector-top">${this._renderHeader()} ${this._renderTabs()}</div>
-          ${this._renderContent()}
+          <div class="inspector-body">
+            <div class="inspector-body-content">${this._renderContent()}</div>
+          </div>
         </div>
       </div>
       ${this._renderExternalSourceDialog()}
