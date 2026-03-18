@@ -1410,28 +1410,42 @@ def _linked_target_location_ids(loc_mgr: LocationManager, source_location_id: st
 
 
 def _sync_peer_location_ids(loc_mgr: LocationManager, source_location_id: str) -> list[str]:
-    """Return effective sync peers for one location (union of forward+reverse declarations)."""
-    peers: set[str] = set()
+    """Return all locations in the same effective shared-space component."""
+    visited: set[str] = set()
+    queue: deque[str] = deque([source_location_id])
 
-    source_config = loc_mgr.get_module_config(source_location_id, "occupancy")
-    peers.update(_effective_sync_locations_for_target(loc_mgr, source_location_id, source_config))
+    while queue:
+        current_location_id = queue.popleft()
+        if current_location_id in visited:
+            continue
+        visited.add(current_location_id)
 
-    for location in loc_mgr.all_locations():
-        candidate_location_id = getattr(location, "id", None)
-        if not isinstance(candidate_location_id, str) or not candidate_location_id:
-            continue
-        if candidate_location_id == source_location_id:
-            continue
-        candidate_config = loc_mgr.get_module_config(candidate_location_id, "occupancy")
-        candidate_synced = _effective_sync_locations_for_target(
+        current_config = loc_mgr.get_module_config(current_location_id, "occupancy")
+        for peer_location_id in _effective_sync_locations_for_target(
             loc_mgr,
-            candidate_location_id,
-            candidate_config,
-        )
-        if source_location_id in candidate_synced:
-            peers.add(candidate_location_id)
+            current_location_id,
+            current_config,
+        ):
+            if peer_location_id not in visited:
+                queue.append(peer_location_id)
 
-    return sorted(peers)
+        for location in loc_mgr.all_locations():
+            candidate_location_id = getattr(location, "id", None)
+            if not isinstance(candidate_location_id, str) or not candidate_location_id:
+                continue
+            if candidate_location_id == current_location_id:
+                continue
+            candidate_config = loc_mgr.get_module_config(candidate_location_id, "occupancy")
+            candidate_synced = _effective_sync_locations_for_target(
+                loc_mgr,
+                candidate_location_id,
+                candidate_config,
+            )
+            if current_location_id in candidate_synced and candidate_location_id not in visited:
+                queue.append(candidate_location_id)
+
+    visited.discard(source_location_id)
+    return sorted(visited)
 
 
 def _occupancy_state_for_location(

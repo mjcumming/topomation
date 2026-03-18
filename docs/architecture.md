@@ -306,6 +306,10 @@ shared location tree selection context.
   `Detection` inspector until that workflow is revalidated.
 - Detection's primary occupancy relationship workflow is `Shared Space`, with
   borrowed coverage handled by `Add Source`.
+- Occupancy binary sensors remain the authoritative room-state API for both
+  Home Assistant automations and the Topomation UI; frontend diagnostics may
+  explain that state, but must not synthesize a contradictory occupied/vacant
+  result.
 - Editable tab behavior is explicit-save:
   - `Detection` and `Ambient` use tab-level draft + explicit save/discard.
   - rule-authoring tabs (`Lighting`, `Media`, `HVAC`) use
@@ -440,6 +444,19 @@ class HAPlatformAdapter:
 4. OccupancyModule: Emits Event(type="occupancy.changed", payload={"occupied": False})
 5. BinarySensor: Updates binary_sensor.occupancy_kitchen to OFF
 6. Coordinator: Calls schedule_next_timeout() for next check
+```
+
+### 4.2b Shared Space Propagation
+
+```
+1. Family Room motion triggers with a 45-minute hold
+2. OccupancyModule stores a direct Family Room contribution expiring in 45 minutes
+3. Integration shared-space handler resolves the full connected shared-space group
+4. Integration mirrors that contribution to every peer as sync:<origin>::<source>
+5. Each peer occupancy entity turns ON from its mirrored contribution set
+6. Any later 5-minute hall event adds another contribution, but does not shorten
+   the existing 45-minute effective timeout
+7. Each room turns OFF only after the last direct or mirrored contribution expires
 ```
 
 ### 4.3 User Changes Config via UI
@@ -694,6 +711,9 @@ loc_mgr.set_module_config(
 - Integration handlers subscribed to `occupancy.changed` may synchronously
   emit new `occupancy.changed` events when they call `occupancy.trigger()` or
   `occupancy.clear()`.
+- Shared-space propagation must preserve source contribution expirations while
+  mirroring them across the connected sync group; timeout convergence remains
+  "longest active contribution wins" inside the occupancy module.
 - Any such handler must use a queue + re-entry guard + iterative drain loop
   (non-recursive) to avoid stack growth under cascades.
 - Apply a bounded per-drain cap and drop remainder with error logging when

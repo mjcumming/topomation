@@ -143,6 +143,7 @@ export class TopomationPanel extends LitElement {
   private _unsubEntityRegistryUpdated?: () => void;
   private _unsubDeviceRegistryUpdated?: () => void;
   private _unsubAreaRegistryUpdated?: () => void;
+  private _updatesSubscriptionConnection?: any;
   @state() private _newLocationDefaults?: { parentId?: string; type?: LocationType };
   private _loadSeq = 0;
   private _reloadTimer?: number;
@@ -190,8 +191,18 @@ export class TopomationPanel extends LitElement {
       this._loadLocations();
     }
 
-    if (changedProps.has("hass") && this.hass) {
-      this._subscribeToUpdates();
+    if (changedProps.has("hass")) {
+      const previousHass = changedProps.get("hass") as HomeAssistant | undefined;
+      const previousConnection = previousHass?.connection;
+      const nextConnection = this.hass?.connection;
+      if (previousConnection !== nextConnection) {
+        if (!nextConnection) {
+          this._teardownUpdateSubscriptions();
+          this._updatesSubscriptionConnection = undefined;
+        } else {
+          void this._subscribeToUpdates();
+        }
+      }
     }
   }
 
@@ -234,35 +245,8 @@ export class TopomationPanel extends LitElement {
       this._registryRefreshTimer = undefined;
     }
 
-    // Clean up subscriptions
-    if (this._unsubUpdates) {
-      this._unsubUpdates();
-      this._unsubUpdates = undefined;
-    }
-    if (this._unsubStateChanged) {
-      this._unsubStateChanged();
-      this._unsubStateChanged = undefined;
-    }
-    if (this._unsubOccupancyChanged) {
-      this._unsubOccupancyChanged();
-      this._unsubOccupancyChanged = undefined;
-    }
-    if (this._unsubHandoffTrace) {
-      this._unsubHandoffTrace();
-      this._unsubHandoffTrace = undefined;
-    }
-    if (this._unsubEntityRegistryUpdated) {
-      this._unsubEntityRegistryUpdated();
-      this._unsubEntityRegistryUpdated = undefined;
-    }
-    if (this._unsubDeviceRegistryUpdated) {
-      this._unsubDeviceRegistryUpdated();
-      this._unsubDeviceRegistryUpdated = undefined;
-    }
-    if (this._unsubAreaRegistryUpdated) {
-      this._unsubAreaRegistryUpdated();
-      this._unsubAreaRegistryUpdated = undefined;
-    }
+    this._teardownUpdateSubscriptions();
+    this._updatesSubscriptionConnection = undefined;
   }
 
   /**
@@ -2168,11 +2152,7 @@ export class TopomationPanel extends LitElement {
     this._setPanelSplit(TREE_PANEL_SPLIT_DEFAULT, true);
   };
 
-  private async _subscribeToUpdates(): Promise<void> {
-    if (!this.hass || !this.hass.connection) return;
-    if (typeof this.hass.connection.subscribeEvents !== "function") return;
-
-    // Clean up any prior subscription
+  private _teardownUpdateSubscriptions(): void {
     if (this._unsubUpdates) {
       this._unsubUpdates();
       this._unsubUpdates = undefined;
@@ -2201,9 +2181,34 @@ export class TopomationPanel extends LitElement {
       this._unsubAreaRegistryUpdated();
       this._unsubAreaRegistryUpdated = undefined;
     }
+  }
+
+  private async _subscribeToUpdates(): Promise<void> {
+    const connection = this.hass?.connection;
+    if (!connection || typeof connection.subscribeEvents !== "function") {
+      this._teardownUpdateSubscriptions();
+      this._updatesSubscriptionConnection = undefined;
+      return;
+    }
+
+    if (
+      this._updatesSubscriptionConnection === connection &&
+      this._unsubUpdates &&
+      this._unsubStateChanged &&
+      this._unsubOccupancyChanged &&
+      this._unsubHandoffTrace &&
+      this._unsubEntityRegistryUpdated &&
+      this._unsubDeviceRegistryUpdated &&
+      this._unsubAreaRegistryUpdated
+    ) {
+      return;
+    }
+
+    this._teardownUpdateSubscriptions();
+    this._updatesSubscriptionConnection = connection;
 
     try {
-      this._unsubUpdates = await this.hass.connection.subscribeEvents(
+      this._unsubUpdates = await connection.subscribeEvents(
         (event: any) => {
           this._scheduleReload(true);
         },
@@ -2214,7 +2219,7 @@ export class TopomationPanel extends LitElement {
     }
 
     try {
-      this._unsubOccupancyChanged = await this.hass.connection.subscribeEvents(
+      this._unsubOccupancyChanged = await connection.subscribeEvents(
         (event: any) => {
           const locationId = event?.data?.location_id;
           const occupied = event?.data?.occupied;
@@ -2236,7 +2241,7 @@ export class TopomationPanel extends LitElement {
     }
 
     try {
-      this._unsubHandoffTrace = await this.hass.connection.subscribeEvents(
+      this._unsubHandoffTrace = await connection.subscribeEvents(
         (event: any) => {
           const data = event?.data || {};
           const edgeId =
@@ -2294,7 +2299,7 @@ export class TopomationPanel extends LitElement {
     }
 
     try {
-      this._unsubEntityRegistryUpdated = await this.hass.connection.subscribeEvents(
+      this._unsubEntityRegistryUpdated = await connection.subscribeEvents(
         (event: any) => {
           this._scheduleRegistryRefresh("entity_registry_updated", event?.data || {});
         },
@@ -2305,7 +2310,7 @@ export class TopomationPanel extends LitElement {
     }
 
     try {
-      this._unsubDeviceRegistryUpdated = await this.hass.connection.subscribeEvents(
+      this._unsubDeviceRegistryUpdated = await connection.subscribeEvents(
         (event: any) => {
           this._scheduleRegistryRefresh("device_registry_updated", event?.data || {});
         },
@@ -2316,7 +2321,7 @@ export class TopomationPanel extends LitElement {
     }
 
     try {
-      this._unsubAreaRegistryUpdated = await this.hass.connection.subscribeEvents(
+      this._unsubAreaRegistryUpdated = await connection.subscribeEvents(
         (event: any) => {
           this._scheduleRegistryRefresh("area_registry_updated", event?.data || {});
         },
@@ -2326,7 +2331,7 @@ export class TopomationPanel extends LitElement {
       console.warn("Failed to subscribe to area_registry_updated events", err);
     }
 
-    await this._syncStateChangedSubscription();
+    await this._syncStateChangedSubscription(connection);
   }
 
   private _scheduleRegistryRefresh(eventType: string, data: Record<string, unknown>): void {
@@ -2422,14 +2427,14 @@ export class TopomationPanel extends LitElement {
     return map;
   }
 
-  private async _syncStateChangedSubscription(): Promise<void> {
-    if (!this.hass?.connection) return;
-    if (typeof this.hass.connection.subscribeEvents !== "function") return;
+  private async _syncStateChangedSubscription(connection = this.hass?.connection): Promise<void> {
+    if (!connection) return;
+    if (typeof connection.subscribeEvents !== "function") return;
 
     if (this._unsubStateChanged) return;
 
     try {
-      this._unsubStateChanged = await this.hass.connection.subscribeEvents(
+      this._unsubStateChanged = await connection.subscribeEvents(
         (event: any) => {
           const entityId = event?.data?.entity_id;
           if (!entityId) return;

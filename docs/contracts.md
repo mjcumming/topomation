@@ -210,9 +210,20 @@ Additional save points:
   - saving normalizes the full group across all selected members
     (`A.sync_locations = [B, C]`, `B.sync_locations = [A, C]`,
     `C.sync_locations = [A, B]`)
+  - runtime resolves the effective shared-space group as the connected
+    component of allowed `sync_locations` declarations, so one missing reverse
+    edge or historical partial graph must not split the occupied/vacant result
   - any occupancy contributor change in one shared-space member is mirrored to
     peers using synthetic sync sources (`sync:<origin>::<source>`) so the group
     behaves like one occupied space
+  - mirrored sync contributors preserve the origin contribution's remaining
+    timeout or indefinite hold; target defaults do not overwrite source timing
+  - a later shorter shared-space contribution must not shorten an already
+    longer active occupied hold; every member vacates only after all direct and
+    mirrored contributions in the group have cleared or expired
+  - occupancy binary sensors are authoritative for shared-space state:
+    `binary_sensor.<location>_occupancy` must report the same occupied/vacant
+    result the UI shows for that location
   - effective UI checked state reflects the full shared group membership, not
     only the current location's raw stored array.
 - Shared-space candidate scope is explicit and sibling-scoped:

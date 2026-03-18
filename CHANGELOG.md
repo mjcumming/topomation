@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.34] - 2026-03-18
+
+### Changed
+
+- Shared Space is now documented and enforced as a backend-owned occupancy
+  contract: shared-space members behave like one connected occupancy group, and
+  room occupancy binary sensors are the authoritative API surface for both Home
+  Assistant automations and the UI.
+- Added ADR-HA-067 plus contract/architecture updates defining shared-space
+  contribution-union timeout semantics, including that mirrored sync
+  contributors preserve source timeouts and shorter later events do not shorten
+  longer active holds.
+
+### Fixed
+
+- Shared-space runtime propagation now resolves the full connected sync group
+  instead of only one-hop peers, so historical or partially normalized
+  `sync_locations` graphs still behave like one occupied space.
+- Removed the frontend-only shared-space occupancy workaround so the panel
+  renders backend occupancy truth instead of inventing a conflicting room state.
+- Stabilized panel event subscriptions across same-connection reactive `hass`
+  churn so live occupancy/explainability state cannot get stuck on stale
+  `Vacant` overrides after the backend binary sensor has already turned on.
+
 ## [0.2.33] - 2026-03-17
 
 ### Fixed

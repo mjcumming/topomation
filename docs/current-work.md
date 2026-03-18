@@ -1,6 +1,6 @@
 # Current work
 
-**Last updated**: 2026-03-17
+**Last updated**: 2026-03-18
 **Purpose**: short live context for parallel work, handoff, and branch safety.
 
 Status markers:
@@ -12,7 +12,7 @@ Status markers:
 - Active focus: repo workflow reset and authority-chain hardening (ADR-HA-063): dev mode only, ambiguity stop rule, and exact touched-workflow validation gate.
 - Active focus: managed shadow area contract + implementation checklist (ADR-HA-049 / ISSUE-057).
 - Active focus: HA-canonical managed-rule sync (ADR-HA-053) with stable rule identity and in-place upserts.
-- Active focus: automation UX + persistence realignment (ADR-HA-054/055/056/060/061/062/063/066): the active rule UI is scoped to Lighting/Media/HVAC, Detection now uses `Shared Space` as the primary occupancy relationship model, and the exact current branch state reran through the touched-workflow gate on live HA on 2026-03-17.
+- Active focus: automation UX + persistence realignment (ADR-HA-054/055/056/060/061/062/063/066/067): the active rule UI is scoped to Lighting/Media/HVAC, Detection uses `Shared Space` as the primary occupancy relationship model, and shared-space occupancy is now documented as binary-sensor authoritative with contribution-union timeout semantics.
 - Active execution checklist: `project/issues/issue-058-automation-ui-contract-implementation.md`.
 - New planning track: ambient light v1 design baseline captured in `docs/ambient-light-v1-design.md` before dusk/dawn coupling work.
 - Future work captured: a house-wide modes/activities context layer (for example `watching_tv`, `evening`, `overnight`, `party`, `bedtime`) that can modulate lighting/media/HVAC behavior is promising, but is intentionally deferred until the simpler lighting-behavior UX lands.

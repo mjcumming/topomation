@@ -3103,6 +3103,76 @@ unnecessary in the primary authoring path for most homes.
 - Reinterpret `Sync Locations` as one-way propagation:
   rejected because it conflates shared-space grouping with directional
   contribution.
+
+---
+
+### ADR-HA-067: Shared Space Runtime Is Binary-Sensor Authoritative and Uses Contribution-Union Semantics (2026-03-18)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+
+ADR-HA-066 established `Shared Space` as the primary user-facing occupancy
+relationship model, but a critical contract gap remained:
+
+1. the frontend could drift into showing an effective shared-space state that
+   the room's actual occupancy binary sensor did not report
+2. timeout behavior for mixed-duration events across one shared-space group was
+   not written down explicitly enough
+3. connected shared-space graphs could be interpreted as only one-hop peers
+   instead of one occupied group
+
+That drift is not acceptable because Home Assistant users and automations query
+the occupancy binary sensors directly. If `Kitchen` is part of a shared space,
+`binary_sensor.kitchen_occupancy` must reflect that runtime truth.
+
+**Decision**:
+
+1. Occupancy binary sensors are the authoritative public contract for room
+   occupancy, including shared-space state.
+2. Shared-space runtime is group-oriented:
+   - any active contribution in one member contributes to every other member
+   - mirrored sync contributors preserve the origin contribution's remaining
+     timeout or indefinite hold
+   - later shorter contributions never shorten a longer already-active hold
+3. Effective shared-space membership for runtime propagation is the connected
+   component of allowed `sync_locations` relationships, not only one-hop direct
+   declarations.
+4. Frontend UI must render the backend binary-sensor state and may only explain
+   it, not override it with a separate occupied/vacant model.
+
+**Rationale**:
+
+1. Users expect open-plan/shared rooms to behave like one occupied space.
+2. The binary sensor is what Home Assistant automations and dashboards consume,
+   so it must be the only source of truth.
+3. Preserving source contribution expirations reuses the occupancy module's
+   existing "longest active contribution wins" behavior cleanly.
+4. Connected-component semantics make shared space robust against historical or
+   partially normalized config graphs.
+
+**Consequences**:
+
+- ✅ Shared-space occupancy now has one authoritative contract across backend,
+  binary sensors, automations, and UI.
+- ✅ Mixed timeout durations behave predictably:
+  - 30-minute Kitchen motion gives the whole group 30 minutes
+  - 45-minute Family Room activity extends the whole group to 45 minutes
+  - 5-minute Back Hall activity adds coverage but does not shorten existing
+    longer holds
+- ✅ Frontend workarounds that invent occupancy from peer rooms are invalid and
+  should be removed.
+- ⚠️ Any future shared-space change must update backend tests, contracts, and
+  release-gate coverage together.
+
+**Alternatives Considered**:
+
+- Keep shared-space aggregation as a frontend-only display rule:
+  rejected because it breaks HA automation expectations and creates two
+  conflicting occupancy truths.
+- Use target-room default timeout for mirrored shared-space events:
+  rejected because it would distort source intent and make one room's defaults
+  silently rewrite another room's active occupancy hold.
 - Add a separate group-creation manager:
   rejected because the existing checklist can author shared space membership
   directly with less UI overhead.

@@ -1,6 +1,6 @@
 # Touched-Workflow Release Gate
 
-**Last reviewed**: 2026-03-06  
+**Last reviewed**: 2026-03-18  
 **Status**: Active (Operational)  
 **Purpose**: block release/live claims unless the exact workflows changed in the
 current branch state were rerun and recorded.
@@ -110,27 +110,30 @@ Outcome:
 
 ## 8. Current Release Candidate Record
 
-Commit under test: release-candidate worktree for `0.2.33` on top of `7560d53` (`Fix aggregate room explainability occupancy`)
+Commit under test: release-candidate worktree for `0.2.34` immediately before the final release commit
 Frontend bundle rebuilt from same commit: yes
 
 Touched workflows:
-- Detection room explainability docked panel current-state occupancy rollup for parent locations
-- Detection room explainability active contributor presentation for occupied descendant areas
+- Shared Space runtime propagation across the full connected sync group
+- Shared Space binary sensor authority for synced-area occupied/vacant state
+- Detection room explainability current-state/render sync during same-connection `hass` churn
 
 Commands run:
-- `npm test -- --runInBand topomation-panel.test.ts`
+- `pytest -q tests/test_init.py -k "sync_location" --no-cov`
+- `pytest -q tests/test_occupancy_timeout_semantics.py tests/test_binary_sensor.py --no-cov`
+- `cd custom_components/topomation/frontend && npm test -- --runInBand topomation-panel.test.ts`
+- `cd custom_components/topomation/frontend && npm run test:unit`
+- `cd custom_components/topomation/frontend && npm run build`
+- `cd custom_components/topomation/frontend && HA_URL="$HA_URL_DEV" HA_TOKEN="$HA_TOKEN_DEV" npx playwright test --config playwright.live.config.ts playwright/live-automation-ui.spec.ts -g "live detection explainability reflects trigger activation and contributor removal"`
 - `./scripts/test-comprehensive.sh`
-- `make test-release-live`
 - `TOPOMATION_PREFER_LOCAL_HA=0 make test-release-live`
-- `cd custom_components/topomation/frontend && HA_URL="$HA_URL_DEV" HA_TOKEN="$HA_TOKEN_DEV" LIVE_PANEL_PATH=/topomation npx playwright test --config playwright.live.config.ts playwright/live-automation-ui.spec.ts`
 
 Outcome:
-- Detection room explainability docked panel current-state occupancy rollup for parent locations: local PASS, live browser PASS
-- Detection room explainability active contributor presentation for occupied descendant areas: local PASS, live browser PASS
+- Shared Space runtime propagation across the full connected sync group: backend targeted PASS, full local gate PASS, live browser shared-space save path PASS
+- Shared Space binary sensor authority for synced-area occupied/vacant state: backend targeted PASS, full local gate PASS
+- Detection room explainability current-state/render sync during same-connection `hass` churn: frontend targeted PASS, targeted live browser PASS, full release gate PASS
 
 Notes:
-- Local comprehensive gate passed on the `0.2.33` release-candidate worktree.
-- Live managed-action contract tests against configured dev HA passed.
-- Live browser gate passed after serving `live-harness.html` from the Playwright
-  Vite web server and switching harness config/state bootstrap calls to the HA
-  websocket API.
+- The backend shared-space fix moved authority back to the occupancy binary sensors.
+- The final frontend change for this release was not a shared-space workaround; it stabilized `topomation-panel` subscriptions so live occupancy state could not drift stale during reactive `hass` churn.
+- The final release commit adds this gate record to the already-validated branch state.

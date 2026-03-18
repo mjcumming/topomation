@@ -1358,6 +1358,115 @@ describe('TopomationPanel integration (fake hass)', () => {
     expect(vacancyReasonDetail).to.equal("Vacated by timeout");
   });
 
+  it("does not resubscribe live event handlers on same-connection hass churn", async () => {
+    const subscriptionCounts = new Map<string, number>();
+    const eventCallbacks = new Map<string, (event: any) => void>();
+    const connection = {
+      subscribeEvents: async (cb: (event: any) => void, eventType?: string) => {
+        const key = String(eventType || "");
+        subscriptionCounts.set(key, (subscriptionCounts.get(key) || 0) + 1);
+        if (eventType) {
+          eventCallbacks.set(eventType, cb);
+        }
+        return () => {
+          if (eventType) {
+            eventCallbacks.delete(eventType);
+          }
+        };
+      },
+    } as any;
+
+    const buildHass = (): HomeAssistant => ({
+      callWS: async <T>(req: Record<string, any>): Promise<T> => {
+        if (req.type === "topomation/locations/list") {
+          return { locations } as T;
+        }
+        if (req.type === "config/entity_registry/list") {
+          return [] as T;
+        }
+        if (req.type === "config/device_registry/list") {
+          return [] as T;
+        }
+        return {} as T;
+      },
+      connection,
+      states: {
+        "binary_sensor.occupancy_kitchen": {
+          entity_id: "binary_sensor.occupancy_kitchen",
+          state: "off",
+          attributes: {
+            device_class: "occupancy",
+            location_id: "kitchen",
+          },
+        },
+      },
+      areas: {},
+      floors: {},
+      config: {
+        location_name: "Test Property",
+      },
+      localize: (key: string) => key,
+    });
+
+    const element = await fixture<HTMLDivElement>(html`
+      <topomation-panel .hass=${buildHass()}></topomation-panel>
+    `);
+
+    await waitUntil(() => (element as any)._loading === false, "panel did not finish loading");
+    await waitUntil(
+      () =>
+        (subscriptionCounts.get("topomation_occupancy_changed") || 0) > 0 &&
+        (subscriptionCounts.get("state_changed") || 0) > 0,
+      "panel did not establish occupancy subscriptions"
+    );
+    const baselineCounts = new Map(subscriptionCounts);
+
+    for (let iteration = 0; iteration < 5; iteration += 1) {
+      (element as any).hass = buildHass();
+      await (element as any).updateComplete;
+    }
+
+    for (const [eventType, baselineCount] of baselineCounts.entries()) {
+      expect(subscriptionCounts.get(eventType) || 0).to.equal(
+        baselineCount,
+        `expected a stable subscription count for ${eventType}`
+      );
+    }
+
+    (element as any)._rightPanelMode = "inspector";
+    (element as any)._selectedId = "kitchen";
+    (element as any).requestUpdate();
+    await (element as any).updateComplete;
+
+    eventCallbacks.get("state_changed")?.({
+      data: {
+        entity_id: "binary_sensor.occupancy_kitchen",
+        new_state: {
+          entity_id: "binary_sensor.occupancy_kitchen",
+          state: "on",
+          last_changed: "2026-03-18T04:00:00+00:00",
+          attributes: {
+            device_class: "occupancy",
+            location_id: "kitchen",
+            previous_occupied: false,
+            reason: "event:trigger",
+          },
+        },
+      },
+    });
+
+    await (element as any).updateComplete;
+    const inspector = element.shadowRoot!.querySelector("ht-location-inspector") as any;
+    expect(inspector).to.exist;
+    await inspector.updateComplete;
+
+    const updatedStatus = (
+      inspector.shadowRoot?.querySelector('[data-testid="header-occupancy-status"]')?.textContent ||
+      ""
+    ).trim();
+    expect(updatedStatus).to.equal("Occupied");
+  });
+
   it("renders grouped device assignment list with unassigned and location buckets", async () => {
     const locationsWithEntities: Location[] = locations.map((loc) =>
       loc.id === "kitchen"
