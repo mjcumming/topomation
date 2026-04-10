@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.37] - 2026-04-10
+
+### Changed
+
+- Reworked the room Lighting rule editor around explicit occupancy and ambient
+  trigger families, with pill-style selections, inline `Time window` choices,
+  and a simpler light-target action layout.
+- Structural nodes (`building`, `grounds`, and `floor`) now stay focused on
+  summary/explainability instead of exposing room-style automation editing.
+- Floor occupancy grouping now uses the `occupancy_group_id` model end to end,
+  with legacy sync behavior removed from the active UI/runtime path.
+
+### Fixed
+
+- Managed action rule save/list calls now prefer local loopback in the dev
+  runtime, avoiding delays caused by stale Home Assistant internal URLs.
+- Lighting rule draft rows no longer get stuck disabled while background rule
+  loading is still completing.
+- Building and grounds inspectors no longer show stale occupancy controls that
+  do not apply to structural nodes.
+- Occupancy explainability now uses location-oriented wording and structural
+  child labels instead of raw room/internal contributor language.
+
 ## [0.2.36] - 2026-03-18
 
 ### Fixed

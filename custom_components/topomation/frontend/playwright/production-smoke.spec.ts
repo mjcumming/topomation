@@ -152,7 +152,7 @@ test("automation tabs omit startup controls and media add-rule survives reactive
 
     await expect(sourceRow).toBeVisible();
     await sourceToggle.check();
-    await page.getByTestId("detection-save-button").click();
+    await page.getByTestId("detection-draft-toolbar").getByTestId("detection-save-button").click();
 
     await expect
       .poll(async () => {

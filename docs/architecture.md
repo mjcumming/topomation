@@ -303,15 +303,25 @@ shared location tree selection context.
   - lock icon: lock/unlock location
 - Occupancy quick-controls are source-aware (`manual_ui`) and respect lock invariants (no mutation while locked).
 - Inspector IA is split into top-level tabs:
-  - `Occupancy`
+  - `Occupancy` for room-level occupancy authoring
+  - `Occupancy Groups` when a `floor` is selected
   - `Ambient`
   - `Lighting`
   - `Media`
   - `HVAC`
 - Advanced occupancy relationship controls are currently hidden from the active
   `Occupancy` inspector until that workflow is revalidated.
-- Occupancy's primary shared-space workflow is `Shared Space`, with
-  borrowed coverage handled by `Add Source`.
+- Occupancy's primary shared-space workflow is floor-scoped `Occupancy Groups`,
+  with borrowed coverage handled by `Add Source`.
+- Floor-selected `Occupancy Groups` author shared occupancy among direct child
+  `area` locations only; the UI does not expose floor-to-floor grouping.
+- Floor-selected `Occupancy Groups` apply immediately and do not use the
+  room-level occupancy draft bar.
+- Occupancy group membership is behavioral, not structural:
+  - rooms remain normal topology nodes
+  - grouped rooms keep their own devices, labels, automations, and detection
+    sources
+  - occupancy authority moves to the occupancy group runtime object
 - Occupancy binary sensors remain the authoritative room-state API for both
   Home Assistant automations and the Topomation UI; frontend diagnostics may
   explain that state, but must not synthesize a contradictory occupied/vacant
@@ -363,7 +373,17 @@ shared location tree selection context.
 - Media/HVAC rule cards do not expose ambient-light filters in v1.
 - `climate.*` is intentionally deferred until preset-oriented occupancy
   behavior is contracted.
-- Integration-owned nodes (`building`, `grounds`, `subarea`) are configured through explicit source assignment in inspector.
+- Structural integration-owned nodes (`building`, `grounds`) use derived
+  occupancy in the active inspector and do not expose direct occupancy source
+  authoring there.
+- Structural nodes (`floor`, `building`, `grounds`) are summary-oriented in the
+  active inspector:
+  - room-style automation tabs are not rendered for them
+  - `floor` keeps occupancy-group management as its structural authoring role
+  - `building` and `grounds` render informational summary/explainability
+    surfaces only
+- Room-like integration-owned nodes (`subarea`) continue to use room-scoped
+  occupancy authoring.
 - HA-backed wrappers (`floor_*`, `area_*`) keep HA-linked entity discovery defaults.
 
 **Components**:
@@ -452,17 +472,20 @@ class HAPlatformAdapter:
 6. Coordinator: Calls schedule_next_timeout() for next check
 ```
 
-### 4.2b Shared Space Propagation
+### 4.2b Occupancy Group Authority
 
 ```
 1. Family Room motion triggers with a 45-minute hold
-2. OccupancyModule stores a direct Family Room contribution expiring in 45 minutes
-3. Integration shared-space handler resolves the full connected shared-space group
-4. Integration mirrors that contribution to every peer as sync:<origin>::<source>
-5. Each peer occupancy entity turns ON from its mirrored contribution set
-6. Any later 5-minute hall event adds another contribution, but does not shorten
+2. Because Family Room belongs to `Main Open Area`, the occupancy runtime resolves
+   the event to that occupancy group
+3. The occupancy group stores the originating Family Room contribution expiring
+   in 45 minutes
+4. Each member room projects the group's occupied state as its room occupancy state
+5. A later 5-minute hall event contributes to the same group and does not shorten
    the existing 45-minute effective timeout
-7. Each room turns OFF only after the last direct or mirrored contribution expires
+6. Manual occupy/vacate and lock actions invoked from any grouped room also act
+   on the group authority
+7. Each member room turns OFF only when the group becomes vacant
 ```
 
 ### 4.3 User Changes Config via UI

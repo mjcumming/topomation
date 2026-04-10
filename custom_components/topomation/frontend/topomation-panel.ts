@@ -99,6 +99,7 @@ export class TopomationPanel extends LitElement {
     _assignmentFilter: { state: true },
     _deviceGroupExpanded: { state: true },
     _haRegistryRevision: { state: true },
+    _pendingDeleteSelectedId: { state: true },
   };
 
   @state() private _locations: Location[] = [];
@@ -133,6 +134,7 @@ export class TopomationPanel extends LitElement {
   @state() private _assignmentFilter: AssignmentFilter = "all";
   @state() private _deviceGroupExpanded: Record<string, boolean> = {};
   @state() private _haRegistryRevision = 0;
+  @state() private _pendingDeleteSelectedId?: string;
 
   private _hasLoaded = false;
   private _pendingLoadTimer?: number;
@@ -222,6 +224,12 @@ export class TopomationPanel extends LitElement {
 
   protected updated(changedProps: PropertyValues): void {
     super.updated(changedProps);
+    if (changedProps.has("_selectedId")) {
+      const selectedId = this._selectedId || undefined;
+      if (this._pendingDeleteSelectedId && this._pendingDeleteSelectedId !== selectedId) {
+        this._pendingDeleteSelectedId = undefined;
+      }
+    }
   }
 
   disconnectedCallback(): void {
@@ -780,6 +788,10 @@ export class TopomationPanel extends LitElement {
     const rightHeaderTitle = "Automation";
     const canCreateStructure = true;
     const deleteDisabledReason = this._deleteDisabledReason(selectedLocation);
+    const deleteArmed =
+      Boolean(selectedLocation) &&
+      this._pendingDeleteSelectedId === selectedLocation?.id;
+    const canDeleteSelected = this._canDeleteLocation(selectedLocation);
     const treePanelBasis = `${(this._treePanelSplit * 100).toFixed(1)}%`;
 
     return html`
@@ -817,8 +829,10 @@ export class TopomationPanel extends LitElement {
                 class="button button-secondary"
                 @click=${this._handleDeleteSelected}
                 title=${deleteDisabledReason}
+                ?disabled=${!canDeleteSelected}
+                data-testid="delete-selected-button"
               >
-                Delete Selected
+                ${deleteArmed ? "Confirm Delete" : "Delete Selected"}
               </button>
             </div>
           </div>
@@ -1637,9 +1651,12 @@ export class TopomationPanel extends LitElement {
       this._showToast(this._deleteDisabledReason(location), "warning");
       return;
     }
-    if (!confirm(`Delete "${location.name}"?`)) {
+    if (this._pendingDeleteSelectedId !== location.id) {
+      this._pendingDeleteSelectedId = location.id;
+      this._showToast(`Click Confirm Delete to remove "${location.name}"`, "warning");
       return;
     }
+    this._pendingDeleteSelectedId = undefined;
     void this._handleLocationDelete(
       new CustomEvent("location-delete", {
         detail: { location },
@@ -1853,6 +1870,7 @@ export class TopomationPanel extends LitElement {
 
         await this._loadLocations(true);
         this._locationsVersion += 1;
+        this._pendingDeleteSelectedId = undefined;
 
         if (selectedWasDeleted) {
           const fallbackId =

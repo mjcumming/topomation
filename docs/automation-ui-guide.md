@@ -161,27 +161,27 @@ Deviation policy:
 Rule-card requirements:
 
 1. Rule title supports inline rename.
-2. Lighting rules are situation-based, not raw trigger-family based.
-3. The first section is `When any of these happen`.
-4. A situation row contains:
-   - one `Event`
-   - one cross-dimension `Only when` requirement
-5. Supported events are:
-   - `Room becomes occupied`
-   - `Room becomes vacant`
-   - `It becomes dark`
-   - `It becomes bright`
-6. Supported `Only when` values are:
-   - for occupancy events: `Always`, `It is dark`, `It is bright`
-   - for ambient events: `Always`, `Room is occupied`, `Room is vacant`
-7. Current backend-backed Lighting rules support at most:
-   - one occupancy-family situation
-   - one ambient-family situation
-8. `Add situation` adds the missing family when available.
-9. `Remove` is per situation and is disabled when it would leave the rule with no
-   situations.
-10. `Time window` is a separate section with one optional toggle plus `Begin` /
-    `End` inputs.
+2. Lighting rules are trigger-family based.
+3. The first section is `When`.
+4. Lighting exposes exactly two trigger-family cards:
+   - `Occupancy change`
+   - `Ambient light change`
+5. Trigger choices are presented as text-button pills, not numbered situation
+   rows.
+6. Supported trigger choices are:
+   - occupancy: `Room becomes occupied`, `Room becomes vacant`
+   - ambient: `It becomes dark`, `It becomes bright`
+7. A trigger family becomes inactive when no trigger in that family is selected.
+8. `Only if` values are shown only when that trigger family is active:
+   - for occupancy triggers: `Any`, `It is dark`, `It is bright`
+   - for ambient triggers: `Any`, `Room is occupied`, `Room is vacant`
+9. Current backend-backed Lighting rules support at most:
+   - one occupancy-family trigger
+   - one ambient-family trigger
+10. `Time window` is a separate section with pill-style choices:
+    - `Any time`
+    - `Limit to a time range`
+    Begin / End inputs appear only when the time range option is active.
 11. One rule supports one optional time window only.
 12. Multi-band behavior is authored as multiple rules, typically via
     `Duplicate rule`.
@@ -193,27 +193,30 @@ Rule-card requirements:
      `turn_on` with `brightness_pct`)
    - non-dimmable rows use an action mode select (`Turn on` / `Turn off` /
      `Toggle`)
-   - `light.turn_on` rows may expose an `Only if off` checkbox; when checked,
-     that individual light action is skipped if the light is already on
+   - `light.turn_on` rows may expose an `Only if off` pill; when active, that
+     individual light action is skipped if the light is already on
    - do not show `Only if off` for `turn_off`; do not preserve it for `toggle`
    - do not render a separate top-level `Device` + `Action` dropdown pair for
      Lighting rules.
-15. Rule lifecycle controls:
+15. Duplicate-rule helper copy is placed with the rule footer controls, not in
+    the middle of the editor body.
+16. Rule lifecycle controls:
    - unsaved draft rows show `Save rule` + `Remove rule`
    - all Lighting rule cards also show `Duplicate rule`
    - persisted edited rows show `Update rule` + `Discard edits` + `Delete rule`
    - persisted clean rows show `Delete rule` + `Duplicate rule`
-16. Rule lifecycle controls are card-local; they are not split between tab-level
+17. Rule lifecycle controls are card-local; they are not split between tab-level
    buttons and rule-card buttons.
 
 Acceptance checks:
 
 1. Single top `Lighting rules` header.
 2. Inline rule rename behavior works.
-3. Lighting renders situation cards instead of trigger-family controls.
-4. Lighting supports one occupancy situation plus one ambient situation in a
+3. Lighting renders trigger-family cards instead of situation cards.
+4. Lighting supports one occupancy trigger plus one ambient trigger in a
    single rule.
-5. `Add situation` is hidden once both situation families are present.
+5. Time window uses `Any time` / `Limit to a time range` controls with inline
+   heading placement.
 6. `Time window` reveals `Begin` and `End`.
 7. Unsaved draft rule hides `Delete rule`.
 8. Persisted edited rule shows `Update rule`, `Discard edits`, `Delete rule`,

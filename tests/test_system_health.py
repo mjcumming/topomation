@@ -25,13 +25,13 @@ async def test_system_health_info_reports_versions(hass: HomeAssistant) -> None:
     """Diagnostics should include integration and home-topology versions."""
     with patch(
         "custom_components.topomation.system_health.metadata.version",
-        return_value="1.0.1",
+        return_value="1.0.2",
     ):
         info = await system_health_info(hass)
 
     assert info["integration_version"] == VERSION
     assert info["home_topology_runtime_version"] == home_topology_version
-    assert info["home_topology_installed_version"] == "1.0.1"
+    assert info["home_topology_installed_version"] == "1.0.2"
 
 
 async def test_system_health_info_handles_missing_distribution(

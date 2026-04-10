@@ -300,12 +300,12 @@ describe('TopomationPanel integration (fake hass)', () => {
       '[data-testid="room-explainability-panel"]'
     ) as HTMLElement | null;
     expect(panel).to.exist;
-    expect(panel?.textContent || "").to.include("Room Explainability");
+    expect(panel?.textContent || "").to.include("Occupancy Explainability");
     expect(panel?.textContent || "").to.include("Current state");
     expect(panel?.textContent || "").to.include("Kitchen Motion");
     expect(panel?.textContent || "").to.include("Occupied by trigger");
     expect(panel?.textContent || "").not.to.include("Vacated by trigger");
-    expect(panel?.textContent || "").to.include("Room became occupied");
+    expect(panel?.textContent || "").to.include("Location became occupied");
 
     const dockBody = explainability?.shadowRoot?.querySelector(".dock-body") as HTMLElement | null;
     expect(dockBody).to.exist;
@@ -717,6 +717,59 @@ describe('TopomationPanel integration (fake hass)', () => {
 
     expect(callWsCalls.some((call) => call.type === "topomation/locations/delete")).to.equal(true);
     expect((element as any)._locations.find((loc: any) => loc.id === "kitchen")).to.equal(undefined);
+  });
+
+  it("requires a second toolbar click to confirm Delete Selected", async () => {
+    const callWsCalls: any[] = [];
+    let locationsState = [...locations];
+
+    const element = await fixture<HTMLDivElement>(html`
+      <topomation-panel
+        .hass=${{
+          callWS: async <T>(req: Record<string, any>): Promise<T> => {
+            callWsCalls.push(req);
+            if (req.type === "topomation/locations/list") {
+              return { locations: locationsState } as T;
+            }
+            if (req.type === "topomation/locations/delete") {
+              locationsState = locationsState.filter((loc) => loc.id !== req.location_id);
+              return { success: true } as T;
+            }
+            if (req.type === "config/entity_registry/list") return [] as T;
+            if (req.type === "config/device_registry/list") return [] as T;
+            throw new Error("Unexpected WS call");
+          },
+          connection: {},
+          states: {},
+          areas: {},
+          floors: {},
+          config: { location_name: "Test Property" },
+          localize: (key: string) => key,
+        } as HomeAssistant}
+      ></topomation-panel>
+    `);
+
+    await waitUntil(() => (element as any)._loading === false, "panel did not finish loading");
+    (element as any)._selectedId = "kitchen";
+    await (element as any).updateComplete;
+
+    const button = element.shadowRoot?.querySelector(
+      '[data-testid="delete-selected-button"]'
+    ) as HTMLButtonElement | null;
+    expect(button).to.exist;
+    expect((button?.textContent || "").trim()).to.equal("Delete Selected");
+
+    button!.click();
+    await (element as any).updateComplete;
+
+    expect(callWsCalls.some((call) => call.type === "topomation/locations/delete")).to.equal(false);
+    expect((button?.textContent || "").trim()).to.equal("Confirm Delete");
+
+    button!.click();
+    await waitUntil(
+      () => callWsCalls.some((call) => call.type === "topomation/locations/delete"),
+      "delete request was not sent after confirmation"
+    );
   });
 
   it("shows add and delete controls in media manager view", async () => {

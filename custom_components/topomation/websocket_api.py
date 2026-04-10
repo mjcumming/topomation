@@ -8,7 +8,6 @@ from typing import Any
 from weakref import WeakKeyDictionary
 
 import voluptuous as vol
-from home_topology import Event
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import area_registry as ar
@@ -65,7 +64,7 @@ _META_SHADOW_FOR_LOCATION_ID_KEY = "shadow_for_location_id"
 _MANAGED_SHADOW_ROLE = "managed_shadow"
 _SHADOW_HOST_TYPES = frozenset({"floor", "building", "grounds"})
 _OCCUPANCY_LINKED_LOCATIONS_KEY = "linked_locations"
-_OCCUPANCY_SYNC_LOCATIONS_KEY = "sync_locations"
+_OCCUPANCY_GROUP_ID_KEY = "occupancy_group_id"
 _DUSK_DAWN_TIME_PATTERN = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
 _ACTION_TRIGGER_TYPES = frozenset({"on_occupied", "on_vacant", "on_dark", "on_bright"})
 _ACTION_LEGACY_TRIGGER_MAP: dict[str, str] = {
@@ -357,258 +356,31 @@ def _normalize_linked_locations_config(
     )
 
 
-def _normalize_sync_locations_config(
-    location_manager: object,
+def _normalize_occupancy_group_id_config(
     location: object,
     config: dict[str, Any],
-) -> tuple[list[str] | None, str | None]:
-    """Validate and normalize occupancy sync_locations against product policy."""
-    raw_values = config.get(_OCCUPANCY_SYNC_LOCATIONS_KEY)
-    if raw_values is None:
+) -> tuple[str | None, str | None]:
+    """Validate and normalize occupancy_group_id against active product policy."""
+    if _OCCUPANCY_GROUP_ID_KEY not in config:
         return None, None
-    if not isinstance(raw_values, list):
-        return None, f"{_OCCUPANCY_SYNC_LOCATIONS_KEY} must be a list of location IDs."
 
-    normalized: list[str] = []
-    seen: set[str] = set()
-    for item in raw_values:
-        if not isinstance(item, str):
-            return None, f"{_OCCUPANCY_SYNC_LOCATIONS_KEY} must contain string location IDs."
-        location_id = item.strip()
-        if not location_id or location_id in seen:
-            continue
-        seen.add(location_id)
-        normalized.append(location_id)
+    raw_value = config.get(_OCCUPANCY_GROUP_ID_KEY)
+    if raw_value is None:
+        return None, None
+    if not isinstance(raw_value, str):
+        return None, f"{_OCCUPANCY_GROUP_ID_KEY} must be a string or null."
 
-    scope = _sync_location_scope(location_manager, location)
-    allowed = _allowed_sync_location_neighbors(location_manager, location, scope)
-    if not allowed:
-        if normalized:
-            if scope is None:
-                return (
-                    None,
-                    "Sync locations are available for area locations whose parent is an area, "
-                    "floor, or building, and for floor locations under the same building.",
-                )
-            candidate_type, _, parent_type = scope
-            return (
-                None,
-                f"Sync locations must be sibling {candidate_type} locations under the same {parent_type}.",
-            )
-        return [], None
-
-    invalid = [location_id for location_id in normalized if location_id not in allowed]
-    if invalid:
-        preview = ", ".join(invalid[:3])
-        if scope is None:
-            return None, f"Invalid sync location(s): {preview}"
-        candidate_type, _, parent_type = scope
-        return (
-            None,
-            f"Sync locations must be sibling {candidate_type} locations under the same {parent_type}. "
-            f"Invalid: {preview}",
-        )
-
-    return normalized, None
-
-
-def _sync_locations_from_config(config: object) -> list[str]:
-    """Return normalized sync peer IDs from a stored occupancy config."""
-    if not isinstance(config, dict):
-        return []
-
-    raw_values = config.get(_OCCUPANCY_SYNC_LOCATIONS_KEY)
-    if not isinstance(raw_values, list):
-        return []
-
-    normalized: list[str] = []
-    seen: set[str] = set()
-    for item in raw_values:
-        if not isinstance(item, str):
-            continue
-        location_id = item.strip()
-        if not location_id or location_id in seen:
-            continue
-        seen.add(location_id)
-        normalized.append(location_id)
-    return normalized
-
-
-def _effective_sync_locations_for_target(
-    location_manager: object,
-    target_location_id: str,
-    config: object,
-) -> list[str]:
-    """Return sync peers filtered by current topology policy."""
-    get_location = getattr(location_manager, "get_location", None)
-    if not callable(get_location):
-        return []
-    try:
-        location = get_location(target_location_id)
-    except Exception:  # pragma: no cover - defensive lookup
-        return []
-    if location is None:
-        return []
-
-    synced = _sync_locations_from_config(config)
-    if not synced:
-        return []
-
-    scope = _sync_location_scope(location_manager, location)
-    allowed = _allowed_sync_location_neighbors(location_manager, location, scope)
-    if not allowed:
-        return []
-
-    return [location_id for location_id in synced if location_id in allowed]
-
-
-def _sync_peer_location_ids(location_manager: object, source_location_id: str) -> list[str]:
-    """Return effective sync peers for one location (forward + reverse declarations)."""
-    get_module_config = getattr(location_manager, "get_module_config", None)
-    all_locations = getattr(location_manager, "all_locations", None)
-    if not callable(get_module_config) or not callable(all_locations):
-        return []
-
-    peers: set[str] = set()
-    source_config = get_module_config(source_location_id, "occupancy")
-    peers.update(
-        _effective_sync_locations_for_target(location_manager, source_location_id, source_config)
-    )
-
-    for location in all_locations():
-        candidate_location_id = getattr(location, "id", None)
-        if not isinstance(candidate_location_id, str) or not candidate_location_id:
-            continue
-        if candidate_location_id == source_location_id:
-            continue
-        candidate_config = get_module_config(candidate_location_id, "occupancy")
-        candidate_synced = _effective_sync_locations_for_target(
-            location_manager,
-            candidate_location_id,
-            candidate_config,
-        )
-        if source_location_id in candidate_synced:
-            peers.add(candidate_location_id)
-
-    return sorted(peers)
-
-
-def _reconcile_sync_group_now(kernel: dict[str, Any], changed_location_ids: set[str]) -> None:
-    """Re-publish current occupancy state for a sync group after config edits.
-
-    Runtime sync mirroring is driven by ``occupancy.changed`` events. When users
-    change sync peer membership while one peer is already occupied, no fresh
-    occupancy event is emitted, so newly synced peers would otherwise remain out
-    of alignment until the next physical change. Re-publishing the current state
-    through the existing event path fixes that gap without introducing a second
-    sync implementation.
-    """
-    if not changed_location_ids:
-        return
-
-    event_bus = kernel.get("event_bus")
-    occupancy_module = kernel.get("modules", {}).get("occupancy")
-    if event_bus is None or occupancy_module is None:
-        return
-
-    get_state = getattr(occupancy_module, "get_location_state", None)
-    publish = getattr(event_bus, "publish", None)
-    if not callable(get_state) or not callable(publish):
-        return
-
-    location_manager = kernel.get("location_manager")
-    if location_manager is None:
-        return
-
-    to_reconcile: set[str] = set(changed_location_ids)
-    for location_id in list(changed_location_ids):
-        to_reconcile.update(_sync_peer_location_ids(location_manager, location_id))
-
-    for location_id in sorted(to_reconcile):
-        try:
-            payload = get_state(location_id)
-        except Exception:  # pragma: no cover - defensive runtime guard
-            _LOGGER.debug(
-                "Skipping sync reconciliation state read for %s after getter failure",
-                location_id,
-                exc_info=True,
-            )
-            continue
-        if not isinstance(payload, dict):
-            continue
-        occupied = payload.get("occupied")
-        if not isinstance(occupied, bool):
-            continue
-        publish(
-            Event(
-                type="occupancy.changed",
-                source="occupancy_sync_config",
-                location_id=location_id,
-                payload=payload,
-            )
-        )
-
-
-def _sync_location_scope(location_manager: object, location: object) -> tuple[str, str, str] | None:
-    """Return sync candidate scope as (candidate_type, parent_id, parent_type)."""
-    if _is_managed_shadow_area(location):
-        return None
+    normalized = raw_value.strip()
+    if not normalized:
+        return None, None
 
     location_type = _location_type(location)
-    parent_id = getattr(location, "parent_id", None)
-    if not isinstance(parent_id, str) or not parent_id:
-        return None
+    if location_type not in {"area", "subarea"}:
+        return None, f"{_OCCUPANCY_GROUP_ID_KEY} is only supported on area/subarea locations."
+    if _is_managed_shadow_area(location):
+        return None, "Managed shadow areas cannot belong to an occupancy group."
 
-    get_location = getattr(location_manager, "get_location", None)
-    if not callable(get_location):
-        return None
-
-    try:
-        parent = get_location(parent_id)
-    except Exception:  # pragma: no cover - defensive lookup
-        return None
-    if parent is None:
-        return None
-
-    parent_type = _location_type(parent)
-    if location_type == "area" and parent_type in {"area", "floor", "building"}:
-        return ("area", parent_id, parent_type)
-    if location_type == "floor" and parent_type == "building":
-        return ("floor", parent_id, parent_type)
-    return None
-
-
-def _allowed_sync_location_neighbors(
-    location_manager: object,
-    location: object,
-    scope: tuple[str, str, str] | None,
-) -> set[str]:
-    """Return allowed sibling sync targets for one location."""
-    if scope is None:
-        return set()
-    candidate_type, parent_id, _ = scope
-
-    all_locations = getattr(location_manager, "all_locations", None)
-    if not callable(all_locations):
-        return set()
-
-    source_location_id = getattr(location, "id", None)
-    allowed: set[str] = set()
-    for candidate in all_locations():
-        candidate_id = getattr(candidate, "id", None)
-        if not isinstance(candidate_id, str) or not candidate_id:
-            continue
-        if candidate_id == source_location_id:
-            continue
-        if getattr(candidate, "parent_id", None) != parent_id:
-            continue
-        if _location_type(candidate) != candidate_type:
-            continue
-        if candidate_type == "area" and _is_managed_shadow_area(candidate):
-            continue
-        allowed.add(candidate_id)
-
-    return allowed
+    return normalized, None
 
 
 def _normalize_action_brightness_pct(raw_value: Any, default_value: int) -> int:
@@ -1967,20 +1739,16 @@ def handle_locations_set_module_config(
             if linked_error:
                 connection.send_error(msg["id"], "invalid_config", linked_error)
                 return
-            normalized_sync, sync_error = _normalize_sync_locations_config(
-                loc_mgr,
-                location,
-                config,
-            )
-            if sync_error:
-                connection.send_error(msg["id"], "invalid_config", sync_error)
+            normalized_group_id, group_error = _normalize_occupancy_group_id_config(location, config)
+            if group_error:
+                connection.send_error(msg["id"], "invalid_config", group_error)
                 return
-            if normalized_linked is not None or normalized_sync is not None:
+            if normalized_linked is not None or _OCCUPANCY_GROUP_ID_KEY in config:
                 config = dict(config)
             if normalized_linked is not None:
                 config["linked_locations"] = normalized_linked
-            if normalized_sync is not None:
-                config["sync_locations"] = normalized_sync
+            if _OCCUPANCY_GROUP_ID_KEY in config:
+                config[_OCCUPANCY_GROUP_ID_KEY] = normalized_group_id
         elif module_id == "_meta":
             normalized_meta, meta_error = _normalize_meta_config(loc_mgr, location, config)
             if meta_error:
@@ -2001,12 +1769,6 @@ def handle_locations_set_module_config(
             module = modules[module_id]
             if hasattr(module, "on_location_config_changed"):
                 module.on_location_config_changed(location_id, config)
-
-        if module_id == "occupancy":
-            changed_location_ids = {location_id}
-            if isinstance(config, dict):
-                changed_location_ids.update(_sync_locations_from_config(config))
-            _reconcile_sync_group_now(kernel, changed_location_ids)
 
         coordinator = kernel.get("coordinator")
         if coordinator and hasattr(coordinator, "schedule_next_timeout"):

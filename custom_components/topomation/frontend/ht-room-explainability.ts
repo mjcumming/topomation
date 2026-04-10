@@ -1,6 +1,7 @@
 import { LitElement, html, css } from "lit";
 import type { HomeAssistant, Location, OccupancyConfig, OccupancySource } from "./types";
 import { sharedStyles } from "./styles";
+import { getLocationType } from "./hierarchy-rules";
 
 type OccupancyTransitionState = {
   occupied: boolean;
@@ -321,7 +322,7 @@ export class HtRoomExplainability extends LitElement {
           <div class="dock-header">
             <div class="dock-title">
               <ha-icon .icon=${"mdi:timeline-clock-outline"}></ha-icon>
-              Room Explainability
+              Occupancy Explainability
             </div>
             <button
               class="button button-secondary"
@@ -337,7 +338,7 @@ export class HtRoomExplainability extends LitElement {
           </div>
           <div class="dock-body">
             <div class="dock-help">
-              <span>See why this room is in its current state and what changed most recently.</span>
+              <span>See why this location is in its current state and what changed most recently.</span>
               ${recentChanges.length > 5
                 ? html`
                     <button
@@ -435,8 +436,8 @@ export class HtRoomExplainability extends LitElement {
                                   `
                                 : html`
                                     <div class="occupancy-empty-state">
-                                      No active contributors are keeping this room occupied right
-                                      now.
+                                      No active contributors are keeping this location occupied
+                                      right now.
                                     </div>
                                   `}
                             </div>
@@ -748,10 +749,15 @@ export class HtRoomExplainability extends LitElement {
       return mode === "occupied" ? undefined : "Vacated by timeout";
     }
     if (normalized === "propagation:parent") {
-      return mode === "occupied" ? undefined : "Vacated by parent propagation";
+      return mode === "occupied" ? undefined : "Vacated because the parent location cleared";
     }
     if (normalized.startsWith("propagation:child:")) {
-      return mode === "occupied" ? undefined : "Vacated by child propagation";
+      const childId = rawReason.split(":").slice(2).join(":").trim();
+      return mode === "occupied"
+        ? undefined
+        : childId
+          ? `Vacated because child location ${this._locationName(childId)} cleared`
+          : "Vacated because a child location cleared";
     }
     if (normalized.startsWith("event:")) {
       const eventType = normalized.split(":", 2)[1];
@@ -886,7 +892,7 @@ export class HtRoomExplainability extends LitElement {
 
   private _explainabilityChangeTitle(item: ExplainabilityChange): string {
     if (item.kind === "state") {
-      return item.event === "occupied" ? "Room became occupied" : "Room became vacant";
+      return item.event === "occupied" ? "Location became occupied" : "Location became vacant";
     }
     if (item.event === "trigger") return "Source triggered";
     if (item.event === "clear") return "Source cleared";
@@ -975,7 +981,10 @@ export class HtRoomExplainability extends LitElement {
 
     const filtered = onlyActive ? rows.filter((item) => item.active) : rows;
     return filtered.map(({ sourceLabel, stateLabel, timeLabel, sourceId }) => ({
-      sourceLabel: `${sourceLabel}${sourceLabel === sourceId ? "" : ` (${sourceId})`}`,
+      sourceLabel:
+        sourceLabel === sourceId || Boolean(this._structuralSourceLabel(sourceId))
+          ? sourceLabel
+          : `${sourceLabel} (${sourceId})`,
       sourceId,
       stateLabel,
       timeLabel,
@@ -993,6 +1002,10 @@ export class HtRoomExplainability extends LitElement {
   }
 
   private _sourceLabelForSourceId(config: OccupancyConfig, sourceId: string): string {
+    const structuralSourceLabel = this._structuralSourceLabel(sourceId);
+    if (structuralSourceLabel) {
+      return structuralSourceLabel;
+    }
     const exact = (config.occupancy_sources || []).find(
       (source) => source.source_id === sourceId || source.entity_id === sourceId
     );
@@ -1004,6 +1017,56 @@ export class HtRoomExplainability extends LitElement {
       return this._sourceDisplayLabel(entityId);
     }
     return this._entityName(sourceId);
+  }
+
+  private _structuralSourceLabel(sourceId: string): string | undefined {
+    const raw = String(sourceId || "").trim();
+    if (!raw) return undefined;
+
+    const prefixedLocationLabel = (
+      prefix: string,
+      separator: ":" | ".",
+      label: string
+    ): string | undefined => {
+      const marker = `${prefix}${separator}`;
+      if (!raw.startsWith(marker)) return undefined;
+      const locationId = raw.slice(marker.length).trim();
+      if (!locationId) return undefined;
+      return `${label}: ${this._locationName(locationId)}`;
+    };
+
+    return (
+      prefixedLocationLabel("__child__", ":", "Child location") ||
+      prefixedLocationLabel("__child__", ".", "Child location") ||
+      prefixedLocationLabel("__follow__", ":", "Parent location") ||
+      prefixedLocationLabel("__follow__", ".", "Parent location") ||
+      (raw.startsWith("linked:")
+        ? `Linked location: ${this._locationName(raw.slice("linked:".length).trim())}`
+        : undefined) ||
+      this._knownLocationLabel(raw)
+    );
+  }
+
+  private _knownLocationLabel(locationId: string): string | undefined {
+    const normalizedId = String(locationId || "").trim();
+    if (!normalizedId) return undefined;
+    const match = (this.locations || []).find((candidate) => candidate.id === normalizedId);
+    if (!match) return undefined;
+    const type = getLocationType(match);
+    const prefix =
+      type === "building"
+        ? "Building"
+        : type === "grounds"
+          ? "Grounds"
+          : type === "floor"
+            ? "Floor"
+            : "Location";
+    return `${prefix}: ${match.name}`;
+  }
+
+  private _locationName(locationId: string): string {
+    const match = (this.locations || []).find((candidate) => candidate.id === locationId);
+    return match?.name || locationId;
   }
 
   private _sourceDisplayLabel(entityId: string, signalKey?: OccupancySource["signal_key"]): string {

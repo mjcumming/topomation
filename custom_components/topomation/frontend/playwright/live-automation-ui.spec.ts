@@ -19,9 +19,43 @@ async function openLiveHarness(page: any): Promise<void> {
 
   if (isRealPanel()) {
     const panelPath = LIVE_PANEL_PATH.startsWith("/") ? LIVE_PANEL_PATH : `/${LIVE_PANEL_PATH}`;
-    await page.goto(baseUrl, { waitUntil: "domcontentloaded", timeout: 15000 });
-    await page.evaluate(
+    await page.addInitScript(
       ({ t }: { t: string }) => {
+        (window as any).externalApp = {
+          getExternalAuth(options: { callback?: string; force?: boolean }) {
+            const callbackName =
+              options && typeof options.callback === "string" ? options.callback : "";
+            const callback =
+              (callbackName && typeof (window as any)[callbackName] === "function"
+                ? (window as any)[callbackName]
+                : undefined) ||
+              (typeof (window as any).externalAuthSetToken === "function"
+                ? (window as any).externalAuthSetToken
+                : undefined);
+            if (typeof callback !== "function") {
+              return;
+            }
+            callback(true, {
+              access_token: t,
+              expires_in: 86400,
+            });
+          },
+          revokeExternalAuth(options: { callback?: string }) {
+            const callbackName =
+              options && typeof options.callback === "string" ? options.callback : "";
+            const callback =
+              (callbackName && typeof (window as any)[callbackName] === "function"
+                ? (window as any)[callbackName]
+                : undefined) ||
+              (typeof (window as any).externalAuthRevokeToken === "function"
+                ? (window as any).externalAuthRevokeToken
+                : undefined);
+            if (typeof callback !== "function") {
+              return;
+            }
+            callback(true);
+          },
+        };
         try {
           localStorage.setItem("hassTokens", JSON.stringify({ default: t }));
           sessionStorage.setItem("hassTokens", JSON.stringify({ default: t }));
@@ -31,7 +65,10 @@ async function openLiveHarness(page: any): Promise<void> {
       },
       { t: token }
     );
-    await page.goto(`${baseUrl}${panelPath}`, { waitUntil: "domcontentloaded", timeout: 20000 });
+    await page.goto(`${baseUrl}${panelPath}?external_auth=1`, {
+      waitUntil: "domcontentloaded",
+      timeout: 20000,
+    });
     await expect(page.locator("topomation-panel")).toBeVisible({ timeout: 15000 });
     await expect(page.locator("ht-location-inspector")).toBeVisible({ timeout: 5000 });
     return;
@@ -51,7 +88,11 @@ async function openLiveHarness(page: any): Promise<void> {
     }
   );
 
-  await page.goto(LIVE_HARNESS_PATH);
+  const separator = LIVE_HARNESS_PATH.includes("?") ? "&" : "?";
+  const harnessUrl =
+    `${LIVE_HARNESS_PATH}${separator}` +
+    `baseUrl=${encodeURIComponent(baseUrl)}&token=${encodeURIComponent(token)}`;
+  await page.goto(harnessUrl);
   await expect(page.getByTestId("live-harness-status")).toHaveAttribute("data-state", "ready");
   await expect(page.locator("topomation-panel")).toBeVisible();
 }
@@ -144,14 +185,33 @@ async function selectLocationById(page: any, locationId: string): Promise<void> 
   }, locationId);
 }
 
-async function findSharedSpaceCandidate(): Promise<{
-  locationId: string;
-  peerId: string;
-  originalLocationConfig: Record<string, unknown>;
-  originalPeerConfig: Record<string, unknown>;
+async function findOccupancyGroupCandidate(): Promise<{
+  floorId: string;
+  memberIds: [string, string];
+  originalConfigs: Record<string, Record<string, unknown>>;
 }> {
   const locations = await listLocations();
   const byId = new Map(locations.map((location) => [String(location.id), location]));
+  const managedShadowIds = new Set<string>();
+  for (const location of locations) {
+    const meta = ((location?.modules?._meta || {}) as Record<string, unknown>);
+    const shadowAreaId =
+      typeof meta.shadow_area_id === "string" ? meta.shadow_area_id.trim() : "";
+    const locationType =
+      typeof meta.type === "string" ? meta.type.trim().toLowerCase() : "";
+    if (shadowAreaId && ["floor", "building", "grounds"].includes(locationType)) {
+      managedShadowIds.add(shadowAreaId);
+    }
+  }
+
+  const isManagedShadowLocation = (location: any): boolean => {
+    const meta = ((location?.modules?._meta || {}) as Record<string, unknown>);
+    const role = typeof meta.role === "string" ? meta.role.trim().toLowerCase() : "";
+    const shadowForLocationId =
+      typeof meta.shadow_for_location_id === "string" ? meta.shadow_for_location_id.trim() : "";
+    return managedShadowIds.has(String(location?.id || "")) || role === "managed_shadow" || Boolean(shadowForLocationId);
+  };
+
   const byParent = new Map<string | null, any[]>();
   for (const location of locations) {
     const key = location.parent_id ?? null;
@@ -163,27 +223,33 @@ async function findSharedSpaceCandidate(): Promise<{
 
   for (const location of locations) {
     const locationType = String(location?.modules?._meta?.type || "");
-    const parentType = String(byId.get(location.parent_id)?.modules?._meta?.type || "");
-    const isEligibleArea =
-      locationType === "area" && ["area", "floor", "building"].includes(parentType);
-    const isEligibleFloor = locationType === "floor" && parentType === "building";
-    if (!isEligibleArea && !isEligibleFloor) continue;
-
-    const siblings = (byParent.get(location.parent_id ?? null) || []).filter((candidate) => {
-      if (candidate.id === location.id) return false;
-      return String(candidate?.modules?._meta?.type || "") === locationType;
+    if (locationType !== "floor") continue;
+    const eligibleChildAreas = (byParent.get(location.id) || []).filter((candidate) => {
+      if (String(candidate?.modules?._meta?.type || "") !== "area") {
+        return false;
+      }
+      if (isManagedShadowLocation(candidate)) {
+        return false;
+      }
+      const currentGroupId = candidate?.modules?.occupancy?.occupancy_group_id;
+      return !(typeof currentGroupId === "string" && currentGroupId.trim().length > 0);
     });
-    if (!siblings.length) continue;
+    if (eligibleChildAreas.length < 2) continue;
 
+    const members = eligibleChildAreas.slice(0, 2).map((item) => String(item.id)) as [string, string];
     return {
-      locationId: String(location.id),
-      peerId: String(siblings[0].id),
-      originalLocationConfig: JSON.parse(JSON.stringify(location?.modules?.occupancy || {})),
-      originalPeerConfig: JSON.parse(JSON.stringify(siblings[0]?.modules?.occupancy || {})),
+      floorId: String(location.id),
+      memberIds: members,
+      originalConfigs: Object.fromEntries(
+        members.map((memberId) => {
+          const member = byId.get(memberId);
+          return [memberId, JSON.parse(JSON.stringify(member?.modules?.occupancy || {}))];
+        })
+      ),
     };
   }
 
-  throw new Error("No live location with an eligible Shared Space peer was found");
+  throw new Error("No live floor with two eligible child areas was found");
 }
 
 async function setOccupancyConfig(
@@ -208,6 +274,11 @@ async function openLightingTab(page: any): Promise<void> {
 async function openDetectionTab(page: any): Promise<void> {
   const inspector = page.locator("ht-location-inspector");
   await expect(inspector).toBeVisible();
+  const occupancyGroupsTab = inspector.getByRole("button", { name: "Occupancy Groups" });
+  if (await occupancyGroupsTab.count()) {
+    await occupancyGroupsTab.click();
+    return;
+  }
   await inspector.getByRole("button", { name: "Occupancy" }).click();
 }
 
@@ -407,7 +478,7 @@ test("live automation lighting workflow matches contracted lifecycle controls", 
     await expect(firstTwoLightRows).toHaveCount(Math.max(2, location.lightIds.length));
     await firstTwoLightRows.nth(0).locator('[data-testid*="-device-include-0"]').check();
     await firstTwoLightRows.nth(1).locator('[data-testid*="-device-include-1"]').check();
-    await firstTwoLightRows.nth(0).locator('[data-testid*="-device-only-if-off-0"]').check();
+    await firstTwoLightRows.nth(0).getByText("Only if off", { exact: true }).click();
 
     const firstSlider = firstTwoLightRows.nth(0).locator("input[type='range']").first();
     const secondSlider = firstTwoLightRows.nth(1).locator("input[type='range']").first();
@@ -498,7 +569,7 @@ test("live detection explainability reflects trigger activation and contributor 
   await openDetectionTab(page);
 
   await expect(explainability).toBeVisible();
-  await expect(explainability).toContainText("Room Explainability");
+  await expect(explainability).toContainText("Occupancy Explainability");
   await expect(inspector.getByTestId("adjacency-advanced-toggle")).toHaveCount(0);
   await expect(inspector.getByText("Advanced Occupancy Relationships")).toHaveCount(0);
 
@@ -532,46 +603,46 @@ test("live detection explainability reflects trigger activation and contributor 
   await expect(activeContributorsPanel).not.toContainText(sourceId, { timeout: 10000 });
 });
 
-test("live detection shared space saves reciprocal membership", async ({ page }) => {
+test("live floor occupancy groups save shared occupancy_group_id membership", async ({ page }) => {
   await openLiveHarness(page);
-  const candidate = await findSharedSpaceCandidate();
-  await selectLocationById(page, candidate.locationId);
+  const candidate = await findOccupancyGroupCandidate();
+  await selectLocationById(page, candidate.floorId);
 
   const inspector = page.locator("ht-location-inspector");
-  await openDetectionTab(page);
 
-  const sharedSpaceSection = inspector.getByTestId("shared-space-section");
-  const sharedSpaceCheckbox = inspector.getByTestId(`shared-space-location-${candidate.peerId}`);
-  await expect(sharedSpaceSection).toBeVisible();
-  await expect(sharedSpaceCheckbox).toBeVisible();
+  const groupsSection = inspector.getByTestId("occupancy-groups-section");
+  const firstMember = inspector.getByTestId(`occupancy-group-create-location-${candidate.memberIds[0]}`);
+  const secondMember = inspector.getByTestId(`occupancy-group-create-location-${candidate.memberIds[1]}`);
+  const createButton = inspector.getByTestId("occupancy-group-create-button");
+  await expect(groupsSection).toBeVisible();
+  await expect(firstMember).toBeVisible();
+  await expect(secondMember).toBeVisible();
 
   try {
-    const originallyChecked = await sharedSpaceCheckbox.isChecked();
-    if (originallyChecked) {
-      await sharedSpaceCheckbox.uncheck();
-    } else {
-      await sharedSpaceCheckbox.check();
-    }
-
-    await inspector.getByTestId("detection-save-button").click();
+    await firstMember.check();
+    await secondMember.check();
+    await expect(createButton).toBeEnabled();
+    await createButton.click();
+    await expect(inspector.getByTestId("detection-save-button")).toHaveCount(0);
 
     await expect
       .poll(async () => {
         const locations = await listLocations();
-        const current = locations.find((location) => location.id === candidate.locationId);
-        const peer = locations.find((location) => location.id === candidate.peerId);
-        const currentSync = Array.isArray(current?.modules?.occupancy?.sync_locations)
-          ? current.modules.occupancy.sync_locations
-          : [];
-        const peerSync = Array.isArray(peer?.modules?.occupancy?.sync_locations)
-          ? peer.modules.occupancy.sync_locations
-          : [];
-        return currentSync.includes(candidate.peerId) && peerSync.includes(candidate.locationId);
+        const current = locations.find((location) => location.id === candidate.memberIds[0]);
+        const peer = locations.find((location) => location.id === candidate.memberIds[1]);
+        const currentGroup = typeof current?.modules?.occupancy?.occupancy_group_id === "string"
+          ? current.modules.occupancy.occupancy_group_id
+          : null;
+        const peerGroup = typeof peer?.modules?.occupancy?.occupancy_group_id === "string"
+          ? peer.modules.occupancy.occupancy_group_id
+          : null;
+        return Boolean(currentGroup && currentGroup === peerGroup);
       })
-      .toBe(!originallyChecked);
+      .toBe(true);
   } finally {
-    await setOccupancyConfig(candidate.locationId, candidate.originalLocationConfig);
-    await setOccupancyConfig(candidate.peerId, candidate.originalPeerConfig);
+    for (const memberId of candidate.memberIds) {
+      await setOccupancyConfig(memberId, candidate.originalConfigs[memberId]);
+    }
   }
 });
 

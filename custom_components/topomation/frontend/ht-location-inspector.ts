@@ -71,10 +71,9 @@ type EntityRegistryMeta = {
   disabledBy?: string | null;
   entityCategory?: string | null;
 };
-type SyncLocationScope = {
-  candidateType: "area" | "floor";
-  parentId: string;
-  parentType: "area" | "floor" | "building";
+type FloorOccupancyGroup = {
+  id: string;
+  memberIds: string[];
 };
 type RuleActionTarget = {
   entity_id: string;
@@ -84,11 +83,6 @@ type RuleActionTarget = {
 };
 type LightingSituationFamily = "occupancy" | "ambient";
 type LightingSituationRequirement = "any" | "dark" | "bright" | "occupied" | "vacant";
-type LightingSituationRow = {
-  family: LightingSituationFamily;
-  event: TopomationActionRule["trigger_type"];
-  requirement: LightingSituationRequirement;
-};
 
 // Dev UX: custom elements cannot be hot-replaced. On HMR updates, force a quick reload.
 try {
@@ -174,6 +168,8 @@ export class HtLocationInspector extends LitElement {
   @state() private _loadingAmbientReading = false;
   @state() private _ambientReadingError?: string;
   @state() private _savingAmbientConfig = false;
+  @state() private _floorGroupCreateSelection: string[] = [];
+  @state() private _detectionDraftHint?: string;
   private _onTimeoutMemory: Record<string, number> = {};
   private _entityAreaLoadPromise?: Promise<void>;
   private _actionRulesLoadSeq = 0;
@@ -761,6 +757,31 @@ export class HtLocationInspector extends LitElement {
         gap: 8px;
         flex-wrap: wrap;
         margin-top: 12px;
+      }
+
+      .dusk-rule-footer-help {
+        margin-top: 8px;
+        text-align: right;
+      }
+
+      .dusk-inline-heading-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-top: 18px;
+        margin-bottom: 6px;
+      }
+
+      .dusk-inline-heading-row .dusk-rule-section-title {
+        margin: 0;
+      }
+
+      .dusk-inline-option-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
       }
 
       .dusk-delete-rule-button {
@@ -2322,9 +2343,46 @@ export class HtLocationInspector extends LitElement {
         color: white !important;
       }
 
+      .dusk-list-footer .button-primary,
+      [data-testid="action-rule-add"].button-primary {
+        background: var(--primary-color, #03a9f4) !important;
+        color: white !important;
+        border: 1px solid var(--primary-color, #03a9f4) !important;
+        box-shadow: 0 4px 12px rgba(var(--rgb-primary-color, 3, 169, 244), 0.24);
+      }
+
+      .dusk-list-footer .button-primary:hover,
+      [data-testid="action-rule-add"].button-primary:hover {
+        filter: brightness(0.96);
+      }
+
       .button-secondary {
         color: var(--primary-color, #03a9f4) !important;
         border-color: var(--divider-color, #e0e0e0) !important;
+      }
+
+      .button:disabled {
+        opacity: 0.5 !important;
+        cursor: not-allowed !important;
+      }
+
+      .group-create-button {
+        color: var(--text-primary-color, #212121) !important;
+        border-color: var(--divider-color, #e0e0e0) !important;
+      }
+
+      .group-create-button.is-ready {
+        background: rgba(3, 169, 244, 0.12) !important;
+        border-color: var(--primary-color, #03a9f4) !important;
+        color: var(--primary-color, #03a9f4) !important;
+      }
+
+      .group-create-button:hover {
+        background: transparent !important;
+      }
+
+      .group-create-button.is-ready:hover {
+        background: rgba(3, 169, 244, 0.16) !important;
       }
 
       .empty-state {
@@ -2602,7 +2660,7 @@ export class HtLocationInspector extends LitElement {
       }
     }
 
-    if (changedProps.has("allLocations") || changedProps.has("location")) {
+    if (this._showsManagedShadowControls() && (changedProps.has("allLocations") || changedProps.has("location"))) {
       this._maybeAutoRepairManagedShadowArea();
     }
 
@@ -2688,9 +2746,9 @@ export class HtLocationInspector extends LitElement {
       enabled: true,
       default_timeout: 300,
       default_trailing_timeout: 120,
+      occupancy_group_id: null,
       occupancy_sources: [],
       linked_locations: [],
-      sync_locations: [],
       wiab: {
         preset: "off",
       },
@@ -2712,14 +2770,20 @@ export class HtLocationInspector extends LitElement {
       Number(config.default_trailing_timeout) || defaults.default_trailing_timeout || 0
     );
     const sanitized: OccupancyConfig = {
-      ...defaults,
-      ...config,
+      version:
+        typeof config.version === "number" && Number.isFinite(config.version)
+          ? config.version
+          : defaults.version,
       enabled: config.enabled !== false,
       default_timeout: defaultTimeout,
       default_trailing_timeout: defaultTrailingTimeout,
+      wiab: config.wiab,
+      occupancy_group_id:
+        typeof config.occupancy_group_id === "string" && config.occupancy_group_id.trim().length > 0
+          ? config.occupancy_group_id.trim()
+          : null,
       occupancy_sources: occupancySources,
       linked_locations: this._normalizeLinkedLocationIds(config.linked_locations, undefined, selfLocationId),
-      sync_locations: this._normalizeLinkedLocationIds(config.sync_locations, undefined, selfLocationId),
     };
     sanitized.wiab = this._getWiabConfig(sanitized);
     return sanitized;
@@ -2730,24 +2794,61 @@ export class HtLocationInspector extends LitElement {
     return this._sanitizeOccupancyConfig(raw, this.location?.id);
   }
 
+  private _persistedOccupancyConfigForLocation(location: Location): OccupancyConfig {
+    const raw = ((location.modules?.occupancy || {}) as OccupancyConfig) || {};
+    return this._sanitizeOccupancyConfig(raw, location.id);
+  }
+
+  private _detectionTabLabel(): string {
+    return this._isFloorLocation() ? "Occupancy Groups" : "Occupancy";
+  }
+
+  private _locationType(): string | null {
+    return this.location ? getLocationType(this.location) : null;
+  }
+
+  private _isAreaLikeLocation(): boolean {
+    const type = this._locationType();
+    return type === "area" || type === "subarea";
+  }
+
+  private _isStructuralSummaryLocation(): boolean {
+    const type = this._locationType();
+    return type === "floor" || type === "building" || type === "grounds";
+  }
+
+  private _isDerivedOccupancyLocation(): boolean {
+    const type = this._locationType();
+    return type === "building" || type === "grounds";
+  }
+
+  private _showsManagedShadowControls(): boolean {
+    return false;
+  }
+
   private _resetDetectionDraftFromLocation(): void {
     if (!this.location) {
       this._occupancyDraft = undefined;
       this._occupancyDraftDirty = false;
       this._occupancySaveError = undefined;
       this._pendingOccupancyByLocation = {};
+      this._floorGroupCreateSelection = [];
+      this._detectionDraftHint = undefined;
       return;
     }
     this._occupancyDraft = this._persistedOccupancyConfig();
     this._occupancyDraftDirty = false;
     this._occupancySaveError = undefined;
     this._pendingOccupancyByLocation = {};
+    this._floorGroupCreateSelection = [];
+    this._detectionDraftHint = undefined;
   }
 
   private _setOccupancyDraft(config: OccupancyConfig): void {
     this._occupancyDraft = this._sanitizeOccupancyConfig(config, this.location?.id);
     this._occupancyDraftDirty = true;
     this._occupancySaveError = undefined;
+    this._detectionDraftHint = "Changes are staged locally. Click Save changes to apply them.";
     this.requestUpdate();
   }
 
@@ -2768,10 +2869,12 @@ export class HtLocationInspector extends LitElement {
     };
     this._occupancyDraftDirty = true;
     this._occupancySaveError = undefined;
+    this._detectionDraftHint = "Changes are staged locally. Click Save changes to apply them.";
     this.requestUpdate();
   }
 
   private _renderDetectionDraftToolbar() {
+    if (this._isFloorLocation()) return "";
     const hasUnsaved = this._occupancyDraftDirty;
     const busy = this._savingOccupancyDraft;
     const hasError = Boolean(this._occupancySaveError);
@@ -2826,7 +2929,7 @@ export class HtLocationInspector extends LitElement {
           <button
             class="button button-secondary"
             type="button"
-            data-testid=${`${kind}-discard-button`}
+            data-testid=${`${kind}-sticky-discard-button`}
             ?disabled=${busy || !hasUnsaved}
             @click=${onDiscard}
           >
@@ -2835,7 +2938,7 @@ export class HtLocationInspector extends LitElement {
           <button
             class="button button-primary draft-save-button"
             type="button"
-            data-testid=${`${kind}-save-button`}
+            data-testid=${`${kind}-sticky-save-button`}
             ?disabled=${busy || !hasUnsaved}
             @click=${onSave}
           >
@@ -2904,6 +3007,7 @@ export class HtLocationInspector extends LitElement {
 
   private _discardDetectionDraft(showToast = true): void {
     this._resetDetectionDraftFromLocation();
+    this.requestUpdate();
     if (showToast) {
       this._showToast("Discarded occupancy changes", "success");
     }
@@ -3026,6 +3130,7 @@ export class HtLocationInspector extends LitElement {
   private _discardAmbientDraft(showToast = true): void {
     this._resetAmbientDraftFromLocation();
     void this._loadAmbientReading();
+    this.requestUpdate();
     if (showToast) {
       this._showToast("Discarded ambient changes", "success");
     }
@@ -3329,13 +3434,17 @@ export class HtLocationInspector extends LitElement {
   }
 
   private _renderTabs() {
+    if (this._isStructuralSummaryLocation()) {
+      return "";
+    }
+    const detectionLabel = this._detectionTabLabel();
     return html`
       <div class="tabs">
         <button
           class="tab ${this._activeTab === "detection" ? "active" : ""}"
           @click=${() => this._handleTabChange("detection")}
         >
-          Occupancy
+          ${detectionLabel}
         </button>
         <button
           class="tab ${this._activeTab === "ambient" ? "active" : ""}"
@@ -3367,10 +3476,11 @@ export class HtLocationInspector extends LitElement {
 
   private _renderContent() {
     const activeTab = this._effectiveTab();
+    const structuralSummaryLocation = this._isStructuralSummaryLocation();
     return html`
       <div class="tab-content">
         ${activeTab === "detection"
-          ? html`${this._renderOccupancyTab()} ${this._renderAdvancedTab()}`
+          ? html`${this._renderDetectionDraftToolbar()} ${this._renderOccupancyTab()} ${this._renderAdvancedTab()}`
           : activeTab === "ambient"
             ? this._renderAmbientTab()
           : activeTab === "lighting"
@@ -3381,13 +3491,15 @@ export class HtLocationInspector extends LitElement {
               ? this._renderDeviceAutomationTab("hvac")
             : ""}
         ${activeTab === "detection"
-          ? this._renderStickyDraftBar("detection", {
-              hasUnsaved: this._occupancyDraftDirty,
-              busy: this._savingOccupancyDraft,
-              error: this._occupancySaveError,
-              onDiscard: () => this._discardDetectionDraft(),
-              onSave: () => this._saveDetectionDraft(),
-            })
+          ? structuralSummaryLocation
+            ? ""
+            : this._renderStickyDraftBar("detection", {
+                hasUnsaved: this._occupancyDraftDirty,
+                busy: this._savingOccupancyDraft,
+                error: this._occupancySaveError,
+                onDiscard: () => this._discardDetectionDraft(),
+                onSave: () => this._saveDetectionDraft(),
+              })
           : activeTab === "ambient"
             ? this._renderStickyDraftBar("ambient", {
                 hasUnsaved: this._ambientDraftDirty,
@@ -3402,6 +3514,9 @@ export class HtLocationInspector extends LitElement {
   }
 
   private _effectiveTab(): InspectorTab {
+    if (this._isStructuralSummaryLocation()) {
+      return "detection";
+    }
     return this._activeTab;
   }
 
@@ -3578,6 +3693,7 @@ export class HtLocationInspector extends LitElement {
 
     const config = this._getOccupancyConfig();
     const isFloor = this._isFloorLocation();
+    const isDerived = this._isDerivedOccupancyLocation();
     const hasHaAreaLink = !!this.location.ha_area_id;
     const siblingAreaSourceScope = this._isSiblingAreaSourceScope();
     const floorSourceCount = (config.occupancy_sources || []).length;
@@ -3587,12 +3703,12 @@ export class HtLocationInspector extends LitElement {
         <div>
           <div class="card-section">
             <div class="section-title">
-              <ha-icon .icon=${"mdi:layers"}></ha-icon>
-              Floor Occupancy Behavior
+              <ha-icon .icon=${"mdi:view-grid-plus"}></ha-icon>
+              Occupancy Groups
             </div>
             <div class="policy-note">
-              Floors do not use direct occupancy sources. Floor occupancy is derived from child areas, so
-              add sensors to those areas and use this floor for aggregated automation.
+              Group this floor's child areas when they should behave like one occupied space.
+              Group membership is authored here and persisted onto the member areas.
             </div>
             ${floorSourceCount > 0
               ? html`
@@ -3603,9 +3719,14 @@ export class HtLocationInspector extends LitElement {
                 `
               : ""}
           </div>
-          ${this._renderSyncLocationsSection(config)}
+          ${this._renderFloorOccupancyGroupsSection()}
+          ${this._renderStructuralOverviewSection()}
         </div>
       `;
+    }
+
+    if (isDerived) {
+      return this._renderDerivedOccupancyTab();
     }
 
     return html`
@@ -3682,7 +3803,166 @@ export class HtLocationInspector extends LitElement {
             </div>
           </div>
         </div>
-        ${this._renderSyncLocationsSection(config)}
+        ${this._isAreaLikeLocation() ? this._renderAreaOccupancyGroupSection(config) : ""}
+      </div>
+    `;
+  }
+
+  private _renderDerivedOccupancyTab() {
+    if (!this.location) return "";
+    const currentState = this._recentExplainabilityCurrentState();
+    const type = this._locationType() || "location";
+    const typeLabel = type === "building" ? "Building" : type === "grounds" ? "Grounds" : "Location";
+    const activeChildren = (currentState?.contributors || []).map((item) => item.sourceLabel);
+
+    return html`
+      <div>
+        <div class="card-section" data-testid="derived-occupancy-section">
+          <div class="section-title">
+            <ha-icon .icon=${"mdi:home-analytics"}></ha-icon>
+            Derived Occupancy
+          </div>
+          <div class="policy-note">
+            ${typeLabel} occupancy is derived from child locations. Add occupancy sources to floors and
+            areas, not here.
+          </div>
+          <div class="subsection-help">
+            This ${type} becomes occupied when one of its descendant locations is occupied.
+          </div>
+          ${currentState
+            ? html`
+                <div class="occupancy-explainability-grid" style="margin-top: 12px;">
+                  <div class="occupancy-explainability-panel">
+                    <div class="occupancy-explainability-panel-title">Current state</div>
+                    <div class="occupancy-status-chip ${currentState.occupied ? "is-occupied" : "is-vacant"}">
+                      ${currentState.occupied ? "Occupied" : "Vacant"}
+                    </div>
+                    <div class="occupancy-summary-lines">
+                      <div class="occupancy-summary-line">
+                        <div class="occupancy-summary-label">Why</div>
+                        <div class="occupancy-summary-value">${currentState.why}</div>
+                      </div>
+                      ${currentState.nextChange
+                        ? html`
+                            <div class="occupancy-summary-line">
+                              <div class="occupancy-summary-label">Next change</div>
+                              <div class="occupancy-summary-value">${currentState.nextChange}</div>
+                            </div>
+                          `
+                        : ""}
+                    </div>
+                  </div>
+                  <div class="occupancy-explainability-panel">
+                    <div class="occupancy-explainability-panel-title">Active child locations</div>
+                    ${activeChildren.length
+                      ? html`
+                          <div class="occupancy-events">
+                            ${activeChildren.map((label) => html`
+                              <div class="occupancy-event">
+                                <span class="occupancy-event-source">${label}</span>
+                              </div>
+                            `)}
+                          </div>
+                        `
+                      : html`
+                          <div class="occupancy-empty-state">
+                            No child locations are actively holding this ${type} occupied.
+                          </div>
+                        `}
+                  </div>
+                  ${this._renderStructureSummaryPanel()}
+                </div>
+              `
+            : html`
+                <div class="occupancy-explainability-grid" style="margin-top: 12px;">
+                  <div class="occupancy-explainability-panel">
+                    <div class="occupancy-explainability-panel-title">Current state</div>
+                    <div class="occupancy-empty-state">No derived occupancy state is available yet.</div>
+                  </div>
+                  ${this._renderStructureSummaryPanel()}
+                </div>
+              `}
+        </div>
+      </div>
+    `;
+  }
+
+  private _renderStructuralOverviewSection() {
+    if (!this.location || !this._isStructuralSummaryLocation()) return "";
+    const type = this._locationType() || "location";
+    const title =
+      type === "floor" ? "Floor Summary" : type === "building" ? "Building Summary" : "Grounds Summary";
+    return html`
+      <div class="card-section" data-testid="structural-overview-section">
+        <div class="section-title">
+          <ha-icon .icon=${"mdi:shape-outline"}></ha-icon>
+          ${title}
+        </div>
+        <div class="policy-note">
+          This ${type} is a structural summary node. Use child areas for direct automation and source authoring.
+        </div>
+        <div class="occupancy-explainability-grid" style="margin-top: 12px;">
+          ${this._renderStructureSummaryPanel()}
+          ${this._renderStructuralCurrentStatePanel()}
+        </div>
+      </div>
+    `;
+  }
+
+  private _renderStructuralCurrentStatePanel() {
+    const currentState = this._recentExplainabilityCurrentState();
+    if (!currentState) {
+      return html`
+        <div class="occupancy-explainability-panel">
+          <div class="occupancy-explainability-panel-title">Occupancy</div>
+          <div class="occupancy-empty-state">No occupancy state is available yet.</div>
+        </div>
+      `;
+    }
+    return html`
+      <div class="occupancy-explainability-panel">
+        <div class="occupancy-explainability-panel-title">Occupancy</div>
+        <div class="occupancy-status-chip ${currentState.occupied ? "is-occupied" : "is-vacant"}">
+          ${currentState.occupied ? "Occupied" : "Vacant"}
+        </div>
+        <div class="occupancy-summary-lines">
+          <div class="occupancy-summary-line">
+            <div class="occupancy-summary-label">Why</div>
+            <div class="occupancy-summary-value">${currentState.why}</div>
+          </div>
+          ${currentState.nextChange
+            ? html`
+                <div class="occupancy-summary-line">
+                  <div class="occupancy-summary-label">Next change</div>
+                  <div class="occupancy-summary-value">${currentState.nextChange}</div>
+                </div>
+              `
+            : ""}
+        </div>
+      </div>
+    `;
+  }
+
+  private _renderStructureSummaryPanel() {
+    const summary = this._structureSummary();
+    if (!summary) return "";
+    return html`
+      <div class="occupancy-explainability-panel" data-testid="structure-summary-panel">
+        <div class="occupancy-explainability-panel-title">Structure</div>
+        <div class="occupancy-summary-lines">
+          <div class="occupancy-summary-line">
+            <div class="occupancy-summary-label">Direct children</div>
+            <div class="occupancy-summary-value">${summary.directChildren}</div>
+          </div>
+          <div class="occupancy-summary-line">
+            <div class="occupancy-summary-label">Descendant rooms</div>
+            <div class="occupancy-summary-value">${summary.descendantRooms}</div>
+          </div>
+          <div class="occupancy-summary-line">
+            <div class="occupancy-summary-label">Occupied descendants</div>
+            <div class="occupancy-summary-value">${summary.occupiedDescendants}</div>
+          </div>
+        </div>
       </div>
     `;
   }
@@ -3694,11 +3974,14 @@ export class HtLocationInspector extends LitElement {
 
   private _renderAdvancedTab() {
     if (!this.location) return "";
+    if (!this._isAreaLikeLocation()) return "";
     const config = this._getOccupancyConfig();
     return html`
       <div>
         ${this._renderWiabSection(config)}
-        ${this._isManagedShadowHost() ? this._renderManagedShadowAreaSection() : ""}
+        ${this._showsManagedShadowControls() && this._isManagedShadowHost()
+          ? this._renderManagedShadowAreaSection()
+          : ""}
       </div>
     `;
   }
@@ -3719,7 +4002,7 @@ export class HtLocationInspector extends LitElement {
         <div class="recent-events-drawer-header">
           <div class="recent-events-drawer-title">
             <ha-icon .icon=${"mdi:timeline-clock-outline"}></ha-icon>
-            Room Explainability
+            Occupancy Explainability
           </div>
           <div class="recent-events-drawer-controls">
             <button
@@ -3737,7 +4020,7 @@ export class HtLocationInspector extends LitElement {
         </div>
         <div class="recent-events-drawer-body">
           <div class="recent-events-drawer-help">
-            <span>See why this room is in its current state and what changed most recently.</span>
+            <span>See why this location is in its current state and what changed most recently.</span>
             ${recentChanges.length > 5
               ? html`
                   <button
@@ -4222,54 +4505,6 @@ export class HtLocationInspector extends LitElement {
     return (this.allLocations || []).find((candidate) => candidate.id === locationId);
   }
 
-  private _syncLocationScope(): SyncLocationScope | null {
-    if (!this.location) return null;
-    const currentType = getLocationType(this.location);
-    const parentId = this.location.parent_id ?? null;
-    const parent = this._locationById(parentId);
-    if (!parentId || !parent) return null;
-    const parentType = getLocationType(parent);
-
-    if (
-      currentType === "area" &&
-      (parentType === "area" || parentType === "floor" || parentType === "building")
-    ) {
-      return { candidateType: "area", parentId, parentType };
-    }
-    if (currentType === "floor" && parentType === "building") {
-      return { candidateType: "floor", parentId, parentType };
-    }
-    return null;
-  }
-
-  private _syncIneligibleMessage(): string {
-    if (!this.location) return "Shared Space is unavailable for this selection.";
-    const currentType = getLocationType(this.location);
-    if (currentType === "area") {
-      return "Shared Space is available for area locations whose parent is an area, floor, or building.";
-    }
-    if (currentType === "floor") {
-      return "Shared Space is available for floor locations that are siblings under the same building.";
-    }
-    return "Shared Space is available only for eligible area/floor sibling sets.";
-  }
-
-  private _syncLocationCandidates(): Location[] {
-    if (!this.location) return [];
-    const scope = this._syncLocationScope();
-    if (!scope) return [];
-    const managedShadowIds = this._managedShadowLocationIds();
-
-    return (this.allLocations || [])
-      .filter((loc) => loc.id !== this.location!.id)
-      .filter((loc) => (loc.parent_id ?? null) === scope.parentId)
-      .filter((loc) => getLocationType(loc) === scope.candidateType)
-      .filter(
-        (loc) => scope.candidateType !== "area" || !this._isManagedShadowLocation(loc, managedShadowIds)
-      )
-      .sort((left, right) => left.name.localeCompare(right.name));
-  }
-
   private _isManagedShadowLocation(
     location: Location,
     managedShadowIds?: Set<string>
@@ -4318,85 +4553,57 @@ export class HtLocationInspector extends LitElement {
     return this._normalizeLinkedLocationIds(raw, allowedCandidates, this.location.id);
   }
 
-  private _syncLocationIds(config: OccupancyConfig): string[] {
-    if (!this.location) {
-      return [];
-    }
-
-    const allowedCandidates = new Set(this._syncLocationCandidates().map((candidate) => candidate.id));
-    if (allowedCandidates.size === 0) {
-      return [];
-    }
-
-    const raw = config.sync_locations;
-    return this._normalizeLinkedLocationIds(raw, allowedCandidates, this.location.id);
-  }
-
   private _candidateLinkedLocationIds(candidate: Location): string[] {
     const raw = this._occupancyConfigForLocation(candidate).linked_locations;
     return this._normalizeLinkedLocationIds(raw, undefined, candidate.id);
   }
 
-  private _candidateSyncLocationIds(candidate: Location): string[] {
-    const raw = this._occupancyConfigForLocation(candidate).sync_locations;
-    return this._normalizeLinkedLocationIds(raw, undefined, candidate.id);
+  private _candidateOccupancyGroupId(candidate: Location): string | null {
+    const value = this._occupancyConfigForLocation(candidate).occupancy_group_id;
+    return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
   }
 
-  private _syncLocationGroupMemberIds(sourceLocationId: string): string[] {
-    const visited = new Set<string>();
-    const queue = [sourceLocationId];
+  private _occupancyGroupCandidatesForLocation(location: Location): Location[] {
+    const managedShadowIds = this._managedShadowLocationIds();
+    const locationType = getLocationType(location);
+    const floorId =
+      locationType === "floor"
+        ? location.id
+        : locationType === "area"
+          ? this._locationById(location.parent_id ?? null)?.id ?? null
+          : null;
+    const floorLocation = floorId ? this._locationById(floorId) : undefined;
+    if (!floorLocation || getLocationType(floorLocation) !== "floor") return [];
 
-    while (queue.length > 0) {
-      const currentId = queue.shift()!;
-      if (visited.has(currentId)) continue;
-      visited.add(currentId);
-
-      const currentLocation =
-        currentId === this.location?.id
-          ? this.location
-          : (this.allLocations || []).find((candidate) => candidate.id === currentId);
-      if (!currentLocation) continue;
-
-      const directPeers = new Set(this._candidateSyncLocationIds(currentLocation));
-      for (const candidate of this._syncLocationCandidatesForLocation(currentLocation)) {
-        const candidatePeers = new Set(this._candidateSyncLocationIds(candidate));
-        if (directPeers.has(candidate.id) || candidatePeers.has(currentId)) {
-          queue.push(candidate.id);
-        }
-      }
-    }
-
-    return [...visited].sort((left, right) => this._locationName(left).localeCompare(this._locationName(right)));
-  }
-
-  private _syncLocationCandidatesForLocation(location: Location): Location[] {
-    const scope = this._syncLocationScopeForLocation(location);
-    if (!scope) return [];
     return (this.allLocations || [])
-      .filter((candidate) => candidate.id !== location.id)
-      .filter((candidate) => candidate.parent_id === scope.parentId)
-      .filter((candidate) => getLocationType(candidate) === scope.candidateType)
-      .filter((candidate) => !isSystemShadowLocation(candidate))
+      .filter((candidate) => candidate.parent_id === floorLocation.id)
+      .filter((candidate) => getLocationType(candidate) === "area")
+      .filter((candidate) => !this._isManagedShadowLocation(candidate, managedShadowIds))
       .sort((left, right) => left.name.localeCompare(right.name));
   }
 
-  private _syncLocationScopeForLocation(
-    location: Location
-  ): { candidateType: "area" | "floor"; parentId: string; parentType: string } | undefined {
-    if (isSystemShadowLocation(location)) return undefined;
-    const locationType = getLocationType(location);
-    const parentId = String(location.parent_id || "").trim();
-    if (!parentId) return undefined;
-    const parent = (this.allLocations || []).find((candidate) => candidate.id === parentId);
-    if (!parent) return undefined;
-    const parentType = getLocationType(parent);
-    if (locationType === "area" && (parentType === "area" || parentType === "floor" || parentType === "building")) {
-      return { candidateType: "area", parentId, parentType };
+  private _occupancyGroupMemberIds(sourceLocationId: string): string[] {
+    const sourceLocation =
+      sourceLocationId === this.location?.id
+        ? this.location
+        : (this.allLocations || []).find((candidate) => candidate.id === sourceLocationId);
+    if (!sourceLocation) return [];
+    const occupancyGroupId = this._candidateOccupancyGroupId(sourceLocation);
+    if (!occupancyGroupId) {
+      return [sourceLocationId];
     }
-    if (locationType === "floor" && parentType === "building") {
-      return { candidateType: "floor", parentId, parentType };
-    }
-    return undefined;
+
+    const candidates = this._occupancyGroupCandidatesForLocation(sourceLocation);
+    return candidates
+      .filter((candidate) => this._candidateOccupancyGroupId(candidate) === occupancyGroupId)
+      .map((candidate) => candidate.id)
+      .sort((left, right) => this._locationName(left).localeCompare(this._locationName(right)));
+  }
+
+  private _generateOccupancyGroupId(): string {
+    const floorId = this.location?.id || "floor";
+    const random = Math.random().toString(36).slice(2, 8);
+    return `${floorId}_group_${Date.now().toString(36)}_${random}`;
   }
 
   private _isTwoWayLinked(candidate: Location, linkedSet: Set<string>): boolean {
@@ -4421,54 +4628,6 @@ export class HtLocationInspector extends LitElement {
       ...config,
       linked_locations: nextLinked,
     });
-  }
-
-  private _toggleSyncLocation(candidate: Location, enabled: boolean): void {
-    if (!this.location) return;
-    const sourceLocationId = this.location.id;
-    const previousGroupIds = new Set(this._syncLocationGroupMemberIds(sourceLocationId));
-    const groupMemberIds = new Set(previousGroupIds);
-    groupMemberIds.add(sourceLocationId);
-    if (enabled) {
-      groupMemberIds.add(candidate.id);
-    } else {
-      groupMemberIds.delete(candidate.id);
-    }
-
-    const nextGroupIds = [...groupMemberIds].sort((left, right) =>
-      this._locationName(left).localeCompare(this._locationName(right))
-    );
-
-    for (const locationId of nextGroupIds) {
-      const targetLocation =
-        locationId === sourceLocationId
-          ? this.location
-          : (this.allLocations || []).find((item) => item.id === locationId);
-      if (!targetLocation) continue;
-      const config = this._occupancyConfigForLocation(targetLocation);
-      const nextSynced = nextGroupIds.filter((peerId) => peerId !== locationId);
-      const nextConfig = {
-        ...config,
-        sync_locations: nextSynced,
-      };
-      if (locationId === sourceLocationId) {
-        this._setOccupancyDraft(nextConfig);
-      } else {
-        this._setPendingOccupancyForLocation(locationId, nextConfig);
-      }
-    }
-
-    previousGroupIds.add(sourceLocationId);
-    for (const locationId of previousGroupIds) {
-      if (groupMemberIds.has(locationId) || locationId === sourceLocationId) continue;
-      const targetLocation = (this.allLocations || []).find((item) => item.id === locationId);
-      if (!targetLocation) continue;
-      const config = this._occupancyConfigForLocation(targetLocation);
-      this._setPendingOccupancyForLocation(locationId, {
-        ...config,
-        sync_locations: [],
-      });
-    }
   }
 
   private _toggleTwoWayLinkedLocation(candidate: Location, enabled: boolean): void {
@@ -4504,71 +4663,347 @@ export class HtLocationInspector extends LitElement {
     });
   }
 
-  private _renderSyncLocationsSection(config: OccupancyConfig) {
+  private _renderAreaOccupancyGroupSection(config: OccupancyConfig) {
     if (!this.location) return "";
-    const scope = this._syncLocationScope();
-    if (!scope) {
+    const floorParentId = this._linkedLocationFloorParentId();
+    if (!floorParentId) {
       return html`
         <div class="card-section">
           <div class="section-title">
             <ha-icon .icon=${"mdi:link-lock"}></ha-icon>
-            Shared Space
+            Occupancy Group
           </div>
           <div class="subsection-help">
-            ${this._syncIneligibleMessage()}
+            Occupancy groups are managed from the parent floor.
           </div>
         </div>
       `;
     }
 
-    const candidates = this._syncLocationCandidates();
-    const sharedSpaceMemberIds = this._syncLocationGroupMemberIds(this.location.id);
+    const sharedSpaceMemberIds = this._occupancyGroupMemberIds(this.location.id);
     const sharedPeerIds = sharedSpaceMemberIds.filter((locationId) => locationId !== this.location!.id);
-    const sharedSet = new Set(sharedPeerIds);
-    const sharedSpaceLabel = sharedSpaceMemberIds
-      .map((locationId) => this._locationName(locationId))
-      .join(", ");
+    const floorName = this._locationName(floorParentId);
 
     return html`
-      <div class="card-section" data-testid="shared-space-section">
+      <div class="card-section" data-testid="occupancy-group-summary-section">
         <div class="section-title">
           <ha-icon .icon=${"mdi:link-lock"}></ha-icon>
-          Shared Space
+          Occupancy Group
         </div>
-        <div class="subsection-help">
-          Treat these locations as one occupied space. If any location in the space is occupied,
-          they all stay occupied until the whole space clears.
-        </div>
-        <div class="linked-location-meta">This space: ${sharedSpaceLabel}</div>
-        ${candidates.length === 0
+        <div class="subsection-help">Managed from ${floorName}.</div>
+        ${sharedPeerIds.length === 0
           ? html`
-              <div class="adjacency-empty">
-                ${scope.candidateType === "floor"
-                  ? "No eligible sibling floors found under this building."
-                  : `No eligible sibling areas found under this ${scope.parentType}.`}
-              </div>
+              <div class="adjacency-empty">No occupancy group assigned.</div>
             `
           : html`
+              <div class="linked-location-meta">
+                Members: ${sharedSpaceMemberIds.map((locationId) => this._locationName(locationId)).join(", ")}
+              </div>
+            `}
+      </div>
+    `;
+  }
+
+  private _floorGroupAreaCandidates(): Location[] {
+    if (!this.location || !this._isFloorLocation()) return [];
+    return this._occupancyGroupCandidatesForLocation(this.location);
+  }
+
+  private _floorOccupancyGroups(): FloorOccupancyGroup[] {
+    const candidates = this._floorGroupAreaCandidates();
+    if (candidates.length === 0) return [];
+    const candidateIds = new Set(candidates.map((candidate) => candidate.id));
+    const visited = new Set<string>();
+    const groups: FloorOccupancyGroup[] = [];
+
+    for (const candidate of candidates) {
+      if (visited.has(candidate.id)) continue;
+      const occupancyGroupId = this._candidateOccupancyGroupId(candidate);
+      if (!occupancyGroupId) {
+        visited.add(candidate.id);
+        continue;
+      }
+      const memberIds = candidates
+        .filter((member) => this._candidateOccupancyGroupId(member) === occupancyGroupId)
+        .map((member) => member.id)
+        .filter((memberId) => candidateIds.has(memberId));
+      for (const memberId of memberIds) {
+        visited.add(memberId);
+      }
+      if (memberIds.length <= 1) {
+        visited.add(candidate.id);
+        continue;
+      }
+      const sortedMemberIds = [...memberIds].sort((left, right) => this._locationName(left).localeCompare(this._locationName(right)));
+      groups.push({
+        id: occupancyGroupId,
+        memberIds: sortedMemberIds,
+      });
+    }
+
+    return groups.sort((left, right) => left.memberIds[0].localeCompare(right.memberIds[0]));
+  }
+
+  private _ungroupedFloorAreaIds(): string[] {
+    const groupedIds = new Set(this._floorOccupancyGroups().flatMap((group) => group.memberIds));
+    return this._floorGroupAreaCandidates()
+      .map((candidate) => candidate.id)
+      .filter((candidateId) => !groupedIds.has(candidateId));
+  }
+
+  private _applyFloorOccupancyGroups(groups: FloorOccupancyGroup[]): void {
+    const candidates = this._floorGroupAreaCandidates();
+    const candidateIds = new Set(candidates.map((candidate) => candidate.id));
+    const normalizedGroups = groups
+      .map((group) => ({
+        ...group,
+        memberIds: [...new Set(group.memberIds.filter((memberId) => candidateIds.has(memberId)))].sort((left, right) =>
+          this._locationName(left).localeCompare(this._locationName(right))
+        ),
+      }))
+      .filter((group) => group.memberIds.length > 1);
+
+    for (const candidate of candidates) {
+      const config = this._occupancyConfigForLocation(candidate);
+      const group = normalizedGroups.find((item) => item.memberIds.includes(candidate.id));
+      this._setPendingOccupancyForLocation(candidate.id, {
+        ...config,
+        occupancy_group_id: group ? group.id : null,
+      });
+    }
+  }
+
+  private _toggleFloorCreateSelection(locationId: string, enabled: boolean): void {
+    const next = new Set(this._floorGroupCreateSelection);
+    if (enabled) {
+      next.add(locationId);
+    } else {
+      next.delete(locationId);
+    }
+    this._floorGroupCreateSelection = [...next].sort((left, right) =>
+      this._locationName(left).localeCompare(this._locationName(right))
+    );
+    this.requestUpdate();
+  }
+
+  private async _persistFloorOccupancyGroups(
+    groups: FloorOccupancyGroup[],
+    successMessage: string
+  ): Promise<void> {
+    if (!this.location || !this.hass) return;
+    const candidates = this._floorGroupAreaCandidates();
+    const candidateIds = new Set(candidates.map((candidate) => candidate.id));
+    const normalizedGroups = groups
+      .map((group) => ({
+        ...group,
+        memberIds: [...new Set(group.memberIds.filter((memberId) => candidateIds.has(memberId)))].sort((left, right) =>
+          this._locationName(left).localeCompare(this._locationName(right))
+        ),
+      }))
+      .filter((group) => group.memberIds.length > 1);
+
+    this._savingOccupancyDraft = true;
+    this._occupancySaveError = undefined;
+    this.requestUpdate();
+    try {
+      for (const candidate of candidates) {
+        const config = this._persistedOccupancyConfigForLocation(candidate);
+        const group = normalizedGroups.find((item) => item.memberIds.includes(candidate.id));
+        const nextConfig = this._sanitizeOccupancyConfig(
+          {
+            ...config,
+            occupancy_group_id: group ? group.id : null,
+          },
+          candidate.id
+        );
+        await this._persistOccupancyConfigForLocation(candidate.id, nextConfig);
+        candidate.modules = candidate.modules || {};
+        candidate.modules.occupancy = nextConfig;
+      }
+      this._pendingOccupancyByLocation = {};
+      this._floorGroupCreateSelection = [];
+      this._occupancyDraftDirty = false;
+      this._occupancySaveError = undefined;
+      this._detectionDraftHint = undefined;
+      this._showToast(successMessage, "success");
+    } catch (err: any) {
+      console.error("Failed to update occupancy groups", err);
+      this._occupancySaveError = err?.message || "Failed to update occupancy groups";
+      this._showToast(this._occupancySaveError, "error");
+    } finally {
+      this._savingOccupancyDraft = false;
+      this.requestUpdate();
+    }
+  }
+
+  private async _createFloorOccupancyGroup(): Promise<void> {
+    if (this._savingOccupancyDraft) return;
+    if (this._floorGroupCreateSelection.length < 2) return;
+    const groups = this._floorOccupancyGroups().map((group) => ({
+      id: group.id,
+      memberIds: [...group.memberIds],
+    }));
+    groups.push({
+      id: this._generateOccupancyGroupId(),
+      memberIds: [...this._floorGroupCreateSelection],
+    });
+    await this._persistFloorOccupancyGroups(groups, "Occupancy group created");
+  }
+
+  private async _deleteFloorOccupancyGroup(groupId: string): Promise<void> {
+    if (this._savingOccupancyDraft) return;
+    const nextGroups = this._floorOccupancyGroups()
+      .filter((group) => group.id !== groupId)
+      .map((group) => ({ id: group.id, memberIds: [...group.memberIds] }));
+    await this._persistFloorOccupancyGroups(nextGroups, "Occupancy group deleted");
+  }
+
+  private async _toggleFloorGroupMembership(
+    groupId: string,
+    locationId: string,
+    enabled: boolean
+  ): Promise<void> {
+    if (this._savingOccupancyDraft) return;
+    const groups = this._floorOccupancyGroups().map((group) => ({
+      ...group,
+      memberIds: [...group.memberIds],
+    }));
+    const targetIndex = groups.findIndex((group) => group.id === groupId);
+    if (targetIndex < 0) return;
+
+    for (const group of groups) {
+      if (group.id === groupId) continue;
+      group.memberIds = group.memberIds.filter((memberId) => memberId !== locationId);
+    }
+
+    const target = groups[targetIndex];
+    if (enabled) {
+      if (!target.memberIds.includes(locationId)) {
+        target.memberIds.push(locationId);
+      }
+    } else {
+      target.memberIds = target.memberIds.filter((memberId) => memberId !== locationId);
+    }
+
+    await this._persistFloorOccupancyGroups(
+      groups.map((group) => ({ id: group.id, memberIds: group.memberIds })),
+      "Occupancy groups updated"
+    );
+  }
+
+  private _renderFloorOccupancyGroupsSection() {
+    if (!this.location) return "";
+    const candidates = this._floorGroupAreaCandidates();
+    const groups = this._floorOccupancyGroups();
+    const ungroupedIds = this._ungroupedFloorAreaIds();
+    const createSelection = new Set(this._floorGroupCreateSelection.filter((locationId) => ungroupedIds.includes(locationId)));
+
+    return html`
+      <div class="card-section" data-testid="occupancy-groups-section">
+        <div class="section-title">
+          <ha-icon .icon=${"mdi:link-lock"}></ha-icon>
+          Occupancy Groups
+        </div>
+        <div class="subsection-help">
+          Create local shared-occupancy groups for this floor. Each area can belong to at most one group.
+        </div>
+        ${candidates.length === 0
+          ? html`<div class="adjacency-empty">No eligible child areas found on this floor.</div>`
+          : html`
               <div class="linked-location-list">
-                ${candidates.map((candidate) => {
-                  const checked = sharedSet.has(candidate.id);
-                  return html`
-                    <div class="linked-location-row">
-                      <label class="linked-location-left">
-                        <input
-                          type="checkbox"
-                          data-testid=${`shared-space-location-${candidate.id}`}
-                          .checked=${checked}
-                          @change=${(event: Event) => {
-                            const target = event.target as HTMLInputElement;
-                            this._toggleSyncLocation(candidate, target.checked);
-                          }}
-                        />
-                        <span class="linked-location-name">${candidate.name}</span>
-                      </label>
-                    </div>
-                  `;
-                })}
+                ${groups.length === 0
+                  ? html`<div class="adjacency-empty">No occupancy groups on this floor yet.</div>`
+                  : repeat(
+                      groups,
+                      (group) => group.id,
+                      (group, index) => html`
+                        <div class="card-section" data-testid=${`occupancy-group-card-${index + 1}`}>
+                          <div class="section-title-row">
+                            <div class="subsection-title">Group ${index + 1}</div>
+                            <button
+                              class="button button-secondary"
+                              type="button"
+                              data-testid=${`occupancy-group-delete-${index + 1}`}
+                              ?disabled=${this._savingOccupancyDraft}
+                              @click=${() => void this._deleteFloorOccupancyGroup(group.id)}
+                            >
+                              Delete group
+                            </button>
+                          </div>
+                          <div class="linked-location-list">
+                            ${candidates.map((candidate) => {
+                              const checked = group.memberIds.includes(candidate.id);
+                              return html`
+                                <div class="linked-location-row">
+                                  <label class="linked-location-left">
+                                    <input
+                                      type="checkbox"
+                                      data-testid=${`occupancy-group-${index + 1}-location-${candidate.id}`}
+                                      .checked=${checked}
+                                      ?disabled=${this._savingOccupancyDraft}
+                                      @change=${(event: Event) => {
+                                        const target = event.target as HTMLInputElement;
+                                        void this._toggleFloorGroupMembership(
+                                          group.id,
+                                          candidate.id,
+                                          target.checked
+                                        );
+                                      }}
+                                    />
+                                    <span class="linked-location-name">${candidate.name}</span>
+                                  </label>
+                                </div>
+                              `;
+                            })}
+                          </div>
+                        </div>
+                      `
+                    )}
+              </div>
+              <div class="card-section" data-testid="occupancy-group-create">
+                <div class="subsection-title">Create group</div>
+                <div class="subsection-help">
+                  Select two or more ungrouped areas to create another occupancy group.
+                </div>
+                ${ungroupedIds.length === 0
+                  ? html`<div class="adjacency-empty">No ungrouped areas remain on this floor.</div>`
+                  : ungroupedIds.length === 1
+                    ? html`<div class="adjacency-empty">Only one ungrouped area remains, so a new group cannot be created.</div>`
+                  : html`
+                      <div class="linked-location-list">
+                        ${ungroupedIds.map((locationId) => html`
+                          <div class="linked-location-row">
+                            <label class="linked-location-left">
+                              <input
+                                type="checkbox"
+                                data-testid=${`occupancy-group-create-location-${locationId}`}
+                                .checked=${createSelection.has(locationId)}
+                                ?disabled=${this._savingOccupancyDraft}
+                                @change=${(event: Event) => {
+                                  const target = event.target as HTMLInputElement;
+                                  this._toggleFloorCreateSelection(locationId, target.checked);
+                                }}
+                              />
+                              <span class="linked-location-name">${this._locationName(locationId)}</span>
+                            </label>
+                          </div>
+                        `)}
+                      </div>
+                      <div class="advanced-toggle-row">
+                        ${this._savingOccupancyDraft
+                          ? html`<div class="subsection-help">Saving occupancy groups...</div>`
+                          : ""}
+                        <button
+                          class="button button-secondary group-create-button ${createSelection.size >= 2 ? "is-ready" : ""}"
+                          type="button"
+                          data-testid="occupancy-group-create-button"
+                          ?disabled=${this._savingOccupancyDraft || createSelection.size < 2 || ungroupedIds.length < 2}
+                          @click=${() => void this._createFloorOccupancyGroup()}
+                        >
+                          Create group
+                        </button>
+                      </div>
+                    `}
               </div>
             `}
       </div>
@@ -4594,7 +5029,6 @@ export class HtLocationInspector extends LitElement {
 
     const candidates = this._linkedLocationCandidates();
     const linked = this._linkedLocationIds(config);
-    const syncedSet = new Set(this._syncLocationIds(config));
     const linkedSet = new Set(linked);
     const linkedLabel = linked.length
       ? linked.map((locationId) => this._locationName(locationId)).join(", ")
@@ -4617,7 +5051,6 @@ export class HtLocationInspector extends LitElement {
               <div class="linked-location-list">
                 ${candidates.map((candidate) => {
                   const checked = linkedSet.has(candidate.id);
-                  const isSynced = syncedSet.has(candidate.id);
                   const twoWayChecked = this._isTwoWayLinked(candidate, linkedSet);
                   return html`
                     <div class="linked-location-row">
@@ -4626,7 +5059,6 @@ export class HtLocationInspector extends LitElement {
                           type="checkbox"
                           data-testid=${`linked-location-${candidate.id}`}
                           .checked=${checked}
-                          ?disabled=${isSynced}
                           @change=${(event: Event) => {
                             const target = event.target as HTMLInputElement;
                             this._toggleLinkedLocation(candidate.id, target.checked);
@@ -4639,7 +5071,7 @@ export class HtLocationInspector extends LitElement {
                           type="checkbox"
                           data-testid=${`linked-location-two-way-${candidate.id}`}
                           .checked=${twoWayChecked}
-                          ?disabled=${!checked || isSynced}
+                          ?disabled=${!checked}
                           @change=${(event: Event) => {
                             const target = event.target as HTMLInputElement;
                             this._toggleTwoWayLinkedLocation(candidate, target.checked);
@@ -6513,13 +6945,6 @@ export class HtLocationInspector extends LitElement {
     return undefined;
   }
 
-  private _lightingSituationEventLabel(event: TopomationActionRule["trigger_type"]): string {
-    if (event === "on_occupied") return "Room becomes occupied";
-    if (event === "on_vacant") return "Room becomes vacant";
-    if (event === "on_bright") return "It becomes bright";
-    return "It becomes dark";
-  }
-
   private _lightingSituationRequirement(
     rule: Partial<TopomationActionRule>,
     family: LightingSituationFamily,
@@ -6539,29 +6964,6 @@ export class HtLocationInspector extends LitElement {
     if (rule.must_be_occupied === true) return "occupied";
     if (rule.must_be_occupied === false) return "vacant";
     return "any";
-  }
-
-  private _lightingSituationRows(rule: Partial<TopomationActionRule>): LightingSituationRow[] {
-    const triggerTypes = this._normalizeActionTriggerTypes(rule.trigger_types, rule.trigger_type);
-    const rows: LightingSituationRow[] = [];
-    const occupancyTrigger = this._occupancyTriggerForRule(triggerTypes);
-    const ambientTrigger = this._ambientTriggerForRule(triggerTypes);
-
-    if (occupancyTrigger) {
-      rows.push({
-        family: "occupancy",
-        event: occupancyTrigger,
-        requirement: this._lightingSituationRequirement(rule, "occupancy", triggerTypes),
-      });
-    }
-    if (ambientTrigger) {
-      rows.push({
-        family: "ambient",
-        event: ambientTrigger,
-        requirement: this._lightingSituationRequirement(rule, "ambient", triggerTypes),
-      });
-    }
-    return rows;
   }
 
   private _setLightingSituationEvent(
@@ -6619,73 +7021,6 @@ export class HtLocationInspector extends LitElement {
     this._updateActionRule(ruleId, {
       must_be_occupied:
         requirement === "occupied" ? true : requirement === "vacant" ? false : undefined,
-    });
-  }
-
-  private _addLightingSituation(ruleId: string): void {
-    const rule = this._workingActionRules().find((candidate) => String(candidate.id || "") === ruleId);
-    if (!rule) return;
-    const triggerTypes = this._normalizeActionTriggerTypes(rule.trigger_types, rule.trigger_type);
-    const occupancyTrigger = this._occupancyTriggerForRule(triggerTypes);
-    const ambientTrigger = this._ambientTriggerForRule(triggerTypes);
-    if (occupancyTrigger && ambientTrigger) return;
-
-    if (!occupancyTrigger) {
-      const existingAmbientRequirement = this._lightingSituationRequirement(rule, "ambient", triggerTypes);
-      const nextOccupancyTrigger =
-        existingAmbientRequirement === "vacant" ? "on_vacant" : "on_occupied";
-      const nextPatch: Partial<TopomationActionRule> = {
-        trigger_types: this._composeLightingTriggerTypes({
-          occupancyTrigger: nextOccupancyTrigger,
-          ambientTrigger,
-        }),
-      };
-      if (ambientTrigger === "on_dark") nextPatch.ambient_condition = "dark";
-      if (ambientTrigger === "on_bright") nextPatch.ambient_condition = "bright";
-      if (this._lightingSituationRequirement(rule, "occupancy", triggerTypes) === "any") {
-        if (ambientTrigger === "on_dark") nextPatch.ambient_condition = "dark";
-        if (ambientTrigger === "on_bright") nextPatch.ambient_condition = "bright";
-      }
-      this._updateActionRule(ruleId, nextPatch);
-      return;
-    }
-
-    const existingOccupancyRequirement = this._lightingSituationRequirement(rule, "occupancy", triggerTypes);
-    const nextAmbientTrigger =
-      existingOccupancyRequirement === "bright" ? "on_bright" : "on_dark";
-    const nextPatch: Partial<TopomationActionRule> = {
-      trigger_types: this._composeLightingTriggerTypes({
-        occupancyTrigger,
-        ambientTrigger: nextAmbientTrigger,
-      }),
-    };
-    if (occupancyTrigger === "on_occupied") {
-      nextPatch.must_be_occupied = true;
-    } else if (occupancyTrigger === "on_vacant") {
-      nextPatch.must_be_occupied = false;
-    }
-    if (this._lightingSituationRequirement(rule, "ambient", triggerTypes) === "any") {
-      nextPatch.must_be_occupied = occupancyTrigger === "on_occupied";
-    }
-    this._updateActionRule(ruleId, nextPatch);
-  }
-
-  private _removeLightingSituation(ruleId: string, family: LightingSituationFamily): void {
-    const rule = this._workingActionRules().find((candidate) => String(candidate.id || "") === ruleId);
-    if (!rule) return;
-    const triggerTypes = this._normalizeActionTriggerTypes(rule.trigger_types, rule.trigger_type);
-    const occupancyTrigger =
-      family === "occupancy" ? undefined : this._occupancyTriggerForRule(triggerTypes);
-    const ambientTrigger =
-      family === "ambient" ? undefined : this._ambientTriggerForRule(triggerTypes);
-    if (!occupancyTrigger && !ambientTrigger) return;
-
-    this._updateActionRule(ruleId, {
-      trigger_types: this._composeLightingTriggerTypes({
-        occupancyTrigger,
-        ambientTrigger,
-      }),
-      ...(family === "occupancy" ? { ambient_condition: "any" } : { must_be_occupied: undefined }),
     });
   }
 
@@ -6813,6 +7148,25 @@ export class HtLocationInspector extends LitElement {
         />
         <span>${label}</span>
       </label>
+    `;
+  }
+
+  private _renderTogglePill(
+    label: string,
+    checked: boolean,
+    disabled: boolean,
+    onToggle: () => void
+  ) {
+    return html`
+      <button
+        type="button"
+        class="choice-pill ${checked ? "active" : ""} ${disabled ? "disabled" : ""}"
+        aria-pressed=${checked ? "true" : "false"}
+        ?disabled=${disabled}
+        @click=${onToggle}
+      >
+        <span>${label}</span>
+      </button>
     `;
   }
 
@@ -7626,45 +7980,51 @@ export class HtLocationInspector extends LitElement {
   }
 
   private _addActionRule(tab: DeviceAutomationTab): void {
-    const rules = this._workingActionRules();
-    const candidates = this._actionRuleTargetEntities(tab);
-    const actionEntityId = candidates[0] || "";
-    const triggerTypes: TopomationActionRule["trigger_type"][] = ["on_occupied"];
-    const triggerType = this._primaryActionTriggerType(triggerTypes);
-    const nextRuleId = `action_rule_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-    this._actionRuleTabById[nextRuleId] = tab;
-    const nextRule: TopomationActionRule = {
-      id: nextRuleId,
-      entity_id: "",
-      name: "New rule",
-      rule_uuid: this._generateRuleUuid(),
-      trigger_type: triggerType,
-      trigger_types: triggerTypes,
-      actions: actionEntityId
-        ? [
-            {
-              entity_id: actionEntityId,
-              service: this._defaultActionServiceForTrigger(actionEntityId, triggerType),
-            },
-          ]
-        : [],
-      action_entity_id: actionEntityId || undefined,
-      action_service: this._defaultActionServiceForTrigger(actionEntityId, triggerType),
-      ambient_condition:
-        tab === "lighting"
-          ? "dark"
-          : this._defaultActionAmbientConditionForTrigger(triggerTypes),
-      must_be_occupied:
-        tab === "lighting"
-          ? undefined
-          : this._normalizeActionMustBeOccupied(undefined, triggerType),
-      time_condition_enabled: false,
-      start_time: "18:00",
-      end_time: "23:59",
-      run_on_startup: false,
-      enabled: true,
-    };
-    this._setActionRulesDraft([...rules, nextRule]);
+    try {
+      const rules = this._workingActionRules();
+      const candidates = this._actionRuleTargetEntities(tab);
+      const actionEntityId = candidates[0] || "";
+      const triggerTypes: TopomationActionRule["trigger_type"][] = ["on_occupied"];
+      const triggerType = this._primaryActionTriggerType(triggerTypes);
+      const nextRuleId = `action_rule_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+      this._actionRuleTabById[nextRuleId] = tab;
+      const nextRule: TopomationActionRule = {
+        id: nextRuleId,
+        entity_id: "",
+        name: "New rule",
+        rule_uuid: this._generateRuleUuid(),
+        trigger_type: triggerType,
+        trigger_types: triggerTypes,
+        actions: actionEntityId
+          ? [
+              {
+                entity_id: actionEntityId,
+                service: this._defaultActionServiceForTrigger(actionEntityId, triggerType),
+              },
+            ]
+          : [],
+        action_entity_id: actionEntityId || undefined,
+        action_service: this._defaultActionServiceForTrigger(actionEntityId, triggerType),
+        ambient_condition:
+          tab === "lighting"
+            ? "dark"
+            : this._defaultActionAmbientConditionForTrigger(triggerTypes),
+        must_be_occupied:
+          tab === "lighting"
+            ? undefined
+            : this._normalizeActionMustBeOccupied(undefined, triggerType),
+        time_condition_enabled: false,
+        start_time: "18:00",
+        end_time: "23:59",
+        run_on_startup: false,
+        enabled: true,
+      };
+      this._setActionRulesDraft([...rules, nextRule]);
+      this._showToast(`Draft ${tab} rule added`, "success");
+    } catch (err: any) {
+      console.error("[topomation] failed to add action rule", err);
+      this._showToast(err?.message || "Failed to add draft rule", "error");
+    }
   }
 
   private _updateActionRule(
@@ -8175,132 +8535,177 @@ export class HtLocationInspector extends LitElement {
     };
   }
 
-  private _renderLightingSituationRows(
+  private _renderLightingTriggerRows(
     ruleId: string,
     rule: TopomationActionRule,
     busy: boolean
   ) {
-    const situations = this._lightingSituationRows(rule);
-    return html`
-      <div class="dusk-rule-section-title">When any of these happen</div>
-      <div class="lighting-situation-list">
-        ${situations.map((situation, index) => {
-          const canRemove = situations.length > 1;
-          const eventOptions =
-            situation.family === "occupancy"
-              ? ([
-                  {
-                    value: "on_occupied" as const,
-                    label: this._lightingSituationEventLabel("on_occupied"),
-                  },
-                  {
-                    value: "on_vacant" as const,
-                    label: this._lightingSituationEventLabel("on_vacant"),
-                  },
-                ] satisfies Array<{ value: TopomationActionRule["trigger_type"]; label: string }>)
-              : ([
-                  {
-                    value: "on_dark" as const,
-                    label: this._lightingSituationEventLabel("on_dark"),
-                  },
-                  {
-                    value: "on_bright" as const,
-                    label: this._lightingSituationEventLabel("on_bright"),
-                  },
-                ] satisfies Array<{ value: TopomationActionRule["trigger_type"]; label: string }>);
-          const requirementOptions =
-            situation.family === "occupancy"
-              ? ([
-                  { value: "any", label: "Always" },
-                  { value: "dark", label: "It is dark" },
-                  { value: "bright", label: "It is bright" },
-                ] satisfies Array<{ value: LightingSituationRequirement; label: string }>)
-              : ([
-                  { value: "any", label: "Always" },
-                  { value: "occupied", label: "Room is occupied" },
-                  { value: "vacant", label: "Room is vacant" },
-                ] satisfies Array<{ value: LightingSituationRequirement; label: string }>);
+    const triggerTypes = this._normalizeActionTriggerTypes(rule.trigger_types, rule.trigger_type);
+    const occupancyTrigger = this._occupancyTriggerForRule(triggerTypes);
+    const ambientTrigger = this._ambientTriggerForRule(triggerTypes);
+    const occupancyRequirement = this._lightingSituationRequirement(
+      rule,
+      "occupancy",
+      triggerTypes
+    );
+    const ambientRequirement = this._lightingSituationRequirement(rule, "ambient", triggerTypes);
 
-          return html`
-            <div
-              class="lighting-situation-card"
-              data-testid=${`action-rule-${ruleId}-situation-${index}`}
-            >
-              <div class="lighting-situation-head">
-                <div class="lighting-situation-title">Situation ${index + 1}</div>
-                <button
-                  type="button"
-                  class="button button-secondary"
-                  ?disabled=${busy || !canRemove}
-                  data-testid=${`action-rule-${ruleId}-situation-${index}-remove`}
-                  @click=${() => this._removeLightingSituation(ruleId, situation.family)}
-                >
-                  Remove
-                </button>
-              </div>
-              <div class="lighting-situation-body">
-                <div class="lighting-situation-row">
-                  <span class="config-label">Event</span>
-                  <div class="choice-pill-group">
-                    ${eventOptions.map((option) =>
-                      this._renderChoicePill(
-                        `lighting-situation-event-${ruleId}-${situation.family}`,
-                        option.value,
-                        option.label,
-                        situation.event === option.value,
-                        busy,
-                        () =>
-                          this._setLightingSituationEvent(
-                            ruleId,
-                            situation.family,
-                            option.value
-                          )
-                      )
-                    )}
-                  </div>
-                </div>
-                <div class="lighting-situation-row">
-                  <span class="config-label">Only when</span>
-                  <div class="choice-pill-group">
-                    ${requirementOptions.map((option) =>
-                      this._renderChoicePill(
-                        `lighting-situation-requirement-${ruleId}-${situation.family}`,
-                        option.value,
-                        option.label,
-                        situation.requirement === option.value,
-                        busy,
-                        () =>
-                          this._setLightingSituationRequirement(
-                            ruleId,
-                            situation.family,
-                            option.value
-                          )
-                      )
-                    )}
-                  </div>
-                </div>
+    return html`
+      <div class="dusk-rule-section-title">When</div>
+      <div class="lighting-situation-list">
+        <div
+          class="lighting-situation-card"
+          data-testid=${`action-rule-${ruleId}-trigger-family-occupancy`}
+        >
+          <div class="lighting-situation-head">
+            <div class="lighting-situation-title">Occupancy change</div>
+          </div>
+          <div class="lighting-situation-body">
+            <div class="lighting-situation-row">
+              <span class="config-label">Trigger</span>
+              <div class="choice-pill-group">
+                ${this._renderTogglePill(
+                  "Room becomes occupied",
+                  occupancyTrigger === "on_occupied",
+                  busy,
+                  () =>
+                    occupancyTrigger === "on_occupied"
+                      ? this._setLightingOccupancyTrigger(
+                          ruleId,
+                          false,
+                          occupancyTrigger,
+                          ambientTrigger
+                        )
+                      : this._setLightingSituationEvent(ruleId, "occupancy", "on_occupied")
+                )}
+                ${this._renderTogglePill(
+                  "Room becomes vacant",
+                  occupancyTrigger === "on_vacant",
+                  busy,
+                  () =>
+                    occupancyTrigger === "on_vacant"
+                      ? this._setLightingOccupancyTrigger(
+                          ruleId,
+                          false,
+                          occupancyTrigger,
+                          ambientTrigger
+                        )
+                      : this._setLightingSituationEvent(ruleId, "occupancy", "on_vacant")
+                )}
               </div>
             </div>
-          `;
-        })}
-      </div>
-      ${situations.length < 2
-        ? html`
-            <div class="lighting-situation-toolbar">
-              <button
-                class="button button-secondary"
-                type="button"
-                data-testid=${`action-rule-${ruleId}-add-situation`}
-                ?disabled=${busy}
-                @click=${() => this._addLightingSituation(ruleId)}
-              >
-                Add situation
-              </button>
+            ${occupancyTrigger
+              ? html`
+                  <div class="lighting-situation-row">
+                    <span class="config-label">Only if</span>
+                    <div class="choice-pill-group">
+                      ${this._renderChoicePill(
+                        `lighting-trigger-${ruleId}-occupancy-condition`,
+                        "any",
+                        "Any",
+                        occupancyRequirement === "any",
+                        busy,
+                        () => this._setLightingSituationRequirement(ruleId, "occupancy", "any")
+                      )}
+                      ${this._renderChoicePill(
+                        `lighting-trigger-${ruleId}-occupancy-condition`,
+                        "dark",
+                        "It is dark",
+                        occupancyRequirement === "dark",
+                        busy,
+                        () => this._setLightingSituationRequirement(ruleId, "occupancy", "dark")
+                      )}
+                      ${this._renderChoicePill(
+                        `lighting-trigger-${ruleId}-occupancy-condition`,
+                        "bright",
+                        "It is bright",
+                        occupancyRequirement === "bright",
+                        busy,
+                        () => this._setLightingSituationRequirement(ruleId, "occupancy", "bright")
+                      )}
+                    </div>
+                  </div>
+                `
+              : ""}
+          </div>
+        </div>
+
+        <div
+          class="lighting-situation-card"
+          data-testid=${`action-rule-${ruleId}-trigger-family-ambient`}
+        >
+          <div class="lighting-situation-head">
+            <div class="lighting-situation-title">Ambient light change</div>
+          </div>
+          <div class="lighting-situation-body">
+            <div class="lighting-situation-row">
+              <span class="config-label">Trigger</span>
+              <div class="choice-pill-group">
+                ${this._renderTogglePill(
+                  "It becomes dark",
+                  ambientTrigger === "on_dark",
+                  busy,
+                  () =>
+                    ambientTrigger === "on_dark"
+                      ? this._setLightingAmbientTrigger(
+                          ruleId,
+                          false,
+                          occupancyTrigger,
+                          ambientTrigger
+                        )
+                      : this._setLightingSituationEvent(ruleId, "ambient", "on_dark")
+                )}
+                ${this._renderTogglePill(
+                  "It becomes bright",
+                  ambientTrigger === "on_bright",
+                  busy,
+                  () =>
+                    ambientTrigger === "on_bright"
+                      ? this._setLightingAmbientTrigger(
+                          ruleId,
+                          false,
+                          occupancyTrigger,
+                          ambientTrigger
+                        )
+                      : this._setLightingSituationEvent(ruleId, "ambient", "on_bright")
+                )}
+              </div>
             </div>
-          `
-        : ""}
-      <div class="config-help lighting-situation-help">
-        Examples: Occupied while dark, Dark while occupied, Vacant, Bright.
+            ${ambientTrigger
+              ? html`
+                  <div class="lighting-situation-row">
+                    <span class="config-label">Only if</span>
+                    <div class="choice-pill-group">
+                      ${this._renderChoicePill(
+                        `lighting-trigger-${ruleId}-ambient-condition`,
+                        "any",
+                        "Any",
+                        ambientRequirement === "any",
+                        busy,
+                        () => this._setLightingSituationRequirement(ruleId, "ambient", "any")
+                      )}
+                      ${this._renderChoicePill(
+                        `lighting-trigger-${ruleId}-ambient-condition`,
+                        "occupied",
+                        "Room is occupied",
+                        ambientRequirement === "occupied",
+                        busy,
+                        () => this._setLightingSituationRequirement(ruleId, "ambient", "occupied")
+                      )}
+                      ${this._renderChoicePill(
+                        `lighting-trigger-${ruleId}-ambient-condition`,
+                        "vacant",
+                        "Room is vacant",
+                        ambientRequirement === "vacant",
+                        busy,
+                        () => this._setLightingSituationRequirement(ruleId, "ambient", "vacant")
+                      )}
+                    </div>
+                  </div>
+                `
+              : ""}
+          </div>
+        </div>
       </div>
     `;
   }
@@ -8463,20 +8868,18 @@ export class HtLocationInspector extends LitElement {
                       </label>
                       ${included && canUseOnlyIfOff
                         ? html`
-                            <label class="dusk-off-only-toggle">
-                              <input
-                                type="checkbox"
-                                .checked=${onlyIfOff}
-                                ?disabled=${busy}
-                                data-testid=${`action-rule-${ruleId}-device-only-if-off-${index}`}
-                                @change=${(ev: Event) => {
+                            <div class="dusk-inline-option-row">
+                              ${this._renderTogglePill(
+                                "Only if off",
+                                onlyIfOff,
+                                busy,
+                                () => {
                                   upsertTarget({
-                                    only_if_off: (ev.target as HTMLInputElement).checked,
+                                    only_if_off: !onlyIfOff,
                                   });
-                                }}
-                              />
-                              <span>Only turn on if off</span>
-                            </label>
+                                }
+                              )}
+                            </div>
                           `
                         : html``}
                     `
@@ -8503,20 +8906,18 @@ export class HtLocationInspector extends LitElement {
                         </select>
                         ${included && canUseOnlyIfOff
                           ? html`
-                              <label class="dusk-off-only-toggle">
-                                <input
-                                  type="checkbox"
-                                  .checked=${onlyIfOff}
-                                  ?disabled=${busy}
-                                  data-testid=${`action-rule-${ruleId}-device-only-if-off-${index}`}
-                                  @change=${(ev: Event) => {
+                              <div class="dusk-inline-option-row">
+                                ${this._renderTogglePill(
+                                  "Only if off",
+                                  onlyIfOff,
+                                  busy,
+                                  () => {
                                     upsertTarget({
-                                      only_if_off: (ev.target as HTMLInputElement).checked,
+                                      only_if_off: !onlyIfOff,
                                     });
-                                  }}
-                                />
-                                <span>Only turn on if off</span>
-                              </label>
+                                  }
+                                )}
+                              </div>
                             `
                           : html``}
                       </div>
@@ -8538,34 +8939,32 @@ export class HtLocationInspector extends LitElement {
     entityOptions: string[]
   ) {
     return html`
-      ${this._renderLightingSituationRows(ruleId, rule, busy)}
+      ${this._renderLightingTriggerRows(ruleId, rule, busy)}
 
-      <div class="dusk-rule-section-title">Time window</div>
-      <div class="lighting-time-window">
-        <div class="config-row">
-          <div>
-            <div class="config-label">Rule timing</div>
-            <div class="config-help">
-              Limit this rule to a time range. Crossing midnight is supported.
-            </div>
-          </div>
-          <div class="config-value">
-            <label class="dusk-off-only-toggle">
-              <input
-                type="checkbox"
-                class="switch-input"
-                .checked=${Boolean(rule.time_condition_enabled)}
-                ?disabled=${busy}
-                @change=${(ev: Event) =>
-                  this._updateActionRule(ruleId, {
-                    time_condition_enabled: (ev.target as HTMLInputElement).checked,
-                  })}
-              />
-              <span>Limit this rule to a time range</span>
-            </label>
-          </div>
+      <div class="dusk-inline-heading-row">
+        <div class="dusk-rule-section-title">Time window</div>
+        <div class="choice-pill-group">
+          ${this._renderTogglePill(
+            "Any time",
+            !Boolean(rule.time_condition_enabled),
+            busy,
+            () =>
+              this._updateActionRule(ruleId, {
+                time_condition_enabled: false,
+              })
+          )}
+          ${this._renderTogglePill(
+            "Limit to a time range",
+            Boolean(rule.time_condition_enabled),
+            busy,
+            () =>
+              this._updateActionRule(ruleId, {
+                time_condition_enabled: !Boolean(rule.time_condition_enabled),
+              })
+          )}
         </div>
-
+      </div>
+      <div class="lighting-time-window">
         ${rule.time_condition_enabled
           ? html`
               <div class="dusk-time-fields">
@@ -8606,18 +9005,14 @@ export class HtLocationInspector extends LitElement {
           : ""}
       </div>
 
-      <div class="dusk-rule-section-title">Set room lights to</div>
+      <div class="dusk-rule-section-title">Lights</div>
       ${this._renderLightingRuleActionRows(ruleId, rule, busy, entityOptions)}
-      <div class="config-help" style="margin-top: 12px;">
-        One optional time window per rule. Use Duplicate rule to create
-        evening, overnight, or cooking variants.
-      </div>
     `;
   }
 
   private _renderDeviceAutomationTab(tab: DeviceAutomationTab) {
     if (!this.location) return "";
-    const busy = this._savingActionRules || this._loadingActionRules;
+    const busy = this._savingActionRules;
     const meta = this._deviceAutomationTabMeta(tab);
     const rules = this._rulesForDeviceAutomationTab(tab);
     const entityOptions = this._actionRuleTargetEntities(tab);
@@ -9134,9 +9529,17 @@ export class HtLocationInspector extends LitElement {
                                       Duplicate rule
                                     </button>
                                   `
-                                : ""}
+                              : ""}
                             `}
                     </div>
+                    ${tab === "lighting"
+                      ? html`
+                          <div class="config-help dusk-rule-footer-help">
+                            Use Duplicate rule for another time window or trigger
+                            variant.
+                          </div>
+                        `
+                      : ""}
                   </div>
                 `;
               })}
@@ -9148,8 +9551,8 @@ export class HtLocationInspector extends LitElement {
               <div class="dusk-list-footer">
                 <button
                   class="button button-primary"
+                  type="button"
                   data-testid="action-rule-add"
-                  ?disabled=${busy}
                   @click=${() => this._addActionRule(tab)}
                 >
                   Add rule
@@ -9511,9 +9914,7 @@ export class HtLocationInspector extends LitElement {
     return typeof locationId === "string" && locationId.trim().length > 0;
   }
 
-  private _getOccupancyState() {
-    if (!this.location) return undefined;
-    const locationId = this.location.id;
+  private _getOccupancyStateForLocation(locationId: string) {
     const liveState = this._liveOccupancyStateByLocation[locationId];
     if (liveState) {
       return liveState;
@@ -9526,6 +9927,55 @@ export class HtLocationInspector extends LitElement {
       return stateObj as Record<string, any>;
     }
     return undefined;
+  }
+
+  private _getOccupancyState() {
+    if (!this.location) return undefined;
+    return this._getOccupancyStateForLocation(this.location.id);
+  }
+
+  private _descendantLocations(locationId: string): Location[] {
+    const directByParent = new Map<string, Location[]>();
+    for (const candidate of this.allLocations || []) {
+      const parentId = typeof candidate.parent_id === "string" ? candidate.parent_id : null;
+      if (!parentId) continue;
+      const siblings = directByParent.get(parentId) || [];
+      siblings.push(candidate);
+      directByParent.set(parentId, siblings);
+    }
+
+    const result: Location[] = [];
+    const stack = [...(directByParent.get(locationId) || [])];
+    while (stack.length) {
+      const next = stack.shift()!;
+      result.push(next);
+      const children = directByParent.get(next.id) || [];
+      if (children.length) {
+        stack.unshift(...children);
+      }
+    }
+    return result;
+  }
+
+  private _structureSummary():
+    | { directChildren: number; descendantRooms: number; occupiedDescendants: number }
+    | undefined {
+    if (!this.location || !this._isStructuralSummaryLocation()) return undefined;
+    const descendants = this._descendantLocations(this.location.id);
+    const directChildren = descendants.filter((candidate) => candidate.parent_id === this.location?.id).length;
+    const descendantRooms = descendants.filter((candidate) => {
+      const type = getLocationType(candidate);
+      return type === "area" || type === "subarea";
+    }).length;
+    const occupiedDescendants = descendants.filter((candidate) => {
+      const state = this._getOccupancyStateForLocation(candidate.id);
+      return this._resolveOccupiedState(state) === true;
+    }).length;
+    return {
+      directChildren,
+      descendantRooms,
+      occupiedDescendants,
+    };
   }
 
   private _resolveOccupiedState(occupancyState?: Record<string, any>): boolean | undefined {
@@ -9685,10 +10135,13 @@ export class HtLocationInspector extends LitElement {
       return "Vacated by timeout";
     }
     if (normalizedReason === "propagation:parent") {
-      return "Vacated by parent propagation";
+      return "Vacated because the parent location cleared";
     }
     if (normalizedReason.startsWith("propagation:child:")) {
-      return "Vacated by child propagation";
+      const childId = rawReason.split(":").slice(2).join(":").trim();
+      return childId
+        ? `Vacated because child location ${this._locationName(childId)} cleared`
+        : "Vacated because a child location cleared";
     }
     if (normalizedReason.startsWith("event:")) {
       const eventType = normalizedReason.split(":", 2)[1];
@@ -9798,7 +10251,7 @@ export class HtLocationInspector extends LitElement {
 
   private _explainabilityChangeTitle(item: OccupancyExplainabilityChange): string {
     if (item.kind === "state") {
-      return item.event === "occupied" ? "Room became occupied" : "Room became vacant";
+      return item.event === "occupied" ? "Location became occupied" : "Location became vacant";
     }
     if (item.event === "trigger") return "Source triggered";
     if (item.event === "clear") return "Source cleared";
@@ -9900,7 +10353,10 @@ export class HtLocationInspector extends LitElement {
 
     const filtered = onlyActive ? ordered.filter((item) => item._active) : ordered;
     return filtered.map(({ sourceLabel, stateLabel, relativeTime, sourceId }) => ({
-      sourceLabel: `${sourceLabel}${sourceLabel === sourceId ? "" : ` (${sourceId})`}`,
+      sourceLabel:
+        sourceLabel === sourceId || Boolean(this._structuralSourceLabel(sourceId))
+          ? sourceLabel
+          : `${sourceLabel} (${sourceId})`,
       sourceId,
       stateLabel,
       relativeTime,
@@ -9920,6 +10376,11 @@ export class HtLocationInspector extends LitElement {
   }
 
   private _sourceLabelForSourceId(config: OccupancyConfig, sourceId: string): string {
+    const structuralSourceLabel = this._structuralSourceLabel(sourceId);
+    if (structuralSourceLabel) {
+      return structuralSourceLabel;
+    }
+
     const exact = (config.occupancy_sources || []).find(
       (source) => source.source_id === sourceId || source.entity_id === sourceId
     );
@@ -9943,6 +10404,51 @@ export class HtLocationInspector extends LitElement {
     }
 
     return this._entityName(sourceId);
+  }
+
+  private _structuralSourceLabel(sourceId: string): string | undefined {
+    const raw = String(sourceId || "").trim();
+    if (!raw) return undefined;
+
+    const prefixedLocationLabel = (
+      prefix: string,
+      separator: ":" | ".",
+      label: string
+    ): string | undefined => {
+      const marker = `${prefix}${separator}`;
+      if (!raw.startsWith(marker)) return undefined;
+      const locationId = raw.slice(marker.length).trim();
+      if (!locationId) return undefined;
+      return `${label}: ${this._locationName(locationId)}`;
+    };
+
+    return (
+      prefixedLocationLabel("__child__", ":", "Child location") ||
+      prefixedLocationLabel("__child__", ".", "Child location") ||
+      prefixedLocationLabel("__follow__", ":", "Parent location") ||
+      prefixedLocationLabel("__follow__", ".", "Parent location") ||
+      (raw.startsWith("linked:")
+        ? `Linked location: ${this._locationName(raw.slice("linked:".length).trim())}`
+        : undefined) ||
+      this._knownLocationLabel(raw)
+    );
+  }
+
+  private _knownLocationLabel(locationId: string): string | undefined {
+    const normalizedId = String(locationId || "").trim();
+    if (!normalizedId) return undefined;
+    const match = (this.allLocations || []).find((candidate) => candidate.id === normalizedId);
+    if (!match) return undefined;
+    const type = getLocationType(match);
+    const prefix =
+      type === "building"
+        ? "Building"
+        : type === "grounds"
+          ? "Grounds"
+          : type === "floor"
+            ? "Floor"
+            : "Location";
+    return `${prefix}: ${match.name}`;
   }
 
   private _parseDateValue(value: unknown): Date | undefined {

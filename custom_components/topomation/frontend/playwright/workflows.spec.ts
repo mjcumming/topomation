@@ -203,7 +203,7 @@ test("detection workflow persists occupancy source configuration", async ({ page
   await expect(motionSourceRow).toBeVisible();
 
   await motionSourceRow.locator("input.source-enable-input").check();
-  await page.getByTestId("detection-save-button").click();
+  await page.getByTestId("detection-draft-toolbar").getByTestId("detection-save-button").click();
 
   await expect
     .poll(async () => {

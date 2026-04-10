@@ -215,42 +215,51 @@ Additional save points:
   - non-sibling areas, child/subarea nodes, and non-HA-backed areas are excluded
   - `Any area / unassigned` is not offered in this sibling-scoped mode.
 
-## C-013 Shared Space Contract
+## C-013 Occupancy Groups Contract
 
-- Occupancy supports primary shared-space membership via occupancy config key
-  `sync_locations: string[]`.
-- Primary Occupancy UI/copy uses label `Shared Space`.
-- Shared-space semantics are reciprocal and group-oriented:
-  - checking a location adds it to the same shared occupancy group as the
-    current location
-  - saving normalizes the full group across all selected members
-    (`A.sync_locations = [B, C]`, `B.sync_locations = [A, C]`,
-    `C.sync_locations = [A, B]`)
-  - runtime resolves the effective shared-space group as the connected
-    component of allowed `sync_locations` declarations, so one missing reverse
-    edge or historical partial graph must not split the occupied/vacant result
-  - any occupancy contributor change in one shared-space member is mirrored to
-    peers using synthetic sync sources (`sync:<origin>::<source>`) so the group
-    behaves like one occupied space
-  - mirrored sync contributors preserve the origin contribution's remaining
-    timeout or indefinite hold; target defaults do not overwrite source timing
-  - a later shorter shared-space contribution must not shorten an already
-    longer active occupied hold; every member vacates only after all direct and
-    mirrored contributions in the group have cleared or expired
-  - occupancy binary sensors are authoritative for shared-space state:
-    `binary_sensor.<location>_occupancy` must report the same occupied/vacant
-    result the UI shows for that location
-  - effective UI checked state reflects the full shared group membership, not
-    only the current location's raw stored array.
-- Shared-space candidate scope is explicit and sibling-scoped:
-  - selected location and candidates must share the same `parent_id`
-  - `area` <-> `area` shared space is allowed when parent type is one of:
-    - `area`
-    - `floor`
-    - `building`
-  - `floor` <-> `floor` shared space is allowed only when parent type is `building`
-  - integration-owned/system nodes outside those scopes are excluded from
-    shared-space target/candidate roles.
+- Occupancy Group membership is explicit room config, using
+  `occupancy_group_id: string | null`.
+- The active authoring model is `Occupancy Groups`.
+- Occupancy Groups v1 are floor-scoped UI clusters:
+  - when a `floor` is selected, the first inspector tab becomes
+    `Occupancy Groups`
+  - that tab manages shared-occupancy groups among direct child `area`
+    locations of the selected floor
+  - an `area` may belong to zero or one occupancy group
+  - a floor may contain zero or more occupancy groups
+  - a valid occupancy group contains at least two areas
+  - room-level Occupancy authoring remains room-scoped; area inspectors may
+    summarize current group membership but do not own group editing
+- Floor occupancy-group actions apply immediately; they do not use the room
+  occupancy draft bar or `Save changes` / `Discard`.
+- Creating, deleting, or editing a floor occupancy group updates explicit
+  group membership on the affected rooms and updates the floor-scoped group
+  definition/registry used by occupancy runtime.
+- `Create group` is enabled only when:
+  - at least two ungrouped candidate areas remain on the selected floor
+  - the user has selected at least two of those ungrouped areas
+- If an existing group is edited down to one or zero members, the group is
+  removed automatically instead of persisting an invalid one-member group.
+- Occupancy Group semantics are authority-based:
+  - each group has one canonical runtime state
+  - that state owns occupied/vacant outcome, effective timeout, and lock
+    behavior for the whole group
+  - occupancy-affecting events from grouped rooms resolve to the group while
+    preserving the originating room/source identity for explainability
+  - all grouped members must publish the same occupied/vacant result, the same
+    effective timeout behavior, and the same lock behavior
+  - occupancy binary sensors remain authoritative for room state:
+    `binary_sensor.<location>_occupancy` must report the group-projected
+    occupied/vacant result for grouped rooms
+  - explainability should explicitly identify the group, using wording
+    equivalent to `via occupancy group`
+- Occupancy Groups v1 candidate scope is intentionally narrow:
+  - only direct child `area` locations under the selected `floor` are eligible
+    group members
+  - managed/system shadow areas are excluded
+  - floor-to-floor grouping is not part of the active UI
+- No new Home Assistant entity is created for an occupancy group in v1; member
+  rooms remain the public occupancy entities.
 - Borrowed coverage belongs in `Add Source`, not in shared-space membership.
 - Directional linked contributors remain supported in stored config key
   `linked_locations: string[]`, but are hidden from the active Occupancy UI
@@ -271,10 +280,26 @@ Additional save points:
   - candidates must share the same `parent_id` as the selected location
   - non-room topology nodes (for example `floor`, `building`, `grounds`) are
     excluded from the picker.
+- Structural occupancy authoring is derived-only in the active UI:
+  - `building` and `grounds` do not expose direct occupancy source editing
+  - `building` and `grounds` do not expose `Add Source`
+  - `building` and `grounds` do not expose WIAB or occupancy-group controls
+  - those location types render a read-only derived-occupancy summary instead
+    of a room-style occupancy editor
+  - structural occupancy is expected to roll up from descendant locations
+- Structural nodes are informational pages in the active inspector:
+  - `floor`, `building`, and `grounds` do not expose room-style automation tabs
+    (`Ambient`, `Lighting`, `Media`, `HVAC`)
+  - `floor` remains the occupancy-group authoring scope for child areas
+  - `building` and `grounds` render summary content only
+  - whole-home/floor aggregate scenes should be authored as normal Home
+    Assistant automations rather than panel-native structural actions
 
 ## C-014 Inspector Draft Bar Contract
 
 - `Occupancy` and `Ambient` use one shared tab-level draft interaction model.
+- Exception: floor-scoped `Occupancy Groups` do not use this draft model; they
+  apply immediately.
 - Clean state:
   - no `Save changes` / `Discard` controls are rendered.
 - Dirty state:
@@ -289,24 +314,31 @@ Additional save points:
 
 ## C-014A Lighting Rule Authoring Contract
 
-- Lighting rule authoring is situation-based in the panel UI.
+- Lighting rule authoring is trigger-family based in the panel UI.
 - A Lighting rule is expressed as:
-  - one or two situation rows
+  - one occupancy trigger family row
+  - one ambient trigger family row
   - one optional time window
-  - one room-lighting action set
-- Supported situation events are:
-  - `Room becomes occupied`
-  - `Room becomes vacant`
-  - `It becomes dark`
-  - `It becomes bright`
-- Situation requirements are cross-dimension only:
-  - occupancy events allow `Always`, `It is dark`, `It is bright`
-  - ambient events allow `Always`, `Room is occupied`, `Room is vacant`
+  - one lighting action target list
+- Supported trigger families are:
+  - occupancy change:
+    - `Room becomes occupied`
+    - `Room becomes vacant`
+  - ambient light change:
+    - `It becomes dark`
+    - `It becomes bright`
+- Trigger families do not render an explicit `Off` pill.
+- A trigger family is inactive when no trigger in that family is selected.
+- Family conditions are cross-dimension only:
+  - occupancy triggers allow `Any`, `It is dark`, `It is bright`
+  - ambient triggers allow `Any`, `Room is occupied`, `Room is vacant`
 - Current backend-backed Lighting rules support at most:
-  - one occupancy-family situation
-  - one ambient-family situation
-- `Duplicate rule` is the primary path for authoring multiple time-window variants
-  of the same room behavior.
+  - one occupancy-edge trigger
+  - one ambient-edge trigger
+- The panel must not present generic `Situation 1 / Situation 2` authoring for
+  Lighting rules.
+- `Duplicate rule` is the primary path for authoring multiple time-window
+  variants of the same room behavior.
 - A Lighting rule may include one optional time window only.
 - Overlapping Lighting rule windows are allowed by design.
 - Lighting action rows remain capability-based and may persist multiple target
@@ -460,9 +492,12 @@ Additional save points:
   - compatibility payloads may still expose a primary `trigger_type`, but the
     canonical Lighting trigger surface is the full trigger set.
 - Lighting condition contract:
-  - Lighting renders explicit ambient and occupancy condition rows.
-  - ambient and occupancy conditions are not locked or hidden solely because a
-    matching trigger is selected.
+  - Lighting renders exactly two explicit trigger-family rows:
+    occupancy change and ambient light change.
+  - a trigger family with no selected trigger is inactive.
+  - ambient and occupancy conditions are shown inline with their trigger
+    family, not as separate generic situation rows.
+  - condition controls only render when their trigger family is active.
   - Lighting may default condition values from the selected trigger set, but
     users retain explicit control of those condition rows.
 - Lighting multi-action contract:
@@ -538,13 +573,13 @@ Additional save points:
   left workspace rail.
 - The panel follows the currently selected location.
 - This section is not a raw debug log. It answers:
-  - why the room is in its current occupancy state now
+  - why the location is in its current occupancy state now
   - what meaningful occupancy-related changes happened most recently
 - V1 explainability is occupancy-scoped only:
   - current occupancy state
   - active contributors
   - next vacancy/timeout when available
-  - recent source-level signal events and room-level occupied/vacant transitions
+  - recent source-level signal events and location-level occupied/vacant transitions
 - V1 does not require raw internal engine traces or lock/unlock timeline
   history.
 - A separate global runtime event log is not exposed in the primary workspace
@@ -561,3 +596,11 @@ Additional save points:
   - optional `occupied`
 - The section title and help text must describe explainability, not imply a
   generic event log when only current-state contributors are shown.
+- The active user-facing label is `Occupancy Explainability`, not
+  `Room Explainability`.
+- Explainability is universal, but copy must adapt to location type:
+  - structural locations (`floor`, `building`, `grounds`) are described as
+    derived from child locations
+  - room-like locations (`area`, `subarea`) may describe direct sources
+- Internal contributor IDs must not be shown raw when a human-readable location
+  or source label can be resolved.

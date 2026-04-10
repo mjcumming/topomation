@@ -46,9 +46,6 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 _LINKED_LOCATION_SOURCE_PREFIX = "linked:"
 _OCCUPANCY_LINKED_LOCATIONS_KEY = "linked_locations"
-_SYNC_LOCATION_SOURCE_PREFIX = "sync:"
-_SYNC_LOCATION_SOURCE_DELIMITER = "::"
-_OCCUPANCY_SYNC_LOCATIONS_KEY = "sync_locations"
 _META_ROLE_KEY = "role"
 _MANAGED_SHADOW_ROLE = "managed_shadow"
 _MAX_PROPAGATION_EVENTS_PER_DRAIN = 4096
@@ -323,13 +320,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 if not linked_targets:
                     continue
 
-                sync_peers = set(_sync_peer_location_ids(loc_mgr, source_location_id))
                 source_contributions = _contribution_source_ids(payload)
                 source_link_id = _linked_location_source_id(source_location_id)
 
                 for target_location_id in linked_targets:
-                    if target_location_id in sync_peers:
-                        continue
                     target_state = _occupancy_state_for_location(
                         occupancy_module,
                         target_location_id,
@@ -377,137 +371,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     linked_propagation_active = False
     bus.subscribe(
         _apply_linked_location_contributors,
-        EventFilter(event_type="occupancy.changed"),
-    )
-
-    @callback
-    def _apply_synced_location_contributors(event: Event) -> None:
-        """Keep sync-room peers aligned to the same contributor set and expirations."""
-        nonlocal sync_propagation_active
-
-        sync_event_queue.append(event)
-        if sync_propagation_active:
-            return
-
-        sync_propagation_active = True
-        if occupancy_module is None:
-            sync_event_queue.clear()
-            sync_propagation_active = False
-            return
-
-        try:
-            drained = 0
-            while sync_event_queue:
-                drained += 1
-                if drained > _MAX_PROPAGATION_EVENTS_PER_DRAIN:
-                    _LOGGER.error(
-                        "Sync-room propagation exceeded %d queued events in one drain;"
-                        " dropping remaining events to avoid recursive startup failure",
-                        _MAX_PROPAGATION_EVENTS_PER_DRAIN,
-                    )
-                    sync_event_queue.clear()
-                    break
-
-                queued_event = sync_event_queue.popleft()
-                payload = (
-                    queued_event.payload
-                    if isinstance(queued_event.payload, Mapping)
-                    else {}
-                )
-                source_location_id = queued_event.location_id
-                occupied = payload.get("occupied")
-                if not isinstance(source_location_id, str) or not source_location_id:
-                    continue
-                if not isinstance(occupied, bool):
-                    continue
-
-                sync_targets = _sync_peer_location_ids(loc_mgr, source_location_id)
-                if not sync_targets:
-                    continue
-
-                event_timestamp = _normalize_utc_datetime(
-                    getattr(queued_event, "timestamp", None)
-                )
-                source_records = _sync_contribution_records(source_location_id, payload)
-                origins_to_reconcile = {source_location_id}
-                for origin_location_id, _, _ in source_records:
-                    origins_to_reconcile.add(origin_location_id)
-
-                for target_location_id in sync_targets:
-                    target_state = _occupancy_state_for_location(
-                        occupancy_module,
-                        target_location_id,
-                    )
-                    if target_state is None:
-                        continue
-
-                    target_contributions = _contribution_expiration_by_source_id(target_state)
-                    desired: dict[str, int | None] = {}
-                    for origin_location_id, origin_source_id, expires_at in source_records:
-                        if origin_location_id == target_location_id:
-                            continue
-                        target_source_id = _sync_location_source_id(
-                            origin_location_id,
-                            origin_source_id,
-                        )
-                        if expires_at is None:
-                            desired[target_source_id] = None
-                            continue
-                        remaining_seconds = max(
-                            0,
-                            int((expires_at - event_timestamp).total_seconds()),
-                        )
-                        if remaining_seconds <= 0:
-                            continue
-                        desired[target_source_id] = remaining_seconds
-
-                    for target_source_id in list(target_contributions):
-                        parsed = _parse_sync_location_source_id(target_source_id)
-                        if parsed is None:
-                            continue
-                        origin_location_id, _ = parsed
-                        if origin_location_id not in origins_to_reconcile:
-                            continue
-                        if target_source_id in desired:
-                            continue
-                        try:
-                            occupancy_module.clear(target_location_id, target_source_id, 0)
-                        except Exception as err:  # noqa: BLE001
-                            _LOGGER.error(
-                                "Failed sync-room clear %s -> %s (%s): %s",
-                                source_location_id,
-                                target_location_id,
-                                target_source_id,
-                                err,
-                                exc_info=True,
-                            )
-
-                    for target_source_id, timeout in desired.items():
-                        current_expires_at = target_contributions.get(target_source_id)
-                        if _sync_contribution_matches(
-                            current_expires_at,
-                            timeout,
-                            event_timestamp,
-                        ):
-                            continue
-                        try:
-                            occupancy_module.trigger(target_location_id, target_source_id, timeout)
-                        except Exception as err:  # noqa: BLE001
-                            _LOGGER.error(
-                                "Failed sync-room trigger %s -> %s (%s): %s",
-                                source_location_id,
-                                target_location_id,
-                                target_source_id,
-                                err,
-                                exc_info=True,
-                            )
-        finally:
-            sync_propagation_active = False
-
-    sync_event_queue: deque[Event] = deque()
-    sync_propagation_active = False
-    bus.subscribe(
-        _apply_synced_location_contributors,
         EventFilter(event_type="occupancy.changed"),
     )
 
@@ -1201,29 +1064,6 @@ def _linked_location_source_id(location_id: str) -> str:
     return f"{_LINKED_LOCATION_SOURCE_PREFIX}{location_id}"
 
 
-def _sync_location_source_id(origin_location_id: str, source_id: str) -> str:
-    """Return synthetic source ID used when mirroring contributors to sync-room peers."""
-    return (
-        f"{_SYNC_LOCATION_SOURCE_PREFIX}"
-        f"{origin_location_id}{_SYNC_LOCATION_SOURCE_DELIMITER}{source_id}"
-    )
-
-
-def _parse_sync_location_source_id(source_id: str) -> tuple[str, str] | None:
-    """Parse sync source id into (origin_location_id, origin_source_id)."""
-    if not source_id.startswith(_SYNC_LOCATION_SOURCE_PREFIX):
-        return None
-    encoded = source_id[len(_SYNC_LOCATION_SOURCE_PREFIX) :]
-    if _SYNC_LOCATION_SOURCE_DELIMITER not in encoded:
-        return None
-    origin_location_id, origin_source_id = encoded.split(_SYNC_LOCATION_SOURCE_DELIMITER, 1)
-    origin_location_id = origin_location_id.strip()
-    origin_source_id = origin_source_id.strip()
-    if not origin_location_id or not origin_source_id:
-        return None
-    return origin_location_id, origin_source_id
-
-
 def _linked_locations_from_config(config: object) -> list[str]:
     """Return normalized directional linked-location contributor IDs."""
     if not isinstance(config, dict):
@@ -1244,28 +1084,6 @@ def _linked_locations_from_config(config: object) -> list[str]:
         seen.add(location_id)
         linked.append(location_id)
     return linked
-
-
-def _sync_locations_from_config(config: object) -> list[str]:
-    """Return normalized sync-location peer IDs."""
-    if not isinstance(config, dict):
-        return []
-
-    raw_sync = config.get(_OCCUPANCY_SYNC_LOCATIONS_KEY)
-    if not isinstance(raw_sync, list):
-        return []
-
-    synced: list[str] = []
-    seen: set[str] = set()
-    for item in raw_sync:
-        if not isinstance(item, str):
-            continue
-        location_id = item.strip()
-        if not location_id or location_id in seen:
-            continue
-        seen.add(location_id)
-        synced.append(location_id)
-    return synced
 
 
 def _allowed_linked_room_neighbors_for_target(
@@ -1306,50 +1124,6 @@ def _allowed_linked_room_neighbors_for_target(
     return allowed
 
 
-def _allowed_sync_neighbors_for_target(
-    loc_mgr: LocationManager,
-    target_location_id: str,
-) -> set[str]:
-    """Return valid sync peer IDs for one target location."""
-    target = loc_mgr.get_location(target_location_id)
-    if target is None or _is_managed_shadow_area(target):
-        return set()
-
-    target_type = _location_type(target)
-    parent_id = getattr(target, "parent_id", None)
-    if not isinstance(parent_id, str) or not parent_id:
-        return set()
-
-    parent = loc_mgr.get_location(parent_id)
-    if parent is None:
-        return set()
-
-    parent_type = _location_type(parent)
-    candidate_type: str | None = None
-    if target_type == "area" and parent_type in {"area", "floor", "building"}:
-        candidate_type = "area"
-    elif target_type == "floor" and parent_type == "building":
-        candidate_type = "floor"
-    if candidate_type is None:
-        return set()
-
-    allowed: set[str] = set()
-    for candidate in loc_mgr.all_locations():
-        candidate_id = getattr(candidate, "id", None)
-        if not isinstance(candidate_id, str) or not candidate_id:
-            continue
-        if candidate_id == target_location_id:
-            continue
-        if getattr(candidate, "parent_id", None) != parent_id:
-            continue
-        if _location_type(candidate) != candidate_type:
-            continue
-        if _is_managed_shadow_area(candidate):
-            continue
-        allowed.add(candidate_id)
-    return allowed
-
-
 def _effective_linked_locations_for_target(
     loc_mgr: LocationManager,
     target_location_id: str,
@@ -1365,23 +1139,6 @@ def _effective_linked_locations_for_target(
         return []
 
     return [location_id for location_id in linked if location_id in allowed]
-
-
-def _effective_sync_locations_for_target(
-    loc_mgr: LocationManager,
-    target_location_id: str,
-    config: object,
-) -> list[str]:
-    """Return sync peers filtered by current room-level policy."""
-    synced = _sync_locations_from_config(config)
-    if not synced:
-        return []
-
-    allowed = _allowed_sync_neighbors_for_target(loc_mgr, target_location_id)
-    if not allowed:
-        return []
-
-    return [location_id for location_id in synced if location_id in allowed]
 
 
 def _linked_target_location_ids(loc_mgr: LocationManager, source_location_id: str) -> list[str]:
@@ -1407,45 +1164,6 @@ def _linked_target_location_ids(loc_mgr: LocationManager, source_location_id: st
         targets.append(target_location_id)
 
     return targets
-
-
-def _sync_peer_location_ids(loc_mgr: LocationManager, source_location_id: str) -> list[str]:
-    """Return all locations in the same effective shared-space component."""
-    visited: set[str] = set()
-    queue: deque[str] = deque([source_location_id])
-
-    while queue:
-        current_location_id = queue.popleft()
-        if current_location_id in visited:
-            continue
-        visited.add(current_location_id)
-
-        current_config = loc_mgr.get_module_config(current_location_id, "occupancy")
-        for peer_location_id in _effective_sync_locations_for_target(
-            loc_mgr,
-            current_location_id,
-            current_config,
-        ):
-            if peer_location_id not in visited:
-                queue.append(peer_location_id)
-
-        for location in loc_mgr.all_locations():
-            candidate_location_id = getattr(location, "id", None)
-            if not isinstance(candidate_location_id, str) or not candidate_location_id:
-                continue
-            if candidate_location_id == current_location_id:
-                continue
-            candidate_config = loc_mgr.get_module_config(candidate_location_id, "occupancy")
-            candidate_synced = _effective_sync_locations_for_target(
-                loc_mgr,
-                candidate_location_id,
-                candidate_config,
-            )
-            if current_location_id in candidate_synced and candidate_location_id not in visited:
-                queue.append(candidate_location_id)
-
-    visited.discard(source_location_id)
-    return sorted(visited)
 
 
 def _occupancy_state_for_location(
@@ -1528,92 +1246,6 @@ def _contribution_expiration_by_source_id(payload: Mapping[str, Any]) -> dict[st
     return mapped
 
 
-def _sync_contribution_records(
-    source_location_id: str,
-    payload: Mapping[str, Any],
-) -> list[tuple[str, str, datetime | None]]:
-    """Normalize source contribution records for sync-room propagation."""
-    contributions = payload.get("contributions")
-    if not isinstance(contributions, list):
-        return []
-
-    records: list[tuple[str, str, datetime | None]] = []
-    seen: set[tuple[str, str]] = set()
-    for contribution in contributions:
-        if not isinstance(contribution, Mapping):
-            continue
-        source_id = contribution.get("source_id")
-        if not isinstance(source_id, str):
-            continue
-        normalized_source = source_id.strip()
-        if not normalized_source:
-            continue
-        if (
-            normalized_source.startswith("__child__:")
-            or normalized_source.startswith("__follow__:")
-            or normalized_source.startswith("__lock_hold__:")
-        ):
-            continue
-
-        parsed_sync = _parse_sync_location_source_id(normalized_source)
-        if parsed_sync is None:
-            origin_location_id = source_location_id
-            origin_source_id = normalized_source
-        else:
-            origin_location_id, origin_source_id = parsed_sync
-        key = (origin_location_id, origin_source_id)
-        if key in seen:
-            continue
-        seen.add(key)
-        records.append(
-            (
-                origin_location_id,
-                origin_source_id,
-                _parse_iso_datetime(contribution.get("expires_at")),
-            )
-        )
-    return records
-
-
-def _sync_contribution_matches(
-    current_expires_at: datetime | None,
-    desired_timeout: int | None,
-    now: datetime,
-) -> bool:
-    """Return True when target sync contribution already matches desired timeout."""
-    if desired_timeout is None:
-        return current_expires_at is None
-    if current_expires_at is None:
-        return False
-    current_remaining = max(0, int((current_expires_at - now).total_seconds()))
-    return abs(current_remaining - desired_timeout) <= 1
-
-
-def _is_active_sync_relationship(
-    loc_mgr: LocationManager,
-    target_location_id: str,
-    origin_location_id: str,
-) -> bool:
-    """Return True when target and origin are currently sync peers."""
-    if target_location_id == origin_location_id:
-        return True
-    target_config = loc_mgr.get_module_config(target_location_id, "occupancy")
-    if origin_location_id in _effective_sync_locations_for_target(
-        loc_mgr,
-        target_location_id,
-        target_config,
-    ):
-        return True
-    origin_config = loc_mgr.get_module_config(origin_location_id, "occupancy")
-    if target_location_id in _effective_sync_locations_for_target(
-        loc_mgr,
-        origin_location_id,
-        origin_config,
-    ):
-        return True
-    return False
-
-
 def _sanitize_occupancy_state_for_restore(
     loc_mgr: LocationManager,
     raw_state: dict[str, Any],
@@ -1654,17 +1286,8 @@ def _sanitize_occupancy_state_for_restore(
                     filtered.append(item)
                     continue
 
-                parsed_sync = _parse_sync_location_source_id(source_id)
-                if parsed_sync is not None:
-                    origin_location_id, _ = parsed_sync
-                    if not _is_active_sync_relationship(
-                        loc_mgr,
-                        location_id,
-                        origin_location_id,
-                    ):
-                        dropped += 1
-                        continue
-                    filtered.append(item)
+                if source_id.startswith("sync:"):
+                    dropped += 1
                     continue
 
                 looks_like_entity_source = "." in source_id.split("::", 1)[0]

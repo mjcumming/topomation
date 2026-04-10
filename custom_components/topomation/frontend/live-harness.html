@@ -66,6 +66,8 @@
         readyState.resolveReady = resolve;
       });
 
+      const queryParams = new URLSearchParams(window.location.search);
+
       const harnessConfig =
         window.__TOPOMATION_LIVE_HARNESS__ ||
         JSON.parse(sessionStorage.getItem("topomation-live-harness") || "null") ||
@@ -75,12 +77,15 @@
         sessionStorage.setItem("topomation-live-harness", JSON.stringify(harnessConfig));
       }
 
-      const explicitBaseUrl = typeof harnessConfig.baseUrl === "string" ? harnessConfig.baseUrl.trim() : "";
+      const explicitBaseUrl =
+        (typeof harnessConfig.baseUrl === "string" ? harnessConfig.baseUrl.trim() : "") ||
+        queryParams.get("baseUrl")?.trim() ||
+        "";
       const baseUrl = explicitBaseUrl || window.location.origin;
       const token =
         typeof harnessConfig.token === "string" && harnessConfig.token.trim()
           ? harnessConfig.token.trim()
-          : "";
+          : queryParams.get("token")?.trim() || "";
       const entryIdOverride =
         typeof harnessConfig.entryId === "string" && harnessConfig.entryId.trim()
           ? harnessConfig.entryId.trim()

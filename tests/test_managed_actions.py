@@ -15,6 +15,24 @@ from custom_components.topomation.const import TOPOMATION_AUTOMATION_METADATA_PR
 from custom_components.topomation.managed_actions import TopomationManagedActions
 
 
+def test_automation_api_bases_include_loopback_fallback(
+    hass: HomeAssistant,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Managed actions should retry HA automation API calls against loopback in dev."""
+    manager = TopomationManagedActions(hass)
+    monkeypatch.setattr(
+        "custom_components.topomation.managed_actions.get_url",
+        lambda _hass, allow_external=False: "http://192.168.1.254:8123",
+    )
+
+    assert manager._automation_api_bases() == [
+        "http://127.0.0.1:8123",
+        "http://localhost:8123",
+        "http://192.168.1.254:8123",
+    ]
+
+
 @pytest.mark.asyncio
 async def test_async_list_rules_filters_to_location_and_extracts_summary(
     hass: HomeAssistant,

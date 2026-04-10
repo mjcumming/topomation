@@ -3238,6 +3238,492 @@ motion, while the runtime was treating both as independent contributors.
 
 ---
 
+### ADR-HA-069: Floor Inspectors Manage Occupancy Groups; Room Occupancy Stays Room-Scoped (2026-04-03)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+
+`Shared Space` solved the "treat these rooms like one occupied space" use case,
+but the active UI still authored that relationship from whichever location was
+selected. That is awkward for the common case:
+
+1. groups do not naturally "belong" to one room
+2. selected floors showed mostly non-actionable Occupancy content
+3. room-level occupancy authoring and multi-room grouping were being mixed into
+   one workspace
+
+For the product's primary use case, we want a constrained shared-occupancy
+workflow without turning topology or adjacency into a general-purpose graph
+editor.
+
+**Decision**:
+
+1. Replace floor-selected `Occupancy` authoring with `Occupancy Groups`.
+2. `Occupancy Groups` are managed from the selected floor and operate on that
+   floor's direct child `area` locations.
+3. A location may belong to zero or one occupancy group.
+4. A floor may have zero or more occupancy groups.
+5. Floor group actions apply immediately instead of using tab-level
+   `Save changes` / `Discard`.
+6. Group creation is valid only when two or more ungrouped child areas are
+   selected, and groups with fewer than two members are removed automatically.
+7. Persisting floor group edits continues to write reciprocal `sync_locations`
+   arrays on the member areas; no new runtime primitive is introduced in v1.
+8. Area inspectors remain room-scoped for occupancy sources and `Add Source`;
+   they may summarize group membership but do not own group editing.
+9. Floor-selected occupancy UI does not expose WIAB, directional contributors,
+   adjacency handoff, or floor-to-floor shared-space editing in the active
+   workflow.
+
+**Rationale**:
+
+1. The grouping use case is valid and common enough to deserve a first-class UX.
+2. Floor scope gives users a natural local context for open-plan/shared-space
+   clusters without introducing whole-home graph complexity.
+3. Keeping room occupancy authoring separate from group editing preserves a
+   clearer mental model: rooms own sources, floors own room grouping.
+4. Reusing `sync_locations` preserves runtime compatibility and keeps the change
+   UI-first instead of migration-heavy.
+
+**Consequences**:
+
+- ✅ Floor inspectors now have an actionable occupancy workspace.
+- ✅ The primary shared-space workflow becomes easier to reason about than
+  pairwise room editing.
+- ✅ Existing runtime semantics remain intact because group membership still
+  persists through reciprocal `sync_locations`.
+- ⚠️ Historical broader `sync_locations` validation/runtime support may remain in
+  code for backward compatibility even though the active UI authors only
+  floor-local child-area groups.
+
+**Alternatives Considered**:
+
+- Keep room-selected `Shared Space` editing as the primary workflow:
+  rejected because the group concept does not naturally belong to one selected
+  room.
+- Model shared occupancy by inserting synthetic "common area" parents in the
+  topology tree:
+  rejected because it mixes behavioral grouping into structural topology.
+- Expose arbitrary cross-floor/cross-structure grouping:
+  rejected for v1 due to explainability and debugging complexity.
+
+---
+
+### ADR-HA-070: Occupancy Groups Are First-Class Runtime Objects, Not Mirrored Peer State (2026-04-06)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+
+ADR-HA-067 defined shared-space runtime as contribution mirroring across member
+rooms using reciprocal `sync_locations`. That model evolved naturally from the
+original feature, but it has an important weakness: it treats a group as many
+independent rooms that copy state into one another instead of one canonical
+occupancy object.
+
+That distinction matters in practice:
+
+1. copied peer state is easier to let drift during timeout, restore, config
+   reconciliation, or partial propagation failures
+2. the product intent is stronger than "these rooms often influence each
+   other"; for grouped rooms we want one occupied/vacant/intent result
+3. users think of the group as one effective space even though the member rooms
+   remain separate for topology, devices, and automations
+
+The current runtime pattern is therefore misaligned with the desired contract.
+If a user creates an occupancy group, they expect all members to behave as if a
+hidden common occupancy area exists behind them.
+
+**Decision**:
+
+1. Occupancy Groups become first-class runtime objects.
+2. An Occupancy Group is a behavioral pseudo-area for occupancy only:
+   - it has one canonical occupancy state
+   - it has one canonical effective timeout / vacancy outcome
+   - it has one canonical intent state
+3. Member areas remain real topology nodes, but when grouped they no longer act
+   as independent occupancy authorities.
+4. Occupancy signals from any grouped member contribute to the group object,
+   not to a copied mesh of mirrored per-room synthetic contributors.
+5. Each member area projects the group's occupancy result as its public room
+   occupancy state, so all members report the same occupied/vacant/intent
+   outcome while grouped.
+6. Group timeout behavior is singular:
+   - the longest active contribution in the group governs the group's vacancy
+   - shorter later events may extend coverage but must not shorten the active
+     group hold
+7. Explainability must preserve source origin through the group, for example:
+   `Kitchen occupied via Main Floor Open Area group from Dining motion`.
+8. Floor-scoped `Occupancy Groups` remains the active authoring model, but the
+   persistence/runtime model must move away from reciprocal state mirroring.
+9. Reciprocal `sync_locations` is no longer the target design pattern for
+   active runtime semantics; it becomes legacy compatibility material to be
+   migrated or retired.
+
+**Rationale**:
+
+1. A first-class group object matches the actual product intent better than a
+   network of mirrored rooms.
+2. One source of truth is easier to reason about, explain, test, and restore
+   than many copied synthetic contributions.
+3. The desired contract is "this group behaves like one area" and should be
+   modeled that way directly.
+4. Member rooms still need to exist independently for room-level devices,
+   automations, and topology, but that does not require independent occupancy
+   authority while grouped.
+
+**Consequences**:
+
+- ✅ Grouped rooms can no longer drift apart in occupied/vacant/intent state by
+  design; they read from one canonical occupancy object.
+- ✅ Timeout behavior becomes easier to express: one effective timeout per group.
+- ✅ Explainability gets clearer because the system can answer both "which group
+  is keeping this occupied?" and "which originating source inside the group did
+  it?"
+- ✅ The runtime model now matches the user's mental model of a hidden common
+  area.
+- ⚠️ This supersedes the contribution-mirroring runtime pattern described in
+  ADR-HA-067 and will require backend/runtime refactoring.
+- ⚠️ Existing persistence based on reciprocal `sync_locations` should be treated
+  as transitional compatibility, not the desired end state.
+- ⚠️ Contracts, architecture docs, restore behavior, and tests must be updated
+  together before implementation is considered complete.
+
+**Alternatives Considered**:
+
+- Keep mirrored contributor union as the runtime model:
+  rejected because it approximates one shared space using many copied states and
+  is too easy to let drift.
+- Model the group as a visible topology parent in the left tree:
+  rejected because occupancy grouping is behavioral, not structural.
+- Keep `sync_locations` as the permanent core primitive and only tighten the
+  propagation code:
+  rejected because it improves a brittle implementation rather than correcting
+  the underlying model.
+
+---
+
+### ADR-HA-071: Occupancy Group Technical Contract Uses Group Authority, Member Projection, and Room-Local Sources (2026-04-06)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+
+ADR-HA-070 established that an Occupancy Group is a first-class runtime object,
+not a mesh of mirrored peer state. We still need a concrete technical contract
+for how group membership, runtime authority, room-local sources, manual actions,
+and explainability should work.
+
+Without this contract, implementation will drift into partial adapter logic,
+unclear source routing, or accidental reintroduction of per-room occupancy
+authority.
+
+**Decision**:
+
+1. Group membership lives explicitly on member rooms via `occupancy_group_id`.
+2. Occupancy group runtime state lives in the occupancy runtime/core layer, not
+   in the Home Assistant adapter.
+3. The runtime owns one canonical state per group:
+   - occupied / vacant
+   - effective timeout / vacancy timing
+   - lock behavior / intent behavior
+4. Detection sources remain room-local in authoring:
+   - sensors and detection config are still assigned to rooms
+   - manual controls are still invoked from rooms
+   - automations remain attached to rooms
+5. When a room belongs to an occupancy group, occupancy-affecting events from
+   that room are resolved to the group as the behavioral authority while
+   preserving the originating room/source identity.
+6. Member rooms project group authority as their public occupancy result:
+   - all grouped members publish the same occupied/vacant result
+   - all grouped members expose the same effective timeout behavior
+   - all grouped members expose the same lock behavior
+7. No new Home Assistant entity is introduced for the group in v1.
+8. Explainability should name the group explicitly, using wording equivalent to
+   `via occupancy group`, while preserving the originating room and source.
+9. Legacy `sync_locations` compatibility is not a design constraint for the new
+   model; alpha-stage implementation may replace it outright.
+
+**Rationale**:
+
+1. Explicit `occupancy_group_id` is easier to reason about than implicit graph
+   reconstruction from reciprocal room arrays.
+2. Room-local authoring preserves the user's mental model for sources and
+   manual controls while allowing runtime authority to move to the group.
+3. Projected member state gives Home Assistant and Topomation one clear answer
+   per room without requiring new public entities.
+4. Keeping group state in the occupancy runtime avoids adapter-only logic and
+   aligns the primitive with the engine that already owns timeout and lock
+   semantics.
+
+**Consequences**:
+
+- ✅ Grouped rooms remain normal rooms for devices, labels, sources, and room
+  automations.
+- ✅ Group occupancy becomes canonical and deterministic.
+- ✅ Member binary sensors remain the only public occupancy entities while still
+  reflecting one shared authority.
+- ✅ Explainability can answer both "why is this room occupied?" and "which
+  group/source is responsible?" in a stable way.
+- ⚠️ Occupancy runtime will need a real group registry/model instead of
+  deriving grouping from reciprocal room config arrays.
+- ⚠️ The Home Assistant integration must translate room-local source activity to
+  group-targeted occupancy events while preserving origin metadata.
+- ⚠️ Contracts and architecture docs now need a follow-up rewrite to replace
+  old `sync_locations`-centric language.
+
+**Alternatives Considered**:
+
+- Keep group membership implicit as reciprocal arrays on each room:
+  rejected because the group itself is the authority and should be modeled
+  directly.
+- Create a new Home Assistant entity per occupancy group:
+  rejected for v1 because the product wants group authority without adding HA
+  entity clutter.
+- Move room-local sources and manual controls onto the group object in the UI:
+  rejected because sources and manual actions are still most understandable from
+  the room context where they originate.
+
+---
+
+### ADR-HA-072: Building And Grounds Use Derived Occupancy + Universal Explainability (2026-04-06)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+
+The active inspector still treated `building` and `grounds` like editable room
+occupancy nodes, exposing direct source assignment and room-centric
+explainability language. That conflicted with the product model:
+
+- `building` and `grounds` are structural rollup locations
+- their occupancy should derive from descendant locations
+- users still need to understand why those structural locations are occupied
+  right now
+
+This exposed two separate use cases that were being blended together:
+
+1. occupancy configuration
+2. occupancy explainability
+
+For structural locations, explainability remains valuable, but direct occupancy
+authoring does not.
+
+**Decision**:
+
+1. `building` and `grounds` use derived occupancy in the active UI.
+2. Structural locations do not expose direct occupancy source authoring:
+   - no `Sources`
+   - no `Add Source`
+   - no WIAB
+   - no occupancy-group editor/summary
+3. Structural locations keep a read-only occupancy summary in the occupancy tab.
+4. Explainability is universal across location types, but its copy must be
+   location-oriented rather than room-oriented.
+5. The user-facing diagnostic panel is renamed from `Room Explainability` to
+   `Occupancy Explainability`.
+6. Explainability copy must use product language for propagation and internal
+   contributors:
+   - show child/parent/linked location names instead of raw internal source IDs
+   - describe state changes as location changes, not room changes
+
+**Rationale**:
+
+1. A building should not be occupiable by direct sources while every child
+   floor/area remains vacant.
+2. Users still need to answer “why is Home occupied?” and “what changed?” for
+   structural locations.
+3. Explainability is a cross-location diagnostic surface; editing rules are
+   type-specific.
+4. Raw internal IDs such as `__child__.floor_second_floor` are implementation
+   artifacts, not acceptable product language.
+
+**Consequences**:
+
+- ✅ `building` and `grounds` behave consistently as derived occupancy nodes.
+- ✅ The occupancy page for structural locations becomes simpler and easier to
+  trust.
+- ✅ Explainability remains useful on all location types.
+- ✅ Recent changes stay focused on meaningful occupancy transitions rather than
+  becoming a generic debug log.
+- ⚠️ Structural occupancy tabs now need a dedicated summary layout instead of
+  reusing the room source editor.
+- ⚠️ Explainability formatting must keep pace with runtime contributor naming so
+  internal IDs do not leak into the UI.
+
+**Alternatives Considered**:
+
+- Keep direct source assignment on `building`/`grounds`:
+  rejected because it breaks the derived structural occupancy model.
+- Remove explainability entirely from structural locations:
+  rejected because understanding aggregate occupancy is still a real user need.
+- Keep `Room Explainability` wording everywhere:
+  rejected because it is misleading for `floor`, `building`, and `grounds`.
+
+### ADR-HA-073: Structural Nodes Are Informational Pages, Not Automation Editors (2026-04-07)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+
+After clarifying that `floor`, `building`, and `grounds` are structural nodes,
+we still had the inspector presenting them with room-style automation tabs
+(`Ambient`, `Lighting`, `Media`, `HVAC`). That created a misleading product
+pattern:
+
+- structural nodes looked like automation authoring targets
+- users could infer that whole-home/floor actions were first-class Topomation
+  configuration
+- the right side of the page was optimized for editing rather than understanding
+
+The actual use case for structural nodes is different:
+
+1. understand aggregate occupancy
+2. understand which descendants are active
+3. understand what changed recently
+4. in the case of `floor`, manage occupancy groups for child areas
+
+Whole-home or whole-floor scenes remain possible in Home Assistant automations,
+but they do not need a dedicated Topomation authoring surface.
+
+**Decision**:
+
+1. Structural nodes are informational pages in the active inspector.
+2. `building` and `grounds` do not render room-style top tabs.
+3. `building` and `grounds` show a summary surface instead:
+   - derived occupancy
+   - active child locations
+   - structure summary
+   - occupancy explainability
+4. `floor` remains a special structural scope for occupancy-group management,
+   but it also does not render room-style automation tabs.
+5. Structural nodes do not expose `Ambient`, `Lighting`, `Media`, or `HVAC`
+   editors in the active inspector.
+6. If users want whole-home or floor-wide scenes/actions, they should author
+   them as standard Home Assistant automations outside this panel.
+
+**Rationale**:
+
+1. Structural nodes are not rooms and should not behave like room editors.
+2. Aggregate scene/action authoring at structural levels creates duplicate or
+   conflicting control paths with room automation.
+3. The product value of structural nodes is understanding occupancy and
+   topology, not issuing macro actions.
+4. Removing the room-style tabs creates space for more useful summary
+   information on the right side.
+
+**Consequences**:
+
+- ✅ Structural pages become easier to understand and trust.
+- ✅ The right pane can focus on summary and explainability instead of fake
+  room controls.
+- ✅ Floors remain the authoring scope for occupancy groups without carrying
+  unrelated automation tabs.
+- ⚠️ Aggregate scenes are no longer discoverable from structural nodes inside
+  Topomation.
+- ⚠️ Structural summary cards now need to surface enough information that users
+  do not miss the removed tabs.
+
+**Alternatives Considered**:
+
+- Keep full automation tabs on structural nodes:
+  rejected because it blurs the line between room behavior and aggregate
+  topology.
+- Keep only a subset of action tabs on structural nodes:
+  rejected because it still implies structural nodes are primary automation
+  targets.
+- Replace structural tabs with a dedicated scene authoring surface:
+  rejected for now because standard Home Assistant automations already cover
+  that use case cleanly.
+
+### ADR-HA-074: Lighting Rules Use Explicit Trigger Families, Not Generic Situations (2026-04-08)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+
+The active Lighting rule editor exposed a generic `Situation 1 / Situation 2`
+model with `Add situation` controls. That implementation matched an internal
+constraint, but it did not match the user’s mental model.
+
+In practice, Lighting rules only need two trigger families:
+
+1. an occupancy-edge trigger
+2. an ambient-light-edge trigger
+
+Each family can carry exactly one cross-dimension condition:
+
+- occupancy edge conditioned by ambient state
+- ambient edge conditioned by occupancy state
+
+Users do not think in terms of arbitrary numbered situations. They think in
+terms of:
+
+- `When room becomes occupied, only if it is dark`
+- `When it becomes bright, only if the room is vacant`
+
+The editor also over-explained time windows and action rows, creating extra
+labels (`Rule timing`, `Set room lights to`) that made the page feel heavier
+than the underlying rule model.
+
+**Decision**:
+
+1. Lighting rules use two first-class trigger family rows in the UI:
+   - `Occupancy change`
+   - `Ambient light change`
+2. Trigger family rows do not render a dedicated `Off` option.
+3. A trigger family is inactive when no trigger in that family is selected.
+4. Each trigger family row exposes only the relevant cross-dimension condition:
+   - occupancy trigger: `Any`, `It is dark`, `It is bright`
+   - ambient trigger: `Any`, `Room is occupied`, `Room is vacant`
+5. The panel must not present numbered `Situation` cards for Lighting rules.
+6. Lighting rules continue to support one optional time window only.
+7. The time window editor is presented as one optional advanced filter, not as
+   a separate timing sub-model.
+8. The time window section header and enable checkbox are presented on one line.
+9. Lighting rules continue to trigger on semantic ambient state
+   (`dark` / `bright`), not raw lux thresholds.
+10. Lux thresholds remain an Ambient configuration concern, not a per-rule
+   Lighting trigger concern.
+11. The action section is presented as a light target list, not as
+   room-centered prose like `Set room lights to`.
+
+**Rationale**:
+
+1. The UI should reflect the real rule model users are authoring.
+2. A flat trigger-family presentation is easier to scan and explain than
+   generic numbered situations.
+3. `dark` / `bright` are the right lighting-rule abstractions for most users;
+   lux belongs in ambient calibration.
+4. Time window is a secondary filter and should not dominate the rule editor.
+5. The target section is fundamentally a list of lights plus actions, so the
+   UI should present it that way.
+
+**Consequences**:
+
+- ✅ Lighting rules become easier to author and read.
+- ✅ The editor better matches the backend trigger model already in use.
+- ✅ We preserve support for combined occupancy + ambient triggers without
+  pretending the rule model is open-ended.
+- ⚠️ Users wanting raw-lux triggers must configure ambient thresholds instead
+  of entering lux directly in the Lighting rule.
+- ⚠️ Existing frontend tests and copy must be updated away from `Situation`
+  language.
+
+**Alternatives Considered**:
+
+- Keep generic `Situation` cards and just rename them:
+  rejected because the core abstraction would still be wrong.
+- Expose raw lux trigger thresholds directly in Lighting rules:
+  rejected for now because it duplicates Ambient calibration and makes the rule
+  editor heavier.
+- Collapse everything into one natural-language sentence builder:
+  rejected for now because it would obscure the two trigger families that still
+  exist underneath.
+
+---
+
 ## How to Use This Log
 
 ### When to Create an ADR

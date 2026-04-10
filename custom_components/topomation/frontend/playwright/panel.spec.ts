@@ -292,7 +292,7 @@ test("lighting tab contract: clickable rule title, footer lifecycle controls, ad
   await expect(inspector.getByTestId("startup-reapply-lighting")).toHaveCount(0);
 });
 
-test("lighting tab contract: situation requirements include dark/bright and time window reveals begin/end", async ({
+test("lighting tab contract: trigger conditions include dark/bright and time window reveals begin/end", async ({
   page,
 }) => {
   await page.goto("/mock-harness.html");
@@ -302,19 +302,19 @@ test("lighting tab contract: situation requirements include dark/bright and time
 
   const inspector = page.locator("ht-location-inspector");
   const firstRule = inspector.locator(".dusk-block-row").first();
-  const firstSituation = firstRule.locator(".lighting-situation-card").first();
-  await expect(firstSituation).toBeVisible();
-  const brightRequirement = firstSituation.locator(".choice-pill", {
+  const occupancyTriggerGroup = firstRule.locator(".lighting-situation-card").first();
+  await expect(occupancyTriggerGroup).toBeVisible();
+  const brightRequirement = occupancyTriggerGroup.locator(".choice-pill", {
     hasText: "It is bright",
   });
   await brightRequirement.click();
   await expect(brightRequirement).toHaveClass(/active/);
 
-  const timeRow = firstRule.locator(".lighting-time-window .config-row", {
-    hasText: "Limit this rule to a time range",
+  const timeToggle = firstRule.locator(".dusk-inline-heading-row .choice-pill", {
+    hasText: "Limit to a time range",
   });
-  await expect(timeRow).toBeVisible();
-  await timeRow.locator("input[type='checkbox']").check();
+  await expect(timeToggle).toBeVisible();
+  await timeToggle.click();
   await expect(firstRule.locator("input[type='time']")).toHaveCount(2);
 });
 
@@ -575,7 +575,7 @@ test("on occupied/on vacant triggers map to on/off occupancy state transitions",
     .toBe(true);
 });
 
-test("integration-owned building shows explicit source composer guidance", async ({ page }) => {
+test("integration-owned building shows derived occupancy guidance", async ({ page }) => {
   await page.goto("/mock-harness.html");
 
   await page.locator("ht-location-tree [data-id='main-building']").first().click();
@@ -583,17 +583,9 @@ test("integration-owned building shows explicit source composer guidance", async
   const inspector = page.locator("ht-location-inspector");
   await expect(inspector).toBeVisible();
   await expect(inspector).toContainText("Main Building");
-  await expect(inspector).toContainText("Integration-owned location");
-  const addSourceButton = inspector.getByTestId("open-external-source-dialog");
-  await expect(addSourceButton).toBeVisible();
-
-  await addSourceButton.click();
-
-  const dialog = page.getByTestId("external-source-dialog");
-  await expect(dialog).toBeVisible();
-  await expect(dialog.getByTestId("external-source-area-select")).toBeVisible();
-  await expect(dialog.getByTestId("external-source-entity-select")).toBeVisible();
-  await expect(dialog.getByTestId("confirm-add-external-source")).toBeVisible();
+  await expect(inspector).toContainText("Derived Occupancy");
+  await expect(inspector).toContainText("Building occupancy is derived from child locations");
+  await expect(inspector.getByTestId("open-external-source-dialog")).toHaveCount(0);
 });
 
 test("occupancy inspector keeps the hero shell outside the scroll body", async ({ page }) => {

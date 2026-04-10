@@ -110,23 +110,25 @@ Outcome:
 
 ## 8. Current Release Candidate Record
 
-Commit under test: release-candidate worktree for `0.2.36` immediately before the final release commit
+Commit under test: release-candidate worktree on `main` for `0.2.37` (post-`4e79198` release edits)
 Frontend bundle rebuilt from same commit: yes
 
 Touched workflows:
-- Occupancy inspector shell layout now uses a fixed hero/tabs region with a dedicated scroll body so source rows and headings cannot paint behind the banner or tab strip
+- Lighting rule create/update/delete in the live room inspector
+- Structural node inspector behavior for building/grounds/floor informational pages
+- Occupancy group authoring and area membership summaries under the new `occupancy_group_id` model
 
 Commands run:
-- `cd custom_components/topomation/frontend && npm test -- ht-location-inspector.test.ts topomation-panel.test.ts`
+- `cd custom_components/topomation/frontend && node ./scripts/run-wtr.mjs ht-location-inspector.test.ts topomation-panel.test.ts`
 - `cd custom_components/topomation/frontend && npm run build`
-- `cd custom_components/topomation/frontend && npx playwright test playwright/panel.spec.ts -g "occupancy inspector keeps the hero shell outside the scroll body"`
-- `source /workspaces/topomation/tests/ha-config.env && cd custom_components/topomation/frontend && HA_URL="${HA_URL_DEV:-$HA_URL_LOCAL}" HA_TOKEN="${HA_TOKEN_DEV:-$HA_TOKEN_LOCAL}" npx playwright test --config playwright.live.config.ts playwright/live-automation-ui.spec.ts -g "live occupancy inspector keeps the hero shell outside the scroll body"`
-- `./scripts/test-comprehensive.sh`
-- `make test-release-live`
+- `pytest -q tests/test_managed_actions.py --no-cov`
+- `HA_URL_DEV="${HA_URL_LOCAL:-http://localhost:8123}" HA_TOKEN_DEV="${HA_TOKEN_LOCAL:-$(cat /workspaces/topomation/ha_long_lived_token)}" make test-release-live`
 
 Outcome:
-- Occupancy inspector shell layout now uses a fixed hero/tabs region with a dedicated scroll body so source rows and headings cannot paint behind the banner or tab strip: targeted frontend PASS, targeted mock browser PASS, targeted live browser PASS, full local gate PASS, full release gate PASS
+- Lighting rule create/update/delete in the live room inspector: PASS
+- Structural node inspector behavior for building/grounds/floor informational pages: PASS
+- Occupancy group authoring and area membership summaries under the new `occupancy_group_id` model: PASS
 
 Notes:
-- This release replaces the prior sticky-stack workaround with a structural split between the fixed inspector shell and the scrollable body.
-- The Auto Release workflow for this cut runs with the already-landed `actions/setup-node@v6` upgrade on `main`, so the release validation also confirms the Node 20 deprecation warning path is no longer tied to `setup-node@v4`.
+- This release candidate consolidates the first-class occupancy-group model, removes legacy sync handling from the active path, and reshapes the Lighting editor around trigger-family rows instead of numbered situations.
+- `make test-release-live` passed on the `0.2.37` release worktree, including local comprehensive checks, live HA managed-action contract tests, and live browser workflow coverage.

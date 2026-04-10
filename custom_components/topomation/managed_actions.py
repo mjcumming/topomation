@@ -14,7 +14,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from time import monotonic
 from typing import Any, Literal, cast
+from urllib.parse import urlsplit
 
+from aiohttp.client_exceptions import ClientConnectorError
 from homeassistant.components.automation import (
     DATA_COMPONENT as AUTOMATION_DATA_COMPONENT,
 )
@@ -146,8 +148,6 @@ class TopomationManagedActions:
     ) -> dict[str, Any]:
         """Call HA config/automation/config REST API. Raises on error."""
         token = await self._ensure_automation_api_token()
-        base = get_url(self.hass, allow_external=False).rstrip("/")
-        url = f"{base}/api/config/automation/config/{automation_id}"
         session = async_get_clientsession(self.hass)
         headers = {
             "Authorization": f"Bearer {token}",
@@ -157,17 +157,56 @@ class TopomationManagedActions:
             body = json.dumps(payload).encode("utf-8")
         else:
             body = None
-        async with session.request(method, url, headers=headers, data=body, timeout=30) as resp:
-            if resp.status >= 400:
-                try:
-                    err = await resp.json()
-                    msg = err.get("message", await resp.text())
-                except Exception:
-                    msg = await resp.text()
-                raise ValueError(f"Automation API {method} {resp.status}: {msg}")
-            if resp.status == 204 or (method == "DELETE" and resp.status == 200):
-                return {}
-            return await resp.json()
+        last_connect_error: ClientConnectorError | None = None
+        for base in self._automation_api_bases():
+            url = f"{base}/api/config/automation/config/{automation_id}"
+            try:
+                async with session.request(
+                    method, url, headers=headers, data=body, timeout=30
+                ) as resp:
+                    if resp.status >= 400:
+                        try:
+                            err = await resp.json()
+                            msg = err.get("message", await resp.text())
+                        except Exception:
+                            msg = await resp.text()
+                        raise ValueError(f"Automation API {method} {resp.status}: {msg}")
+                    if resp.status == 204 or (method == "DELETE" and resp.status == 200):
+                        return {}
+                    return await resp.json()
+            except ClientConnectorError as err:
+                last_connect_error = err
+                _LOGGER.debug(
+                    "Automation API connection failed for base %s; trying next candidate",
+                    base,
+                    exc_info=True,
+                )
+                continue
+        if last_connect_error is not None:
+            raise last_connect_error
+        raise ValueError("Automation API request failed before a response was received")
+
+    def _automation_api_bases(self) -> list[str]:
+        """Return candidate base URLs for the HA automation config API."""
+        configured = get_url(self.hass, allow_external=False).rstrip("/")
+        parsed = urlsplit(configured)
+        hostname = (parsed.hostname or "").strip().lower()
+        candidates: list[str] = []
+        if hostname not in {"127.0.0.1", "localhost"}:
+            port = parsed.port or (443 if parsed.scheme == "https" else 8123)
+            scheme = parsed.scheme or "http"
+            for loopback_host in ("127.0.0.1", "localhost"):
+                candidates.append(f"{scheme}://{loopback_host}:{port}")
+        candidates.append(configured)
+
+        deduped: list[str] = []
+        seen = set()
+        for candidate in candidates:
+            if candidate in seen:
+                continue
+            seen.add(candidate)
+            deduped.append(candidate)
+        return deduped
 
     async def async_list_rules(self, location_id: str) -> list[dict[str, Any]]:
         """List managed action rules for one location."""
