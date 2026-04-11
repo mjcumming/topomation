@@ -446,9 +446,9 @@ test("live automation lighting workflow matches contracted lifecycle controls", 
   await expect(inspector.getByRole("button", { name: "Occupancy" })).toBeVisible();
   await expect(inspector.getByRole("button", { name: "Ambient" })).toBeVisible();
   await expect(inspector.getByRole("button", { name: "Lighting" })).toBeVisible();
+  await expect(inspector.getByRole("button", { name: "Appliances" })).toBeVisible();
   await expect(inspector.getByRole("button", { name: "Media" })).toBeVisible();
   await expect(inspector.getByRole("button", { name: "HVAC" })).toBeVisible();
-  await expect(inspector.getByRole("button", { name: "Appliances" })).toHaveCount(0);
 
   await openLightingTab(page);
 

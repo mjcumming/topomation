@@ -636,11 +636,26 @@ export class HtRoomExplainability extends LitElement {
 
   private _resolveOccupiedState(occupancyState?: Record<string, any>): boolean | undefined {
     const locationId = this.location?.id;
+    const transition = locationId ? this.occupancyTransitions?.[locationId] : undefined;
+    const transitionChangedAt = this._parseDateValue(transition?.changedAt)?.getTime();
+    const stateChangedAt = this._parseDateValue(
+      occupancyState?.last_changed || occupancyState?.last_updated
+    )?.getTime();
+
+    if (
+      transition &&
+      typeof transition.occupied === "boolean" &&
+      (stateChangedAt === undefined ||
+        (transitionChangedAt !== undefined && transitionChangedAt > stateChangedAt))
+    ) {
+      return transition.occupied;
+    }
+
+    if (occupancyState?.state === "on") return true;
+    if (occupancyState?.state === "off") return false;
+
     const override = locationId ? this.occupancyStates?.[locationId] : undefined;
     if (typeof override === "boolean") return override;
-    if (!occupancyState) return undefined;
-    if (occupancyState.state === "on") return true;
-    if (occupancyState.state === "off") return false;
     return undefined;
   }
 

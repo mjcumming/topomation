@@ -91,6 +91,48 @@ async def test_binary_sensor_updates_on_live_occupancy_changed_event() -> None:
 
 
 @pytest.mark.asyncio
+async def test_binary_sensor_updates_lock_attributes_on_occupancy_changed() -> None:
+    """occupancy.changed should refresh lock-related attributes from the payload."""
+    bus = Mock()
+    occupancy_module = Mock()
+    occupancy_module.get_location_state.return_value = None
+    occupancy_module.get_effective_timeout.return_value = None
+
+    sensor = OccupancyBinarySensor(
+        "kitchen",
+        "Kitchen",
+        bus,
+        occupancy_module=occupancy_module,
+        recent_changes_provider=lambda _: [],
+    )
+    sensor.async_write_ha_state = Mock()
+
+    await sensor.async_added_to_hass()
+    callback = bus.subscribe.call_args_list[0].args[0]
+    callback(
+        Event(
+            type="occupancy.changed",
+            source="occupancy",
+            location_id="kitchen",
+            payload={
+                "occupied": True,
+                "is_locked": True,
+                "locked_by": ["ui_freeze"],
+                "lock_modes": ["freeze"],
+                "direct_locks": [{"source_id": "ui_freeze", "mode": "freeze", "scope": "self"}],
+                "reason": "event:lock",
+            },
+            timestamp=datetime.now(UTC),
+        )
+    )
+
+    assert sensor.extra_state_attributes["is_locked"] is True
+    assert sensor.extra_state_attributes["locked_by"] == ["ui_freeze"]
+    assert sensor.extra_state_attributes["lock_modes"] == ["freeze"]
+    assert sensor.extra_state_attributes["reason"] == "event:lock"
+
+
+@pytest.mark.asyncio
 async def test_binary_sensor_refreshes_recent_changes_on_signal_event() -> None:
     """Source-level occupancy signals should refresh explainability attributes."""
     bus = Mock()

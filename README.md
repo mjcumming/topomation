@@ -11,7 +11,7 @@
 
 **Whole-home occupancy automation for Home Assistant, built around locations instead of automation sprawl.**
 
-TopoMation lets you model your home as a hierarchy, assign detection sources and devices to each location, and generate native Home Assistant automations for lighting, media, and HVAC behavior. It is designed for people who want occupancy automation that stays understandable when it grows past a few rooms.
+TopoMation lets you model your home as a hierarchy, assign detection sources and devices to each location, and generate native Home Assistant automations for lighting, appliances (standalone `fan.*` and `switch.*`), media, and HVAC (climate-linked `fan.*`). It is designed for people who want occupancy automation that stays understandable when it grows past a few rooms.
 
 ## Why this exists
 
@@ -58,7 +58,7 @@ TopoMation handles the cases that usually become custom automation debt:
 2. Organize them into a deeper tree with optional `building`, `grounds`, and `subarea` nodes.
 3. Assign occupancy sources and device targets to each location.
 4. Configure `Occupancy` and `Ambient`.
-5. Add rules in `Lighting`, `Media`, and `HVAC`.
+5. Add rules in `Lighting`, `Appliances`, `Media`, and `HVAC`.
 
 After that, TopoMation maintains occupancy entities and managed automations from the location model.
 
@@ -98,7 +98,7 @@ The switch interaction becomes the occupancy signal. No extra hardware required.
 - Per-location occupancy entities
 - Multi-source occupancy fusion with configurable timeouts
 - Ambient light support with lux sensors and sun fallback
-- Native HA-managed rules for lighting, media, and HVAC
+- Native HA-managed rules for lighting, appliances, media, and HVAC
 - Manual trigger, clear, vacate, lock, and unlock services
 - Lock scopes for a single location or an entire subtree
 
@@ -121,7 +121,7 @@ Full guide: [docs/installation.md](docs/installation.md)
 3. Add any missing structural nodes such as `building`, `grounds`, or `subarea`.
 4. Select a room and configure the `Occupancy` tab.
 5. Configure `Ambient` if you want dark/bright-aware behavior.
-6. Add at least one rule in `Lighting`, `Media`, or `HVAC`.
+6. Add at least one rule in `Lighting`, `Appliances`, `Media`, or `HVAC`.
 7. Trigger the room and confirm the generated automation appears in Home Assistant.
 
 ## Services
@@ -152,7 +152,7 @@ You should expect:
 
 - Ambient sensor assignment is explicit; there is no automatic lux discovery.
 - Admin access is required for panel routes and managed automation writes.
-- `Media` and `HVAC` are intentionally narrower than unrestricted HA automation editing.
+- `Appliances`, `Media`, and `HVAC` are intentionally narrower than unrestricted HA automation editing.
 - Rich `climate.*` thermostat workflows are intentionally deferred.
 
 ## Documentation

@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.38] - 2026-04-10
+
+### Added
+
+- **Appliances** managed-rules tab in the room inspector for standalone `fan.*`
+  entities and `switch.*` targets, with the same occupancy-only trigger and time
+  window controls as Media and HVAC.
+- Deep links `/topomation-appliances` and `/topomation-appliance` so the panel
+  opens with the Appliances inspector tab for the selected location.
+
+### Changed
+
+- **HVAC** tab now lists only `fan.*` entities whose device registry chain ties
+  them to a `climate.*` on the same Home Assistant device; other fans appear
+  under Appliances.
+
+### Tests / docs
+
+- Extended Web Test Runner and Playwright coverage for the new tab, fan split,
+  and appliances route; updated root `README.md` and `tests/README.md`.
+
 ## [0.2.37] - 2026-04-10
 
 ### Changed

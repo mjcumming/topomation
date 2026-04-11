@@ -6,6 +6,9 @@ Comprehensive test suite for the Topomation Home Assistant integration.
 
 ### Unit Tests
 
+- **`test_managed_action_config_build_matrix.py`** - Parametrized triggers/conditions/`require_dark` normalization for managed HA automations (see `OCCUPANCY-LIGHTING-MATRIX.md`)
+- **`test_managed_lighting_automation_runtime.py`** - Mock-HA execution: compiled managed rules fire (`on_occupied` / `on_vacant` / sun / lux / time), `only_if_off`, grouped vacancy turning off per-room lights (see matrix §4)
+- **`test_lock_services_integration.py`** - Real-kernel `topomation.lock` / `unlock` / `unlock_all` → occupancy `binary_sensor` attributes
 - **`test_init.py`** - Integration setup/teardown lifecycle tests
 - **`test_coordinator.py`** - Timeout scheduling and coordination tests
 - **`test_event_bridge.py`** - Event translation and bridge tests
@@ -16,6 +19,12 @@ Comprehensive test suite for the Topomation Home Assistant integration.
 - **`test-realworld.py`** - ✨ Real-world integration tests with realistic scenarios
 - **`test-live-managed-actions-contract.py`** - Live HA contract test for managed automation rule registration/enumeration/deletion
 
+### Frontend (Web Test Runner + Playwright)
+
+- **`custom_components/topomation/frontend/ht-location-inspector.test.ts`** - Room inspector: occupancy, ambient, managed rules for Lighting / Appliances / Media / HVAC (including fan split: appliance vs climate-linked targets), save flows
+- **`custom_components/topomation/frontend/topomation-panel.test.ts`** - Panel shell, tree, deep links (e.g. `/topomation-appliances` → Appliances tab)
+- **`custom_components/topomation/frontend/playwright/*.spec.ts`** - Mock harness and live HA UI workflows (`npm run test:e2e`)
+
 ### Configuration
 
 - **`conftest.py`** - Shared pytest fixtures and test configuration
@@ -25,6 +34,7 @@ Comprehensive test suite for the Topomation Home Assistant integration.
 
 ### Testing Guides
 
+- **`OCCUPANCY-LIGHTING-MATRIX.md`** - Traceability index: integration scope vs `home-topology` / HA core, floor groups, `EventBridge`, managed-action config builders
 - **`DEV-CONTAINER-HA.md`** - Canonical run/restart workflow for HA in this repo's dev container
 - **`QUICK-START-LIVE.md`** - 🚀 5-minute guide to test against live HA
 - **`RUN-AGAINST-HA.md`** - Complete guide for live HA testing

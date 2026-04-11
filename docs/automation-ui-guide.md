@@ -1,8 +1,8 @@
 # Automation UI Guide (Workspace + Inspector)
 
-**Last reviewed**: 2026-03-18  
+**Last reviewed**: 2026-04-10  
 **Status**: Active (design baseline)  
-**Authority**: ADR-HA-055, ADR-HA-056, ADR-HA-060, ADR-HA-066, ADR-HA-068 + `docs/contracts.md`
+**Authority**: ADR-HA-055, ADR-HA-056, ADR-HA-060, ADR-HA-066, ADR-HA-068, ADR-HA-069 + `docs/contracts.md`
 
 This guide defines the intended user interaction model for Topomation's
 automation workspace and inspector tabs.
@@ -21,6 +21,7 @@ automation workspace and inspector tabs.
    - `Occupancy`
    - `Ambient`
    - `Lighting`
+   - `Appliances`
    - `Media`
    - `HVAC`
 
@@ -80,30 +81,32 @@ Top-to-bottom layout order:
    - direct sensor options for the location
    - `Inherit from parent` as the empty/default option
    - do not render a separate inherit checkbox alongside the selector.
-5. Rule-authoring tabs (`Lighting`, `Media`, `HVAC`) use
+5. Rule-authoring tabs (`Lighting`, `Appliances`, `Media`, `HVAC`) use
    per-rule card controls for rule lifecycle edits.
 6. Do not mix tab-level `Save changes` / `Discard changes` with per-card
    `Delete rule` for the same rule workflow.
 
 ## 6.5 Non-Lighting Scope
 
-1. `Media` is the common-case media workflow:
+1. `Appliances` (v1): simple loads — standalone `fan.*` (not on the same HA device
+   graph as a `climate.*` entity) and `switch.*` for on/off style actions.
+   - occupancy edge triggers only (`Room becomes occupied` / `Room becomes vacant`)
+   - no ambient-light triggers or ambient filter rows
+   - optional time window matches the Lighting-style pill control (`Any time` /
+     `Limit to a time range`)
+   - `Set speed` exposes a percentage control for `fan.*` when that action is selected
+2. `HVAC` (v1): `fan.*` tied to HVAC hardware — a fan appears here when the entity
+   registry links its device (including `via_device` parents) to a `climate.*`
+   entity on the same device chain.
+   - same occupancy-only + time-window editor pattern as `Appliances` and `Media`
+3. `Media` is the common-case media workflow:
    `media_player.*` targets with simple occupancy-driven power/playback/volume/
    mute actions.
-   - only `On occupied` / `On vacant` triggers
-   - no separate occupancy-condition row
-   - optional time window remains available
+   - occupancy edge triggers only (choice pills; no ambient rows)
+   - optional time window (same pill pattern as Lighting)
    - `Set volume` exposes a percentage control only when selected
-2. `HVAC` is a fans-first workflow in v1:
-   - `fan.*` targets are first-class.
-   - switch-controlled exhaust/ventilation devices may also appear here via
-     `switch.*` compatibility.
-   - only `On occupied` / `On vacant` triggers
-   - no separate occupancy-condition row
-   - optional time window remains available
-   - `Set speed` exposes a percentage control for `fan.*` targets only
-3. `Media` and `HVAC` do not expose an ambient-light condition filter in v1.
-4. Do not present a dedicated `Appliances` top-level tab in v1.
+4. `Appliances`, `Media`, and `HVAC` do not expose ambient-light triggers or
+   ambient condition filters in v1.
 5. Do not present `climate.*` thermostat/preset editing until a narrower common
    occupancy contract is agreed and documented.
 
@@ -112,16 +115,15 @@ Top-to-bottom layout order:
 1. Unsaved draft rule card:
    - show `Save rule`
    - show `Remove rule`
-   - `Lighting` also shows `Duplicate rule`
+   - all rule-authoring tabs also show `Duplicate rule`
    - do not show `Delete rule`.
 2. Persisted rule card with edits:
    - show `Update rule`
    - show `Discard edits`
    - show `Delete rule`.
-   - `Lighting` also shows `Duplicate rule`.
+   - all rule-authoring tabs also show `Duplicate rule`.
 3. Persisted rule card with no edits:
-   - show `Delete rule` only for `Media` / `HVAC`.
-   - `Lighting` shows `Delete rule` + `Duplicate rule`.
+   - show `Delete rule` + `Duplicate rule` on every rule-authoring tab.
 4. Rule lifecycle controls are colocated on the rule card.
 
 ## 8. Lighting Persistence Direction

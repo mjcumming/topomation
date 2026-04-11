@@ -289,7 +289,7 @@ Additional save points:
   - structural occupancy is expected to roll up from descendant locations
 - Structural nodes are informational pages in the active inspector:
   - `floor`, `building`, and `grounds` do not expose room-style automation tabs
-    (`Ambient`, `Lighting`, `Media`, `HVAC`)
+    (`Ambient`, `Lighting`, `Appliances`, `Media`, `HVAC`)
   - `floor` remains the occupancy-group authoring scope for child areas
   - `building` and `grounds` render summary content only
   - whole-home/floor aggregate scenes should be authored as normal Home
@@ -310,7 +310,7 @@ Additional save points:
   - the sticky bar remains visible and `Save changes` shows `Saving...`.
 - Save errors:
   - the sticky bar remains visible and an inline warning is shown above it.
-- `Lighting`, `Media`, and `HVAC` do not use this sticky draft bar; they keep per-rule lifecycle controls.
+- `Lighting`, `Appliances`, `Media`, and `HVAC` do not use this sticky draft bar; they keep per-rule lifecycle controls.
 
 ## C-014A Lighting Rule Authoring Contract
 
@@ -424,7 +424,7 @@ Additional save points:
 ## C-017 Automation Editing + Lighting Persistence Contract
 
 - Inspector IA contract:
-  - top-level tabs: `Occupancy`, `Ambient`, `Lighting`, `Media`, `HVAC`
+  - top-level tabs: `Occupancy`, `Ambient`, `Lighting`, `Appliances`, `Media`, `HVAC`
   - no top-level `Advanced` tab and no generic `Actions` tab
   - advanced occupancy relationship controls are hidden from the active
     `Occupancy` UI until the workflow is revalidated.
@@ -436,7 +436,7 @@ Additional save points:
 - Save/update behavior is explicit across editable automation surfaces:
   - `Occupancy` and `Ambient` use tab-level draft state + explicit
     save/discard controls.
-  - `Lighting`, `Media`, and `HVAC` use per-rule card lifecycle
+  - `Lighting`, `Appliances`, `Media`, and `HVAC` use per-rule card lifecycle
     controls (`Save rule` / `Update rule` / `Discard edits` / `Remove rule` /
     `Delete rule`) as applicable.
   - no silent auto-save for user-authored policy/config edits in these tabs.
@@ -453,31 +453,30 @@ Additional save points:
   managed automation ownership (same authority model as other managed-rule
   domains).
 - Non-light managed automation tabs remain split by intent:
+  - `Appliances` -> standalone `fan.*` (not tied to an HVAC/climate device in the
+    HA device registry) plus `switch.*` for simple on/off loads such as
+    switch-mode exhaust fans.
+  - `HVAC` -> `fan.*` whose entity device (or `via_device` ancestor chain) is
+    shared with at least one `climate.*` entity on the same HA device graph.
   - `Media` -> `media_player.*`
-  - `HVAC` -> `fan.*` plus `switch.*` compatibility for switch-controlled
-    exhaust/ventilation devices
-  - no dedicated `Appliances` tab in v1.
-  - `climate.*` thermostat/preset workflows are deferred until a narrower
+  - `climate.*` thermostat/preset authoring remains deferred until a narrower
     contract exists for common occupancy actions.
-  - `Media` and `HVAC` do not expose ambient-light conditions in v1.
+  - `Appliances`, `Media`, and `HVAC` do not expose ambient-light triggers or
+    ambient condition rows in v1 (occupancy edges plus optional time window only).
   - `Media` action choices focus on common occupancy controls:
     power, playback, volume, and mute.
-  - `Media` and `HVAC` rule cards do not render a separate occupancy-condition
-    row; `on_occupied` / `on_vacant` already define the occupancy side.
-  - `Media` keeps only the time-window condition in v1.
-  - `HVAC` keeps only the time-window condition in v1.
   - `Media` exposes `volume_set` as a first-class action with a visible percent
     control only when selected.
-  - `HVAC` exposes `fan.set_percentage` as a first-class action for `fan.*`
-    targets with a visible percent control only when selected.
+  - `Appliances` and `HVAC` expose `fan.set_percentage` as a first-class action
+    for `fan.*` targets with a visible percent control only when selected.
 - Lighting rule persistence contract:
   - HA automation entities/config are canonical for Lighting rule state.
   - save path is upsert+diff with stable metadata identity (`rule_uuid`).
   - backend integration is the only writer for Lighting automation mutations.
 - Ownership constraint:
-  - hard-block `light.*` overlap between Lighting-policy targets and managed-action targets in `Media` / `HVAC` for the same location.
+  - hard-block `light.*` overlap between Lighting-policy targets and managed-action targets in `Appliances` / `Media` / `HVAC` for the same location.
 - Startup behavior contract:
-  - `Lighting`, `Media`, and `HVAC` do not expose tab-global startup reapply
+  - `Lighting`, `Appliances`, `Media`, and `HVAC` do not expose tab-global startup reapply
     toggles.
 - Lighting multi-trigger contract:
   - a Lighting rule may include up to one occupancy-edge trigger and up to one

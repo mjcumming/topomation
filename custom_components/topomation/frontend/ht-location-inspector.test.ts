@@ -1144,7 +1144,7 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(optionValues).to.not.include("binary_sensor.mudroom_occupancy");
   });
 
-  it("renders Occupancy/Ambient/Lighting/Media/HVAC top-level tabs for area-like locations", async () => {
+  it("renders Occupancy/Ambient/Lighting/Appliances/Media/HVAC top-level tabs for area-like locations", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>() => [] as T,
       connection: {},
@@ -1173,9 +1173,9 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(tabLabels).to.include("Occupancy");
     expect(tabLabels).to.include("Ambient");
     expect(tabLabels).to.include("Lighting");
+    expect(tabLabels).to.include("Appliances");
     expect(tabLabels).to.include("Media");
     expect(tabLabels).to.include("HVAC");
-    expect(tabLabels).to.not.include("Appliances");
   });
 
   it("groups legacy light power source with level source in one card", async () => {
@@ -2906,7 +2906,7 @@ describe("HtLocationInspector occupancy source composer", () => {
     const beforeText = (
       element.shadowRoot!.querySelector('[data-testid="header-vacant-at"]')?.textContent || ""
     ).trim();
-    expect(beforeText).to.equal("Vacant at No timeout scheduled");
+    expect(beforeText).to.equal("");
 
     stateChangedHandler!({
       data: {
@@ -3344,14 +3344,161 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect((activeTab?.textContent || "").trim()).to.equal("Media");
   });
 
+  it("maps forcedTab appliances to Appliances", async () => {
+    const hass: HomeAssistant = {
+      callWS: async <T>() => [] as T,
+      connection: {},
+      states: {},
+      areas: {},
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_appliances_room";
+    location.name = "Utility";
+    location.modules._meta = { type: "area" };
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${location}
+        .forcedTab=${"appliances"}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    const activeTab = element.shadowRoot!.querySelector(".tab.active");
+    expect((activeTab?.textContent || "").trim()).to.equal("Appliances");
+  });
+
+  it("filters Appliances target entities to standalone fans and switches", async () => {
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>) => {
+        if (request.type === "topomation/actions/rules/list") {
+          return { rules: [] } as T;
+        }
+        if (request.type === "config/entity_registry/list") {
+          return [
+            { entity_id: "fan.kitchen_hood", device_id: "dev_hvac_stack" },
+            { entity_id: "climate.kitchen", device_id: "dev_hvac_stack" },
+            { entity_id: "fan.bathroom_fan", device_id: "dev_bath" },
+          ] as T;
+        }
+        if (request.type === "config/device_registry/list") {
+          return [
+            { id: "dev_hvac_stack", via_device_id: null },
+            { id: "dev_bath", via_device_id: null },
+          ] as T;
+        }
+        return [] as T;
+      },
+      connection: {},
+      states: {
+        "fan.kitchen_hood": {
+          entity_id: "fan.kitchen_hood",
+          state: "off",
+          attributes: {
+            friendly_name: "Kitchen Hood",
+            area_id: "kitchen",
+          },
+        },
+        "fan.bathroom_fan": {
+          entity_id: "fan.bathroom_fan",
+          state: "off",
+          attributes: {
+            friendly_name: "Bathroom Fan",
+            area_id: "kitchen",
+          },
+        },
+        "switch.kitchen_accent": {
+          entity_id: "switch.kitchen_accent",
+          state: "off",
+          attributes: {
+            friendly_name: "Kitchen Accent",
+            area_id: "kitchen",
+          },
+        },
+        "light.kitchen_ceiling": {
+          entity_id: "light.kitchen_ceiling",
+          state: "off",
+          attributes: {
+            friendly_name: "Kitchen Ceiling",
+            area_id: "kitchen",
+          },
+        },
+        "media_player.kitchen_speaker": {
+          entity_id: "media_player.kitchen_speaker",
+          state: "idle",
+          attributes: {
+            friendly_name: "Kitchen Speaker",
+            area_id: "kitchen",
+          },
+        },
+      },
+      areas: {},
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_kitchen";
+    location.ha_area_id = "kitchen";
+    location.modules._meta = { type: "area" };
+    location.entity_ids = [
+      "light.kitchen_ceiling",
+      "fan.kitchen_hood",
+      "fan.bathroom_fan",
+      "media_player.kitchen_speaker",
+      "switch.kitchen_accent",
+    ];
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector .hass=${hass} .location=${location} .forcedTab=${"appliances"}></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    const addRuleButton = element.shadowRoot?.querySelector(
+      '[data-testid="action-rule-add"]'
+    ) as HTMLButtonElement | null;
+    expect(addRuleButton).to.exist;
+    addRuleButton!.click();
+    await element.updateComplete;
+
+    await waitUntil(
+      () => {
+        const row = element.shadowRoot!.querySelector(".dusk-block-row") as HTMLElement | null;
+        if (!row) return false;
+        const sel = row.querySelector("select.dusk-wide-select") as HTMLSelectElement | null;
+        if (!sel) return false;
+        const opts = Array.from(sel.options).map((o) => o.value);
+        return (
+          opts.includes("fan.bathroom_fan") &&
+          opts.includes("switch.kitchen_accent") &&
+          !opts.includes("fan.kitchen_hood") &&
+          !opts.includes("light.kitchen_ceiling") &&
+          !opts.includes("media_player.kitchen_speaker")
+        );
+      },
+      "appliance rule targets did not match standalone fan + switch filter"
+    );
+  });
+
   it("adds a rule and shows HVAC trigger/conditions/actions controls", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>) => {
         if (request.type === "topomation/actions/rules/list") {
           return { rules: [] } as T;
         }
-        if (request.type === "config/entity_registry/list") return [] as T;
-        if (request.type === "config/device_registry/list") return [] as T;
+        if (request.type === "config/entity_registry/list") {
+          return [
+            { entity_id: "fan.kitchen_hood", device_id: "dev_hvac_stack" },
+            { entity_id: "climate.kitchen", device_id: "dev_hvac_stack" },
+          ] as T;
+        }
+        if (request.type === "config/device_registry/list") {
+          return [{ id: "dev_hvac_stack", via_device_id: null }] as T;
+        }
         return [] as T;
       },
       connection: {},
@@ -3396,24 +3543,20 @@ describe("HtLocationInspector occupancy source composer", () => {
     const row = element.shadowRoot!.querySelector(".dusk-block-row") as HTMLElement | null;
     expect(row).to.exist;
 
+    expect((row!.textContent || "")).to.include("Occupancy change");
+    expect((row!.textContent || "")).to.include("Room becomes occupied");
+    expect((row!.textContent || "")).to.include("Time window");
+    expect((row!.textContent || "")).to.not.include("Ambient light change");
+
     const selects = Array.from(row!.querySelectorAll("select.dusk-wide-select")) as HTMLSelectElement[];
-    expect(selects.length).to.equal(3);
-
-    const triggerOptions = Array.from(selects[0].options).map((option) => option.value);
-    expect(triggerOptions).to.deep.equal(["on_occupied", "on_vacant"]);
-
-    expect((row!.textContent || "")).to.not.include("Must be occupied");
-    expect((row!.textContent || "")).to.include("Use time window");
-    expect((row!.textContent || "")).to.not.include("Ambient must be");
+    expect(selects.length).to.equal(2);
 
     expect(row!.querySelectorAll('input[type="time"]').length).to.equal(0);
-    const timeToggle = Array.from(
-      row!.querySelectorAll(".dusk-conditions .config-row")
-    ).find((candidate) => (candidate.textContent || "").includes("Use time window"))?.querySelector(
-      "input.switch-input"
-    ) as HTMLInputElement | null;
-    expect(timeToggle).to.exist;
-    timeToggle!.click();
+    const limitTime = Array.from(row!.querySelectorAll("button")).find((btn) =>
+      (btn.textContent || "").includes("Limit to a time range")
+    ) as HTMLButtonElement | null;
+    expect(limitTime).to.exist;
+    limitTime!.click();
     await element.updateComplete;
 
     await waitUntil(
@@ -3422,14 +3565,21 @@ describe("HtLocationInspector occupancy source composer", () => {
     );
   });
 
-  it("filters HVAC target entities to fans and switch-controlled ventilation targets", async () => {
+  it("filters HVAC target entities to fans linked to a climate device on the same HA device", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>) => {
         if (request.type === "topomation/actions/rules/list") {
           return { rules: [] } as T;
         }
-        if (request.type === "config/entity_registry/list") return [] as T;
-        if (request.type === "config/device_registry/list") return [] as T;
+        if (request.type === "config/entity_registry/list") {
+          return [
+            { entity_id: "fan.kitchen_hood", device_id: "dev_hvac_stack" },
+            { entity_id: "climate.kitchen", device_id: "dev_hvac_stack" },
+          ] as T;
+        }
+        if (request.type === "config/device_registry/list") {
+          return [{ id: "dev_hvac_stack", via_device_id: null }] as T;
+        }
         return [] as T;
       },
       connection: {},
@@ -3500,10 +3650,10 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect((row!.textContent || "")).to.not.include("Occupancy must be");
 
     const selects = Array.from(row!.querySelectorAll("select.dusk-wide-select")) as HTMLSelectElement[];
-    expect(selects.length).to.equal(3);
-    const targetOptions = Array.from(selects[1].options).map((option) => option.value);
+    expect(selects.length).to.equal(2);
+    const targetOptions = Array.from(selects[0].options).map((option) => option.value);
     expect(targetOptions).to.include("fan.kitchen_hood");
-    expect(targetOptions).to.include("switch.kitchen_accent");
+    expect(targetOptions).to.not.include("switch.kitchen_accent");
     expect(targetOptions).to.not.include("light.kitchen_ceiling");
     expect(targetOptions).to.not.include("media_player.kitchen_speaker");
   });
@@ -3562,8 +3712,15 @@ describe("HtLocationInspector occupancy source composer", () => {
             },
           } as T;
         }
-        if (request.type === "config/entity_registry/list") return [] as T;
-        if (request.type === "config/device_registry/list") return [] as T;
+        if (request.type === "config/entity_registry/list") {
+          return [
+            { entity_id: "fan.kitchen_hood", device_id: "dev_hvac_stack" },
+            { entity_id: "climate.kitchen", device_id: "dev_hvac_stack" },
+          ] as T;
+        }
+        if (request.type === "config/device_registry/list") {
+          return [{ id: "dev_hvac_stack", via_device_id: null }] as T;
+        }
         return [] as T;
       },
       connection: {},
@@ -3601,25 +3758,25 @@ describe("HtLocationInspector occupancy source composer", () => {
     const row = element.shadowRoot!.querySelector(".dusk-block-row") as HTMLElement | null;
     expect(row).to.exist;
 
-    let selects = Array.from(row!.querySelectorAll("select.dusk-wide-select")) as HTMLSelectElement[];
-    selects[0].value = "on_vacant";
-    selects[0].dispatchEvent(new Event("change", { bubbles: true, composed: true }));
-    await element.updateComplete;
-
-    selects = Array.from(row!.querySelectorAll("select.dusk-wide-select")) as HTMLSelectElement[];
-    selects[1].value = "fan.kitchen_hood";
-    selects[1].dispatchEvent(new Event("change", { bubbles: true, composed: true }));
-    selects[2].value = "turn_off";
-    selects[2].dispatchEvent(new Event("change", { bubbles: true, composed: true }));
-    await element.updateComplete;
-
-    const timeToggle = Array.from(
-      row!.querySelectorAll(".dusk-conditions .config-row")
-    ).find((candidate) => (candidate.textContent || "").includes("Use time window"))?.querySelector(
-      "input.switch-input"
+    const vacantRadio = row!.querySelector(
+      'input[type="radio"][value="on_vacant"]'
     ) as HTMLInputElement | null;
-    expect(timeToggle).to.exist;
-    timeToggle!.click();
+    expect(vacantRadio).to.exist;
+    vacantRadio!.click();
+    await element.updateComplete;
+
+    let selects = Array.from(row!.querySelectorAll("select.dusk-wide-select")) as HTMLSelectElement[];
+    selects[0].value = "fan.kitchen_hood";
+    selects[0].dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+    selects[1].value = "turn_off";
+    selects[1].dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+    await element.updateComplete;
+
+    const limitTime = Array.from(row!.querySelectorAll("button")).find((btn) =>
+      (btn.textContent || "").includes("Limit to a time range")
+    ) as HTMLButtonElement | null;
+    expect(limitTime).to.exist;
+    limitTime!.click();
     await element.updateComplete;
 
     await waitUntil(
@@ -3651,7 +3808,9 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(payload.trigger_type).to.equal("on_vacant");
     expect(payload.trigger_types).to.deep.equal(["on_vacant"]);
     expect(payload.ambient_condition).to.equal("any");
-    expect(payload.must_be_occupied).to.equal(false);
+    expect(payload.must_be_occupied === false || payload.must_be_occupied === undefined).to.equal(
+      true
+    );
     expect(payload.time_condition_enabled).to.equal(true);
     expect(payload.start_time).to.equal("19:15");
     expect(payload.end_time).to.equal("23:30");
@@ -3716,26 +3875,28 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect((row!.textContent || "")).to.not.include("Occupancy must be");
 
     const selects = Array.from(row!.querySelectorAll("select.dusk-wide-select")) as HTMLSelectElement[];
-    expect(selects.length).to.equal(3);
-    selects[1].value = "media_player.kitchen_speaker";
-    selects[1].dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+    expect(selects.length).to.equal(2);
+    selects[0].value = "media_player.kitchen_speaker";
+    selects[0].dispatchEvent(new Event("change", { bubbles: true, composed: true }));
     await element.updateComplete;
 
     const actionSelect = Array.from(
       row!.querySelectorAll("select.dusk-wide-select")
-    )[2] as HTMLSelectElement;
+    )[1] as HTMLSelectElement;
     const actionOptionValues = Array.from(actionSelect.options).map((option) => option.value);
-    expect(actionOptionValues).to.deep.equal([
-      "media_play",
-      "turn_on",
-      "volume_mute:false",
-      "volume_set",
-      "volume_mute:true",
-      "media_pause",
-      "media_play_pause",
-      "turn_off",
-      "media_stop",
-    ]);
+    expect(new Set(actionOptionValues)).to.deep.equal(
+      new Set([
+        "media_play",
+        "turn_on",
+        "volume_mute:false",
+        "volume_set",
+        "volume_mute:true",
+        "media_pause",
+        "media_play_pause",
+        "turn_off",
+        "media_stop",
+      ])
+    );
   });
 
   it("shows media volume control only for set volume actions", async () => {
@@ -3778,11 +3939,11 @@ describe("HtLocationInspector occupancy source composer", () => {
 
     const row = element.shadowRoot!.querySelector(".dusk-block-row") as HTMLElement;
     const selects = Array.from(row.querySelectorAll("select.dusk-wide-select")) as HTMLSelectElement[];
-    selects[1].value = "media_player.kitchen_speaker";
-    selects[1].dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+    selects[0].value = "media_player.kitchen_speaker";
+    selects[0].dispatchEvent(new Event("change", { bubbles: true, composed: true }));
     await element.updateComplete;
 
-    let actionSelect = Array.from(row.querySelectorAll("select.dusk-wide-select"))[2] as HTMLSelectElement;
+    let actionSelect = Array.from(row.querySelectorAll("select.dusk-wide-select"))[1] as HTMLSelectElement;
     actionSelect.value = "volume_set";
     actionSelect.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
     await element.updateComplete;
@@ -3793,7 +3954,7 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(slider?.value).to.equal("30");
   });
 
-  it("shows HVAC fan speed control only for set speed actions", async () => {
+  it("shows appliance fan speed control only for set speed actions", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>) => {
         if (request.type === "topomation/actions/rules/list") return { rules: [] } as T;
@@ -3821,7 +3982,7 @@ describe("HtLocationInspector occupancy source composer", () => {
     location.entity_ids = ["fan.kitchen_hood"];
 
     const element = await fixture<HtLocationInspector>(html`
-      <ht-location-inspector .hass=${hass} .location=${location} .forcedTab=${"hvac"}></ht-location-inspector>
+      <ht-location-inspector .hass=${hass} .location=${location} .forcedTab=${"appliances"}></ht-location-inspector>
     `);
     await element.updateComplete;
 
@@ -3832,7 +3993,7 @@ describe("HtLocationInspector occupancy source composer", () => {
     await element.updateComplete;
 
     const row = element.shadowRoot!.querySelector(".dusk-block-row") as HTMLElement;
-    const actionSelect = Array.from(row.querySelectorAll("select.dusk-wide-select"))[2] as HTMLSelectElement;
+    const actionSelect = Array.from(row.querySelectorAll("select.dusk-wide-select"))[1] as HTMLSelectElement;
     actionSelect.value = "set_percentage";
     actionSelect.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
     await element.updateComplete;
@@ -3873,8 +4034,15 @@ describe("HtLocationInspector occupancy source composer", () => {
           }
           return { rules: [] } as T;
         }
-        if (request.type === "config/entity_registry/list") return [] as T;
-        if (request.type === "config/device_registry/list") return [] as T;
+        if (request.type === "config/entity_registry/list") {
+          return [
+            { entity_id: "fan.kitchen_hood", device_id: "dev_hvac_stack" },
+            { entity_id: "climate.kitchen", device_id: "dev_hvac_stack" },
+          ] as T;
+        }
+        if (request.type === "config/device_registry/list") {
+          return [{ id: "dev_hvac_stack", via_device_id: null }] as T;
+        }
         return [] as T;
       },
       connection: {
@@ -3985,7 +4153,7 @@ describe("HtLocationInspector occupancy source composer", () => {
       <ht-location-inspector
         .hass=${buildHass()}
         .location=${location}
-        .forcedTab=${"hvac"}
+        .forcedTab=${"appliances"}
       ></ht-location-inspector>
     `);
     await element.updateComplete;

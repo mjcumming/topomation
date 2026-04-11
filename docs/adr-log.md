@@ -2703,6 +2703,40 @@ occupancy-driven presets/setbacks/modes.
 
 ---
 
+### ADR-HA-069: Appliances Tab, HVAC-Linked Fans, and Occupancy-Only Editors (2026-04-10)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+
+ADR-HA-060 removed `Appliances` and treated `HVAC` as the home for all `fan.*`
+targets. That bundled bathroom exhaust with thermostat-adjacent hardware and
+made product language misleading.
+
+**Decision**:
+
+1. Restore a visible `Appliances` tab for standalone `fan.*` and `switch.*`
+   on/off style loads (v1 is fans-first; other appliance classes are deferred).
+2. Narrow `HVAC` managed targets to `fan.*` whose HA entity/device registry graph
+   ties the fan device (including `via_device_id` ancestors) to a `climate.*`
+   entity on the same device chain.
+3. Align `Appliances`, `Media`, and `HVAC` editors with Lighting-quality structure
+   for occupancy edges + optional time window, without ambient-light triggers or
+   ambient filter rows.
+4. Default new `Media` draft rules to `on_vacant` for conservative automation
+   bias; `Appliances` / `HVAC` default to `on_occupied`.
+
+**Consequences**:
+
+- Inspector rule tabs are `Lighting`, `Appliances`, `Media`, `HVAC` (plus
+  `Occupancy` / `Ambient`).
+- ADR-HA-060’s “no Appliances tab” decision is superseded for IA; HA-060 remains
+  historical context for why `Appliances` must be intentionally scoped rather
+  than a generic catch-all.
+- Deep links `/topomation-appliances` resolve to the real `Appliances` tab.
+
+---
+
 ### ADR-HA-061: Startup Replay Moves to Rule Cards; Harness Must Cover Reactive HA Churn (2026-03-06)
 
 **Status**: ✅ APPROVED

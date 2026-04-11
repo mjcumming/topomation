@@ -228,7 +228,7 @@ test("automation tabs do not expose tab-level startup controls", async ({ page }
   await expect(page.getByTestId("startup-reapply-hvac")).toHaveCount(0);
 });
 
-test("lighting media and hvac tabs each save managed rules", async ({ page }) => {
+test("lighting media and appliances tabs each save managed rules", async ({ page }) => {
   await page.goto("/mock-harness.html");
 
   await page.evaluate(async () => {
@@ -278,14 +278,8 @@ test("lighting media and hvac tabs each save managed rules", async ({ page }) =>
   await inspector.getByRole("button", { name: "Add rule" }).click();
   const mediaRule = inspector.locator(".dusk-block-row[data-testid^='action-rule-']").last();
   await expect(mediaRule).toBeVisible();
-  await mediaRule
-    .locator(".dusk-rule-row", { hasText: "Device" })
-    .locator("select")
-    .selectOption("media_player.kitchen_speaker");
-  await mediaRule
-    .locator(".dusk-rule-row", { hasText: "Action" })
-    .locator("select")
-    .selectOption("media_pause");
+  await mediaRule.getByRole("combobox").nth(0).selectOption("media_player.kitchen_speaker");
+  await mediaRule.getByRole("combobox").nth(1).selectOption("media_pause");
   await mediaRule.getByRole("button", { name: "Save rule" }).click();
   await expect
     .poll(async () => {
@@ -298,19 +292,13 @@ test("lighting media and hvac tabs each save managed rules", async ({ page }) =>
     })
     .toBe(true);
 
-  await inspector.getByRole("button", { name: "HVAC" }).click();
+  await inspector.getByRole("button", { name: "Appliances" }).click();
   await inspector.getByRole("button", { name: "Add rule" }).click();
-  const hvacRule = inspector.locator(".dusk-block-row[data-testid^='action-rule-']").last();
-  await expect(hvacRule).toBeVisible();
-  await hvacRule
-    .locator(".dusk-rule-row", { hasText: "Device" })
-    .locator("select")
-    .selectOption("fan.kitchen_bathroom_exhaust");
-  await hvacRule
-    .locator(".dusk-rule-row", { hasText: "Action" })
-    .locator("select")
-    .selectOption("turn_on");
-  await hvacRule.getByRole("button", { name: "Save rule" }).click();
+  const appliancesRule = inspector.locator(".dusk-block-row[data-testid^='action-rule-']").last();
+  await expect(appliancesRule).toBeVisible();
+  await appliancesRule.getByRole("combobox").nth(0).selectOption("fan.kitchen_bathroom_exhaust");
+  await appliancesRule.getByRole("combobox").nth(1).selectOption("turn_on");
+  await appliancesRule.getByRole("button", { name: "Save rule" }).click();
   await expect
     .poll(async () => {
       const rules = await kitchenManagedRules(page);

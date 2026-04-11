@@ -110,25 +110,23 @@ Outcome:
 
 ## 8. Current Release Candidate Record
 
-Commit under test: release-candidate worktree on `main` for `0.2.37` (post-`4e79198` release edits)
+Commit under test: run `git rev-parse HEAD` on the releasing branch after checkout (local validation performed on the `0.2.38` version bump and frontend bundle in the same change).
 Frontend bundle rebuilt from same commit: yes
 
 Touched workflows:
-- Lighting rule create/update/delete in the live room inspector
-- Structural node inspector behavior for building/grounds/floor informational pages
-- Occupancy group authoring and area membership summaries under the new `occupancy_group_id` model
+- Appliances / Media / HVAC occupancy-only managed rules in the room inspector (including fan device-registry split)
+- Panel deep link `/topomation-appliances` → Appliances tab
+- Playwright mock harness: media rule editor (radio + combobox), time window toggle, service option set
+- Multi-tab save workflow (lighting, media, appliances)
 
 Commands run:
-- `cd custom_components/topomation/frontend && node ./scripts/run-wtr.mjs ht-location-inspector.test.ts topomation-panel.test.ts`
-- `cd custom_components/topomation/frontend && npm run build`
-- `pytest -q tests/test_managed_actions.py --no-cov`
-- `HA_URL_DEV="${HA_URL_LOCAL:-http://localhost:8123}" HA_TOKEN_DEV="${HA_TOKEN_LOCAL:-$(cat /workspaces/topomation/ha_long_lived_token)}" make test-release-live`
+- `./scripts/test-comprehensive.sh` (ruff, mypy, `pytest tests/`, Vitest, `npm run build` + bundle diff, Web Test Runner, Playwright `npm run test:e2e`)
+- `make test-release-live` (comprehensive subset then live HA gate)
 
 Outcome:
-- Lighting rule create/update/delete in the live room inspector: PASS
-- Structural node inspector behavior for building/grounds/floor informational pages: PASS
-- Occupancy group authoring and area membership summaries under the new `occupancy_group_id` model: PASS
+- Local comprehensive gate (`./scripts/test-comprehensive.sh`): PASS
+- `make test-release-live` live Home Assistant step: **BLOCKED** — no HA reachable at `http://localhost:8123` in this environment (connection refused). Mock/browser portions of the release-live script completed before the live check failed.
 
 Notes:
-- This release candidate consolidates the first-class occupancy-group model, removes legacy sync handling from the active path, and reshapes the Lighting editor around trigger-family rows instead of numbered situations.
-- `make test-release-live` passed on the `0.2.37` release worktree, including local comprehensive checks, live HA managed-action contract tests, and live browser workflow coverage.
+- Release `0.2.38` adds the Appliances tab, climate-linked vs standalone fan routing, panel routes, WTR coverage, and Playwright updates for the occupancy-only rule UI.
+- Re-run `make test-release-live` (or `./tests/run-live-tests.sh` with a valid `tests/ha-config.env`) on a machine with Home Assistant up to satisfy the live gate before claiming live-validated delivery.

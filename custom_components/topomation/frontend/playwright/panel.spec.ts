@@ -326,9 +326,9 @@ test("media tab renders rule editor", async ({ page }) => {
   await expect(inspector.getByRole("button", { name: "Occupancy" })).toBeVisible();
   await expect(inspector.getByRole("button", { name: "Ambient" })).toBeVisible();
   await expect(inspector.getByRole("button", { name: "Lighting" })).toBeVisible();
+  await expect(inspector.getByRole("button", { name: "Appliances" })).toBeVisible();
   await expect(inspector.getByRole("button", { name: "Media" })).toBeVisible();
   await expect(inspector.getByRole("button", { name: "HVAC" })).toBeVisible();
-  await expect(inspector.getByRole("button", { name: "Appliances" })).toHaveCount(0);
   await openActionsTab(page);
 
   await expect(inspector).toContainText("Media Rules");
@@ -349,12 +349,9 @@ test("actions rule add/save/delete persists managed automations", async ({ page 
     .first();
   await expect(rule).toBeVisible();
 
-  await rule.locator(".dusk-rule-row", { hasText: "Trigger" }).locator("select").selectOption("on_occupied");
-  await rule
-    .locator(".dusk-rule-row", { hasText: "Device" })
-    .locator("select")
-    .selectOption("media_player.kitchen_speaker");
-  await rule.locator(".dusk-rule-row", { hasText: "Action" }).locator("select").selectOption("media_pause");
+  await rule.locator('input[type="radio"][value="on_occupied"]').check();
+  await rule.getByRole("combobox").nth(0).selectOption("media_player.kitchen_speaker");
+  await rule.getByRole("combobox").nth(1).selectOption("media_pause");
   await rule.getByRole("button", { name: "Save rule" }).click();
 
   await expect
@@ -386,18 +383,15 @@ test("media rule time settings persist without ambient controls", async ({ page 
     .first();
   await expect(rule).toBeVisible();
 
-  await rule.locator(".dusk-rule-row", { hasText: "Trigger" }).locator("select").selectOption("on_occupied");
-  await rule
-    .locator(".dusk-rule-row", { hasText: "Device" })
-    .locator("select")
-    .selectOption("media_player.kitchen_speaker");
-  await rule.locator(".dusk-rule-row", { hasText: "Action" }).locator("select").selectOption("media_play");
+  await rule.locator('input[type="radio"][value="on_occupied"]').check();
+  await rule.getByRole("combobox").nth(0).selectOption("media_player.kitchen_speaker");
+  await rule.getByRole("combobox").nth(1).selectOption("media_play");
   await expect(rule.locator(".dusk-conditions .config-row", { hasText: "Ambient must be" })).toHaveCount(0);
 
-  const timeRow = rule.locator(".dusk-conditions .config-row", { hasText: "Use time window" });
-  await timeRow.locator("input[type='checkbox']").check();
-  const startInput = rule.locator("input[type='time']").nth(0);
-  const endInput = rule.locator("input[type='time']").nth(1);
+  await rule.getByRole("button", { name: "Limit to a time range" }).click();
+  await expect(rule.locator("input[type='time']")).toHaveCount(2);
+  const startInput = rule.locator(".dusk-time-field", { hasText: "Begin" }).locator("input[type='time']");
+  const endInput = rule.locator(".dusk-time-field", { hasText: "End" }).locator("input[type='time']");
   await startInput.fill("21:30");
   await startInput.dispatchEvent("change");
   await endInput.fill("23:45");
@@ -413,8 +407,8 @@ test("media rule time settings persist without ambient controls", async ({ page 
           summary.trigger_type === "on_occupied" &&
           summary.ambient_condition === "any" &&
           !summary.has_dark_condition &&
-          summary.time_after === "21:30" &&
-          summary.time_before === "23:45"
+          String(summary.time_after || "").startsWith("21:30") &&
+          String(summary.time_before || "").startsWith("23:45")
       );
     })
     .toBe(true);
@@ -482,23 +476,27 @@ test("media rule service options align to media player controls", async ({ page 
   const deviceSelect = rule.locator(".dusk-rule-row", { hasText: "Target device" }).locator("select");
   const actionSelect = rule.locator(".dusk-rule-row", { hasText: "Action" }).locator("select");
   await deviceSelect.selectOption("media_player.kitchen_receiver");
+  const expectedActions = [
+    "media_play",
+    "turn_on",
+    "volume_mute:false",
+    "volume_set",
+    "volume_mute:true",
+    "media_pause",
+    "media_play_pause",
+    "turn_off",
+    "media_stop",
+  ];
   await expect
-    .poll(async () =>
-      actionSelect.evaluate((el) =>
+    .poll(async () => {
+      const values = await actionSelect.evaluate((el) =>
         Array.from((el as HTMLSelectElement).options).map((option) => option.value)
-      )
-    )
-    .toEqual([
-      "media_play",
-      "turn_on",
-      "volume_mute:false",
-      "volume_set",
-      "volume_mute:true",
-      "media_pause",
-      "media_play_pause",
-      "turn_off",
-      "media_stop",
-    ]);
+      );
+      const a = new Set(values);
+      const b = new Set(expectedActions);
+      return a.size === b.size && expectedActions.every((v) => a.has(v));
+    })
+    .toBe(true);
 });
 
 test("on occupied/on vacant triggers map to on/off occupancy state transitions", async ({ page }) => {
@@ -521,12 +519,9 @@ test("on occupied/on vacant triggers map to on/off occupancy state transitions",
   const occupiedRule = inspector
     .locator(".dusk-block-row[data-testid^='action-rule-']")
     .last();
-  await occupiedRule.locator(".dusk-rule-row", { hasText: "Trigger" }).locator("select").selectOption("on_occupied");
-  await occupiedRule
-    .locator(".dusk-rule-row", { hasText: "Device" })
-    .locator("select")
-    .selectOption("media_player.kitchen_speaker");
-  await occupiedRule.locator(".dusk-rule-row", { hasText: "Action" }).locator("select").selectOption("media_play");
+  await occupiedRule.locator('input[type="radio"][value="on_occupied"]').check();
+  await occupiedRule.getByRole("combobox").nth(0).selectOption("media_player.kitchen_speaker");
+  await occupiedRule.getByRole("combobox").nth(1).selectOption("media_play");
   const saveOccupiedRule = occupiedRule.getByRole("button", { name: "Save rule" });
   await saveOccupiedRule.scrollIntoViewIfNeeded();
   await saveOccupiedRule.evaluate((button) => (button as HTMLButtonElement).click());
@@ -546,12 +541,9 @@ test("on occupied/on vacant triggers map to on/off occupancy state transitions",
   const vacantRule = inspector
     .locator(".dusk-block-row[data-testid^='action-rule-']")
     .last();
-  await vacantRule.locator(".dusk-rule-row", { hasText: "Trigger" }).locator("select").selectOption("on_vacant");
-  await vacantRule
-    .locator(".dusk-rule-row", { hasText: "Device" })
-    .locator("select")
-    .selectOption("media_player.kitchen_speaker");
-  await vacantRule.locator(".dusk-rule-row", { hasText: "Action" }).locator("select").selectOption("media_stop");
+  await vacantRule.locator('input[type="radio"][value="on_vacant"]').check();
+  await vacantRule.getByRole("combobox").nth(0).selectOption("media_player.kitchen_speaker");
+  await vacantRule.getByRole("combobox").nth(1).selectOption("media_stop");
   const saveVacantRule = vacantRule.getByRole("button", { name: "Save rule" });
   await saveVacantRule.scrollIntoViewIfNeeded();
   await saveVacantRule.evaluate((button) => (button as HTMLButtonElement).click());

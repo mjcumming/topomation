@@ -59,12 +59,9 @@ async function addBasicKitchenActionRule(
     .locator(".dusk-block-row[data-testid^='action-rule-']")
     .first();
   await expect(rule).toBeVisible();
-  await rule.locator(".dusk-rule-row", { hasText: "Trigger" }).locator("select").selectOption("on_occupied");
-  await rule
-    .locator(".dusk-rule-row", { hasText: "Device" })
-    .locator("select")
-    .selectOption("media_player.kitchen_speaker");
-  await rule.locator(".dusk-rule-row", { hasText: "Action" }).locator("select").selectOption("media_pause");
+  await rule.locator('input[type="radio"][value="on_occupied"]').check();
+  await rule.getByRole("combobox").nth(0).selectOption("media_player.kitchen_speaker");
+  await rule.getByRole("combobox").nth(1).selectOption("media_pause");
   await rule.getByRole("button", { name: "Save rule" }).click();
 }
 

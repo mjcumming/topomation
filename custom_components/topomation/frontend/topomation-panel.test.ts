@@ -198,6 +198,59 @@ describe('TopomationPanel integration (fake hass)', () => {
     ).to.be.true;
   });
 
+  it("route /topomation-appliances passes forcedTab appliances to the room inspector", async () => {
+    const hass: HomeAssistant = {
+      callWS: async <T>(req: Record<string, any>): Promise<T> => {
+        if (req.type === "topomation/locations/list") {
+          return { locations } as T;
+        }
+        if (req.type === "config/entity_registry/list") {
+          return [] as T;
+        }
+        if (req.type === "config/device_registry/list") {
+          return [] as T;
+        }
+        throw new Error("Unexpected WS call");
+      },
+      connection: {},
+      states: {},
+      areas: {},
+      floors: {},
+      config: {
+        location_name: "Test Property",
+        latitude: 37.7749,
+        longitude: -122.4194,
+        time_zone: "America/Los_Angeles",
+        country: "US",
+      },
+      localize: (key: string) => key,
+    };
+
+    const element = await fixture<HTMLDivElement>(html`
+      <topomation-panel
+        .hass=${hass}
+        .route=${{ path: "/topomation-appliances" }}
+        .panel=${{ config: { entry_id: "entry_123" } }}
+      ></topomation-panel>
+    `);
+
+    await waitUntil(() => (element as any)._loading === false, "panel did not finish loading");
+
+    (element as any)._selectedId = "kitchen";
+    element.requestUpdate();
+    await element.updateComplete;
+
+    const inspector = element.shadowRoot!.querySelector("ht-location-inspector") as any;
+    await waitUntil(
+      () => inspector?.forcedTab === "appliances",
+      "inspector did not receive appliances forced tab"
+    );
+    await inspector.updateComplete;
+
+    const activeTab = inspector.shadowRoot!.querySelector(".tab.active");
+    expect((activeTab?.textContent || "").trim()).to.equal("Appliances");
+  });
+
   it("renders room explainability docked under the tree for the selected location", async () => {
     const explainabilityLocations = locations.map((loc) =>
       loc.id === "kitchen"
@@ -1816,6 +1869,125 @@ describe('TopomationPanel integration (fake hass)', () => {
         (element as any)._locations.find((loc: Location) => loc.id === "kitchen")?.name ===
         "Kitchen Focus Refresh",
       "focused reload did not update panel locations"
+    );
+  });
+
+  it("retries resume reload after focus when the first wake refresh fails", async () => {
+    const callWsCalls: Array<Record<string, any>> = [];
+    let afterFocus = false;
+    let focusReloadAttempts = 0;
+
+    const initialLocations: Location[] = locations.map((loc) =>
+      loc.id === "kitchen" ? { ...loc, name: "Kitchen" } : { ...loc }
+    );
+    const updatedLocations: Location[] = locations.map((loc) =>
+      loc.id === "kitchen" ? { ...loc, name: "Kitchen Wake Retry" } : { ...loc }
+    );
+
+    const hass: HomeAssistant = {
+      callWS: async <T>(req: Record<string, any>): Promise<T> => {
+        callWsCalls.push(req);
+        if (req.type === "topomation/locations/list") {
+          if (!afterFocus) {
+            return { locations: initialLocations } as T;
+          }
+          focusReloadAttempts += 1;
+          if (focusReloadAttempts === 1) {
+            throw new Error("wake refresh timeout");
+          }
+          return { locations: updatedLocations } as T;
+        }
+        if (req.type === "config/entity_registry/list") {
+          return [] as T;
+        }
+        if (req.type === "config/device_registry/list") {
+          return [] as T;
+        }
+        throw new Error("Unexpected WS call");
+      },
+      connection: {
+        subscribeEvents: async () => () => undefined,
+      } as any,
+      states: {},
+      areas: {},
+      floors: {},
+      config: { location_name: "Test Property" },
+      localize: (key: string) => key,
+    };
+
+    const element = await fixture<HTMLDivElement>(html`
+      <topomation-panel .hass=${hass}></topomation-panel>
+    `);
+
+    await waitUntil(() => (element as any)._loading === false, "panel did not finish loading");
+    afterFocus = true;
+    window.dispatchEvent(new Event("focus"));
+
+    await waitUntil(
+      () =>
+        (element as any)._locations.find((loc: Location) => loc.id === "kitchen")?.name ===
+        "Kitchen Wake Retry",
+      "resume retry did not recover locations after initial focus reload failure",
+      { timeout: 4000 }
+    );
+  });
+
+  it("reloads locations when the browser comes back online", async () => {
+    const callWsCalls: Array<Record<string, any>> = [];
+    let useUpdatedData = false;
+
+    const initialLocations: Location[] = locations.map((loc) =>
+      loc.id === "kitchen" ? { ...loc, name: "Kitchen" } : { ...loc }
+    );
+    const updatedLocations: Location[] = locations.map((loc) =>
+      loc.id === "kitchen" ? { ...loc, name: "Kitchen Online Refresh" } : { ...loc }
+    );
+
+    const hass: HomeAssistant = {
+      callWS: async <T>(req: Record<string, any>): Promise<T> => {
+        callWsCalls.push(req);
+        if (req.type === "topomation/locations/list") {
+          return { locations: useUpdatedData ? updatedLocations : initialLocations } as T;
+        }
+        if (req.type === "config/entity_registry/list") {
+          return [] as T;
+        }
+        if (req.type === "config/device_registry/list") {
+          return [] as T;
+        }
+        throw new Error("Unexpected WS call");
+      },
+      connection: {
+        subscribeEvents: async () => () => undefined,
+      } as any,
+      states: {},
+      areas: {},
+      floors: {},
+      config: { location_name: "Test Property" },
+      localize: (key: string) => key,
+    };
+
+    const element = await fixture<HTMLDivElement>(html`
+      <topomation-panel .hass=${hass}></topomation-panel>
+    `);
+
+    await waitUntil(() => (element as any)._loading === false, "panel did not finish loading");
+    const initialLocationCalls = callWsCalls.filter((call) => call.type === "topomation/locations/list").length;
+
+    useUpdatedData = true;
+    window.dispatchEvent(new Event("online"));
+
+    await waitUntil(
+      () =>
+        callWsCalls.filter((call) => call.type === "topomation/locations/list").length >
+        initialLocationCalls,
+      "locations/list was not reloaded after browser returned online"
+    );
+    await waitUntil(
+      () =>
+        (element as any)._locations.find((loc: Location) => loc.id === "kitchen")?.name ===
+        "Kitchen Online Refresh",
+      "online reload did not update panel locations"
     );
   });
 

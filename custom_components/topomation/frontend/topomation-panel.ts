@@ -20,6 +20,7 @@ import "./ht-room-explainability";
 type ManagerView =
   | "location"
   | "occupancy"
+  | "appliances"
   | "media"
   | "hvac";
 type RightPanelMode = "inspector" | "assign";
@@ -149,6 +150,7 @@ export class TopomationPanel extends LitElement {
   @state() private _newLocationDefaults?: { parentId?: string; type?: LocationType };
   private _loadSeq = 0;
   private _reloadTimer?: number;
+  private _resumeRetryTimer?: number;
   private _registryRefreshTimer?: number;
   private _entityAreaIndexLoaded = false;
   private _entityAreaIndexPromise?: Promise<void>;
@@ -220,6 +222,7 @@ export class TopomationPanel extends LitElement {
     document.addEventListener("visibilitychange", this._handleVisibilityChange);
     window.addEventListener("focus", this._handleWindowFocus);
     window.addEventListener("pageshow", this._handlePageShow as EventListener);
+    window.addEventListener("online", this._handleOnline);
   }
 
   protected updated(changedProps: PropertyValues): void {
@@ -238,6 +241,7 @@ export class TopomationPanel extends LitElement {
     document.removeEventListener("visibilitychange", this._handleVisibilityChange);
     window.removeEventListener("focus", this._handleWindowFocus);
     window.removeEventListener("pageshow", this._handlePageShow as EventListener);
+    window.removeEventListener("online", this._handleOnline);
     this._stopPanelSplitterDrag();
 
     if (this._pendingLoadTimer) {
@@ -247,6 +251,10 @@ export class TopomationPanel extends LitElement {
     if (this._reloadTimer) {
       clearTimeout(this._reloadTimer);
       this._reloadTimer = undefined;
+    }
+    if (this._resumeRetryTimer) {
+      clearTimeout(this._resumeRetryTimer);
+      this._resumeRetryTimer = undefined;
     }
     if (this._registryRefreshTimer) {
       clearTimeout(this._registryRefreshTimer);
@@ -912,6 +920,8 @@ export class TopomationPanel extends LitElement {
 
   private _managerViewFromPath(path: string): ManagerView {
     if (path.startsWith("/topomation-occupancy")) return "occupancy";
+    if (path.startsWith("/topomation-appliances") || path.startsWith("/topomation-appliance"))
+      return "appliances";
     if (path.startsWith("/topomation-media")) return "media";
     if (path.startsWith("/topomation-hvac")) return "hvac";
     return "location";
@@ -922,6 +932,7 @@ export class TopomationPanel extends LitElement {
     if (
       configuredView === "location" ||
       configuredView === "occupancy" ||
+      configuredView === "appliances" ||
       configuredView === "media" ||
       configuredView === "hvac"
     ) {
@@ -1962,6 +1973,15 @@ export class TopomationPanel extends LitElement {
       if (!this.isConnected || !this.hass) return;
       void this._subscribeToUpdates();
       this._scheduleReload(true);
+      if (this._resumeRetryTimer) {
+        window.clearTimeout(this._resumeRetryTimer);
+      }
+      this._resumeRetryTimer = window.setTimeout(() => {
+        this._resumeRetryTimer = undefined;
+        if (!this.isConnected || !this.hass) return;
+        void this._subscribeToUpdates();
+        this._scheduleReload(true);
+      }, 1500);
       if (this._rightPanelMode === "assign") {
         void this._ensureEntityAreaIndex(true);
       }
@@ -1979,6 +1999,10 @@ export class TopomationPanel extends LitElement {
   };
 
   private _handlePageShow = (): void => {
+    this._queueResumeRefresh();
+  };
+
+  private _handleOnline = (): void => {
     this._queueResumeRefresh();
   };
 
