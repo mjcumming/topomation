@@ -250,7 +250,8 @@ async def test_setup_entry_throttles_stayed_occupied_explainability_within_windo
         lambda evt: forwarded_events.append(dict(evt.data or {})),
     )
 
-    t0 = datetime.now(UTC)
+    # Fixed anchor avoids wall-clock drift vs. event timestamps under slow CI runners.
+    t0 = datetime(2026, 4, 12, 12, 0, 0, tzinfo=UTC)
     edge = Mock()
     edge.location_id = "room_burst"
     edge.payload = {
@@ -285,7 +286,7 @@ async def test_setup_entry_throttles_stayed_occupied_explainability_within_windo
         "previous_occupied": True,
         "reason": "event:child",
     }
-    ext_late.timestamp = t0 + timedelta(seconds=15)
+    ext_late.timestamp = t0 + timedelta(seconds=30)
 
     for callback in occupancy_callbacks:
         callback(edge)
