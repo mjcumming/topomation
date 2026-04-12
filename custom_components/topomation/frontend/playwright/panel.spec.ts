@@ -1,7 +1,18 @@
 import { expect, test } from "@playwright/test";
 
+/** Count rename inputs inside ht-location-tree (nested open shadow roots). */
+async function shadowLocationNameInputCount(page: any): Promise<number> {
+  return await page.evaluate(() => {
+    const panel = document.querySelector("topomation-panel") as Element | null;
+    const tree = panel?.shadowRoot?.querySelector("ht-location-tree") as Element | null;
+    const root = tree?.shadowRoot;
+    if (!root) return 0;
+    return root.querySelectorAll(".location-name-input").length;
+  });
+}
+
 async function expandTreeNodes(page: any, ids: string[]): Promise<void> {
-  await page.evaluate((expandIds) => {
+  await page.evaluate(async (expandIds: string[]) => {
     const panel = document.querySelector("topomation-panel") as any;
     const tree = panel?.shadowRoot?.querySelector("ht-location-tree") as any;
     if (!tree) throw new Error("ht-location-tree not found");
@@ -11,6 +22,7 @@ async function expandTreeNodes(page: any, ids: string[]): Promise<void> {
     }
     tree._expandedIds = next;
     tree.requestUpdate?.();
+    await tree.updateComplete;
   }, ids);
 }
 
@@ -126,13 +138,15 @@ test("mock harness loads and renders tree rows", async ({ page }) => {
 
 test("inline rename opens editor on double-click", async ({ page }) => {
   await page.goto("/mock-harness.html");
+  await expect(page.locator("topomation-panel")).toBeVisible();
   await expandTreeNodes(page, ["main-building", "main-floor"]);
 
   const kitchenName = page.locator("ht-location-tree [data-id='kitchen'] .location-name").first();
   await expect(kitchenName).toBeVisible();
-  await kitchenName.dblclick();
+  // Headless CI is occasionally flaky on synthetic dblclick(); spaced clicks match user intent.
+  await kitchenName.click({ clickCount: 2, delay: 60 });
 
-  await expect(page.locator("ht-location-tree .location-name-input")).toHaveCount(1);
+  await expect.poll(() => shadowLocationNameInputCount(page)).toBe(1);
 });
 
 test("dispatching a move updates hierarchy without duplication", async ({ page }) => {
