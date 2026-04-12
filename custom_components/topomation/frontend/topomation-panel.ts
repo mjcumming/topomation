@@ -1636,15 +1636,22 @@ export class TopomationPanel extends LitElement {
     this._handleNewLocation();
   }
 
+  private _isTopologyAnchorLocation(location: Location | undefined): boolean {
+    const meta = (location?.modules?._meta || {}) as Record<string, unknown>;
+    return meta.topology_anchor === true;
+  }
+
   private _canDeleteLocation(location: Location | undefined): boolean {
     if (!location) return false;
     if (location.is_explicit_root) return false;
+    if (this._isTopologyAnchorLocation(location)) return false;
     return true;
   }
 
   private _deleteDisabledReason(location: Location | undefined): string {
     if (!location) return "Select a location to delete";
     if (location.is_explicit_root) return "Home root cannot be deleted";
+    if (this._isTopologyAnchorLocation(location)) return "Primary property anchor cannot be deleted";
     return "Delete selected location";
   }
 

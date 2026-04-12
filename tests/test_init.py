@@ -939,13 +939,14 @@ async def test_setup_entry_bootstraps_building_and_grounds_on_first_install(
         call for call in mock_location_manager.create_location.call_args_list if call.kwargs.get("id") == "home"
     )
     assert home_call.kwargs.get("name") == hass.config.location_name
+    assert home_call.kwargs.get("is_explicit_root") is False
 
     # Default building wrapper is Home.
     building_call = next(
         call for call in mock_location_manager.create_location.call_args_list if call.kwargs.get("id") == "building_main"
     )
     assert building_call.kwargs.get("name") == "Home"
-    assert building_call.kwargs.get("parent_id") is None
+    assert building_call.kwargs.get("parent_id") == "home"
 
     meta_locations: set[str] = set()
     for call in mock_location_manager.set_module_config.call_args_list:
@@ -963,6 +964,22 @@ async def test_setup_entry_bootstraps_building_and_grounds_on_first_install(
     assert "home" in meta_locations
     assert "building_main" in meta_locations
     assert "grounds" in meta_locations
+
+    home_meta_payload: dict | None = None
+    for call in mock_location_manager.set_module_config.call_args_list:
+        args, kwargs = call.args or (), call.kwargs or {}
+        loc = kwargs.get("location_id") or (args[0] if len(args) > 0 else None)
+        mod = kwargs.get("module_id") or (args[1] if len(args) > 1 else None)
+        if loc != "home" or mod != "_meta":
+            continue
+        cfg = kwargs.get("config")
+        if cfg is None and len(args) > 2:
+            cfg = args[2]
+        home_meta_payload = cfg if isinstance(cfg, dict) else None
+        break
+    assert isinstance(home_meta_payload, dict)
+    assert home_meta_payload.get("type") == "property"
+    assert home_meta_payload.get("topology_anchor") is True
 
 
 async def test_setup_entry_does_not_bootstrap_when_saved_config_exists(

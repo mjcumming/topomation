@@ -343,6 +343,11 @@ export class HtLocationTree extends LitElement {
         color: var(--info-color);
       }
 
+      .type-badge.property {
+        background: rgba(var(--rgb-primary-color), 0.22);
+        color: var(--primary-color);
+      }
+
       .type-badge.proxy {
         background: rgba(var(--rgb-secondary-text-color, 120, 120, 120), 0.2);
         color: var(--text-secondary-color);
@@ -365,6 +370,11 @@ export class HtLocationTree extends LitElement {
 
       .tree-item.selected .type-badge.grounds {
         background: var(--info-color);
+        color: white;
+      }
+
+      .tree-item.selected .type-badge.property {
+        background: var(--primary-color);
         color: white;
       }
 

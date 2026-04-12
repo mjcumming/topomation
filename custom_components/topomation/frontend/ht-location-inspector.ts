@@ -765,6 +765,17 @@ export class HtLocationInspector extends LitElement {
         gap: 8px;
         flex-wrap: wrap;
         margin-top: 12px;
+        position: sticky;
+        bottom: 0;
+        z-index: 4;
+        margin-left: -16px;
+        margin-right: -16px;
+        margin-bottom: -16px;
+        padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
+        background: color-mix(in srgb, var(--card-background-color) 96%, transparent);
+        backdrop-filter: blur(6px);
+        border-top: 1px solid var(--divider-color);
+        box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.06);
       }
 
       .dusk-rule-footer-help {
@@ -952,18 +963,18 @@ export class HtLocationInspector extends LitElement {
 
       .sticky-draft-bar {
         position: sticky;
-        bottom: 0;
+        top: 0;
         z-index: 5;
         display: flex;
         align-items: center;
         justify-content: space-between;
         gap: 12px;
-        margin-top: 16px;
+        margin-bottom: 14px;
         padding: 12px 16px;
         border: 1px solid var(--divider-color);
         border-radius: 12px;
         background: color-mix(in srgb, var(--card-background-color) 92%, white 8%);
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+        box-shadow: 0 4px 18px rgba(0, 0, 0, 0.08);
       }
 
       .sticky-draft-bar-note {
@@ -2605,7 +2616,11 @@ export class HtLocationInspector extends LitElement {
     if (changedProps.has("forcedTab")) {
       const mapped = this._mapRequestedTab(this.forcedTab);
       if (mapped) {
-        this._activeTab = mapped;
+        let nextTab = mapped;
+        if (this._isManagedShadowAreaLocation() && nextTab === "detection") {
+          nextTab = "lighting";
+        }
+        this._activeTab = nextTab;
       } else if (changedProps.get("forcedTab")) {
         this._activeTab = "detection";
       }
@@ -2649,6 +2664,9 @@ export class HtLocationInspector extends LitElement {
           void this._loadEntityAreaAssignments();
         }
         void this._loadAmbientReading();
+        if (this._isManagedShadowAreaLocation() && this._activeTab === "detection") {
+          this._activeTab = "lighting";
+        }
       } else {
         if (!this._occupancyDraftDirty) {
           this._resetDetectionDraftFromLocation();
@@ -2884,12 +2902,18 @@ export class HtLocationInspector extends LitElement {
 
   private _isStructuralSummaryLocation(): boolean {
     const type = this._locationType();
-    return type === "floor" || type === "building" || type === "grounds";
+    return type === "floor" || type === "building" || type === "grounds" || type === "property";
+  }
+
+  /** Integration-owned managed shadow HA area (device container); occupancy is derived from the tree. */
+  private _isManagedShadowAreaLocation(): boolean {
+    if (!this.location) return false;
+    return this._isManagedShadowLocation(this.location, this._managedShadowLocationIds());
   }
 
   private _isDerivedOccupancyLocation(): boolean {
     const type = this._locationType();
-    return type === "building" || type === "grounds";
+    return type === "building" || type === "grounds" || type === "property";
   }
 
   private _showsManagedShadowControls(): boolean {
@@ -2943,41 +2967,6 @@ export class HtLocationInspector extends LitElement {
     this.requestUpdate();
   }
 
-  private _renderDetectionDraftToolbar() {
-    if (this._isFloorLocation()) return "";
-    const hasUnsaved = this._occupancyDraftDirty;
-    const busy = this._savingOccupancyDraft;
-    const hasError = Boolean(this._occupancySaveError);
-    if (!hasUnsaved && !busy && !hasError) return "";
-    return html`
-      ${this._occupancySaveError
-        ? html`<div class="policy-warning" data-testid="detection-save-error">${this._occupancySaveError}</div>`
-        : ""}
-      <div class="draft-toolbar draft-toolbar-actions-only" data-testid="detection-draft-toolbar">
-        <div class="draft-toolbar-actions">
-          <button
-            class="button button-secondary"
-            type="button"
-            data-testid="detection-discard-button"
-            ?disabled=${busy || !hasUnsaved}
-            @click=${() => this._discardDetectionDraft()}
-          >
-            Discard
-          </button>
-          <button
-            class="dusk-save-button ${hasUnsaved ? "dirty" : ""}"
-            type="button"
-            data-testid="detection-save-button"
-            ?disabled=${busy || !hasUnsaved}
-            @click=${() => this._saveDetectionDraft()}
-          >
-            ${busy ? "Saving..." : "Save changes"}
-          </button>
-        </div>
-      </div>
-    `;
-  }
-
   private _renderStickyDraftBar(
     kind: "detection" | "ambient",
     options: {
@@ -2992,14 +2981,14 @@ export class HtLocationInspector extends LitElement {
     if (!hasUnsaved && !busy && !error) return "";
     const note = busy ? "Saving changes..." : "Unsaved changes";
     return html`
-      ${error ? html`<div class="policy-warning">${error}</div>` : ""}
-      <div class="sticky-draft-bar" data-testid=${`${kind}-sticky-draft-bar`}>
+        ${error ? html`<div class="policy-warning">${error}</div>` : ""}
+      <div class="sticky-draft-bar" data-testid=${kind === "detection" ? "detection-draft-toolbar" : `${kind}-sticky-draft-bar`}>
         <div class="sticky-draft-bar-note">${note}</div>
         <div class="sticky-draft-bar-actions">
           <button
             class="button button-secondary"
             type="button"
-            data-testid=${`${kind}-sticky-discard-button`}
+            data-testid=${kind === "detection" ? "detection-discard-button" : `${kind}-sticky-discard-button`}
             ?disabled=${busy || !hasUnsaved}
             @click=${onDiscard}
           >
@@ -3008,7 +2997,7 @@ export class HtLocationInspector extends LitElement {
           <button
             class="button button-primary draft-save-button"
             type="button"
-            data-testid=${`${kind}-sticky-save-button`}
+            data-testid=${kind === "detection" ? "detection-save-button" : `${kind}-sticky-save-button`}
             ?disabled=${busy || !hasUnsaved}
             @click=${onSave}
           >
@@ -3508,14 +3497,19 @@ export class HtLocationInspector extends LitElement {
       return "";
     }
     const detectionLabel = this._detectionTabLabel();
+    const hideOccupancyTab = this._isManagedShadowAreaLocation();
     return html`
       <div class="tabs">
-        <button
-          class="tab ${this._activeTab === "detection" ? "active" : ""}"
-          @click=${() => this._handleTabChange("detection")}
-        >
-          ${detectionLabel}
-        </button>
+        ${hideOccupancyTab
+          ? ""
+          : html`
+              <button
+                class="tab ${this._activeTab === "detection" ? "active" : ""}"
+                @click=${() => this._handleTabChange("detection")}
+              >
+                ${detectionLabel}
+              </button>
+            `}
         <button
           class="tab ${this._activeTab === "ambient" ? "active" : ""}"
           @click=${() => this._handleTabChange("ambient")}
@@ -3553,12 +3547,29 @@ export class HtLocationInspector extends LitElement {
   private _renderContent() {
     const activeTab = this._effectiveTab();
     const structuralSummaryLocation = this._isStructuralSummaryLocation();
+    const detectionSticky =
+      !structuralSummaryLocation && !this._isManagedShadowAreaLocation()
+        ? this._renderStickyDraftBar("detection", {
+            hasUnsaved: this._occupancyDraftDirty,
+            busy: this._savingOccupancyDraft,
+            error: this._occupancySaveError,
+            onDiscard: () => this._discardDetectionDraft(),
+            onSave: () => this._saveDetectionDraft(),
+          })
+        : "";
+    const ambientSticky = this._renderStickyDraftBar("ambient", {
+      hasUnsaved: this._ambientDraftDirty,
+      busy: this._savingAmbientConfig,
+      error: this._ambientSaveError,
+      onDiscard: () => this._discardAmbientDraft(),
+      onSave: () => this._saveAmbientDraft(),
+    });
     return html`
       <div class="tab-content">
         ${activeTab === "detection"
-          ? html`${this._renderDetectionDraftToolbar()} ${this._renderOccupancyTab()} ${this._renderAdvancedTab()}`
+          ? html`${detectionSticky}${this._renderOccupancyTab()} ${this._renderAdvancedTab()}`
           : activeTab === "ambient"
-            ? this._renderAmbientTab()
+            ? html`${ambientSticky}${this._renderAmbientTab()}`
           : activeTab === "lighting"
               ? this._renderDeviceAutomationTab("lighting")
             : activeTab === "appliances"
@@ -3568,25 +3579,6 @@ export class HtLocationInspector extends LitElement {
             : activeTab === "hvac"
               ? this._renderDeviceAutomationTab("hvac")
             : ""}
-        ${activeTab === "detection"
-          ? structuralSummaryLocation
-            ? ""
-            : this._renderStickyDraftBar("detection", {
-                hasUnsaved: this._occupancyDraftDirty,
-                busy: this._savingOccupancyDraft,
-                error: this._occupancySaveError,
-                onDiscard: () => this._discardDetectionDraft(),
-                onSave: () => this._saveDetectionDraft(),
-              })
-          : activeTab === "ambient"
-            ? this._renderStickyDraftBar("ambient", {
-                hasUnsaved: this._ambientDraftDirty,
-                busy: this._savingAmbientConfig,
-                error: this._ambientSaveError,
-                onDiscard: () => this._discardAmbientDraft(),
-                onSave: () => this._saveAmbientDraft(),
-              })
-            : ""}
       </div>
     `;
   }
@@ -3594,6 +3586,9 @@ export class HtLocationInspector extends LitElement {
   private _effectiveTab(): InspectorTab {
     if (this._isStructuralSummaryLocation()) {
       return "detection";
+    }
+    if (this._isManagedShadowAreaLocation() && this._activeTab === "detection") {
+      return "lighting";
     }
     return this._activeTab;
   }
@@ -3891,7 +3886,14 @@ export class HtLocationInspector extends LitElement {
     if (!this.location) return "";
     const currentState = this._recentExplainabilityCurrentState();
     const type = this._locationType() || "location";
-    const typeLabel = type === "building" ? "Building" : type === "grounds" ? "Grounds" : "Location";
+    const typeLabel =
+      type === "building"
+        ? "Building"
+        : type === "grounds"
+          ? "Grounds"
+          : type === "property"
+            ? "Property"
+            : "Location";
     const activeChildren = (currentState?.contributors || []).map((item) => item.sourceLabel);
 
     return html`
@@ -3970,7 +3972,15 @@ export class HtLocationInspector extends LitElement {
     if (!this.location || !this._isStructuralSummaryLocation()) return "";
     const type = this._locationType() || "location";
     const title =
-      type === "floor" ? "Floor Summary" : type === "building" ? "Building Summary" : "Grounds Summary";
+      type === "floor"
+        ? "Floor Summary"
+        : type === "building"
+          ? "Building Summary"
+          : type === "grounds"
+            ? "Grounds Summary"
+            : type === "property"
+              ? "Property Summary"
+              : "Summary";
     return html`
       <div class="card-section" data-testid="structural-overview-section">
         <div class="section-title">
@@ -4411,7 +4421,7 @@ export class HtLocationInspector extends LitElement {
   private _isManagedShadowHost(): boolean {
     if (!this.location || this.location.is_explicit_root) return false;
     const type = getLocationType(this.location);
-    return type === "floor" || type === "building" || type === "grounds";
+    return type === "floor" || type === "building" || type === "grounds" || type === "property";
   }
 
   private _currentManagedShadowAreaId(): string {
@@ -5844,14 +5854,18 @@ export class HtLocationInspector extends LitElement {
         signalKey: this._normalizedSignalKeyForSource(source),
       }));
     const items = [...visibleCandidateItems, ...configuredExtraItems].sort((a, b) => {
-      const aConfigured = sourceIndexByKey.has(a.key);
-      const bConfigured = sourceIndexByKey.has(b.key);
-      if (aConfigured !== bConfigured) return aConfigured ? -1 : 1;
-
       const byName = this._entityName(a.entityId).localeCompare(this._entityName(b.entityId));
       if (byName !== 0) return byName;
 
-      return this._signalSortWeight(a.signalKey) - this._signalSortWeight(b.signalKey);
+      const bySignal = this._signalSortWeight(a.signalKey) - this._signalSortWeight(b.signalKey);
+      if (bySignal !== 0) return bySignal;
+
+      const ai = sourceIndexByKey.get(a.key);
+      const bi = sourceIndexByKey.get(b.key);
+      if (ai !== undefined && bi !== undefined) return ai - bi;
+      if (ai !== undefined) return -1;
+      if (bi !== undefined) return 1;
+      return 0;
     });
 
     const itemGroups: Array<{ key: string; items: CandidateItem[] }> = [];
@@ -6303,7 +6317,7 @@ export class HtLocationInspector extends LitElement {
   }
 
   private _renderExternalSourceDialog() {
-    if (!this._externalSourceDialogOpen || !this.location || this._effectiveTab() !== "detection") return "";
+    if (!this._externalSourceDialogOpen || !this.location) return "";
     const config = this._getOccupancyConfig();
     const siblingAreaSourceScope = this._isSiblingAreaSourceScope();
     const hasHaAreaLink = Boolean(this.location.ha_area_id);
@@ -10535,9 +10549,11 @@ export class HtLocationInspector extends LitElement {
         ? "Building"
         : type === "grounds"
           ? "Grounds"
-          : type === "floor"
-            ? "Floor"
-            : "Location";
+          : type === "property"
+            ? "Property"
+            : type === "floor"
+              ? "Floor"
+              : "Location";
     return `${prefix}: ${match.name}`;
   }
 

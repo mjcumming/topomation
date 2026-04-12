@@ -34,7 +34,7 @@ _META_ROLE_KEY = "role"
 _META_SHADOW_AREA_ID_KEY = "shadow_area_id"
 _META_SHADOW_FOR_LOCATION_ID_KEY = "shadow_for_location_id"
 _MANAGED_SHADOW_ROLE = "managed_shadow"
-_SHADOW_HOST_TYPES = frozenset({"floor", "building", "grounds"})
+_SHADOW_HOST_TYPES = frozenset({"floor", "building", "grounds", "property"})
 _MANAGED_SHADOW_NAME_TAG = "Topomation"
 _MANAGED_SHADOW_NAME_MAX_ATTEMPTS = 100
 
@@ -50,7 +50,7 @@ def _location_type(location: object) -> str:
     raw = str(meta.get("type", "")).strip().lower()
     if raw == "room":
         return "area"
-    if raw in {"floor", "area", "building", "grounds", "subarea"}:
+    if raw in {"floor", "area", "building", "grounds", "subarea", "property"}:
         return raw
     return "area"
 

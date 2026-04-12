@@ -6,8 +6,6 @@ const LEGACY_LOCATION_TYPE_MAP: Record<string, LocationType> = {
   room: "area",
 };
 
-const ROOT_ONLY_TYPES = new Set<LocationType>(["building", "grounds"]);
-
 function normalizeLocationType(rawType: unknown): LocationType {
   const normalized = String(rawType ?? "area").trim().toLowerCase();
   const mapped = LEGACY_LOCATION_TYPE_MAP[normalized] ?? normalized;
@@ -16,7 +14,8 @@ function normalizeLocationType(rawType: unknown): LocationType {
     mapped === "area" ||
     mapped === "building" ||
     mapped === "grounds" ||
-    mapped === "subarea"
+    mapped === "subarea" ||
+    mapped === "property"
   ) {
     return mapped;
   }
@@ -32,18 +31,21 @@ export function getLocationType(loc: Location): LocationType {
  * Used by the Location Dialog to filter the parent dropdown.
  */
 export function getAllowedParentTypes(childType: LocationType): ParentType[] {
-  // Floors may be top-level or nested directly under a building wrapper.
-  if (childType === "floor") {
-    return ["root", "building"];
-  }
-  // Root-only wrappers stay top-level.
-  if (ROOT_ONLY_TYPES.has(childType)) {
+  if (childType === "property") {
     return ["root"];
   }
-  if (childType === "subarea") {
-    return ["root", "floor", "area", "subarea", "building", "grounds"];
+  // Floors may be top-level or nested under a building or property.
+  if (childType === "floor") {
+    return ["root", "building", "property"];
   }
-  return ["root", "floor", "area", "building", "grounds"];
+  // Building / grounds may be root-level or nested under a property (multi-root forest).
+  if (childType === "building" || childType === "grounds") {
+    return ["root", "property"];
+  }
+  if (childType === "subarea") {
+    return ["root", "floor", "area", "subarea", "building", "grounds", "property"];
+  }
+  return ["root", "floor", "area", "building", "grounds", "property"];
 }
 
 export function isParentAllowed(childType: LocationType, parentType: ParentType): boolean {
@@ -54,8 +56,9 @@ export function isParentAllowed(childType: LocationType, parentType: ParentType)
  * Validates if a move is physically possible and logically sound.
  * 1. Basic tree integrity (no self-parenting, no cycles)
  * 2. Type-level parent constraints:
- *    - floor -> root|building
- *    - building|grounds -> root only
+ *    - floor -> root|building|property
+ *    - building|grounds -> root|property
+ *    - property -> root only
  */
 export function canMoveLocation(params: {
   locations: Location[];
@@ -75,9 +78,14 @@ export function canMoveLocation(params: {
   if (newParentId && byId.get(newParentId)?.is_explicit_root) return false;
   const childType = getLocationType(movedLoc);
 
-  // Root-only wrappers must stay at root (no parent).
-  if (ROOT_ONLY_TYPES.has(childType)) {
+  if (childType === "property") {
     return newParentId === null;
+  }
+
+  if (childType === "building" || childType === "grounds") {
+    if (newParentId === null) return true;
+    const parent = byId.get(newParentId);
+    return parent ? getLocationType(parent) === "property" : false;
   }
 
   const parentType: ParentType =

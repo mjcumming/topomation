@@ -139,16 +139,27 @@ async def test_locations_list_imports_floors_areas_and_entities(
     payload = connection.send_result.call_args[0][1]
     locations = payload["locations"]
 
-    # 2 floors + 8 imported areas, plus first-install Home root/building/grounds
-    # wrappers and one managed shadow area per imported floor.
-    assert len(locations) == 13 + len(floors)
+    # 12 import rows (floors, areas, per-floor shadows) + property anchor + building + grounds.
+    assert len(locations) == 15
 
     # Floors exist and are grouped under default Home building.
     floor_names = {loc["name"] for loc in locations if loc["id"].startswith("floor_")}
     assert floor_names == {"Ground Floor", "First Floor"}
-    assert any(loc["id"] == "home" and loc["is_explicit_root"] for loc in locations)
+    assert any(
+        loc["id"] == "home"
+        and loc["is_explicit_root"] is False
+        and str(
+            ((loc.get("modules", {}) or {}).get("_meta", {}) or {}).get("type", "")
+        ).strip()
+        == "property"
+        for loc in locations
+    )
     assert any(loc["id"] == "building_main" for loc in locations)
     assert any(loc["id"] == "grounds" for loc in locations)
+    building_row = next(loc for loc in locations if loc["id"] == "building_main")
+    grounds_row = next(loc for loc in locations if loc["id"] == "grounds")
+    assert building_row.get("parent_id") == "home"
+    assert grounds_row.get("parent_id") == "home"
     for floor_loc in (loc for loc in locations if loc["id"].startswith("floor_")):
         assert floor_loc["parent_id"] == "building_main"
 
@@ -580,7 +591,7 @@ async def test_locations_create_rejects_non_root_grounds(
 async def test_locations_create_rejects_explicit_root_as_parent(
     hass: HomeAssistant,
 ) -> None:
-    """Explicit Home root cannot be used as a parent target."""
+    """Explicit-root locations cannot be used as a parent target."""
     entry = MockConfigEntry(domain=DOMAIN, data={}, entry_id="test_entry")
     entry.add_to_hass(hass)
 
@@ -589,10 +600,18 @@ async def test_locations_create_rejects_explicit_root_as_parent(
         await hass.async_block_till_done()
 
     loc_mgr = hass.data[DOMAIN][entry.entry_id]["location_manager"]
-    explicit_root = next(
-        (loc for loc in loc_mgr.all_locations() if bool(getattr(loc, "is_explicit_root", False))),
-        None,
+    loc_mgr.create_location(
+        id="legacy_explicit",
+        name="Legacy explicit",
+        parent_id=None,
+        is_explicit_root=True,
     )
+    loc_mgr.set_module_config(
+        "legacy_explicit",
+        "_meta",
+        {"type": "area", "sync_source": "topology"},
+    )
+    explicit_root = loc_mgr.get_location("legacy_explicit")
     assert explicit_root is not None
 
     connection = _fake_connection()
@@ -850,10 +869,18 @@ async def test_locations_delete_rejects_explicit_root(hass: HomeAssistant) -> No
         await hass.async_block_till_done()
 
     loc_mgr = hass.data[DOMAIN][entry.entry_id]["location_manager"]
-    explicit_root = next(
-        (loc for loc in loc_mgr.all_locations() if bool(getattr(loc, "is_explicit_root", False))),
-        None,
+    loc_mgr.create_location(
+        id="legacy_explicit_del",
+        name="Legacy explicit del",
+        parent_id=None,
+        is_explicit_root=True,
     )
+    loc_mgr.set_module_config(
+        "legacy_explicit_del",
+        "_meta",
+        {"type": "area", "sync_source": "topology"},
+    )
+    explicit_root = loc_mgr.get_location("legacy_explicit_del")
     assert explicit_root is not None
 
     connection = _fake_connection()
@@ -864,6 +891,37 @@ async def test_locations_delete_rejects_explicit_root(hass: HomeAssistant) -> No
             "id": 112,
             "type": WS_TYPE_LOCATIONS_DELETE,
             "location_id": explicit_root.id,
+        },
+    )
+
+    assert connection.send_result.call_count == 0
+    connection.send_error.assert_called_once()
+    err_args = connection.send_error.call_args[0]
+    assert err_args[1] == "operation_not_supported"
+
+
+@pytest.mark.asyncio
+async def test_locations_delete_rejects_topology_anchor(hass: HomeAssistant) -> None:
+    """Primary topology property anchor cannot be deleted."""
+    entry = MockConfigEntry(domain=DOMAIN, data={}, entry_id="test_entry")
+    entry.add_to_hass(hass)
+
+    with patch("custom_components.topomation.async_register_panel", AsyncMock()):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    loc_mgr = hass.data[DOMAIN][entry.entry_id]["location_manager"]
+    home = loc_mgr.get_location("home")
+    assert home is not None
+
+    connection = _fake_connection()
+    handle_locations_delete(
+        hass,
+        connection,
+        {
+            "id": 113,
+            "type": WS_TYPE_LOCATIONS_DELETE,
+            "location_id": "home",
         },
     )
 
@@ -1323,14 +1381,10 @@ async def test_locations_reorder_rejects_floor_under_grounds(
         await hass.async_block_till_done()
 
     loc_mgr = hass.data[DOMAIN][entry.entry_id]["location_manager"]
-    explicit_root = next(
-        (loc for loc in loc_mgr.all_locations() if bool(getattr(loc, "is_explicit_root", False))),
-        None,
-    )
-    assert explicit_root is not None
+    assert loc_mgr.get_location("home") is not None
     assert loc_mgr.get_location("grounds") is not None
 
-    loc_mgr.create_location(id="floor_test", name="Test Floor", parent_id=explicit_root.id)
+    loc_mgr.create_location(id="floor_test", name="Test Floor", parent_id="home")
     loc_mgr.set_module_config("floor_test", "_meta", {"type": "floor", "sync_source": "topology"})
 
     connection = _fake_connection()
@@ -1353,7 +1407,7 @@ async def test_locations_reorder_rejects_floor_under_grounds(
 
     unchanged = loc_mgr.get_location("floor_test")
     assert unchanged is not None
-    assert unchanged.parent_id == explicit_root.id
+    assert unchanged.parent_id == "home"
 
 
 @pytest.mark.asyncio
@@ -1372,13 +1426,8 @@ async def test_locations_reorder_rejects_floor_under_floor(
         await hass.async_block_till_done()
 
     loc_mgr = hass.data[DOMAIN][entry.entry_id]["location_manager"]
-    root = next(
-        (loc for loc in loc_mgr.all_locations() if bool(getattr(loc, "is_explicit_root", False))),
-        None,
-    )
-    assert root is not None
 
-    loc_mgr.create_location(id="building_test", name="Test Building", parent_id=root.id)
+    loc_mgr.create_location(id="building_test", name="Test Building", parent_id=None)
     loc_mgr.set_module_config("building_test", "_meta", {"type": "building", "sync_source": "topology"})
 
     loc_mgr.create_location(id="floor_a", name="Floor A", parent_id="building_test")
@@ -1426,11 +1475,7 @@ async def test_locations_reorder_rejects_nested_grounds(
         await hass.async_block_till_done()
 
     loc_mgr = hass.data[DOMAIN][entry.entry_id]["location_manager"]
-    explicit_root = next(
-        (loc for loc in loc_mgr.all_locations() if bool(getattr(loc, "is_explicit_root", False))),
-        None,
-    )
-    assert explicit_root is not None
+    assert loc_mgr.get_location("home") is not None
 
     building = loc_mgr.get_location("building_home")
     if building is None:

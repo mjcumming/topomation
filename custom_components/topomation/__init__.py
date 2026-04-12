@@ -28,6 +28,7 @@ from .const import (
     DOMAIN,
     EVENT_TOPOMATION_HANDOFF_TRACE,
     EVENT_TOPOMATION_OCCUPANCY_CHANGED,
+    META_TOPOLOGY_ANCHOR_KEY,
     STORAGE_KEY_CONFIG,
     STORAGE_KEY_STATE,
     STORAGE_VERSION,
@@ -213,6 +214,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # 2. Load saved configuration
     has_saved_configuration = await _load_configuration(hass, loc_mgr)
+    topology_migrated = _migrate_topology_property_model(loc_mgr)
 
     # 3. Initialize modules
     platform_adapter = HAPlatformAdapter(hass)
@@ -457,16 +459,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         bool(getattr(location, "is_explicit_root", False))
         for location in loc_mgr.all_locations()
     )
-    should_bootstrap_structure = (not has_saved_configuration) or (not has_explicit_root)
+    has_structural_scaffold = any(
+        _location_type(loc) == "building" and not bool(getattr(loc, "is_explicit_root", False))
+        for loc in loc_mgr.all_locations()
+    ) or any(_location_type(loc) == "grounds" for loc in loc_mgr.all_locations())
+    should_bootstrap_structure = (not has_saved_configuration) or (
+        (not has_explicit_root) and not has_structural_scaffold
+    )
     if should_bootstrap_structure:
         _bootstrap_default_structural_roots(
             hass,
             loc_mgr,
             reparent_floors_to_default_building=not has_saved_configuration,
         )
-        _setup_default_configs(loc_mgr, modules)
-    wrappers_normalized = _normalize_root_only_structural_wrappers(loc_mgr)
-    if wrappers_normalized:
         _setup_default_configs(loc_mgr, modules)
 
     # 9. Set up event bridge (HA → kernel)
@@ -565,8 +570,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Persist topology migration updates for existing installs as soon as possible.
     if should_bootstrap_structure and has_saved_configuration:
         _schedule_persist("upgrade/ensure_home_root")
-    if wrappers_normalized and has_saved_configuration:
-        _schedule_persist("upgrade/root_only_wrappers")
+    if topology_migrated and has_saved_configuration:
+        _schedule_persist("upgrade/property_topology")
 
     # 12. Store kernel in hass.data
     hass.data[DOMAIN][entry.entry_id] = {
@@ -719,26 +724,65 @@ def _is_managed_shadow_area(location: Any) -> bool:
     return str(meta.get(_META_ROLE_KEY, "")).strip().lower() == _MANAGED_SHADOW_ROLE
 
 
-def _normalize_root_only_structural_wrappers(loc_mgr: LocationManager) -> bool:
-    """Ensure building/grounds wrappers are always root-level."""
-    normalized = False
-    for location in list(loc_mgr.all_locations()):
-        if bool(getattr(location, "is_explicit_root", False)):
+def _topology_anchor_location_ids(loc_mgr: LocationManager) -> list[str]:
+    """Return ids of locations tagged as the primary topology anchor(s)."""
+    anchors: list[str] = []
+    for loc in loc_mgr.all_locations():
+        meta = _location_meta(loc)
+        if meta.get(META_TOPOLOGY_ANCHOR_KEY) is True:
+            anchors.append(str(getattr(loc, "id", "") or ""))
+    return [aid for aid in anchors if aid]
+
+
+def _migrate_topology_property_model(loc_mgr: LocationManager) -> bool:
+    """Upgrade legacy hidden Home root to visible property + reparent wrappers.
+
+    Returns True when persisted topology likely changed and should be autosaved.
+    """
+    changed = False
+    home = loc_mgr.get_location("home")
+    if home is not None:
+        meta = dict(_location_meta(home))
+        was_explicit = bool(getattr(home, "is_explicit_root", False))
+        old_type = str(meta.get("type", "")).strip().lower()
+        if was_explicit or (home.id == "home" and old_type == "building"):
+            if was_explicit:
+                try:
+                    loc_mgr.update_location(home.id, is_explicit_root=False)
+                    changed = True
+                except (KeyError, ValueError, TypeError) as err:
+                    _LOGGER.warning("Failed clearing explicit root on 'home': %s", err)
+            meta["type"] = "property"
+            meta.setdefault("sync_source", "topology")
+            meta.setdefault("sync_enabled", True)
+            meta[META_TOPOLOGY_ANCHOR_KEY] = True
+            loc_mgr.set_module_config(home.id, "_meta", meta)
+            changed = True
+            _LOGGER.info("Migrated 'home' location to visible property topology")
+
+    anchors = _topology_anchor_location_ids(loc_mgr)
+    if len(anchors) != 1:
+        return changed
+
+    anchor = anchors[0]
+    for loc in list(loc_mgr.all_locations()):
+        if str(getattr(loc, "id", "") or "") == anchor:
             continue
-        if _location_type(location) not in {"building", "grounds"}:
+        if bool(getattr(loc, "is_explicit_root", False)):
             continue
-        if getattr(location, "parent_id", None) is None:
+        if _location_type(loc) not in {"building", "grounds"}:
+            continue
+        parent_id = getattr(loc, "parent_id", None)
+        if parent_id not in (None, ""):
             continue
         try:
-            loc_mgr.update_location(location.id, parent_id="")
-            normalized = True
-        except (KeyError, ValueError) as err:
-            _LOGGER.warning(
-                "Failed to normalize root-only wrapper '%s': %s",
-                location.id,
-                err,
-            )
-    return normalized
+            loc_mgr.update_location(loc.id, parent_id=anchor)
+            changed = True
+            _LOGGER.info("Reparented '%s' under topology anchor '%s'", loc.id, anchor)
+        except (KeyError, ValueError, TypeError) as err:
+            _LOGGER.warning("Failed reparenting '%s' under '%s': %s", loc.id, anchor, err)
+
+    return changed
 
 
 def _supports_adjacency_restore(loc_mgr: LocationManager) -> bool:
@@ -943,17 +987,15 @@ def _bootstrap_default_structural_roots(
     *,
     reparent_floors_to_default_building: bool = False,
 ) -> None:
-    """Create a single Home root plus default structural wrappers on first install."""
+    """Create default property anchor (id ``home``) plus building/grounds children."""
     all_locations = list(loc_mgr.all_locations())
 
-    home_location = next(
-        (
-            loc
-            for loc in all_locations
-            if bool(getattr(loc, "is_explicit_root", False))
-        ),
-        None,
-    )
+    home_location = loc_mgr.get_location("home")
+    if home_location is None:
+        home_location = next(
+            (loc for loc in all_locations if bool(getattr(loc, "is_explicit_root", False))),
+            None,
+        )
     created_ids: list[str] = []
 
     if home_location is None:
@@ -962,19 +1004,34 @@ def _bootstrap_default_structural_roots(
             id="home",
             name=home_name,
             parent_id=None,
-            is_explicit_root=True,
+            is_explicit_root=False,
         )
         loc_mgr.set_module_config(
             "home",
             "_meta",
             {
-                "type": "building",
+                "type": "property",
+                "topology_anchor": True,
                 "sync_source": "topology",
                 "sync_enabled": True,
             },
         )
         home_location = loc_mgr.get_location("home")
         created_ids.append("home")
+    else:
+        meta = dict(_location_meta(home_location))
+        meta["type"] = "property"
+        meta.setdefault("sync_source", "topology")
+        meta.setdefault("sync_enabled", True)
+        meta[META_TOPOLOGY_ANCHOR_KEY] = True
+        loc_mgr.set_module_config(str(home_location.id), "_meta", meta)
+        if bool(getattr(home_location, "is_explicit_root", False)):
+            try:
+                loc_mgr.update_location(str(home_location.id), is_explicit_root=False)
+            except (KeyError, ValueError, TypeError) as err:
+                _LOGGER.warning("Failed clearing explicit root on '%s': %s", home_location.id, err)
+
+    anchor_id = str(getattr(home_location, "id", "") or "home")
 
     all_locations = list(loc_mgr.all_locations())
     has_building = any(
@@ -997,7 +1054,7 @@ def _bootstrap_default_structural_roots(
         loc_mgr.create_location(
             id=building_id,
             name=building_name,
-            parent_id=None,
+            parent_id=anchor_id,
             is_explicit_root=False,
         )
         loc_mgr.set_module_config(
@@ -1016,7 +1073,7 @@ def _bootstrap_default_structural_roots(
         loc_mgr.create_location(
             id=grounds_id,
             name="Grounds",
-            parent_id=None,
+            parent_id=anchor_id,
             is_explicit_root=False,
         )
         loc_mgr.set_module_config(

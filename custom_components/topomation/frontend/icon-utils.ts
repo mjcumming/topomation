@@ -49,6 +49,7 @@ export function getTypeFallbackIcon(type: LocationType): string {
     building: "mdi:office-building",
     grounds: "mdi:pine-tree",
     subarea: "mdi:map-marker-radius",
+    property: "mdi:home-city-outline",
   };
   return typeIcons[type] ?? "mdi:map-marker";
 }
@@ -61,6 +62,7 @@ function normalizeLocationType(rawType: unknown): LocationType {
   if (normalized === "building") return "building";
   if (normalized === "grounds") return "grounds";
   if (normalized === "subarea") return "subarea";
+  if (normalized === "property") return "property";
   return "area";
 }
 

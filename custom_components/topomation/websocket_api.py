@@ -20,6 +20,7 @@ except Exception:  # pragma: no cover - compatibility import
 
 from .const import (
     DOMAIN,
+    META_TOPOLOGY_ANCHOR_KEY,
     WS_TYPE_ACTION_RULES_CREATE,
     WS_TYPE_ACTION_RULES_DELETE,
     WS_TYPE_ACTION_RULES_LIST,
@@ -53,6 +54,7 @@ _SUPPORTED_LOCATION_TYPES = frozenset(
         "building",
         "grounds",
         "subarea",
+        "property",
     }
 )
 _LEGACY_LOCATION_TYPE_ALIASES: dict[str, str] = {
@@ -62,7 +64,7 @@ _META_ROLE_KEY = "role"
 _META_SHADOW_AREA_ID_KEY = "shadow_area_id"
 _META_SHADOW_FOR_LOCATION_ID_KEY = "shadow_for_location_id"
 _MANAGED_SHADOW_ROLE = "managed_shadow"
-_SHADOW_HOST_TYPES = frozenset({"floor", "building", "grounds"})
+_SHADOW_HOST_TYPES = frozenset({"floor", "building", "grounds", "property"})
 _OCCUPANCY_LINKED_LOCATIONS_KEY = "linked_locations"
 _OCCUPANCY_GROUP_ID_KEY = "occupancy_group_id"
 _DUSK_DAWN_TIME_PATTERN = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
@@ -647,11 +649,16 @@ def _validate_parent_for_type(
 
     parent_type = _location_type(parent)
 
-    if location_type in {"building", "grounds"}:
-        return False, f"{location_type.capitalize()} locations must be root-level"
+    if location_type == "property" and parent_id is not None:
+        return False, "Property locations must be root-level"
 
-    if location_type == "floor" and parent_type != "building":
-        return False, "Floor parent must be root-level or Building"
+    if location_type in {"building", "grounds"}:
+        if parent_type == "property":
+            return True, None
+        return False, f"{location_type.capitalize()} locations must be root-level or under a Property"
+
+    if location_type == "floor" and parent_type not in {"building", "property"}:
+        return False, "Floor parent must be root-level, Building, or Property"
 
     return True, None
 
@@ -1493,6 +1500,14 @@ def handle_locations_delete(
             msg["id"],
             "operation_not_supported",
             "Cannot delete the Home root location.",
+        )
+        return
+
+    if _location_meta(location).get(META_TOPOLOGY_ANCHOR_KEY) is True:
+        connection.send_error(
+            msg["id"],
+            "operation_not_supported",
+            "Cannot delete the primary topology property anchor.",
         )
         return
 

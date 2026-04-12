@@ -9,6 +9,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.40] - 2026-04-12
+
+### Added
+
+- **`property`** location type as a visible site / parcel root with managed
+  shadow HA area support (same reconciliation model as `building` / `grounds` /
+  `floor`).
+- **`modules._meta.topology_anchor`** on the default bootstrap row (`home`) so
+  the primary property cannot be deleted from the UI or WebSocket API.
+
+### Changed
+
+- Bootstrap now creates **`home`** as a **visible** property anchor
+  (`is_explicit_root=false`), with default **`building_main`** and **`grounds`**
+  parented under it so ambient defaults and occupancy rollup follow the tree.
+- Legacy installs: explicit-root **`home`** (or `home` still typed as
+  **`building`**) migrate to **property** + anchor; orphan root-level
+  **`building` / `grounds`** reparent under the anchor when exactly one anchor
+  exists (idempotent on restart).
+- **Hierarchy**: `building` and `grounds` may live at root or under a
+  **`property`**; **`floor`** may parent under **`property`** or **`building`**.
+- **WebSocket** `locations/delete` rejects removal of the topology anchor.
+
+### Documentation
+
+- **ADR-HA-076** and `docs/integration-guide.md` type / parent matrix updates.
+
 ## [0.2.39] - 2026-04-11
 
 ### Changed

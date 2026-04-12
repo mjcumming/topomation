@@ -226,6 +226,7 @@ export class HtLocationDialog extends LitElement {
         selector: {
           select: {
             options: [
+              { value: "property", label: "Property" },
               { value: "floor", label: "Floor" },
               { value: "area", label: "Area" },
               { value: "building", label: "Building" },

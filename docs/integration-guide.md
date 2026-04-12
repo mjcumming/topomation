@@ -240,16 +240,17 @@ The kernel is **type-agnostic** - it provides a tree structure but has no built-
 3. **Enforcing hierarchy rules** - What can parent what
 4. **UI representation** - Icons, labels, drag-and-drop constraints
 
-### topomation Shipped Type Profile (ADR-HA-020)
+### topomation Shipped Type Profile (ADR-HA-020, ADR-HA-076)
 
 Current HA adapter behavior uses the following structural types:
 
 | Type | Description | Can Contain |
 |------|-------------|-------------|
+| **property** | Site / parcel root (visible; optional `topology_anchor` for the primary row) | `building`, `grounds`, `floor`, `area`, `subarea` |
 | **floor** | HA floor wrapper (`sync_source=homeassistant`) | `area`, `subarea` |
 | **area** | HA area wrapper or topology-owned area | `area`, `subarea` |
-| **building** | Integration-owned structural root | `area`, `subarea` |
-| **grounds** | Integration-owned outdoor/grounds root | `area`, `subarea` |
+| **building** | Integration-owned indoor structure | `area`, `subarea` |
+| **grounds** | Integration-owned outdoor/grounds structure | `area`, `subarea` |
 | **subarea** | Integration-owned nested region | `subarea` |
 
 ### Hierarchy Rules
@@ -258,11 +259,12 @@ The frontend enforces these parent constraints:
 
 | Child Type | Allowed Parent Types |
 |------------|----------------------|
-| `floor` | `root` only |
-| `building` | `root` only |
-| `grounds` | `root` only |
-| `area` | `root`, `floor`, `area`, `building`, `grounds` |
-| `subarea` | `root`, `floor`, `area`, `subarea`, `building`, `grounds` |
+| `property` | `root` only |
+| `floor` | `root`, `building`, `property` |
+| `building` | `root`, `property` |
+| `grounds` | `root`, `property` |
+| `area` | `root`, `floor`, `area`, `building`, `grounds`, `property` |
+| `subarea` | `root`, `floor`, `area`, `subarea`, `building`, `grounds`, `property` |
 
 Additionally, moves must pass tree integrity checks (no self-parenting, no cycles).
 

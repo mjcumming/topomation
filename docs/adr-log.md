@@ -3809,6 +3809,66 @@ operator needs were under-specified:
 
 ---
 
+### ADR-HA-076: Property topology + visible site root (2026-04-12)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+
+- The integration bootstrapped a hidden `home` row (`is_explicit_root=True`) typed
+  like a building while `building_main` / `grounds` were separate root siblings.
+  That split made site-wide defaults (ambient lux, etc.) and occupancy rollup
+  awkward: the kernel already propagates occupancy up `parent_id`, but wrappers
+  were not parented under a single visible site node.
+- Users need a clear **parcel / site** concept distinct from **building** and
+  **grounds**, optional **multiple property roots** (forest) for future
+  multi-site / imported HA topologies, and the same **managed shadow area**
+  pattern as other structural hosts.
+
+**Decision**:
+
+1. Introduce `_meta.type="property"` as a first-class structural type. The
+   default bootstrap row keeps stable id **`home`** but is **visible** in the
+   panel (`is_explicit_root=False`), typed **property**, and tagged
+   `modules._meta.topology_anchor=true` for the **primary** site anchor that
+   must not be deleted from the UI/API.
+2. **Migrate** legacy installs: any explicit-root `home` (or `home` still typed
+   `building`) becomes a visible property + anchor; root-level `building` /
+   `grounds` rows are **reparented under** that anchor when exactly **one**
+   topology anchor exists (idempotent on restart).
+3. **Building** and **grounds** may be root-level **or** parented under a
+   **property** (multi-root forest). **Floors** may parent under **property** or
+   **building** (or remain root per existing rules).
+4. **Managed shadow**: `property` is a shadow host alongside `floor`,
+   `building`, and `grounds` (same reconciliation pipeline).
+5. **Occupancy**: structural rollup continues to use kernel parent propagation;
+   parenting building/grounds under `home` (property) makes the property
+   occupancy entity reflect the whole site when children contribute upward.
+6. **Cross-property moves** for areas are allowed; occupancy sources are **not**
+   auto-migrated (operators fix references if needed).
+
+**Rationale**:
+
+1. Aligns language with real-world **property vs building vs grounds**.
+2. One visible anchor restores predictable **inheritance** for ambient defaults.
+3. Forest-of-properties avoids painting into a single-root corner for future
+   remote-import workflows.
+
+**Consequences**:
+
+- ✅ Clear UX for Illuminance / site defaults on **property**.
+- ✅ Occupancy `binary_sensor` for the anchor can track subtree occupancy.
+- ⚠️ Bootstrap / persistence tests and hierarchy validators must be updated.
+- ℹ️ `topology_anchor` is integration metadata (stored under `modules._meta`).
+
+**Alternatives Considered**:
+
+- Keep hidden `home` and document “put lux on building_main” — rejected as
+  confusing.
+- Require exactly one global root parent — rejected in favor of a forest.
+
+---
+
 ## How to Use This Log
 
 ### When to Create an ADR

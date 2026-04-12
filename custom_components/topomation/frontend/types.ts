@@ -192,7 +192,8 @@ export type LocationType =
   | "area"
   | "building"
   | "grounds"
-  | "subarea";
+  | "subarea"
+  | "property";
 
 export interface LocationTreeState {
   locations: Location[];

@@ -1876,7 +1876,7 @@ describe("HtLocationInspector occupancy source composer", () => {
       element.shadowRoot!.querySelector('[data-testid="detection-save-button"]')
     ).to.equal(null);
     expect(
-      element.shadowRoot!.querySelector('[data-testid="detection-sticky-draft-bar"]')
+      element.shadowRoot!.querySelector('[data-testid="detection-draft-toolbar"]')
     ).to.equal(null);
 
     await waitUntil(() => {
@@ -4647,7 +4647,7 @@ describe("HtLocationInspector WIAB configuration", () => {
       element.shadowRoot!.querySelector('[data-testid="detection-save-button"]')
     ).to.equal(null);
     expect(
-      element.shadowRoot!.querySelector('[data-testid="detection-sticky-draft-bar"]')
+      element.shadowRoot!.querySelector('[data-testid="detection-draft-toolbar"]')
     ).to.equal(null);
   });
 

@@ -1,7 +1,7 @@
 import type { Location } from "./types";
 
 const MANAGED_SHADOW_ROLE = "managed_shadow";
-const SHADOW_HOST_TYPES = new Set(["floor", "building", "grounds"]);
+const SHADOW_HOST_TYPES = new Set(["floor", "building", "grounds", "property"]);
 
 const _meta = (location?: Location): Record<string, any> =>
   ((location?.modules?._meta || {}) as Record<string, any>);
