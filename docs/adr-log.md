@@ -2971,6 +2971,9 @@ Adopt an inspector explainability model for occupancy v1:
 - ⚠️ Recent-change history is intentionally shallow and optimized for operator
   understanding, not full forensic replay.
 - ⚠️ Lock/unlock timeline history remains out of scope for v1.
+- ✅ Stayed-occupied `recent_changes` state rows may be throttled within a short
+  time window so bursts (motion, lights, propagation) do not overwhelm the
+  timeline; exact rules live under **C-021** in `docs/contracts.md`.
 
 **Alternatives Considered**:
 
@@ -3260,6 +3263,9 @@ motion, while the runtime was treating both as independent contributors.
 - ✅ Users have a clear configuration rule for authoritative presence rooms.
 - ⚠️ A room may remain occupied after presence turns off if another configured
   source still has an active contribution.
+- ADR-HA-075 refines the story for **configured HA off**: immediate `clear` with
+  zero trailing is whole-room vacate (`authoritative_vacant`); trailing `clear`
+  rows are **exit-grace** and any later **trigger** on the location cancels them.
 
 **Alternatives Considered**:
 
@@ -3755,6 +3761,51 @@ than the underlying rule model.
 - Collapse everything into one natural-language sentence builder:
   rejected for now because it would obscure the two trigger families that still
   exist underneath.
+
+---
+
+### ADR-HA-075: Authoritative Immediate Off and Exit-Grace Cancellation (2026-04-11)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+
+Additive per-source occupancy (ADR-HA-068) is correct for fusion, but two
+operator needs were under-specified:
+
+1. When a source’s HA **OFF** is intentionally wired as “the room is empty”
+   (e.g. light off, trusted presence off with **zero** trailing), users expect
+   **whole-room vacant**, not “only this source_id clears while others keep the
+   room occupied.”
+2. When a source uses **trailing clear** (scheduled vacancy / exit doubt), a
+   **new trigger** from another sensor before that grace completes should
+   **cancel** that pending vacancy path—motion “rescuing” during presence exit
+   grace is the canonical example.
+
+**Decision**:
+
+1. **Immediate configured off**: If `off_event=clear` and `off_trailing==0`, the
+   integration emits `occupancy.signal` with `authoritative_vacant: true` and
+   `timeout=0`. The kernel translates that to a **location-wide VACATE** for
+   the resolved runtime location (same as explicit vacate semantics for
+   contributions). If an operator does not want that behavior, they must not
+   configure an immediate off clear for that entity.
+2. **Exit grace**: `CLEAR` with trailing **> 0** creates a timed contribution
+   tagged `exit_grace` on `SourceContribution`. **Any** `TRIGGER` on that
+   location removes **all** exit-grace contributions before applying the new
+   trigger hold.
+3. **Inspector / service `clear`**: Manual `topomation.clear` remains
+   source-scoped unless it adopts the same explicit contract later; HA-driven
+   authoritative vacate is the `authoritative_vacant` path only.
+
+**Consequences**:
+
+- ADR-HA-068 remains the default fusion story; ADR-HA-075 adds **explicit**
+  exceptions driven only by configuration (`immediate off`) and engine state
+  (`exit_grace` + trigger rescue).
+- `docs/contracts.md` **C-003A** / **C-003B** must stay aligned with payload
+  and kernel behavior.
+- Requires `home-topology` **1.0.3+**.
 
 ---
 

@@ -218,6 +218,95 @@ async def test_setup_entry_forwards_occupancy_changed_to_ha_bus(
     assert matched["recent_changes"][0]["event"] == "occupied"
 
 
+async def test_setup_entry_throttles_stayed_occupied_explainability_within_window(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    mock_event_bus: Mock,
+) -> None:
+    """Stayed-occupied state rows should not flood recent_changes within a short window."""
+    config_entry.add_to_hass(hass)
+
+    with (
+        patch("custom_components.topomation.async_register_panel"),
+        patch("custom_components.topomation.async_register_websocket_api"),
+        patch("custom_components.topomation.async_register_services"),
+        patch.object(hass.config_entries, "async_forward_entry_setups", return_value=True),
+    ):
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    occupancy_callbacks = []
+    for call in mock_event_bus.subscribe.call_args_list:
+        if len(call.args) < 2:
+            continue
+        callback = call.args[0]
+        event_filter = call.args[1]
+        if getattr(event_filter, "event_type", None) == "occupancy.changed":
+            occupancy_callbacks.append(callback)
+
+    forwarded_events: list[dict] = []
+    unsub = hass.bus.async_listen(
+        EVENT_TOPOMATION_OCCUPANCY_CHANGED,
+        lambda evt: forwarded_events.append(dict(evt.data or {})),
+    )
+
+    t0 = datetime.now(UTC)
+    edge = Mock()
+    edge.location_id = "room_burst"
+    edge.payload = {
+        "occupied": True,
+        "previous_occupied": False,
+        "reason": "event:trigger",
+    }
+    edge.timestamp = t0
+
+    ext1 = Mock()
+    ext1.location_id = "room_burst"
+    ext1.payload = {
+        "occupied": True,
+        "previous_occupied": True,
+        "reason": "event:child",
+    }
+    ext1.timestamp = t0 + timedelta(seconds=2)
+
+    ext2 = Mock()
+    ext2.location_id = "room_burst"
+    ext2.payload = {
+        "occupied": True,
+        "previous_occupied": True,
+        "reason": "event:child",
+    }
+    ext2.timestamp = t0 + timedelta(seconds=3)
+
+    ext_late = Mock()
+    ext_late.location_id = "room_burst"
+    ext_late.payload = {
+        "occupied": True,
+        "previous_occupied": True,
+        "reason": "event:child",
+    }
+    ext_late.timestamp = t0 + timedelta(seconds=15)
+
+    for callback in occupancy_callbacks:
+        callback(edge)
+        callback(ext1)
+        callback(ext2)
+        callback(ext_late)
+
+    await hass.async_block_till_done()
+    unsub()
+
+    burst_events = [item for item in forwarded_events if item.get("location_id") == "room_burst"]
+    assert len(burst_events) == 4
+    final = burst_events[-1]
+    state_rows = [row for row in final["recent_changes"] if row.get("kind") == "state"]
+    assert len(state_rows) == 2
+    assert state_rows[0]["event"] == "occupied"
+    assert state_rows[0]["previous_occupied"] is True
+    assert state_rows[1]["event"] == "occupied"
+    assert state_rows[1]["previous_occupied"] is False
+
+
 async def test_setup_entry_tracks_signal_events_in_recent_changes(
     hass: HomeAssistant,
     config_entry: MockConfigEntry,

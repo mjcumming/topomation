@@ -35,30 +35,41 @@ Use this file as the quick contract surface. Keep it synchronized with:
 ## C-003A Source-off clear contract
 
 - For occupancy sources configured with `off_event=clear`:
-  - `off_trailing <= 0` maps to immediate source release (`event_type=clear`, `timeout=0`)
-  - `off_trailing > 0` maps to trailing source release (`event_type=clear`, `timeout=off_trailing`)
+  - `off_trailing <= 0` maps to `occupancy.signal` with `event_type=clear`, `timeout=0`,
+    and **`authoritative_vacant: true`**, which the kernel treats as a **location-wide
+    vacate** (all contributions cleared for that location). Operators who do not want
+    whole-room vacant on that entity’s OFF must set `off_event` to `none` or use a
+    non-zero `off_trailing` exit grace.
+  - `off_trailing > 0` maps to trailing source release (`event_type=clear`, `timeout=off_trailing`).
+    Those timed holds are **exit-grace** rows: any later **trigger** on that location
+    cancels **all** exit-grace holds (see **C-003B** and ADR-HA-075).
 - Inspector "Test Off" mirrors this:
-  - always `service: topomation.clear(location_id, source_id, trailing_timeout)`
-- Occupancy source state changes must not emit location-level authoritative vacate.
-- Authoritative vacate remains explicit-only (`topomation.vacate`, `topomation.vacate_area`,
-  or policy actions that intentionally call vacate).
+  - always `service: topomation.clear(location_id, source_id, trailing_timeout)` (source-scoped;
+    use `topomation.vacate` when testing whole-room vacant explicitly).
+- Authoritative vacate from HA sources is limited to the configured **immediate off**
+  path above; other vacate entry points remain `topomation.vacate`, `topomation.vacate_area`,
+  or policy actions that call vacate.
 - Lock directives remain authoritative (`block_vacant` may prevent transition to vacant).
 
 ## C-003B Mixed-source additive occupancy contract
 
 - Occupancy contributions are additive per `source_id`; there is no implicit
   source-class precedence between motion, presence, occupancy, door, media,
-  light, or other configured sources.
-- A direct-presence source turning off clears only that direct-presence
-  contribution. It does not cancel any still-active motion or other source
-  holds for the same location.
-- If motion has an active hold when presence clears, the location remains
-  occupied until that motion contribution clears or expires.
-- Configuring both presence and motion in one location is an intentional
-  additive-coverage decision, not a "presence rules" hierarchy.
-- If an operator wants presence to be authoritative for a location, they must
-  not also configure other sources that can independently keep that location
-  occupied.
+  light, or other configured sources **except** where **C-003A** defines an
+  explicit whole-room vacate or exit-grace cancellation.
+- A **trailing** clear (`off_event=clear` with `off_trailing > 0`) keeps a timed
+  **exit-grace** hold for that `source_id`. Any **`trigger`** on the same
+  location cancels **all** exit-grace holds so new motion (or another source)
+  can rescind a pending scheduled vacancy before it completes.
+- A configured **immediate** off clear (`off_event=clear`, `off_trailing == 0`)
+  vacates the **entire** location via **C-003A**; other sources do not keep the
+  room occupied past that signal.
+- For clears that are not “immediate authoritative off” and not exit-grace
+  (for example service `clear(..., 0)` without the HA authoritative path), a
+  source’s release still removes only that `source_id` unless otherwise specified.
+- Configuring both presence and motion in one location remains a deliberate
+  fusion choice; use **immediate off** only on sources that should end the room,
+  and prefer **trailing off** when OFF is ambiguous (typical for motion).
 
 ## C-004 Service surface contract
 
@@ -593,6 +604,16 @@ Additional save points:
   - optional `signal_key`
   - optional `reason`
   - optional `occupied`
+- Stayed-occupied explainability throttling (integration buffer only): when a
+  kernel `occupancy.changed` would append a `kind: state` row where `occupied`
+  and `previous_occupied` are both true, that row is omitted if the newest entry
+  in the buffer is already an occupied state row and the new `changed_at` is
+  less than 10 seconds after that entry’s `changed_at`. True edges (vacant→occupied
+  or occupied→vacant), rows when `previous_occupied` is unknown, and occupied state
+  rows more than 10 seconds after the prior occupied state row are always
+  recorded. `occupancy.signal` rows are unchanged. Home Assistant still receives
+  `EVENT_TOPOMATION_OCCUPANCY_CHANGED` for every kernel `occupancy.changed`; only
+  the explainability `recent_changes` deque is throttled.
 - The section title and help text must describe explainability, not imply a
   generic event log when only current-state contributors are shown.
 - The active user-facing label is `Occupancy Explainability`, not

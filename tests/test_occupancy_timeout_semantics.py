@@ -5,10 +5,11 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 from home_topology import EventBus, LocationManager
+from home_topology.core.bus import Event
 from home_topology.modules.occupancy import OccupancyModule
 
 
-def _build_occupancy_module() -> OccupancyModule:
+def _build_occupancy_module() -> tuple[OccupancyModule, EventBus]:
     """Create a minimal occupancy runtime with one test area."""
     bus = EventBus()
     loc_mgr = LocationManager()
@@ -19,7 +20,7 @@ def _build_occupancy_module() -> OccupancyModule:
 
     module = OccupancyModule()
     module.attach(bus, loc_mgr)
-    return module
+    return module, bus
 
 
 def _expires_at_for_source(state: dict, source_id: str) -> datetime | None:
@@ -35,7 +36,7 @@ def _expires_at_for_source(state: dict, source_id: str) -> datetime | None:
 
 def test_longest_source_timeout_controls_vacancy() -> None:
     """Location stays occupied until the longest active source contribution expires."""
-    occupancy = _build_occupancy_module()
+    occupancy, _bus = _build_occupancy_module()
     base = datetime(2026, 3, 3, 12, 0, tzinfo=UTC)
 
     # Motion contributes short hold; light contributes longer hold.
@@ -64,7 +65,7 @@ def test_longest_source_timeout_controls_vacancy() -> None:
 
 def test_shorter_trigger_does_not_shorten_existing_longer_timeout() -> None:
     """A later short trigger does not reduce effective timeout set by another source."""
-    occupancy = _build_occupancy_module()
+    occupancy, _bus = _build_occupancy_module()
     base = datetime(2026, 3, 3, 13, 0, tzinfo=UTC)
 
     occupancy.trigger("area_test", "light", 1800, now=base)
@@ -85,7 +86,7 @@ def test_shorter_trigger_does_not_shorten_existing_longer_timeout() -> None:
 
 def test_presence_clear_does_not_cancel_active_motion_hold() -> None:
     """Presence OFF clears only presence while motion hold remains active."""
-    occupancy = _build_occupancy_module()
+    occupancy, _bus = _build_occupancy_module()
     base = datetime(2026, 3, 3, 14, 0, tzinfo=UTC)
 
     occupancy.trigger("area_test", "presence", None, now=base)
@@ -113,3 +114,69 @@ def test_presence_clear_does_not_cancel_active_motion_hold() -> None:
     state_after_motion_timeout = occupancy.get_location_state("area_test")
     assert state_after_motion_timeout is not None
     assert state_after_motion_timeout["occupied"] is False
+
+
+def test_occupancy_signal_authoritative_vacant_vacates_entire_location() -> None:
+    """Mirrors HA bridge: authoritative_vacant + clear timeout 0 vacates the whole location."""
+    occupancy, bus = _build_occupancy_module()
+    base = datetime(2026, 4, 11, 15, 0, tzinfo=UTC)
+
+    occupancy.trigger("area_test", "motion", 600, now=base)
+    occupancy.trigger("area_test", "light", 900, now=base)
+    assert occupancy.get_location_state("area_test")["occupied"] is True
+
+    bus.publish(
+        Event(
+            type="occupancy.signal",
+            source="ha",
+            entity_id="light.kitchen_ceiling",
+            location_id="area_test",
+            payload={
+                "event_type": "clear",
+                "source_id": "light",
+                "timeout": 0,
+                "authoritative_vacant": True,
+            },
+            timestamp=base + timedelta(seconds=10),
+        )
+    )
+
+    st = occupancy.get_location_state("area_test")
+    assert st is not None
+    assert st["occupied"] is False
+    assert st["contributions"] == []
+
+
+def test_exit_grace_cancelled_by_occupancy_signal_trigger() -> None:
+    """Trailing presence clear is exit-grace; a later signal trigger drops that hold."""
+    occupancy, bus = _build_occupancy_module()
+    t0 = datetime(2026, 4, 11, 16, 0, tzinfo=UTC)
+
+    occupancy.trigger("area_test", "motion", 1800, now=t0)
+    occupancy.trigger("area_test", "presence", None, now=t0 + timedelta(seconds=30))
+    occupancy.clear("area_test", "presence", 300, now=t0 + timedelta(seconds=60))
+
+    mid = occupancy.get_location_state("area_test")
+    assert mid is not None
+    assert {c["source_id"] for c in mid["contributions"]} == {"motion", "presence"}
+    presence_row = next(c for c in mid["contributions"] if c["source_id"] == "presence")
+    assert presence_row.get("exit_grace") is True
+
+    bus.publish(
+        Event(
+            type="occupancy.signal",
+            source="ha",
+            location_id="area_test",
+            payload={
+                "event_type": "trigger",
+                "source_id": "motion",
+                "timeout": 1800,
+            },
+            timestamp=t0 + timedelta(seconds=120),
+        )
+    )
+
+    after = occupancy.get_location_state("area_test")
+    assert after is not None
+    assert after["occupied"] is True
+    assert {c["source_id"] for c in after["contributions"]} == {"motion"}

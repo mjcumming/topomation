@@ -384,6 +384,35 @@ async def test_state_change_publishes_kernel_event(
     assert published_event.payload["new_state"] == STATE_ON
 
 
+async def test_light_power_clear_with_zero_trailing_sets_authoritative_vacant(
+    event_bridge: EventBridge,
+    event_bus: Mock,
+    location_manager: Mock,
+) -> None:
+    """Configured off_event=clear with off_trailing=0 requests whole-room vacate (ADR-HA-075)."""
+    old_state = State("light.kitchen", STATE_ON, {"brightness": 200})
+    new_state = State("light.kitchen", STATE_OFF, {"brightness": 0})
+    ha_event = Mock()
+    ha_event.data = {
+        "entity_id": "light.kitchen",
+        "old_state": old_state,
+        "new_state": new_state,
+    }
+
+    event_bridge._state_changed_listener(ha_event)
+
+    published = [call.args[0] for call in event_bus.publish.call_args_list]
+    clear_events = [e for e in published if e.payload.get("event_type") == "clear"]
+    assert clear_events, "expected at least one clear occupancy.signal"
+    power_clear = next(
+        e
+        for e in clear_events
+        if e.payload.get("source_id") == "light.kitchen::power"
+    )
+    assert power_clear.payload.get("timeout") == 0
+    assert power_clear.payload.get("authoritative_vacant") is True
+
+
 async def test_state_change_publishes_adjacency_handoff_events(
     event_bridge: EventBridge,
     event_bus: Mock,

@@ -50,6 +50,9 @@ _META_ROLE_KEY = "role"
 _MANAGED_SHADOW_ROLE = "managed_shadow"
 _MAX_PROPAGATION_EVENTS_PER_DRAIN = 4096
 _MAX_OCCUPANCY_EXPLAINABILITY_EVENTS = 20
+# Drop stayed-occupied explainability rows when another occupied state row was
+# logged moments ago (motion + lights + propagation bursts).
+_OCCUPANCY_EXTENSION_EXPLAINABILITY_THROTTLE_SECONDS = 10
 
 PLATFORMS: list[Platform] = [
     Platform.BINARY_SENSOR,  # Occupancy binary sensors
@@ -76,6 +79,47 @@ def _event_timestamp_iso(event: Event) -> str:
     if isinstance(timestamp, datetime):
         return timestamp.astimezone(UTC).isoformat()
     return dt_util.utcnow().isoformat()
+
+
+def _parse_explainability_changed_at_iso(value: str) -> datetime | None:
+    """Parse a changed_at value from explainability buffers."""
+    raw = value.strip()
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw.replace("Z", "+00:00")).astimezone(UTC)
+    except ValueError:
+        return None
+
+
+def _should_skip_occupied_extension_explainability(
+    recent_changes: deque[dict[str, Any]],
+    *,
+    occupied: bool,
+    previous_occupied: bool | None,
+    new_changed_at: str,
+) -> bool:
+    """Return True when a stayed-occupied state row should not be buffered."""
+    if not (occupied is True and previous_occupied is True):
+        return False
+    if not recent_changes:
+        return False
+    last = recent_changes[0]
+    if last.get("kind") != "state" or last.get("event") != "occupied":
+        return False
+    if last.get("occupied") is not True:
+        return False
+    last_ts = last.get("changed_at")
+    if not isinstance(last_ts, str):
+        return False
+    last_dt = _parse_explainability_changed_at_iso(last_ts)
+    new_dt = _parse_explainability_changed_at_iso(new_changed_at)
+    if last_dt is None or new_dt is None:
+        return False
+    delta = (new_dt - last_dt).total_seconds()
+    if delta < 0:
+        return False
+    return delta < _OCCUPANCY_EXTENSION_EXPLAINABILITY_THROTTLE_SECONDS
 
 
 async def _async_handle_options_update(hass: HomeAssistant, entry: ConfigEntry) -> None:
@@ -230,18 +274,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             ha_payload["reason"] = reason
         changed_at = _event_timestamp_iso(event)
         recent_changes = occupancy_recent_changes[location_id]
-        recent_changes.appendleft(
-            {
-                "kind": "state",
-                "event": "occupied" if occupied else "vacant",
-                "occupied": occupied,
-                "previous_occupied": previous_occupied
-                if isinstance(previous_occupied, bool)
-                else None,
-                "reason": reason if isinstance(reason, str) and reason else None,
-                "changed_at": changed_at,
-            }
+        previous_occupied_bool = (
+            previous_occupied if isinstance(previous_occupied, bool) else None
         )
+        if not _should_skip_occupied_extension_explainability(
+            recent_changes,
+            occupied=occupied,
+            previous_occupied=previous_occupied_bool,
+            new_changed_at=changed_at,
+        ):
+            recent_changes.appendleft(
+                {
+                    "kind": "state",
+                    "event": "occupied" if occupied else "vacant",
+                    "occupied": occupied,
+                    "previous_occupied": previous_occupied_bool,
+                    "reason": reason if isinstance(reason, str) and reason else None,
+                    "changed_at": changed_at,
+                }
+            )
         ha_payload["recent_changes"] = list(recent_changes)
 
         hass.bus.async_fire(EVENT_TOPOMATION_OCCUPANCY_CHANGED, ha_payload)

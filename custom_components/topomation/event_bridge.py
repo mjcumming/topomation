@@ -153,6 +153,13 @@ class EventBridge:
             }
             if source_event["timeout_set"]:
                 payload["timeout"] = source_event["timeout"]
+            if (
+                source_event["event_type"] == "clear"
+                and source_event["timeout_set"]
+                and int(source_event["timeout"] or 0) == 0
+            ):
+                # Whole-room vacate when HA "off" is configured with zero trailing (see ADR-HA-075).
+                payload["authoritative_vacant"] = True
 
             kernel_event = Event(
                 type="occupancy.signal",

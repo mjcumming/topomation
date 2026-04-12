@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.39] - 2026-04-11
+
+### Changed
+
+- Depend on **home-topology 1.0.3** for occupancy engine updates below.
+
+### Fixed
+
+- Configured `off_event=clear` with **zero** `off_trailing` now carries
+  **`authoritative_vacant`** on `occupancy.signal`, so the kernel **vacates the
+  whole location** (not only that `source_id`). Use `off_event=none` or a
+  non-zero trailing delay when OFF must not end the room.
+- **Exit-grace** holds from trailing clears are cancelled when **any** source
+  **triggers** on the same location (rescues scheduled vacancy during grace).
+
+### Documentation
+
+- **ADR-HA-075** (authoritative immediate off + exit-grace cancellation) and
+  contract updates **C-003A** / **C-003B**.
+
 ## [0.2.38] - 2026-04-10
 
 ### Added
