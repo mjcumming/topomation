@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.43] - 2026-04-13
+
+### Fixed
+
+- **Structural inspector vs tree / explainability**: for `property`, `building`,
+  `grounds`, and `floor`, the inspector header, derived occupancy tab, and
+  runtime summary now use the **same descendant rollup** as the topology tree
+  and Occupancy Explainability dock (`occupancyStates` across the subtree).
+  v0.2.42 already read the correct **shadow** occupancy entity
+  (`effectiveOccupancyTopologyId`); this closes the remaining case where that
+  entity could read **vacant** while children were **occupied** (e.g. “9
+  occupied descendants” but “Vacant” in the inspector).
+
 ## [0.2.42] - 2026-04-13
 
 ### Fixed
