@@ -1879,6 +1879,11 @@ def handle_locations_assign_entity(
         if callable(schedule_persist):
             schedule_persist("locations/assign_entity")
 
+        modules = kernel.get("modules")
+        ambient_mod = modules.get("ambient") if isinstance(modules, dict) else None
+        if ambient_mod is not None and hasattr(ambient_mod, "invalidate_ambient_sensor_cache"):
+            ambient_mod.invalidate_ambient_sensor_cache()
+
         connection.send_result(
             msg["id"],
             {

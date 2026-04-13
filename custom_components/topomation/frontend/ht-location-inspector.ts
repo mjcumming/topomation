@@ -4336,7 +4336,7 @@ export class HtLocationInspector extends LitElement {
   }
 
   private _isManagedShadowHost(): boolean {
-    if (!this.location || this.location.is_explicit_root) return false;
+    if (!this.location) return false;
     const type = getLocationType(this.location);
     return type === "floor" || type === "building" || type === "grounds" || type === "property";
   }

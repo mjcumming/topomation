@@ -13,7 +13,10 @@ from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import floor_registry as fr
 
-from custom_components.topomation.sync_manager import SyncManager
+from custom_components.topomation.sync_manager import (
+    SyncManager,
+    managed_shadow_entity_ids_for_ambient,
+)
 
 # =============================================================================
 # Fixtures
@@ -1263,6 +1266,36 @@ class TestSyncUtilities:
         assert area is not None
         assert area.name == "Kitchen"
         assert area.id == kitchen.id
+
+
+# =============================================================================
+# Managed shadow ambient helpers
+# =============================================================================
+
+
+class TestManagedShadowEntityIdsForAmbient:
+    """managed_shadow_entity_ids_for_ambient exposes shadow bucket entity ids."""
+
+    def test_returns_shadow_entity_ids_for_property_host(self, loc_mgr: LocationManager) -> None:
+        loc_mgr.create_location("prop_q", "Queen", None)
+        loc_mgr.create_location("shadow_a", "Queen System", "prop_q")
+        loc_mgr.set_module_config(
+            "prop_q", "_meta", {"type": "property", "shadow_area_id": "shadow_a"}
+        )
+        loc_mgr.add_entity_to_location("sensor.queen_illuminance", "shadow_a")
+        assert managed_shadow_entity_ids_for_ambient(loc_mgr, "prop_q") == (
+            "sensor.queen_illuminance",
+        )
+
+    def test_returns_empty_when_not_structure_type(self, loc_mgr: LocationManager) -> None:
+        loc_mgr.create_location("area_plain", "Kitchen", None)
+        loc_mgr.set_module_config("area_plain", "_meta", {"type": "area"})
+        assert managed_shadow_entity_ids_for_ambient(loc_mgr, "area_plain") == ()
+
+    def test_returns_empty_when_no_shadow_link(self, loc_mgr: LocationManager) -> None:
+        loc_mgr.create_location("prop_x", "Solo", None)
+        loc_mgr.set_module_config("prop_x", "_meta", {"type": "property"})
+        assert managed_shadow_entity_ids_for_ambient(loc_mgr, "prop_x") == ()
 
 
 # =============================================================================

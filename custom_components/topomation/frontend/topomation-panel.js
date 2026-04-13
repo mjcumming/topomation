@@ -4625,7 +4625,7 @@ const $e = class $e extends ot {
     `;
   }
   _isManagedShadowHost() {
-    if (!this.location || this.location.is_explicit_root) return !1;
+    if (!this.location) return !1;
     const t = C(this.location);
     return t === "floor" || t === "building" || t === "grounds" || t === "property";
   }

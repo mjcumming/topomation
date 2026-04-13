@@ -62,6 +62,36 @@ def _is_shadow_host(location: object) -> bool:
     return _location_type(location) in _SHADOW_HOST_TYPES
 
 
+def managed_shadow_entity_ids_for_ambient(
+    location_manager: LocationManager, location_id: str
+) -> tuple[str, ...]:
+    """Return entity IDs attached to the managed shadow child of a structure host.
+
+    Lux and other devices mapped into the shadow ``area_*`` row must participate
+    in ambient resolution for the parent property/building/grounds/floor host
+    even when ``auto_discover`` is disabled on stored ambient config.
+    """
+    location = location_manager.get_location(location_id)
+    if location is None:
+        return ()
+    if _location_type(location) not in _SHADOW_HOST_TYPES:
+        return ()
+    modules = getattr(location, "modules", {}) or {}
+    if not isinstance(modules, dict):
+        return ()
+    meta = modules.get("_meta", {})
+    if not isinstance(meta, dict):
+        return ()
+    shadow_id = str(meta.get(_META_SHADOW_AREA_ID_KEY, "")).strip()
+    if not shadow_id:
+        return ()
+    shadow = location_manager.get_location(shadow_id)
+    if shadow is None:
+        return ()
+    raw_ids = getattr(shadow, "entity_ids", None) or []
+    return tuple(eid for eid in raw_ids if isinstance(eid, str))
+
+
 def _managed_shadow_name_candidate(base_name: str, attempt: int) -> str:
     """Build deterministic managed-shadow area name candidates."""
     if attempt <= 0:

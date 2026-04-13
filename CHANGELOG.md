@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.45] - 2026-04-13
+
+### Fixed
+
+- **Ambient / lux on structure hosts** (`property`, `building`, `grounds`, `floor`):
+  illuminance sensors attached to the **managed shadow** topology row (where HA
+  registry mappings land) are now included in kernel lux resolution via
+  `home-topology` `AmbientLightModule` `extra_lux_entity_ids`, so readings and
+  provenance work even when `auto_discover` is off and the host row has no
+  `entity_ids`. Ambient sensor cache is cleared on topology entity assignment.
+- **Inspector**: managed-shadow HA area enumeration for the Ambient lux picker no
+  longer skips hosts solely because `is_explicit_root` is set on the location row.
+
+### Dependencies
+
+- `home-topology` **1.0.4** (`AmbientLightModule` hook + `invalidate_ambient_sensor_cache`).
+
 ## [0.2.44] - 2026-04-13
 
 ### Changed
