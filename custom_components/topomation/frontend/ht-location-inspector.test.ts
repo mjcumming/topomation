@@ -2321,7 +2321,13 @@ describe("HtLocationInspector occupancy source composer", () => {
     const kitchenCheckbox = element.shadowRoot!.querySelector(
       '[data-testid="occupancy-group-create-location-area_kitchen"]'
     ) as HTMLInputElement | null;
-    expect(tabLabels).to.deep.equal(["Occupancy Groups", "Ambient"]);
+    expect(tabLabels).to.deep.equal([
+      "Occupancy Groups",
+      "Ambient",
+      "Lighting",
+      "Media",
+      "HVAC",
+    ]);
     expect(groupsSection).to.exist;
     expect(kitchenCheckbox).to.exist;
     expect(element.shadowRoot?.querySelector('[data-testid="structural-overview-section"]')).to.exist;
@@ -4481,7 +4487,7 @@ describe("HtLocationInspector WIAB configuration", () => {
     const buildingTabs = Array.from(element.shadowRoot?.querySelectorAll(".tabs > .tab") || []).map((t) =>
       (t.textContent || "").trim()
     );
-    expect(buildingTabs).to.deep.equal(["Occupancy", "Ambient"]);
+    expect(buildingTabs).to.deep.equal(["Occupancy", "Ambient", "Lighting", "Media", "HVAC"]);
     expect(element.shadowRoot?.querySelector('[data-testid="derived-occupancy-section"]')).to.exist;
     expect(element.shadowRoot?.querySelector('[data-testid="structure-summary-panel"]')).to.exist;
     expect(element.shadowRoot?.querySelector('[data-testid="open-external-source-dialog"]')).to.equal(null);
@@ -4526,7 +4532,7 @@ describe("HtLocationInspector WIAB configuration", () => {
     const groundsTabs = Array.from(element.shadowRoot?.querySelectorAll(".tabs > .tab") || []).map((t) =>
       (t.textContent || "").trim()
     );
-    expect(groundsTabs).to.deep.equal(["Occupancy", "Ambient"]);
+    expect(groundsTabs).to.deep.equal(["Occupancy", "Ambient", "Lighting", "Media", "HVAC"]);
     expect(element.shadowRoot?.querySelector('[data-testid="derived-occupancy-section"]')).to.exist;
     expect(element.shadowRoot?.querySelector('[data-testid="structure-summary-panel"]')).to.exist;
     expect(element.shadowRoot?.querySelector('[data-testid="open-external-source-dialog"]')).to.equal(null);
