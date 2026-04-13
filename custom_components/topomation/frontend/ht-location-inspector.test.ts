@@ -6072,3 +6072,437 @@ describe("HtLocationInspector WIAB configuration", () => {
     expect((occupancyTriggerCard?.textContent || "")).to.include("Any");
   });
 });
+
+describe("HtLocationInspector structure host managed-shadow enumeration", () => {
+  const metaTypes = ["property", "building", "grounds"] as const;
+
+  type MetaType = (typeof metaTypes)[number];
+
+  const buildHostShadowContext = (metaType: MetaType) => {
+    const hostId = `host_${metaType}_shad_enum`;
+    const shadowId = `shadow_${metaType}_shad_enum`;
+    const hostArea = `ha_host_${metaType}_shad`;
+    const shadowArea = `ha_shadow_${metaType}_shad`;
+
+    const registry = [
+      { entity_id: `light.${metaType}_host_porch`, area_id: hostArea, device_id: null },
+      { entity_id: `light.${metaType}_shadow_garage`, area_id: shadowArea, device_id: null },
+      { entity_id: `sensor.${metaType}_shadow_illuminance`, area_id: shadowArea, device_id: null },
+      { entity_id: `media_player.${metaType}_shadow_receiver`, area_id: shadowArea, device_id: null },
+      { entity_id: `binary_sensor.${metaType}_shadow_motion`, area_id: shadowArea, device_id: null },
+      { entity_id: `fan.${metaType}_hvac_fan`, area_id: shadowArea, device_id: "dev_hvac_enum" },
+      { entity_id: `climate.${metaType}_hvac`, area_id: shadowArea, device_id: "dev_hvac_enum" },
+    ];
+
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>): Promise<T> => {
+        if (request.type === "topomation/actions/rules/list") {
+          return { rules: [] } as T;
+        }
+        if (request.type === "config/entity_registry/list") {
+          return registry as T;
+        }
+        if (request.type === "config/device_registry/list") {
+          return [{ id: "dev_hvac_enum", via_device_id: null }] as T;
+        }
+        if (request.type === "topomation/ambient/get_reading") {
+          return {
+            lux: 120,
+            source_sensor: `sensor.${metaType}_shadow_illuminance`,
+            source_location: hostId,
+            is_inherited: false,
+            is_dark: false,
+            is_bright: true,
+            dark_threshold: 50,
+            bright_threshold: 500,
+            fallback_method: null,
+            timestamp: new Date().toISOString(),
+          } as T;
+        }
+        if (request.type === "topomation/locations/set_module_config") {
+          return { success: true } as T;
+        }
+        return {} as T;
+      },
+      connection: {},
+      states: {
+        [`light.${metaType}_host_porch`]: {
+          entity_id: `light.${metaType}_host_porch`,
+          state: "off",
+          attributes: { friendly_name: "Host porch", area_id: hostArea },
+        },
+        [`light.${metaType}_shadow_garage`]: {
+          entity_id: `light.${metaType}_shadow_garage`,
+          state: "off",
+          attributes: { friendly_name: "Shadow garage", area_id: shadowArea },
+        },
+        [`sensor.${metaType}_shadow_illuminance`]: {
+          entity_id: `sensor.${metaType}_shadow_illuminance`,
+          state: "120",
+          attributes: {
+            friendly_name: "Shadow lux",
+            device_class: "illuminance",
+            unit_of_measurement: "lx",
+            area_id: shadowArea,
+          },
+        },
+        [`media_player.${metaType}_shadow_receiver`]: {
+          entity_id: `media_player.${metaType}_shadow_receiver`,
+          state: "idle",
+          attributes: { friendly_name: "Shadow receiver", area_id: shadowArea },
+        },
+        [`binary_sensor.${metaType}_shadow_motion`]: {
+          entity_id: `binary_sensor.${metaType}_shadow_motion`,
+          state: "off",
+          attributes: {
+            friendly_name: "Shadow motion",
+            device_class: "motion",
+            area_id: shadowArea,
+          },
+        },
+        [`fan.${metaType}_hvac_fan`]: {
+          entity_id: `fan.${metaType}_hvac_fan`,
+          state: "off",
+          attributes: { friendly_name: "HVAC fan", area_id: shadowArea },
+        },
+        [`climate.${metaType}_hvac`]: {
+          entity_id: `climate.${metaType}_hvac`,
+          state: "auto",
+          attributes: { friendly_name: "HVAC climate", area_id: shadowArea },
+        },
+      },
+      areas: {
+        [hostArea]: { area_id: hostArea, name: "Host area" },
+        [shadowArea]: { area_id: shadowArea, name: "Shadow area" },
+      },
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const host: Location = {
+      ...structuredClone(baseLocation),
+      id: hostId,
+      name: `Host ${metaType}`,
+      parent_id: null,
+      ha_area_id: hostArea,
+      entity_ids: [],
+      modules: {
+        _meta: { type: metaType, shadow_area_id: shadowId },
+        occupancy: {
+          enabled: true,
+          default_timeout: 300,
+          default_trailing_timeout: 120,
+          occupancy_sources: [],
+        },
+        ambient: {
+          lux_sensor: null,
+          auto_discover: false,
+          inherit_from_parent: true,
+          dark_threshold: 50,
+          bright_threshold: 500,
+          fallback_to_sun: true,
+          assume_dark_on_error: true,
+        },
+      },
+    };
+
+    const shadow: Location = {
+      ...structuredClone(baseLocation),
+      id: shadowId,
+      name: "Managed system area",
+      parent_id: hostId,
+      ha_area_id: shadowArea,
+      entity_ids: [],
+      modules: {
+        _meta: {
+          type: "area",
+          role: "managed_shadow",
+          shadow_for_location_id: hostId,
+        },
+        occupancy: {
+          enabled: true,
+          default_timeout: 300,
+          default_trailing_timeout: 120,
+          occupancy_sources: [],
+        },
+      },
+    };
+
+    return { hass, host, allLocations: [host, shadow] as Location[] };
+  };
+
+  for (const metaType of metaTypes) {
+    it(`${metaType}: lighting rule targets list lights from host HA area and managed shadow HA area`, async () => {
+      const { hass, host, allLocations } = buildHostShadowContext(metaType);
+      const element = await fixture<HtLocationInspector>(html`
+        <ht-location-inspector
+          .hass=${hass}
+          .location=${host}
+          .allLocations=${allLocations}
+          .forcedTab=${"lighting"}
+        ></ht-location-inspector>
+      `);
+      await element.updateComplete;
+
+      await waitUntil(
+        () => {
+          const section = element.shadowRoot?.querySelector('[data-testid="actions-rules-section"]');
+          const text = section?.textContent || "";
+          return !text.includes("No compatible light devices found in this location.");
+        },
+        `lighting entity pool stayed empty (registry/area merge) for ${metaType}`
+      );
+
+      const addRuleButton = element.shadowRoot?.querySelector(
+        '[data-testid="action-rule-add"]'
+      ) as HTMLButtonElement | null;
+      expect(addRuleButton).to.exist;
+      addRuleButton!.click();
+      await element.updateComplete;
+
+      await waitUntil(
+        () => {
+          const actions = element.shadowRoot!.querySelector(
+            '[data-testid^="action-rule-"][data-testid$="-actions"]'
+          );
+          const text = actions?.textContent || "";
+          return (
+            text.includes(`light.${metaType}_host_porch`) && text.includes(`light.${metaType}_shadow_garage`)
+          );
+        },
+        `lighting action rows did not list host + shadow area lights for ${metaType}`
+      );
+    });
+
+    it(`${metaType}: media rule targets list media_players from managed shadow HA area`, async () => {
+      const { hass, host, allLocations } = buildHostShadowContext(metaType);
+      const element = await fixture<HtLocationInspector>(html`
+        <ht-location-inspector
+          .hass=${hass}
+          .location=${host}
+          .allLocations=${allLocations}
+          .forcedTab=${"media"}
+        ></ht-location-inspector>
+      `);
+      await element.updateComplete;
+
+      await waitUntil(
+        () => {
+          const section = element.shadowRoot?.querySelector('[data-testid="actions-rules-section"]');
+          const text = section?.textContent || "";
+          return !text.includes("No compatible media devices found in this location.");
+        },
+        `media entity pool stayed empty for ${metaType}`
+      );
+
+      const addRuleButton = element.shadowRoot?.querySelector(
+        '[data-testid="action-rule-add"]'
+      ) as HTMLButtonElement | null;
+      expect(addRuleButton).to.exist;
+      addRuleButton!.click();
+      await element.updateComplete;
+
+      await waitUntil(
+        () => {
+          const row = element.shadowRoot!.querySelector(".dusk-block-row") as HTMLElement | null;
+          const sel = row?.querySelector("select.dusk-wide-select") as HTMLSelectElement | null;
+          if (!sel) return false;
+          return Array.from(sel.options).some((o) => o.value === `media_player.${metaType}_shadow_receiver`);
+        },
+        `media targets did not include shadow-area media_player for ${metaType}`
+      );
+    });
+
+    it(`${metaType}: HVAC rule targets list climate-linked fan from managed shadow HA area`, async () => {
+      const { hass, host, allLocations } = buildHostShadowContext(metaType);
+      const element = await fixture<HtLocationInspector>(html`
+        <ht-location-inspector
+          .hass=${hass}
+          .location=${host}
+          .allLocations=${allLocations}
+          .forcedTab=${"hvac"}
+        ></ht-location-inspector>
+      `);
+      await element.updateComplete;
+
+      await waitUntil(
+        () => {
+          const section = element.shadowRoot?.querySelector('[data-testid="actions-rules-section"]');
+          const text = section?.textContent || "";
+          return !text.includes("No compatible HVAC-linked fan devices found in this location.");
+        },
+        `HVAC entity pool stayed empty for ${metaType}`
+      );
+
+      const addRuleButton = element.shadowRoot?.querySelector(
+        '[data-testid="action-rule-add"]'
+      ) as HTMLButtonElement | null;
+      expect(addRuleButton).to.exist;
+      addRuleButton!.click();
+      await element.updateComplete;
+
+      await waitUntil(
+        () => {
+          const row = element.shadowRoot!.querySelector(".dusk-block-row") as HTMLElement | null;
+          const sel = row?.querySelector("select.dusk-wide-select") as HTMLSelectElement | null;
+          if (!sel) return false;
+          const opts = Array.from(sel.options).map((o) => o.value);
+          return (
+            opts.includes(`fan.${metaType}_hvac_fan`) && !opts.includes(`climate.${metaType}_hvac`)
+          );
+        },
+        `HVAC targets did not include shadow-area HVAC fan for ${metaType}`
+      );
+    });
+
+    it(`${metaType}: ambient lux select lists illuminance from managed shadow HA area`, async () => {
+      const { hass, host, allLocations } = buildHostShadowContext(metaType);
+      const element = await fixture<HtLocationInspector>(html`
+        <ht-location-inspector
+          .hass=${hass}
+          .location=${host}
+          .allLocations=${allLocations}
+        ></ht-location-inspector>
+      `);
+      await element.updateComplete;
+      await switchTopTab(element, "Ambient");
+      await element.updateComplete;
+
+      const sensorSelect = element.shadowRoot?.querySelector(
+        '[data-testid="ambient-lux-sensor-select"]'
+      ) as HTMLSelectElement | null;
+      expect(sensorSelect).to.exist;
+      await waitUntil(
+        () => {
+          const opts = Array.from(sensorSelect!.options).map((o) => o.value);
+          return opts.includes(`sensor.${metaType}_shadow_illuminance`);
+        },
+        `ambient lux candidates did not include shadow-area sensor for ${metaType}`
+      );
+    });
+  }
+
+  it("floor host: lighting rule targets union floor HA area and managed shadow HA area", async () => {
+    const metaType = "floor" as const;
+    const hostId = "host_floor_shad_enum";
+    const shadowId = "shadow_floor_shad_enum";
+    const hostArea = "ha_host_floor_shad";
+    const shadowArea = "ha_shadow_floor_shad";
+
+    const registry = [
+      { entity_id: "light.floor_host_stair", area_id: hostArea, device_id: null },
+      { entity_id: "light.floor_shadow_hall", area_id: shadowArea, device_id: null },
+    ];
+
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>): Promise<T> => {
+        if (request.type === "topomation/actions/rules/list") {
+          return { rules: [] } as T;
+        }
+        if (request.type === "config/entity_registry/list") {
+          return registry as T;
+        }
+        if (request.type === "config/device_registry/list") {
+          return [] as T;
+        }
+        return {} as T;
+      },
+      connection: {},
+      states: {
+        "light.floor_host_stair": {
+          entity_id: "light.floor_host_stair",
+          state: "off",
+          attributes: { friendly_name: "Stair", area_id: hostArea },
+        },
+        "light.floor_shadow_hall": {
+          entity_id: "light.floor_shadow_hall",
+          state: "off",
+          attributes: { friendly_name: "Hall", area_id: shadowArea },
+        },
+      },
+      areas: {
+        [hostArea]: { area_id: hostArea, name: "Floor host" },
+        [shadowArea]: { area_id: shadowArea, name: "Floor shadow" },
+      },
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const host: Location = {
+      ...structuredClone(baseLocation),
+      id: hostId,
+      name: "Main Floor",
+      parent_id: null,
+      ha_area_id: hostArea,
+      entity_ids: [],
+      modules: {
+        _meta: { type: metaType, shadow_area_id: shadowId },
+        occupancy: {
+          enabled: true,
+          default_timeout: 300,
+          default_trailing_timeout: 120,
+          occupancy_sources: [],
+        },
+      },
+    };
+
+    const shadow: Location = {
+      ...structuredClone(baseLocation),
+      id: shadowId,
+      name: "Floor system",
+      parent_id: hostId,
+      ha_area_id: shadowArea,
+      entity_ids: [],
+      modules: {
+        _meta: {
+          type: "area",
+          role: "managed_shadow",
+          shadow_for_location_id: hostId,
+        },
+        occupancy: {
+          enabled: true,
+          default_timeout: 300,
+          default_trailing_timeout: 120,
+          occupancy_sources: [],
+        },
+      },
+    };
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${host}
+        .allLocations=${[host, shadow] as Location[]}
+        .forcedTab=${"lighting"}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    await waitUntil(
+      () => {
+        const section = element.shadowRoot?.querySelector('[data-testid="actions-rules-section"]');
+        const text = section?.textContent || "";
+        return !text.includes("No compatible light devices found in this location.");
+      },
+      "floor lighting entity pool stayed empty"
+    );
+
+    const addRuleButton = element.shadowRoot?.querySelector(
+      '[data-testid="action-rule-add"]'
+    ) as HTMLButtonElement | null;
+    expect(addRuleButton).to.exist;
+    addRuleButton!.click();
+    await element.updateComplete;
+
+    await waitUntil(
+      () => {
+        const actions = element.shadowRoot!.querySelector(
+          '[data-testid^="action-rule-"][data-testid$="-actions"]'
+        );
+        const text = actions?.textContent || "";
+        return text.includes("light.floor_host_stair") && text.includes("light.floor_shadow_hall");
+      },
+      "floor lighting action rows did not union host + shadow area lights"
+    );
+  });
+});
