@@ -4,10 +4,9 @@ on:
   push:
     branches:
       - main
-    paths:
-      - "custom_components/topomation/manifest.json"
-      - "custom_components/topomation/const.py"
-      - "pyproject.toml"
+    # Intentionally no paths filter: if the manifest version was bumped but CI failed,
+    # a follow-up fix may not touch manifest/const/pyproject — we still need to run
+    # check-version so release-missing can publish vX when the tag does not exist yet.
   workflow_dispatch:
     inputs:
       reason:
