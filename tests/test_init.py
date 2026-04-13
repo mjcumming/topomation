@@ -9,6 +9,7 @@ Following Home Assistant integration testing best practices:
 
 from __future__ import annotations
 
+import copy
 from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock, patch
 
@@ -254,7 +255,7 @@ async def test_setup_entry_throttles_stayed_occupied_explainability_within_windo
     forwarded_events: list[dict] = []
     unsub = hass.bus.async_listen(
         EVENT_TOPOMATION_OCCUPANCY_CHANGED,
-        lambda evt: forwarded_events.append(dict(evt.data or {})),
+        lambda evt: forwarded_events.append(copy.deepcopy(dict(evt.data or {}))),
     )
 
     # Fixed anchor avoids wall-clock drift vs. event timestamps under slow CI runners.
@@ -306,7 +307,15 @@ async def test_setup_entry_throttles_stayed_occupied_explainability_within_windo
 
     burst_events = [item for item in forwarded_events if item.get("location_id") == "room_burst"]
     assert len(burst_events) == 4
-    final = burst_events[-1]
+    # Only the last forward should include both the stayed-occupied row and the edge transition;
+    # do not assume listener callback order matches fire order on all HA runners.
+    with_two_states = [
+        item
+        for item in burst_events
+        if len([r for r in item.get("recent_changes", []) if r.get("kind") == "state"]) == 2
+    ]
+    assert len(with_two_states) == 1
+    final = with_two_states[0]
     state_rows = [row for row in final["recent_changes"] if row.get("kind") == "state"]
     assert len(state_rows) == 2
     assert state_rows[0]["event"] == "occupied"
