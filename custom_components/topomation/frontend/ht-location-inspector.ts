@@ -18,6 +18,7 @@ import { sharedStyles } from "./styles";
 import { getLocationIcon } from "./icon-utils";
 import { getLocationType } from "./hierarchy-rules";
 import {
+  effectiveOccupancyTopologyId,
   isSystemShadowLocation,
   managedShadowAreaIdForHost,
   managedShadowLocationIdSet,
@@ -2656,7 +2657,7 @@ export class HtLocationInspector extends LitElement {
           this._reconcileActiveTabFromMapped(mappedForced);
         } else if (this._isStructuralSummaryLocation()) {
           const t = this._activeTab;
-          if (t !== "detection" && t !== "ambient") {
+          if (!this._structuralInspectorTabSet().has(t)) {
             this._activeTab = "detection";
           }
         } else if (this._isManagedShadowAreaLocation() && this._activeTab === "detection") {
@@ -2898,6 +2899,11 @@ export class HtLocationInspector extends LitElement {
   private _isStructuralSummaryLocation(): boolean {
     const type = this._locationType();
     return type === "floor" || type === "building" || type === "grounds" || type === "property";
+  }
+
+  /** Tabs allowed on structural summary locations (no Appliances aggregate tab). */
+  private _structuralInspectorTabSet(): ReadonlySet<InspectorTab> {
+    return new Set<InspectorTab>(["detection", "ambient", "lighting", "media", "hvac"]);
   }
 
   /** Integration-owned managed shadow HA area (device container); occupancy is derived from the tree. */
@@ -3298,16 +3304,56 @@ export class HtLocationInspector extends LitElement {
       }
     }
 
-    if (this.location.ha_area_id) {
-      const states = this.hass?.states || {};
+    const states = this.hass?.states || {};
+    for (const areaId of this._deviceEnumerationHaAreaIds()) {
       for (const entityId of Object.keys(states)) {
-        if (!this._entityIsInArea(entityId, this.location.ha_area_id)) continue;
+        if (!this._entityIsInArea(entityId, areaId)) continue;
         if (!this._isLuxSensorEntity(entityId)) continue;
         candidateIds.add(entityId);
       }
     }
 
+    for (const entityId of this._deviceEnumerationExtraEntityIds()) {
+      if (this._isLuxSensorEntity(entityId)) {
+        candidateIds.add(entityId);
+      }
+    }
+
     return [...candidateIds].sort((left, right) => this._entityName(left).localeCompare(this._entityName(right)));
+  }
+
+  /**
+   * HA area ids used to enumerate devices for ambient lux, action rules, etc.
+   * Includes the location's own `ha_area_id` plus the managed shadow's HA area
+   * when this node is a shadow host (property / building / grounds / floor).
+   */
+  private _deviceEnumerationHaAreaIds(): string[] {
+    if (!this.location) return [];
+    const ids = new Set<string>();
+    const direct = this.location.ha_area_id;
+    if (typeof direct === "string" && direct.trim()) {
+      ids.add(direct.trim());
+    }
+    if (this._isManagedShadowHost()) {
+      const shadowLocId = managedShadowAreaIdForHost(this.location);
+      if (shadowLocId) {
+        const shadow = this._managedShadowAreaById(shadowLocId);
+        const shadowHa = shadow?.ha_area_id;
+        if (typeof shadowHa === "string" && shadowHa.trim()) {
+          ids.add(shadowHa.trim());
+        }
+      }
+    }
+    return [...ids];
+  }
+
+  /** Entity ids attached to this host's managed shadow wrapper (if any). */
+  private _deviceEnumerationExtraEntityIds(): string[] {
+    if (!this.location || !this._isManagedShadowHost()) return [];
+    const shadowLocId = managedShadowAreaIdForHost(this.location);
+    if (!shadowLocId) return [];
+    const shadow = this._managedShadowAreaById(shadowLocId);
+    return Array.isArray(shadow?.entity_ids) ? [...shadow.entity_ids] : [];
   }
 
   private _selectedAmbientSensorId(
@@ -3487,7 +3533,7 @@ export class HtLocationInspector extends LitElement {
     return getLocationIcon(location);
   }
 
-  /** Structural locations: occupancy summary or groups plus ambient calibration only (ADR-HA-076). */
+  /** Structural hosts: rollup occupancy, ambient, and aggregate device automation (ADR-HA-078). */
   private _renderStructuralTabs() {
     const detectionLabel = this._detectionTabLabel();
     return html`
@@ -3503,6 +3549,24 @@ export class HtLocationInspector extends LitElement {
           @click=${() => this._handleTabChange("ambient")}
         >
           Ambient
+        </button>
+        <button
+          class="tab ${this._activeTab === "lighting" ? "active" : ""}"
+          @click=${() => this._handleTabChange("lighting")}
+        >
+          Lighting
+        </button>
+        <button
+          class="tab ${this._activeTab === "media" ? "active" : ""}"
+          @click=${() => this._handleTabChange("media")}
+        >
+          Media
+        </button>
+        <button
+          class="tab ${this._activeTab === "hvac" ? "active" : ""}"
+          @click=${() => this._handleTabChange("hvac")}
+        >
+          HVAC
         </button>
       </div>
     `;
@@ -3601,7 +3665,8 @@ export class HtLocationInspector extends LitElement {
 
   private _effectiveTab(): InspectorTab {
     if (this._isStructuralSummaryLocation()) {
-      return this._activeTab === "ambient" ? "ambient" : "detection";
+      const allowed = this._structuralInspectorTabSet();
+      return allowed.has(this._activeTab) ? this._activeTab : "detection";
     }
     if (this._isManagedShadowAreaLocation() && this._activeTab === "detection") {
       return "lighting";
@@ -3646,11 +3711,7 @@ export class HtLocationInspector extends LitElement {
     if (this._isManagedShadowAreaLocation() && nextTab === "detection") {
       nextTab = "lighting";
     }
-    if (
-      this._isStructuralSummaryLocation() &&
-      nextTab !== "detection" &&
-      nextTab !== "ambient"
-    ) {
+    if (this._isStructuralSummaryLocation() && !this._structuralInspectorTabSet().has(nextTab)) {
       nextTab = "detection";
     }
     this._activeTab = nextTab;
@@ -3765,7 +3826,8 @@ export class HtLocationInspector extends LitElement {
                 const { [locationId]: _omit, ...remaining } = this._liveOccupancyStateByLocation;
                 this._liveOccupancyStateByLocation = remaining;
               }
-              if (this.location?.id === locationId) {
+              const watchedOccupancyId = this._effectiveOccupancyTopologyId();
+              if (watchedOccupancyId && locationId === watchedOccupancyId) {
                 this.requestUpdate();
               }
             }
@@ -4258,9 +4320,13 @@ export class HtLocationInspector extends LitElement {
     if (entityId === activeSourceSensor || entityId === configuredLuxSensor) return true;
     if ((this.location.entity_ids || []).includes(entityId)) return true;
 
-    if (this.location.ha_area_id) {
-      if (this._resolveEntityAreaId(entityId, candidateState) === this.location.ha_area_id) return true;
+    const resolvedArea = this._resolveEntityAreaId(entityId, candidateState);
+    if (resolvedArea) {
+      for (const areaId of this._deviceEnumerationHaAreaIds()) {
+        if (resolvedArea === areaId) return true;
+      }
     }
+    if ((this._deviceEnumerationExtraEntityIds() || []).includes(entityId)) return true;
 
     return false;
   }
@@ -4463,6 +4529,11 @@ export class HtLocationInspector extends LitElement {
 
   private _managedShadowAreaById(locationId: string): Location | undefined {
     return (this.allLocations || []).find((candidate) => candidate.id === locationId);
+  }
+
+  /** See `effectiveOccupancyTopologyId` (shadow host occupancy entity id). */
+  private _effectiveOccupancyTopologyId(): string {
+    return effectiveOccupancyTopologyId(this.location, this.allLocations);
   }
 
   private _managedShadowAreaLabel(areaId: string): string {
@@ -7827,11 +7898,18 @@ export class HtLocationInspector extends LitElement {
         ids.add(entityId);
       }
     }
-    if (this.location.ha_area_id) {
-      for (const entityId of this._entitiesForArea(this.location.ha_area_id)) {
+    for (const areaId of this._deviceEnumerationHaAreaIds()) {
+      for (const entityId of this._entitiesForArea(areaId)) {
+        if (!this._isCandidateEntity(entityId)) continue;
         if (this._isActionRuleEntity(entityId, tab)) {
           ids.add(entityId);
         }
+      }
+    }
+    for (const entityId of this._deviceEnumerationExtraEntityIds()) {
+      if (!this._isCandidateEntity(entityId)) continue;
+      if (this._isActionRuleEntity(entityId, tab)) {
+        ids.add(entityId);
       }
     }
     return [...ids].sort((a, b) => this._entityName(a).localeCompare(this._entityName(b)));
@@ -10056,7 +10134,7 @@ export class HtLocationInspector extends LitElement {
 
   private _getOccupancyState() {
     if (!this.location) return undefined;
-    return this._getOccupancyStateForLocation(this.location.id);
+    return this._getOccupancyStateForLocation(this._effectiveOccupancyTopologyId());
   }
 
   private _descendantLocations(locationId: string): Location[] {
@@ -10105,9 +10183,12 @@ export class HtLocationInspector extends LitElement {
 
   private _resolveOccupiedState(
     occupancyState?: Record<string, any>,
-    locationId = this.location?.id
+    locationId?: string
   ): boolean | undefined {
-    const transition = locationId ? this.occupancyTransitions?.[locationId] : undefined;
+    const effectiveLocationId = locationId ?? this._effectiveOccupancyTopologyId();
+    const transition = effectiveLocationId
+      ? this.occupancyTransitions?.[effectiveLocationId]
+      : undefined;
     const transitionChangedAt = this._parseDateValue(transition?.changedAt)?.getTime();
     const stateChangedAt = this._parseDateValue(
       occupancyState?.last_changed || occupancyState?.last_updated
@@ -10129,7 +10210,7 @@ export class HtLocationInspector extends LitElement {
       return false;
     }
 
-    const override = locationId ? this.occupancyStates?.[locationId] : undefined;
+    const override = effectiveLocationId ? this.occupancyStates?.[effectiveLocationId] : undefined;
     if (typeof override === "boolean") {
       return override;
     }
@@ -10228,7 +10309,7 @@ export class HtLocationInspector extends LitElement {
     occupiedState: boolean | undefined
   ): string | undefined {
     if (occupiedState !== false) return undefined;
-    const locationId = this.location?.id;
+    const locationId = this._effectiveOccupancyTopologyId();
     if (!locationId) return undefined;
 
     const transitionReason = this.occupancyTransitions?.[locationId]?.reason;
@@ -10246,7 +10327,7 @@ export class HtLocationInspector extends LitElement {
     occupiedState: boolean | undefined
   ): string | undefined {
     if (occupiedState !== true) return undefined;
-    const locationId = this.location?.id;
+    const locationId = this._effectiveOccupancyTopologyId();
     if (!locationId) return undefined;
 
     const transitionReason = this.occupancyTransitions?.[locationId]?.reason;

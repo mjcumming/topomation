@@ -58,7 +58,7 @@ TopoMation handles the cases that usually become custom automation debt:
 2. Organize them into a deeper tree with optional `building`, `grounds`, and `subarea` nodes.
 3. Assign occupancy sources and device targets to each location.
 4. Configure `Occupancy` and `Ambient`.
-5. Add rules in `Lighting`, `Appliances`, `Media`, and `HVAC`.
+5. Add rules in `Appliances`, `HVAC`, `Lighting`, and `Media`.
 
 After that, TopoMation maintains occupancy entities and managed automations from the location model.
 
@@ -128,7 +128,7 @@ Full guide: [docs/installation.md](docs/installation.md)
 3. Add any missing structural nodes such as `building`, `grounds`, or `subarea`.
 4. Select a room and configure the `Occupancy` tab.
 5. Configure `Ambient` if you want dark/bright-aware behavior.
-6. Add at least one rule in `Lighting`, `Appliances`, `Media`, or `HVAC`.
+6. Add at least one rule in `Appliances`, `HVAC`, `Lighting`, or `Media`.
 7. Trigger the room and confirm the generated automation appears in Home Assistant.
 
 ## Services

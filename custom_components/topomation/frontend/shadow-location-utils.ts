@@ -1,4 +1,5 @@
 import type { Location } from "./types";
+import { getLocationType } from "./hierarchy-rules";
 
 const MANAGED_SHADOW_ROLE = "managed_shadow";
 const SHADOW_HOST_TYPES = new Set(["floor", "building", "grounds", "property"]);
@@ -53,3 +54,31 @@ export const managedShadowAreaIdForHost = (hostLocation?: Location): string => {
   const meta = _meta(hostLocation);
   return _normalizedMetaString(meta, "shadow_area_id");
 };
+
+/**
+ * Topology location id used by Topomation occupancy `binary_sensor` entities
+ * (`attributes.location_id`). For managed-shadow hosts (floor/building/grounds/property,
+ * non–explicit-root), that id is the shadow `area_*` child, not the host row
+ * (ADR-HA-077, ADR-HA-079).
+ */
+export function effectiveOccupancyTopologyId(
+  location: Location | undefined,
+  allLocations: readonly Location[] | undefined
+): string {
+  if (!location) return "";
+  if (location.is_explicit_root) return location.id;
+
+  const type = getLocationType(location);
+  const isShadowHostType =
+    type === "floor" || type === "building" || type === "grounds" || type === "property";
+  if (!isShadowHostType) return location.id;
+
+  const shadowId = managedShadowAreaIdForHost(location);
+  if (!shadowId) return location.id;
+
+  const list = allLocations || [];
+  const shadow = list.find((candidate) => candidate.id === shadowId);
+  if (!shadow) return location.id;
+
+  return shadowId;
+}

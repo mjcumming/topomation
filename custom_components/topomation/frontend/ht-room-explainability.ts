@@ -2,6 +2,7 @@ import { LitElement, html, css } from "lit";
 import type { HomeAssistant, Location, OccupancyConfig, OccupancySource } from "./types";
 import { sharedStyles } from "./styles";
 import { getLocationType } from "./hierarchy-rules";
+import { effectiveOccupancyTopologyId } from "./shadow-location-utils";
 
 type OccupancyTransitionState = {
   occupied: boolean;
@@ -494,14 +495,8 @@ export class HtRoomExplainability extends LitElement {
 
   private _getOccupancyState() {
     if (!this.location) return undefined;
-    const states = this.hass?.states || {};
-    for (const stateObj of Object.values(states)) {
-      const attrs = stateObj?.attributes || {};
-      if (attrs.device_class !== "occupancy") continue;
-      if (attrs.location_id !== this.location.id) continue;
-      return stateObj as Record<string, any>;
-    }
-    return undefined;
+    const topologyId = effectiveOccupancyTopologyId(this.location, this.locations);
+    return this._getOccupancyStateForLocation(topologyId);
   }
 
   private _getOccupancyStateForLocation(locationId: string) {
@@ -635,7 +630,9 @@ export class HtRoomExplainability extends LitElement {
   }
 
   private _resolveOccupiedState(occupancyState?: Record<string, any>): boolean | undefined {
-    const locationId = this.location?.id;
+    const locationId = this.location
+      ? effectiveOccupancyTopologyId(this.location, this.locations)
+      : undefined;
     const transition = locationId ? this.occupancyTransitions?.[locationId] : undefined;
     const transitionChangedAt = this._parseDateValue(transition?.changedAt)?.getTime();
     const stateChangedAt = this._parseDateValue(

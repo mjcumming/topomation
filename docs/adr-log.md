@@ -3933,6 +3933,67 @@ operator needs were under-specified:
 
 ---
 
+### ADR-HA-079: Inspector occupancy reads use shadow topology id (2026-04-13)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+
+- ADR-HA-077 registers Topomation occupancy `binary_sensor` entities only for
+  **non–shadow-host** topology rows; aggregate hosts use the **managed shadow**
+  `area_*` child's `location_id` in `attributes.location_id`.
+- The location inspector (header, derived occupancy summary, explainability
+  drawer, runtime status) and `ht-room-explainability` keyed some reads off
+  **`selected host id`**, so HA state and `occupancyStates` / transition maps
+  (keyed by entity `location_id`) disagreed with the tree's descendant rollup.
+  Operators saw **Vacant** on a property while descendants were occupied and the
+  sidebar dot showed **occupied**.
+
+**Decision**:
+
+1. Introduce **`effectiveOccupancyTopologyId(location, allLocations)`** in
+   `shadow-location-utils.ts`: for non–explicit-root `floor` / `building` /
+   `grounds` / `property` hosts with a resolvable `shadow_area_id` child in
+   `allLocations`, return the **shadow** topology id; otherwise return
+   `location.id`.
+2. Use that id for:
+   - `_getOccupancyState()` / `_getOccupancyStateForLocation` in the inspector
+   - `_resolveOccupiedState` default keying for `occupancyTransitions` and
+     `occupancyStates` overrides when resolving the **current** row
+   - `_resolveVacancyReason` / `_resolveOccupiedReason` transition lookup
+   - live `state_changed` refresh when the selected row's occupancy entity updates
+3. Mirror the same resolution in **`ht-room-explainability`**.
+4. Do **not** change per-descendant lookups (structure summary, child iteration);
+   those already pass explicit ids.
+
+**Rationale**:
+
+1. Single read path aligned with ADR-HA-077 entity registration and contracts
+   occupancy / shadow-host clauses (see **C-014** managed shadow + occupancy group
+   text).
+2. Matches the managed-shadow pattern already used for HA-facing enumeration
+   (shadow `ha_area_id` / `entity_ids`); occupancy **state** must use the same
+   topology id as the registered entity.
+3. Avoids duplicating rollup logic in the header; the **shadow entity** already
+   reflects kernel rollup for that aggregate.
+
+**Consequences**:
+
+- ✅ Structural host selection shows the same occupied/vacant signal as the
+  registered HA entity and transition maps.
+- ✅ Explainability and header stay in sync for property/building/grounds/floor.
+- ℹ️ Legacy `occupancy_<host_id>` entities removed at setup are not revived; UI
+  no longer expects them for shadow hosts.
+
+**Alternatives Considered**:
+
+- Re-register host-level occupancy entities — rejected (ADR-HA-077 duplicate-entity
+  problem).
+- Compute display-only rollup in the inspector without reading the shadow entity —
+  rejected as second truth vs HA and kernel-exposed state.
+
+---
+
 ## How to Use This Log
 
 ### When to Create an ADR

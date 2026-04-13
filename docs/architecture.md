@@ -148,6 +148,9 @@ def state_changed_listener(event):
   represented in HA by a **managed shadow** `area_*` child; the occupancy
   entity for the user-facing area is registered for that shadow location, not
   twice on host + shadow (see ADR-HA-077).
+- The Lit inspector and related UI must look up that entity using
+  `effectiveOccupancyTopologyId(host, allLocations)` so `location_id` matches
+  `attributes.location_id` when a structural host is selected (ADR-HA-079).
 - `sensor.occupancy_confidence_{location_id}` - Confidence percentage (future)
 
 **Pattern**:

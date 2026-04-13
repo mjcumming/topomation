@@ -268,6 +268,10 @@ Additional save points:
     host-level Topomation occupancy entity; HA-visible occupancy for that
     aggregate uses the **managed shadow** `area_*` location’s entity only (avoids
     duplicate “same name, two entities” rows)
+  - Panel code that reads occupancy **state** (header, runtime summary,
+    explainability, live `state_changed` refresh) must resolve the topology id via
+    **`effectiveOccupancyTopologyId`** (host → managed shadow child when present),
+    matching `attributes.location_id` on the entity (ADR-HA-079)
   - explainability should explicitly identify the group, using wording
     equivalent to `via occupancy group`
 - Occupancy Groups v1 candidate scope is intentionally narrow:
@@ -304,17 +308,18 @@ Additional save points:
   - those location types render a read-only derived-occupancy summary instead
     of a room-style occupancy editor
   - structural occupancy is expected to roll up from descendant locations
-- Structural nodes are informational pages in the active inspector:
-  - `property`, `floor`, `building`, and `grounds` expose **Occupancy** (summary
-    or occupancy groups) and **Ambient** tabs only for site/structural lux
-    calibration and inherited ambient defaults
-  - they do **not** expose action-oriented tabs (`Lighting`, `Appliances`,
-    `Media`, `HVAC`)
+- Structural nodes are informational pages in the active inspector for **occupancy
+  rollup** (no direct source authoring on aggregate hosts), but they **do** expose
+  **Lighting**, **Media**, and **HVAC** (not **Appliances**) alongside **Occupancy**
+  (summary or groups) and **Ambient**:
+  - `property`, `floor`, `building`, and `grounds` use the same managed-shadow
+    HA area as the device container for aggregate automation targets (ADR-HA-049,
+    ADR-HA-078)
   - `floor` remains the occupancy-group authoring scope for child areas
   - `building` and `grounds` render derived-occupancy summary on Occupancy, not
     a room-style source editor
-  - whole-home/floor aggregate scenes should be authored as normal Home
-    Assistant automations rather than panel-native structural actions
+  - whole-home/floor aggregate scenes may still be authored as normal Home
+    Assistant automations when operators prefer HA-native automation UI
 
 ## C-014 Inspector Draft Bar Contract
 
@@ -331,7 +336,7 @@ Additional save points:
   - the sticky bar remains visible and `Save changes` shows `Saving...`.
 - Save errors:
   - the sticky bar remains visible and an inline warning is shown above it.
-- `Lighting`, `Appliances`, `Media`, and `HVAC` do not use this sticky draft bar; they keep per-rule lifecycle controls.
+- Device-automation rule tabs (`Appliances`, `HVAC`, `Lighting`, `Media`) do not use this sticky draft bar; they keep per-rule lifecycle controls.
 
 ## C-014A Lighting Rule Authoring Contract
 
@@ -372,6 +377,7 @@ Additional save points:
 - Aggregate topology nodes requiring HA-native `area_id` interoperability must
   use explicit, integration-owned managed shadow areas.
 - Managed shadow hosts:
+  - non-root `property`
   - non-root `floor`
   - non-root `building`
   - non-root `grounds`
@@ -411,6 +417,12 @@ Additional save points:
 - Ambient lux sensor assignment is explicit in Topomation v1:
   - users map/select a lux sensor per location when needed
   - no ambient auto-discovery workflow is used in v1 panel behavior.
+- Lux sensor **candidates** in the inspector include entities in:
+  - the location’s `entity_ids`
+  - any HA area linked by `location.ha_area_id`
+  - when the location is a **managed shadow host** (`property`, `floor`,
+    `building`, `grounds`): the host’s managed shadow wrapper’s `ha_area_id` and
+    that shadow location’s `entity_ids` (ADR-HA-078)
 - Ambient module configs must persist with `auto_discover: false` in integration defaults.
 - Ambient source priority:
   1. assigned location lux sensor
@@ -445,7 +457,7 @@ Additional save points:
 ## C-017 Automation Editing + Lighting Persistence Contract
 
 - Inspector IA contract:
-  - top-level tabs: `Occupancy`, `Ambient`, `Lighting`, `Appliances`, `Media`, `HVAC`
+  - top-level tabs: `Occupancy`, `Ambient`, `Appliances`, `HVAC`, `Lighting`, `Media`
   - no top-level `Advanced` tab and no generic `Actions` tab
   - advanced occupancy relationship controls are hidden from the active
     `Occupancy` UI until the workflow is revalidated.
@@ -457,7 +469,7 @@ Additional save points:
 - Save/update behavior is explicit across editable automation surfaces:
   - `Occupancy` and `Ambient` use tab-level draft state + explicit
     save/discard controls.
-  - `Lighting`, `Appliances`, `Media`, and `HVAC` use per-rule card lifecycle
+  - `Appliances`, `HVAC`, `Lighting`, and `Media` use per-rule card lifecycle
     controls (`Save rule` / `Update rule` / `Discard edits` / `Remove rule` /
     `Delete rule`) as applicable.
   - no silent auto-save for user-authored policy/config edits in these tabs.
@@ -497,7 +509,7 @@ Additional save points:
 - Ownership constraint:
   - hard-block `light.*` overlap between Lighting-policy targets and managed-action targets in `Appliances` / `Media` / `HVAC` for the same location.
 - Startup behavior contract:
-  - `Lighting`, `Appliances`, `Media`, and `HVAC` do not expose tab-global startup reapply
+  - `Appliances`, `HVAC`, `Lighting`, and `Media` do not expose tab-global startup reapply
     toggles.
 - Lighting multi-trigger contract:
   - a Lighting rule may include up to one occupancy-edge trigger and up to one
@@ -629,8 +641,8 @@ Additional save points:
 - The active user-facing label is `Occupancy Explainability`, not
   `Room Explainability`.
 - Explainability is universal, but copy must adapt to location type:
-  - structural locations (`floor`, `building`, `grounds`) are described as
-    derived from child locations
+  - structural locations (`property`, `floor`, `building`, `grounds`) are described as
+    derived from child locations (or occupancy groups on `floor`)
   - room-like locations (`area`, `subarea`) may describe direct sources
 - Internal contributor IDs must not be shown raw when a human-readable location
   or source label can be resolved.
