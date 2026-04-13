@@ -235,14 +235,21 @@ async def test_setup_entry_throttles_stayed_occupied_explainability_within_windo
         await hass.config_entries.async_setup(config_entry.entry_id)
         await hass.async_block_till_done()
 
-    occupancy_callbacks = []
+    occupancy_forwarders: list = []
     for call in mock_event_bus.subscribe.call_args_list:
         if len(call.args) < 2:
             continue
         callback = call.args[0]
         event_filter = call.args[1]
-        if getattr(event_filter, "event_type", None) == "occupancy.changed":
-            occupancy_callbacks.append(callback)
+        if getattr(event_filter, "event_type", None) != "occupancy.changed":
+            continue
+        # Other occupancy.changed subscribers (linked propagation, actions runtime, etc.)
+        # run against a real OccupancyModule here and can perturb this scenario; the buffer
+        # under test lives only in _forward_occupancy_changed.
+        if getattr(callback, "__name__", None) == "_forward_occupancy_changed":
+            occupancy_forwarders.append(callback)
+
+    assert occupancy_forwarders, "expected HA occupancy forwarder to be registered"
 
     forwarded_events: list[dict] = []
     unsub = hass.bus.async_listen(
@@ -291,7 +298,7 @@ async def test_setup_entry_throttles_stayed_occupied_explainability_within_windo
     # Deliver like a real bus: one kernel publication, then all subscribers,
     # before the next publication (not each subscriber consuming the whole burst).
     for event in (edge, ext1, ext2, ext_late):
-        for callback in occupancy_callbacks:
+        for callback in occupancy_forwarders:
             callback(event)
 
     await hass.async_block_till_done()
