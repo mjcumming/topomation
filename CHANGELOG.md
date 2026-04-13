@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.42] - 2026-04-13
+
+### Fixed
+
+- **Structural host occupancy in the panel** (`property`, `floor`, `building`,
+  `grounds`): the inspector and room explainability now read Home Assistant
+  occupancy state using the **managed shadow area** topology id
+  (`effectiveOccupancyTopologyId`), aligned with `attributes.location_id` on
+  the registered entity (ADR-HA-077). Resolves mismatches where the tree showed
+  **occupied** but the header or derived summary showed **vacant**.
+
+### Tests
+
+- Vitest coverage for `effectiveOccupancyTopologyId` in
+  `vitest/shadow-location-utils.test.ts`.
+
+### Documentation
+
+- **ADR-HA-079**; `docs/contracts.md` and `docs/architecture.md` panel contract
+  for shadow-aware occupancy reads; README automation tab ordering for doc
+  consistency checks.
+
 ## [0.2.41] - 2026-04-13
 
 ### Added
