@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.46] - 2026-04-13
+
+### Fixed
+
+- **CI / installs**: `home-topology` **1.0.4** is not yet on PyPI; integration again
+  pins **1.0.3** and supplies `TopomationAmbientLightModule` in-tree with the same
+  managed-shadow `extra_lux_entity_ids` resolution and `invalidate_ambient_sensor_cache`
+  behavior so HACS and `pip install` keep working until the kernel release ships.
+
 ## [0.2.45] - 2026-04-13
 
 ### Fixed

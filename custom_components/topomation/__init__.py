@@ -10,7 +10,6 @@ from inspect import isawaitable
 from typing import TYPE_CHECKING, Any
 
 from home_topology import EventBus, EventFilter, LocationManager
-from home_topology.modules.ambient import AmbientLightModule
 from home_topology.modules.automation import AutomationModule
 from home_topology.modules.occupancy import OccupancyModule
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP, Platform
@@ -39,6 +38,7 @@ from .managed_actions import TopomationManagedActions
 from .panel import async_register_panel
 from .services import async_register_services, async_unregister_services
 from .sync_manager import SyncManager, managed_shadow_entity_ids_for_ambient
+from .topomation_ambient import TopomationAmbientLightModule
 from .websocket_api import async_register_websocket_api
 
 if TYPE_CHECKING:
@@ -225,7 +225,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     modules = {
         "occupancy": occupancy_module,
         "automation": automation_module,
-        "ambient": AmbientLightModule(
+        "ambient": TopomationAmbientLightModule(
             platform_adapter=platform_adapter,
             extra_lux_entity_ids=lambda lid: managed_shadow_entity_ids_for_ambient(
                 loc_mgr, lid
