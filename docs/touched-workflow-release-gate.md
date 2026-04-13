@@ -110,23 +110,24 @@ Outcome:
 
 ## 8. Current Release Candidate Record
 
-Commit under test: run `git rev-parse HEAD` on the releasing branch after checkout (local validation performed on the `0.2.38` version bump and frontend bundle in the same change).
+Commit under test: run `git rev-parse HEAD` after the `0.2.41` version bump commit lands on the branch you release.
 Frontend bundle rebuilt from same commit: yes
 
 Touched workflows:
-- Appliances / Media / HVAC occupancy-only managed rules in the room inspector (including fan device-registry split)
-- Panel deep link `/topomation-appliances` → Appliances tab
-- Playwright mock harness: media rule editor (radio + combobox), time window toggle, service option set
-- Multi-tab save workflow (lighting, media, appliances)
+- Structural inspector: **Occupancy** + **Ambient** tabs (property / building / grounds / floor)
+- Panel forced-tab / deep-link reconciliation when tree selection changes
+- Occupancy binary sensor registration for shadow hosts vs managed shadow areas
+- Managed actions rule list (metadata filter + concurrent automation config fetch)
+- WebSocket `locations/list` contract (bootstrap counts / sibling order)
 
 Commands run:
-- `./scripts/test-comprehensive.sh` (ruff, mypy, `pytest tests/`, Vitest, `npm run build` + bundle diff, Web Test Runner, Playwright `npm run test:e2e`)
-- `make test-release-live` (comprehensive subset then live HA gate)
+- `./scripts/test-comprehensive.sh` (ruff, mypy, `pytest tests/`, Vitest, `npm run build` + bundle parity, Web Test Runner, Playwright `npm run test:e2e`)
+- `make test-release-live` (invoked; live step blocked below)
 
 Outcome:
 - Local comprehensive gate (`./scripts/test-comprehensive.sh`): PASS
-- `make test-release-live` live Home Assistant step: **BLOCKED** — no HA reachable at `http://localhost:8123` in this environment (connection refused). Mock/browser portions of the release-live script completed before the live check failed.
+- `make test-release-live` live Home Assistant step: **BLOCKED** — cannot connect to `http://localhost:8123` (HA not running in this environment). Run `make test-release-live` with HA up before treating the release as fully validated per `docs/release-validation-runbook.md`.
 
 Notes:
-- Release `0.2.38` adds the Appliances tab, climate-linked vs standalone fan routing, panel routes, WTR coverage, and Playwright updates for the occupancy-only rule UI.
-- Re-run `make test-release-live` (or `./tests/run-live-tests.sh` with a valid `tests/ha-config.env`) on a machine with Home Assistant up to satisfy the live gate before claiming live-validated delivery.
+- Release `0.2.41` ships structural Ambient editing, shadow-host occupancy entity cleanup, managed-actions listing hardening, and contract/test updates.
+- After push to `main`, confirm CI and **Auto Release** are green for the release commit before considering the release complete.

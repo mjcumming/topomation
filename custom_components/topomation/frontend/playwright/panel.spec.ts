@@ -592,6 +592,7 @@ test("integration-owned building shows derived occupancy guidance", async ({ pag
   await expect(inspector).toContainText("Derived Occupancy");
   await expect(inspector).toContainText("Building occupancy is derived from child locations");
   await expect(inspector.getByTestId("open-external-source-dialog")).toHaveCount(0);
+  await expect(inspector.getByRole("button", { name: "Ambient" })).toBeVisible();
 });
 
 test("occupancy inspector keeps the hero shell outside the scroll body", async ({ page }) => {

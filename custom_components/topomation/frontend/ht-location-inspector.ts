@@ -765,17 +765,8 @@ export class HtLocationInspector extends LitElement {
         gap: 8px;
         flex-wrap: wrap;
         margin-top: 12px;
-        position: sticky;
-        bottom: 0;
-        z-index: 4;
-        margin-left: -16px;
-        margin-right: -16px;
-        margin-bottom: -16px;
-        padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
-        background: color-mix(in srgb, var(--card-background-color) 96%, transparent);
-        backdrop-filter: blur(6px);
+        padding-top: 12px;
         border-top: 1px solid var(--divider-color);
-        box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.06);
       }
 
       .dusk-rule-footer-help {
@@ -2616,11 +2607,7 @@ export class HtLocationInspector extends LitElement {
     if (changedProps.has("forcedTab")) {
       const mapped = this._mapRequestedTab(this.forcedTab);
       if (mapped) {
-        let nextTab = mapped;
-        if (this._isManagedShadowAreaLocation() && nextTab === "detection") {
-          nextTab = "lighting";
-        }
-        this._activeTab = nextTab;
+        this._reconcileActiveTabFromMapped(mapped);
       } else if (changedProps.get("forcedTab")) {
         this._activeTab = "detection";
       }
@@ -2664,7 +2651,15 @@ export class HtLocationInspector extends LitElement {
           void this._loadEntityAreaAssignments();
         }
         void this._loadAmbientReading();
-        if (this._isManagedShadowAreaLocation() && this._activeTab === "detection") {
+        const mappedForced = this._mapRequestedTab(this.forcedTab);
+        if (mappedForced) {
+          this._reconcileActiveTabFromMapped(mappedForced);
+        } else if (this._isStructuralSummaryLocation()) {
+          const t = this._activeTab;
+          if (t !== "detection" && t !== "ambient") {
+            this._activeTab = "detection";
+          }
+        } else if (this._isManagedShadowAreaLocation() && this._activeTab === "detection") {
           this._activeTab = "lighting";
         }
       } else {
@@ -3492,9 +3487,30 @@ export class HtLocationInspector extends LitElement {
     return getLocationIcon(location);
   }
 
+  /** Structural locations: occupancy summary or groups plus ambient calibration only (ADR-HA-076). */
+  private _renderStructuralTabs() {
+    const detectionLabel = this._detectionTabLabel();
+    return html`
+      <div class="tabs">
+        <button
+          class="tab ${this._activeTab === "detection" ? "active" : ""}"
+          @click=${() => this._handleTabChange("detection")}
+        >
+          ${detectionLabel}
+        </button>
+        <button
+          class="tab ${this._activeTab === "ambient" ? "active" : ""}"
+          @click=${() => this._handleTabChange("ambient")}
+        >
+          Ambient
+        </button>
+      </div>
+    `;
+  }
+
   private _renderTabs() {
     if (this._isStructuralSummaryLocation()) {
-      return "";
+      return this._renderStructuralTabs();
     }
     const detectionLabel = this._detectionTabLabel();
     const hideOccupancyTab = this._isManagedShadowAreaLocation();
@@ -3585,7 +3601,7 @@ export class HtLocationInspector extends LitElement {
 
   private _effectiveTab(): InspectorTab {
     if (this._isStructuralSummaryLocation()) {
-      return "detection";
+      return this._activeTab === "ambient" ? "ambient" : "detection";
     }
     if (this._isManagedShadowAreaLocation() && this._activeTab === "detection") {
       return "lighting";
@@ -3622,6 +3638,22 @@ export class HtLocationInspector extends LitElement {
     }
     this._activeTab = nextTab;
     this.requestUpdate();
+  }
+
+  /** Apply parent `forcedTab` (and structural / managed-shadow constraints) to `_activeTab`. */
+  private _reconcileActiveTabFromMapped(mapped: InspectorTab): void {
+    let nextTab = mapped;
+    if (this._isManagedShadowAreaLocation() && nextTab === "detection") {
+      nextTab = "lighting";
+    }
+    if (
+      this._isStructuralSummaryLocation() &&
+      nextTab !== "detection" &&
+      nextTab !== "ambient"
+    ) {
+      nextTab = "detection";
+    }
+    this._activeTab = nextTab;
   }
 
   private _mapRequestedTab(requested?: InspectorTabRequest): InspectorTab | undefined {
@@ -7787,6 +7819,10 @@ export class HtLocationInspector extends LitElement {
     if (!this.location) return [];
     const ids = new Set<string>();
     for (const entityId of this.location.entity_ids || []) {
+      // Match area-based discovery: respect entity registry visibility (hidden, disabled,
+      // diagnostic/config). Location may still list stale IDs (e.g. old switch hidden after
+      // changing device type to fan in HA).
+      if (!this._isCandidateEntity(entityId)) continue;
       if (this._isActionRuleEntity(entityId, tab)) {
         ids.add(entityId);
       }

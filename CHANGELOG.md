@@ -9,6 +9,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.41] - 2026-04-13
+
+### Added
+
+- **Ambient** tab on structural locations (`property`, `building`, `grounds`,
+  `floor`) next to **Occupancy** / **Occupancy Groups**, so site and structural
+  nodes can edit lux sensor and ambient calibration without action tabs.
+
+### Changed
+
+- Panel **forced tab** (deep links such as `/topomation-appliances`) is
+  reapplied when the selected location changes, so picking a room after landing
+  on a structural node opens the correct inspector tab.
+- **Managed shadow** reconciliation runs before the event bridge starts so
+  shadow areas exist before occupancy entities register.
+- **Occupancy binary sensors** are not created for shadow host locations
+  (`floor`, `building`, `grounds`, `property`); only the managed shadow area
+  exposes the entity, with legacy host entities removed on setup.
+- **Managed actions** rule listing filters Topomation metadata before calling
+  the automation config API and fetches latest configs concurrently.
+
+### Fixed
+
+- WebSocket contract tests updated for property bootstrap location counts and
+  sibling ordering under `building_main`.
+
+### Documentation
+
+- `docs/contracts.md`: structural inspector exposes Occupancy + Ambient only.
+
 ## [0.2.40] - 2026-04-12
 
 ### Added

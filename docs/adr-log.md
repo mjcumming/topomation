@@ -3857,7 +3857,8 @@ operator needs were under-specified:
 **Consequences**:
 
 - ✅ Clear UX for Illuminance / site defaults on **property**.
-- ✅ Occupancy `binary_sensor` for the anchor can track subtree occupancy.
+- ✅ Subtree occupancy for the property anchor is exposed in HA via the **managed
+  shadow** occupancy entity (not a second host-level sensor; see ADR-HA-077).
 - ⚠️ Bootstrap / persistence tests and hierarchy validators must be updated.
 - ℹ️ `topology_anchor` is integration metadata (stored under `modules._meta`).
 
@@ -3866,6 +3867,69 @@ operator needs were under-specified:
 - Keep hidden `home` and document “put lux on building_main” — rejected as
   confusing.
 - Require exactly one global root parent — rejected in favor of a forest.
+
+---
+
+### ADR-HA-077: Occupancy binary sensors only on non-host locations (2026-04-13)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+
+- Managed shadow areas (ADR-HA-049) give every structural aggregate host
+  (`floor`, `building`, `grounds`, `property`) an HA-backed `area_*` child with
+  the same human-visible name as the host on first shadow-name allocation.
+- The binary sensor platform previously registered **`OccupancyBinarySensor` for
+  every** topology location, including those hosts. That produced **two** HA
+  occupancy entities with the same friendly name: one on the host (no
+  `area_id`) and one on the shadow (with `area_id`), which is confusing and
+  redundant.
+- Product policy already treats **areas** as the place occupancy is configured
+  (for example floors cannot own occupancy sources in the panel); the extra
+  host entity did not add a distinct HA-area assignment.
+
+**Decision**:
+
+1. **Do not** register an occupancy `binary_sensor` for locations where
+   `sync_manager._is_shadow_host(location)` is true (same predicate as managed
+   shadow policy: `floor`, `building`, `grounds`, `property`, excluding explicit
+   roots).
+2. **Do** register occupancy entities for all other locations, including managed
+   shadow **`area_*`** nodes (and normal rooms), so exactly **one** Topomation
+   occupancy entity exists per intended HA area for structural aggregates.
+3. On binary sensor platform setup, **remove** legacy entity-registry rows for
+   `unique_id` `occupancy_<host_id>` when the host is a shadow host, so upgrades
+   drop obsolete host sensors.
+4. After structural bootstrap (and on every config entry setup), call
+   **`SyncManager.reconcile_managed_shadow_areas()`** again so shadow locations
+   exist **before** platforms run; otherwise fresh installs could briefly have
+   hosts without shadows and no occupancy entity at all.
+
+**Rationale**:
+
+1. One public occupancy surface per structural aggregate, aligned with HA’s
+   area registry.
+2. Matches user mental model: “occupancy lives on the area,” not on an
+   unassigned duplicate row.
+3. Avoids breaking automations that already pointed at the shadow-linked entity
+   with a proper `area_id`.
+
+**Consequences**:
+
+- ✅ Entity list no longer shows paired duplicate “X Occupancy” rows for host +
+  shadow.
+- ⚠️ Anything that assumed an occupancy **entity_id** keyed to the **host**
+  `location_id` (for example `building_main`) must use the **shadow area**
+  location’s entity instead (`unique_id` `occupancy_area_<ha_area_uuid>`).
+- ℹ️ Kernel occupancy state keyed by topology `location_id` is unchanged; only
+  the HA entity **registration** policy changed.
+- ℹ️ `docs/contracts.md` and `docs/architecture.md` updated to match.
+
+**Alternatives Considered**:
+
+- Keep both entities but rename the host sensor — rejected as still redundant.
+- Hide host entity via `entity_registry` only — rejected; registry cleanup and
+  no registration is clearer.
 
 ---
 

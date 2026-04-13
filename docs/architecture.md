@@ -141,7 +141,13 @@ def state_changed_listener(event):
 
 **Entities Created**:
 
-- `binary_sensor.occupancy_{location_id}` - Occupied/vacant state
+- `binary_sensor.*` with `unique_id` `occupancy_{location_id}` and
+  `device_class: occupancy` — occupied/vacant state for that topology location
+- **Not** created for **shadow host** nodes (`floor`, `building`, `grounds`,
+  `property` where `sync_manager._is_shadow_host` applies): those aggregates are
+  represented in HA by a **managed shadow** `area_*` child; the occupancy
+  entity for the user-facing area is registered for that shadow location, not
+  twice on host + shadow (see ADR-HA-077).
 - `sensor.occupancy_confidence_{location_id}` - Confidence percentage (future)
 
 **Pattern**:

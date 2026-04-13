@@ -216,6 +216,8 @@ class TopomationManagedActions:
         entities = self._snapshot_automation_entities(component)
         self._prune_recent_rule_snapshots()
 
+        pending: list[tuple[str, Mapping[str, Any], str]] = []
+
         for automation_entity in entities:
             entity_id = getattr(automation_entity, "entity_id", None)
             raw_config = getattr(automation_entity, "raw_config", None)
@@ -263,24 +265,46 @@ class TopomationManagedActions:
                 )
                 continue
 
-            effective_config: Mapping[str, Any] = raw_config
-            if isinstance(automation_id, str) and automation_id:
-                try:
-                    latest_payload = await self._call_automation_config_api("GET", automation_id)
-                    if isinstance(latest_payload, Mapping):
-                        latest_config = latest_payload.get("config")
-                        if isinstance(latest_config, Mapping):
-                            effective_config = latest_config
-                        elif "description" in latest_payload and "triggers" in latest_payload:
-                            # Some HA builds may return the config object directly.
-                            effective_config = latest_payload
-                except Exception:
-                    _LOGGER.debug(
-                        "Falling back to runtime raw_config for managed rule list: %s",
-                        automation_id,
-                        exc_info=True,
-                    )
+            raw_metadata = self._parse_metadata(raw_config.get("description"))
+            if raw_metadata is None or raw_metadata.location_id != location_id:
+                continue
 
+            pending.append(
+                (entity_id, raw_config, automation_id if isinstance(automation_id, str) else "")
+            )
+
+        async def _fetch_latest_rule_config(
+            automation_id: str, raw_config: Mapping[str, Any]
+        ) -> Mapping[str, Any]:
+            if not automation_id:
+                return raw_config
+            try:
+                latest_payload = await self._call_automation_config_api("GET", automation_id)
+                if isinstance(latest_payload, Mapping):
+                    latest_config = latest_payload.get("config")
+                    if isinstance(latest_config, Mapping):
+                        return latest_config
+                    if "description" in latest_payload and "triggers" in latest_payload:
+                        # Some HA builds may return the config object directly.
+                        return latest_payload
+            except Exception:
+                _LOGGER.debug(
+                    "Falling back to runtime raw_config for managed rule list: %s",
+                    automation_id,
+                    exc_info=True,
+                )
+            return raw_config
+
+        effective_configs = await asyncio.gather(
+            *[
+                _fetch_latest_rule_config(automation_id, raw_config)
+                for (_, raw_config, automation_id) in pending
+            ]
+        )
+
+        for (entity_id, raw_config, automation_id), effective_config in zip(
+            pending, effective_configs, strict=True
+        ):
             metadata = self._parse_metadata(effective_config.get("description"))
             if metadata is None or metadata.location_id != location_id:
                 metadata = self._parse_metadata(raw_config.get("description"))

@@ -288,11 +288,11 @@ async def test_setup_entry_throttles_stayed_occupied_explainability_within_windo
     }
     ext_late.timestamp = t0 + timedelta(seconds=30)
 
-    for callback in occupancy_callbacks:
-        callback(edge)
-        callback(ext1)
-        callback(ext2)
-        callback(ext_late)
+    # Deliver like a real bus: one kernel publication, then all subscribers,
+    # before the next publication (not each subscriber consuming the whole burst).
+    for event in (edge, ext1, ext2, ext_late):
+        for callback in occupancy_callbacks:
+            callback(event)
 
     await hass.async_block_till_done()
     unsub()

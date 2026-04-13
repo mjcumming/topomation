@@ -474,6 +474,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
         _setup_default_configs(loc_mgr, modules)
 
+    # Managed shadow areas for floor/building/grounds/property hosts must exist before
+    # platforms register occupancy entities (hosts no longer expose their own sensors).
+    sync_manager.reconcile_managed_shadow_areas()
+
     # 9. Set up event bridge (HA → kernel)
     event_bridge = EventBridge(hass, bus, loc_mgr, modules.get("occupancy"))
     await event_bridge.async_setup()

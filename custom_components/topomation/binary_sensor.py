@@ -18,6 +18,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
+from .sync_manager import _is_shadow_host
 
 if TYPE_CHECKING:
     from home_topology.modules.occupancy import OccupancyModule
@@ -78,10 +79,24 @@ async def async_setup_entry(
     modules = kernel["modules"]
     occupancy_module = modules.get("occupancy")
 
-    # Create occupancy sensor for each location
+    # Shadow hosts (floor / building / grounds / property) each have a managed shadow
+    # HA area location; occupancy is exposed only for that area-like node, not twice.
+    for location in loc_mgr.all_locations():
+        if _is_shadow_host(location):
+            removed = _remove_occupancy_entity_for_location(hass, entry, location.id)
+            if removed:
+                _LOGGER.debug(
+                    "Removed legacy host occupancy entity %s for shadow host %s",
+                    removed,
+                    location.id,
+                )
+
+    # Create occupancy sensor for each non-host location (areas, subareas, explicit roots, …)
     entities: list[OccupancyBinarySensor] = []
     sensors_by_location_id: dict[str, OccupancyBinarySensor] = {}
     for location in loc_mgr.all_locations():
+        if _is_shadow_host(location):
+            continue
         sensor = OccupancyBinarySensor(
             location.id,
             location.name,
@@ -111,6 +126,8 @@ async def async_setup_entry(
 
         location = loc_mgr.get_location(location_id)
         if location is None:
+            return
+        if _is_shadow_host(location):
             return
 
         sensor = OccupancyBinarySensor(

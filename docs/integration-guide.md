@@ -1381,6 +1381,14 @@ class TopomationCoordinator:
 
 ### `binary_sensor.py` - Occupancy Sensors
 
+**Registration (Topomation)**: The platform adds one `OccupancyBinarySensor` per
+topology location **except** managed-shadow **hosts** (`floor`, `building`,
+`grounds`, `property` per `_is_shadow_host` in `sync_manager.py`). Host-level
+rows would duplicate the managed shadow `area_*` occupancy entity; legacy host
+registry entries are removed on setup. `SyncManager.reconcile_managed_shadow_areas()`
+runs after structural bootstrap and before platforms so shadow locations exist
+first. See **ADR-HA-077**.
+
 ```python
 """Binary sensor platform for home-topology."""
 import logging
@@ -1411,7 +1419,7 @@ async def async_setup_entry(
     loc_mgr = kernel["loc_mgr"]
     bus = kernel["bus"]
     
-    # Create occupancy sensor for each location
+    # Create occupancy sensor for each location (see note above: Topomation skips shadow hosts)
     entities = []
     for location in loc_mgr.all_locations():
         entities.append(OccupancyBinarySensor(location.id, location.name, bus))

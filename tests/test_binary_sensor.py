@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+from collections import defaultdict, deque
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
 from home_topology.core.bus import Event
+from homeassistant.core import HomeAssistant
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.topomation.binary_sensor import OccupancyBinarySensor
+from custom_components.topomation.binary_sensor import OccupancyBinarySensor, async_setup_entry
+from custom_components.topomation.const import DOMAIN
 
 
 @pytest.mark.asyncio
@@ -169,3 +174,47 @@ async def test_binary_sensor_refreshes_recent_changes_on_signal_event() -> None:
 
     assert sensor.extra_state_attributes["recent_changes"] == [{"kind": "signal", "event": "trigger"}]
     assert sensor.async_write_ha_state.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_binary_sensor_setup_skips_shadow_host_locations(hass: HomeAssistant) -> None:
+    """Floor/building/grounds/property hosts use managed shadow areas for occupancy exposure."""
+    entry = MockConfigEntry(domain=DOMAIN, entry_id="e1")
+    entry.add_to_hass(hass)
+
+    floor_host = SimpleNamespace(
+        id="floor_one",
+        name="First Floor",
+        parent_id="home",
+        is_explicit_root=False,
+        modules={"_meta": {"type": "floor"}},
+        ha_area_id=None,
+    )
+    area_node = SimpleNamespace(
+        id="area_kitchen",
+        name="Kitchen",
+        parent_id="floor_one",
+        is_explicit_root=False,
+        modules={"_meta": {"type": "area", "ha_area_id": "a1"}},
+        ha_area_id="a1",
+    )
+    loc_mgr = Mock()
+    loc_mgr.all_locations.return_value = [floor_host, area_node]
+    mock_bus = Mock()
+    mock_bus.subscribe = Mock()
+    mock_bus.unsubscribe = Mock()
+
+    hass.data[DOMAIN] = {
+        "e1": {
+            "location_manager": loc_mgr,
+            "event_bus": mock_bus,
+            "modules": {"occupancy": Mock()},
+            "occupancy_recent_changes": defaultdict(deque),
+        }
+    }
+
+    added: list[OccupancyBinarySensor] = []
+    await async_setup_entry(hass, entry, lambda ents: added.extend(ents))
+
+    assert len(added) == 1
+    assert added[0]._location_id == "area_kitchen"

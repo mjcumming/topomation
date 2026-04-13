@@ -2321,7 +2321,7 @@ describe("HtLocationInspector occupancy source composer", () => {
     const kitchenCheckbox = element.shadowRoot!.querySelector(
       '[data-testid="occupancy-group-create-location-area_kitchen"]'
     ) as HTMLInputElement | null;
-    expect(tabLabels).to.deep.equal([]);
+    expect(tabLabels).to.deep.equal(["Occupancy Groups", "Ambient"]);
     expect(groupsSection).to.exist;
     expect(kitchenCheckbox).to.exist;
     expect(element.shadowRoot?.querySelector('[data-testid="structural-overview-section"]')).to.exist;
@@ -3484,6 +3484,102 @@ describe("HtLocationInspector occupancy source composer", () => {
     );
   });
 
+  it("excludes hidden or disabled entities from location.entity_ids in appliance rule targets", async () => {
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>) => {
+        if (request.type === "topomation/actions/rules/list") {
+          return { rules: [] } as T;
+        }
+        if (request.type === "config/entity_registry/list") {
+          return [
+            {
+              entity_id: "fan.bathroom_fan",
+              device_id: "dev_bath",
+            },
+            {
+              entity_id: "switch.legacy_fan_hidden",
+              device_id: "dev_bath",
+              hidden_by: "user",
+            },
+            {
+              entity_id: "switch.legacy_fan_disabled",
+              device_id: "dev_bath",
+              disabled_by: "user",
+            },
+          ] as T;
+        }
+        if (request.type === "config/device_registry/list") {
+          return [{ id: "dev_bath", via_device_id: null }] as T;
+        }
+        return [] as T;
+      },
+      connection: {},
+      states: {
+        "fan.bathroom_fan": {
+          entity_id: "fan.bathroom_fan",
+          state: "off",
+          attributes: {
+            friendly_name: "Bathroom Fan",
+            area_id: "kitchen",
+          },
+        },
+        "switch.legacy_fan_hidden": {
+          entity_id: "switch.legacy_fan_hidden",
+          state: "off",
+          attributes: {
+            friendly_name: "Bathroom Fan (old switch)",
+            area_id: "kitchen",
+          },
+        },
+        "switch.legacy_fan_disabled": {
+          entity_id: "switch.legacy_fan_disabled",
+          state: "unavailable",
+          attributes: {
+            friendly_name: "Bathroom Fan (disabled)",
+            area_id: "kitchen",
+          },
+        },
+      },
+      areas: {},
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_kitchen";
+    location.ha_area_id = "kitchen";
+    location.modules._meta = { type: "area" };
+    location.entity_ids = ["fan.bathroom_fan", "switch.legacy_fan_hidden", "switch.legacy_fan_disabled"];
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector .hass=${hass} .location=${location} .forcedTab=${"appliances"}></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    const addRuleButton = element.shadowRoot?.querySelector(
+      '[data-testid="action-rule-add"]'
+    ) as HTMLButtonElement | null;
+    expect(addRuleButton).to.exist;
+    addRuleButton!.click();
+    await element.updateComplete;
+
+    await waitUntil(
+      () => {
+        const row = element.shadowRoot!.querySelector(".dusk-block-row") as HTMLElement | null;
+        if (!row) return false;
+        const sel = row.querySelector("select.dusk-wide-select") as HTMLSelectElement | null;
+        if (!sel) return false;
+        const opts = Array.from(sel.options).map((o) => o.value);
+        return (
+          opts.includes("fan.bathroom_fan") &&
+          !opts.includes("switch.legacy_fan_hidden") &&
+          !opts.includes("switch.legacy_fan_disabled")
+        );
+      },
+      "hidden/disabled location entities should not appear as appliance targets"
+    );
+  });
+
   it("adds a rule and shows HVAC trigger/conditions/actions controls", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>) => {
@@ -4382,7 +4478,10 @@ describe("HtLocationInspector WIAB configuration", () => {
       <ht-location-inspector .hass=${hass} .location=${location}></ht-location-inspector>
     `);
     await element.updateComplete;
-    expect(Array.from(element.shadowRoot?.querySelectorAll(".tabs > .tab") || []).length).to.equal(0);
+    const buildingTabs = Array.from(element.shadowRoot?.querySelectorAll(".tabs > .tab") || []).map((t) =>
+      (t.textContent || "").trim()
+    );
+    expect(buildingTabs).to.deep.equal(["Occupancy", "Ambient"]);
     expect(element.shadowRoot?.querySelector('[data-testid="derived-occupancy-section"]')).to.exist;
     expect(element.shadowRoot?.querySelector('[data-testid="structure-summary-panel"]')).to.exist;
     expect(element.shadowRoot?.querySelector('[data-testid="open-external-source-dialog"]')).to.equal(null);
@@ -4424,7 +4523,10 @@ describe("HtLocationInspector WIAB configuration", () => {
       <ht-location-inspector .hass=${hass} .location=${location}></ht-location-inspector>
     `);
     await element.updateComplete;
-    expect(Array.from(element.shadowRoot?.querySelectorAll(".tabs > .tab") || []).length).to.equal(0);
+    const groundsTabs = Array.from(element.shadowRoot?.querySelectorAll(".tabs > .tab") || []).map((t) =>
+      (t.textContent || "").trim()
+    );
+    expect(groundsTabs).to.deep.equal(["Occupancy", "Ambient"]);
     expect(element.shadowRoot?.querySelector('[data-testid="derived-occupancy-section"]')).to.exist;
     expect(element.shadowRoot?.querySelector('[data-testid="structure-summary-panel"]')).to.exist;
     expect(element.shadowRoot?.querySelector('[data-testid="open-external-source-dialog"]')).to.equal(null);

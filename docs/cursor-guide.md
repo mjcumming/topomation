@@ -571,6 +571,11 @@ remove_listener = hass.bus.async_listen(
 
 ### 1.4 Entity Pattern
 
+Topomation’s shipped `OccupancyBinarySensor` uses `unique_id` `occupancy_{location_id}` and
+**does not** register entities for managed-shadow **hosts** (`floor` / `building` /
+`grounds` / `property` per `sync_manager._is_shadow_host`); see **ADR-HA-077**. The
+snippet below is illustrative (coordinator variant).
+
 ```python
 class OccupancyBinarySensor(CoordinatorEntity, BinarySensorEntity):
     """Binary sensor for occupancy state."""

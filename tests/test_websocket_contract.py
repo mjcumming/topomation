@@ -139,8 +139,9 @@ async def test_locations_list_imports_floors_areas_and_entities(
     payload = connection.send_result.call_args[0][1]
     locations = payload["locations"]
 
-    # 12 import rows (floors, areas, per-floor shadows) + property anchor + building + grounds.
-    assert len(locations) == 15
+    # 12 import rows (floors, areas, per-floor shadows) + property anchor + building + grounds
+    # + managed shadows for property, building, and grounds (3) alongside the 2 floor shadows.
+    assert len(locations) == 18
 
     # Floors exist and are grouped under default Home building.
     floor_names = {loc["name"] for loc in locations if loc["id"].startswith("floor_")}
@@ -169,7 +170,7 @@ async def test_locations_list_imports_floors_areas_and_entities(
         if str(((loc.get("modules", {}) or {}).get("_meta", {}) or {}).get("role", "")).strip().lower()
         == "managed_shadow"
     ]
-    assert len(managed_shadows) == len(floors)
+    assert len(managed_shadows) == len(floors) + 3
 
     # Rooms are parented to the right floor and carry entities
     def find_by_name(name: str) -> dict:
@@ -669,8 +670,10 @@ async def test_locations_list_sorts_siblings_alphabetically_until_manual_reorder
 
     payload = connection.send_result.call_args[0][1]
     children = [loc for loc in payload["locations"] if loc["parent_id"] == "building_main"]
-    assert [loc["name"] for loc in children] == ["Alpha", "Middle", "Zulu"]
-    assert [loc["order"] for loc in children] == [1, 2, 0]
+    assert [loc["name"] for loc in children] == ["Alpha", "Home", "Middle", "Zulu"]
+    test_children = [loc for loc in children if loc["id"] in {"child_a", "child_m", "child_z"}]
+    # `order` is sibling index among all `building_main` children (includes managed shadow `area_home`).
+    assert [loc["order"] for loc in test_children] == [2, 3, 1]
 
 
 @pytest.mark.asyncio

@@ -259,9 +259,15 @@ Additional save points:
     preserving the originating room/source identity for explainability
   - all grouped members must publish the same occupied/vacant result, the same
     effective timeout behavior, and the same lock behavior
-  - occupancy binary sensors remain authoritative for room state:
-    `binary_sensor.<location>_occupancy` must report the group-projected
-    occupied/vacant result for grouped rooms
+  - occupancy binary sensors (entity `unique_id` `occupancy_{location_id}`) remain
+    authoritative for **member room** state in Home Assistant: each grouped
+    **area** location’s entity must report the group-projected occupied/vacant
+    result for that room
+  - **Shadow host** locations (`floor`, `building`, `grounds`, `property` per
+    managed-shadow policy; see ADR-HA-049 and ADR-HA-077) do **not** register a
+    host-level Topomation occupancy entity; HA-visible occupancy for that
+    aggregate uses the **managed shadow** `area_*` location’s entity only (avoids
+    duplicate “same name, two entities” rows)
   - explainability should explicitly identify the group, using wording
     equivalent to `via occupancy group`
 - Occupancy Groups v1 candidate scope is intentionally narrow:
@@ -299,10 +305,14 @@ Additional save points:
     of a room-style occupancy editor
   - structural occupancy is expected to roll up from descendant locations
 - Structural nodes are informational pages in the active inspector:
-  - `floor`, `building`, and `grounds` do not expose room-style automation tabs
-    (`Ambient`, `Lighting`, `Appliances`, `Media`, `HVAC`)
+  - `property`, `floor`, `building`, and `grounds` expose **Occupancy** (summary
+    or occupancy groups) and **Ambient** tabs only for site/structural lux
+    calibration and inherited ambient defaults
+  - they do **not** expose action-oriented tabs (`Lighting`, `Appliances`,
+    `Media`, `HVAC`)
   - `floor` remains the occupancy-group authoring scope for child areas
-  - `building` and `grounds` render summary content only
+  - `building` and `grounds` render derived-occupancy summary on Occupancy, not
+    a room-style source editor
   - whole-home/floor aggregate scenes should be authored as normal Home
     Assistant automations rather than panel-native structural actions
 
