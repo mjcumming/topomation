@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.44] - 2026-04-13
+
+### Changed
+
+- **Occupancy tree strip**: docked panel under the tree is labeled **Occupancy**
+  and shows occupied/vacant, **one** primary line (newest `recent_changes` entry
+  as “Last event”, otherwise the merged “why” string), plus optional timeout /
+  lock meta. Removed separate contributor and full recent-changes lists from the
+  tree (use the **Occupancy** tab or HA History/Logbook for depth).
+- **Inspector**: derived and structural occupancy summaries use the same
+  at-a-glance layout; removed an unwired legacy explainability drawer.
+- **Presentation**: `__group_member__:*` sources show readable names; duplicate
+  contributions dedupe by `source_id`; aggregate parent contributors merge across
+  children.
+
+### Documentation
+
+- **ADR-HA-080**; **C-021** and user docs (README, installation, automation UI
+  guide, architecture).
+
 ## [0.2.43] - 2026-04-13
 
 ### Fixed

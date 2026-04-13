@@ -34,7 +34,6 @@ export class HtRoomExplainability extends LitElement {
     occupancyStates: { attribute: false },
     occupancyTransitions: { attribute: false },
     _collapsed: { state: true },
-    _showAllChanges: { state: true },
     _nowEpochMs: { state: true },
   };
 
@@ -45,7 +44,6 @@ export class HtRoomExplainability extends LitElement {
   public occupancyTransitions: Record<string, OccupancyTransitionState> = {};
 
   private _collapsed = false;
-  private _showAllChanges = false;
   private _nowEpochMs = Date.now();
 
   private _clockTimer?: number;
@@ -94,10 +92,7 @@ export class HtRoomExplainability extends LitElement {
 
       .dock-body {
         padding: 12px;
-        height: clamp(180px, 280px, 60vh);
-        min-height: 180px;
-        max-height: 60vh;
-        resize: vertical;
+        max-height: 40vh;
         overflow: auto;
       }
 
@@ -106,40 +101,30 @@ export class HtRoomExplainability extends LitElement {
       }
 
       .dock-help {
-        display: flex;
-        align-items: baseline;
-        justify-content: space-between;
-        gap: 8px;
         margin-bottom: 10px;
         font-size: 12px;
-        color: var(--text-secondary-color);
+        line-height: 1.4;
+        color: var(--secondary-text-color);
       }
 
-      .occupancy-explainability {
+      .occupancy-at-a-glance {
         display: flex;
         flex-direction: column;
-        gap: 12px;
+        gap: 10px;
       }
 
-      .occupancy-explainability-grid {
-        display: grid;
-        grid-template-columns: 1fr;
-        gap: 12px;
+      .occupancy-primary-detail {
+        font-size: 13px;
+        line-height: 1.45;
+        color: var(--primary-text-color);
       }
 
-      .occupancy-explainability-panel {
-        border: 1px solid var(--divider-color);
-        border-radius: 12px;
-        padding: 12px;
-        background: rgba(var(--rgb-primary-color), 0.03);
-      }
-
-      .occupancy-explainability-panel-title {
-        margin-bottom: 10px;
-        font-size: 11px;
-        font-weight: 700;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
+      .occupancy-meta-lines {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        font-size: 12px;
+        line-height: 1.4;
         color: var(--secondary-text-color);
       }
 
@@ -162,117 +147,6 @@ export class HtRoomExplainability extends LitElement {
       .occupancy-status-chip.is-vacant {
         background: rgba(var(--rgb-warning-color), 0.12);
         color: var(--warning-color);
-      }
-
-      .occupancy-summary-lines {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-      }
-
-      .occupancy-summary-line {
-        display: flex;
-        flex-direction: column;
-        gap: 2px;
-      }
-
-      .occupancy-summary-label {
-        font-size: 11px;
-        font-weight: 700;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-        color: var(--secondary-text-color);
-      }
-
-      .occupancy-summary-value {
-        color: var(--primary-text-color);
-      }
-
-      .occupancy-events {
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-      }
-
-      .occupancy-contributors {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-      }
-
-      .occupancy-contributor {
-        border: 1px solid var(--divider-color);
-        border-radius: 8px;
-        padding: 10px 12px;
-        background: rgba(var(--rgb-primary-color), 0.03);
-      }
-
-      .occupancy-contributor-head {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 10px;
-      }
-
-      .occupancy-contributor-source {
-        font-weight: 600;
-        color: var(--primary-text-color);
-        overflow-wrap: anywhere;
-      }
-
-      .occupancy-contributor-state {
-        display: inline-flex;
-        align-items: center;
-        border-radius: 999px;
-        padding: 3px 8px;
-        font-size: 11px;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-        background: rgba(var(--rgb-success-color), 0.1);
-        color: var(--success-color);
-        white-space: nowrap;
-      }
-
-      .occupancy-contributor-meta {
-        margin-top: 6px;
-        font-size: 12px;
-        color: var(--text-secondary-color);
-      }
-
-      .occupancy-event {
-        display: grid;
-        grid-template-columns: 80px minmax(0, 1fr);
-        gap: 8px;
-        align-items: start;
-        border: 1px solid var(--divider-color);
-        border-radius: 8px;
-        padding: 8px 10px;
-        background: rgba(var(--rgb-primary-color), 0.03);
-        color: var(--primary-text-color);
-        font-size: 12px;
-      }
-
-      .occupancy-event-time {
-        white-space: nowrap;
-        font-variant-numeric: tabular-nums;
-        color: var(--text-secondary-color);
-      }
-
-      .occupancy-event-copy {
-        display: flex;
-        flex-direction: column;
-        gap: 2px;
-        min-width: 0;
-      }
-
-      .occupancy-event-source {
-        font-weight: 600;
-      }
-
-      .occupancy-event-description,
-      .occupancy-event-meta {
-        color: var(--text-secondary-color);
       }
 
       .occupancy-empty-state {
@@ -303,7 +177,6 @@ export class HtRoomExplainability extends LitElement {
   protected willUpdate(changedProps: Map<string, unknown>): void {
     if (changedProps.has("location")) {
       this._collapsed = false;
-      this._showAllChanges = false;
     }
   }
 
@@ -312,7 +185,10 @@ export class HtRoomExplainability extends LitElement {
 
     const currentState = this._recentExplainabilityCurrentState();
     const recentChanges = this._recentExplainabilityChanges();
-    const recentChangesToRender = this._showAllChanges ? recentChanges : recentChanges.slice(0, 5);
+    const primaryDetail = this._occupancyAtAGlancePrimary(currentState, recentChanges);
+    const metaLines: string[] = [];
+    if (currentState?.nextChange) metaLines.push(currentState.nextChange);
+    if (currentState?.lockedSummary) metaLines.push(currentState.lockedSummary);
 
     return html`
       <div
@@ -322,8 +198,8 @@ export class HtRoomExplainability extends LitElement {
         <div class="dock-card">
           <div class="dock-header">
             <div class="dock-title">
-              <ha-icon .icon=${"mdi:timeline-clock-outline"}></ha-icon>
-              Occupancy Explainability
+              <ha-icon .icon=${"mdi:home-motion"}></ha-icon>
+              Occupancy
             </div>
             <button
               class="button button-secondary"
@@ -338,149 +214,60 @@ export class HtRoomExplainability extends LitElement {
             </button>
           </div>
           <div class="dock-body">
-            <div class="dock-help">
-              <span>See why this location is in its current state and what changed most recently.</span>
-              ${recentChanges.length > 5
-                ? html`
-                    <button
-                      class="button button-secondary"
-                      type="button"
-                      style="padding: 2px 8px; font-size: 11px;"
-                      data-testid="room-explainability-toggle"
-                      @click=${() => {
-                        this._showAllChanges = !this._showAllChanges;
-                      }}
-                    >
-                      ${this._showAllChanges ? "Show less" : "Show all"}
-                    </button>
-                  `
-                : ""}
-            </div>
+            <div class="dock-help">Whether this location is occupied and the latest occupancy-related note.</div>
 
             ${!currentState && recentChanges.length === 0
               ? html`
                   <div class="occupancy-empty-state">
-                    No explainability data is available for this location yet.
+                    No occupancy data for this location yet.
                   </div>
                 `
               : html`
-                  <div class="occupancy-explainability">
+                  <div class="occupancy-at-a-glance">
                     ${currentState
                       ? html`
-                          <div class="occupancy-explainability-grid">
-                            <div class="occupancy-explainability-panel">
-                              <div class="occupancy-explainability-panel-title">Current state</div>
-                              <div
-                                class="occupancy-status-chip ${currentState.occupied
-                                  ? "is-occupied"
-                                  : "is-vacant"}"
-                              >
-                                ${currentState.occupied ? "Occupied" : "Vacant"}
-                              </div>
-                              <div class="occupancy-summary-lines">
-                                <div class="occupancy-summary-line">
-                                  <div class="occupancy-summary-label">Why</div>
-                                  <div class="occupancy-summary-value">${currentState.why}</div>
-                                </div>
-                                ${currentState.nextChange
-                                  ? html`
-                                      <div class="occupancy-summary-line">
-                                        <div class="occupancy-summary-label">Next change</div>
-                                        <div class="occupancy-summary-value">
-                                          ${currentState.nextChange}
-                                        </div>
-                                      </div>
-                                    `
-                                  : ""}
-                                ${currentState.lockedSummary
-                                  ? html`
-                                      <div class="occupancy-summary-line">
-                                        <div class="occupancy-summary-label">Lock</div>
-                                        <div class="occupancy-summary-value">
-                                          ${currentState.lockedSummary}
-                                        </div>
-                                      </div>
-                                    `
-                                  : ""}
-                              </div>
-                            </div>
-
-                            <div class="occupancy-explainability-panel">
-                              <div class="occupancy-explainability-panel-title">
-                                Active contributors
-                              </div>
-                              ${currentState.contributors.length
-                                ? html`
-                                    <div class="occupancy-contributors">
-                                      ${currentState.contributors.map(
-                                        (item) => html`
-                                          <div class="occupancy-contributor">
-                                            <div class="occupancy-contributor-head">
-                                              <div class="occupancy-contributor-source">
-                                                ${item.sourceLabel}
-                                              </div>
-                                              <div class="occupancy-contributor-state">
-                                                ${item.stateLabel}
-                                              </div>
-                                            </div>
-                                            ${item.timeLabel
-                                              ? html`
-                                                  <div class="occupancy-contributor-meta">
-                                                    Last update ${item.timeLabel}
-                                                  </div>
-                                                `
-                                              : ""}
-                                          </div>
-                                        `
-                                      )}
-                                    </div>
-                                  `
-                                : html`
-                                    <div class="occupancy-empty-state">
-                                      No active contributors are keeping this location occupied
-                                      right now.
-                                    </div>
-                                  `}
-                            </div>
+                          <div
+                            class="occupancy-status-chip ${currentState.occupied
+                              ? "is-occupied"
+                              : "is-vacant"}"
+                          >
+                            ${currentState.occupied ? "Occupied" : "Vacant"}
                           </div>
                         `
                       : ""}
-
-                    <div class="occupancy-explainability-panel">
-                      <div class="occupancy-explainability-panel-title">Recent changes</div>
-                      ${recentChangesToRender.length
-                        ? html`
-                            <div class="occupancy-events">
-                              ${recentChangesToRender.map(
-                                (item) => html`
-                                  <div class="occupancy-event">
-                                    <div class="occupancy-event-time">${item.timeLabel}</div>
-                                    <div class="occupancy-event-copy">
-                                      <div class="occupancy-event-source">${item.title}</div>
-                                      <div class="occupancy-event-description">
-                                        ${item.description}
-                                      </div>
-                                      <div class="occupancy-event-meta">
-                                        ${item.relativeTime}
-                                      </div>
-                                    </div>
-                                  </div>
-                                `
-                              )}
-                            </div>
-                          `
-                        : html`
-                            <div class="occupancy-empty-state">
-                              No recent occupancy changes are available yet.
-                            </div>
-                          `}
-                    </div>
+                    <div class="occupancy-primary-detail">${primaryDetail}</div>
+                    ${metaLines.length
+                      ? html`<div class="occupancy-meta-lines">${metaLines.map((line) => html`<div>${line}</div>`)}</div>`
+                      : ""}
                   </div>
                 `}
           </div>
         </div>
       </div>
     `;
+  }
+
+  /** One line: prefer newest log entry, else current “why” / fallback. */
+  private _occupancyAtAGlancePrimary(
+    currentState:
+      | {
+          occupied: boolean;
+          why: string;
+          nextChange?: string;
+          lockedSummary?: string;
+          contributors: unknown[];
+        }
+      | undefined,
+    recentChanges: Array<{ title: string; description: string; relativeTime: string }>
+  ): string {
+    if (recentChanges.length > 0) {
+      const latest = recentChanges[0];
+      return `Last event: ${latest.title} — ${latest.description} (${latest.relativeTime})`;
+    }
+    if (currentState?.why) {
+      return currentState.why;
+    }
+    return "No recent occupancy events are logged yet.";
   }
 
   private _getOccupancyConfig(): OccupancyConfig {
@@ -595,12 +382,12 @@ export class HtRoomExplainability extends LitElement {
               this._parseDateValue(contribution?.timestamp);
             const stateLabel =
               String(contribution?.state || contribution?.state_value || "").trim() || "active";
+            const innerLabel = this._sourceLabelForSourceId(childConfig, sourceId);
+            const childName = childLocation?.name || locationId;
             return {
-              sourceLabel: `${childLocation?.name || locationId}: ${this._sourceLabelForSourceId(
-                childConfig,
-                sourceId
-              )}`,
               sourceId,
+              innerLabel,
+              childName,
               stateLabel,
               timeLabel: timestamp ? `${this._formatElapsedDuration(timestamp)} ago` : undefined,
               timestampMs: timestamp ? timestamp.getTime() : this._nowEpochMs,
@@ -610,23 +397,70 @@ export class HtRoomExplainability extends LitElement {
             (
               item
             ): item is {
-              sourceLabel: string;
               sourceId: string;
+              innerLabel: string;
+              childName: string;
               stateLabel: string;
               timeLabel?: string;
               timestampMs: number;
             } => Boolean(item)
           );
       })
-      .sort((left, right) => right.timestampMs - left.timestampMs)
-      .map(({ sourceLabel, sourceId, stateLabel, timeLabel }) => ({
-        sourceLabel,
-        sourceId,
-        stateLabel,
-        timeLabel,
-      }));
+      .sort((left, right) => right.timestampMs - left.timestampMs);
 
-    return descendantRows;
+    const mergedBySource = new Map<
+      string,
+      {
+        sourceId: string;
+        innerLabel: string;
+        childNames: string[];
+        stateLabel: string;
+        timeLabel?: string;
+        timestampMs: number;
+      }
+    >();
+    for (const row of descendantRows) {
+      const existing = mergedBySource.get(row.sourceId);
+      if (!existing) {
+        mergedBySource.set(row.sourceId, {
+          sourceId: row.sourceId,
+          innerLabel: row.innerLabel,
+          childNames: [row.childName],
+          stateLabel: row.stateLabel,
+          timeLabel: row.timeLabel,
+          timestampMs: row.timestampMs,
+        });
+        continue;
+      }
+      if (!existing.childNames.includes(row.childName)) {
+        existing.childNames.push(row.childName);
+      }
+      if (row.timestampMs > existing.timestampMs) {
+        existing.timestampMs = row.timestampMs;
+        existing.timeLabel = row.timeLabel;
+        existing.stateLabel = row.stateLabel;
+      }
+    }
+
+    const MAX_AREAS_LISTED = 3;
+    return [...mergedBySource.values()]
+      .sort((left, right) => right.timestampMs - left.timestampMs)
+      .map(({ sourceId, innerLabel, childNames, stateLabel, timeLabel }) => {
+        const sortedNames = [...childNames].sort((a, b) => a.localeCompare(b));
+        let sourceLabelOut: string;
+        if (sortedNames.length === 1) {
+          sourceLabelOut = `${sortedNames[0]}: ${innerLabel}`;
+        } else {
+          const listed = sortedNames.slice(0, MAX_AREAS_LISTED);
+          const remainder = sortedNames.length - listed.length;
+          const suffix =
+            remainder > 0
+              ? `${listed.join(", ")}, +${remainder} more`
+              : listed.join(", ");
+          sourceLabelOut = `${innerLabel} · ${sortedNames.length} areas: ${suffix}`;
+        }
+        return { sourceLabel: sourceLabelOut, sourceId, stateLabel, timeLabel };
+      });
   }
 
   private _resolveOccupiedState(occupancyState?: Record<string, any>): boolean | undefined {
@@ -946,7 +780,16 @@ export class HtRoomExplainability extends LitElement {
     const attrs = occupancyState.attributes || {};
     const rawContributions = Array.isArray(attrs.contributions) ? attrs.contributions : [];
 
-    const rows = rawContributions
+    type ContributionRow = {
+      sourceLabel: string;
+      sourceId: string;
+      stateLabel: string;
+      timeLabel?: string;
+      timestampMs: number;
+      active: boolean;
+    };
+
+    const mapped = rawContributions
       .map((contribution: any) => {
         const rawSourceId =
           typeof contribution?.source_id === "string" && contribution.source_id
@@ -974,22 +817,20 @@ export class HtRoomExplainability extends LitElement {
           active,
         };
       })
-      .filter(
-        (
-          item
-        ): item is {
-          sourceLabel: string;
-          sourceId: string;
-          stateLabel: string;
-          timeLabel?: string;
-          timestampMs: number;
-          active: boolean;
-        } => Boolean(item)
-      )
-      .sort((left, right) => {
-        if (left.active !== right.active) return left.active ? -1 : 1;
-        return right.timestampMs - left.timestampMs;
-      });
+      .filter((item): item is ContributionRow => Boolean(item));
+
+    const dedupedBySource = new Map<string, ContributionRow>();
+    for (const item of mapped) {
+      const prev = dedupedBySource.get(item.sourceId);
+      if (!prev || item.timestampMs > prev.timestampMs) {
+        dedupedBySource.set(item.sourceId, item);
+      }
+    }
+
+    const rows = [...dedupedBySource.values()].sort((left, right) => {
+      if (left.active !== right.active) return left.active ? -1 : 1;
+      return right.timestampMs - left.timestampMs;
+    });
 
     const filtered = onlyActive ? rows.filter((item) => item.active) : rows;
     return filtered.map(({ sourceLabel, stateLabel, timeLabel, sourceId }) => ({
@@ -1047,16 +888,49 @@ export class HtRoomExplainability extends LitElement {
       return `${label}: ${this._locationName(locationId)}`;
     };
 
+    const groupMemberLabel = (): string | undefined => {
+      const markerColon = "__group_member__:";
+      const markerDot = "__group_member__.";
+      let memberId = "";
+      if (raw.startsWith(markerColon)) {
+        memberId = raw.slice(markerColon.length).trim();
+      } else if (raw.startsWith(markerDot)) {
+        memberId = raw.slice(markerDot.length).trim();
+      }
+      if (!memberId) return undefined;
+      return `Occupancy group: ${this._displayNameForLocationOrAreaId(memberId)}`;
+    };
+
     return (
       prefixedLocationLabel("__child__", ":", "Child location") ||
       prefixedLocationLabel("__child__", ".", "Child location") ||
       prefixedLocationLabel("__follow__", ":", "Parent location") ||
       prefixedLocationLabel("__follow__", ".", "Parent location") ||
+      groupMemberLabel() ||
       (raw.startsWith("linked:")
         ? `Linked location: ${this._locationName(raw.slice("linked:".length).trim())}`
         : undefined) ||
       this._knownLocationLabel(raw)
     );
+  }
+
+  /** Resolve topology location id or HA area id to a short display name. */
+  private _displayNameForLocationOrAreaId(rawId: string): string {
+    const id = String(rawId || "").trim();
+    if (!id) return "";
+    const haArea = this.hass?.areas?.[id];
+    if (haArea && typeof haArea.name === "string" && haArea.name.trim()) {
+      return haArea.name.trim();
+    }
+    const topo = this._locationName(id);
+    if (topo !== id) return topo;
+    return this._humanizeTechnicalId(id);
+  }
+
+  private _humanizeTechnicalId(id: string): string {
+    const stripped = id.replace(/^area_/i, "").replace(/_/g, " ").trim();
+    if (!stripped) return id;
+    return stripped.replace(/\b\w/g, (ch) => ch.toUpperCase());
   }
 
   private _knownLocationLabel(locationId: string): string | undefined {

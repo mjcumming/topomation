@@ -1,6 +1,6 @@
 # Current work
 
-**Last updated**: 2026-03-18
+**Last updated**: 2026-04-13
 **Purpose**: short live context for parallel work, handoff, and branch safety.
 
 Status markers:
@@ -35,6 +35,7 @@ Status markers:
 | Managed action backend WS path | active | Done | Implemented | Frontend now routes rule save/delete/enable to integration backend commands. |
 | Registration verification hardening | active | Done | Implemented | Create now fails+rolls back when HA does not register automation after reload. |
 | Docs/rules hardening for faster agent startup | active | Done | Implemented | Added quickstart/contracts/current-work and instruction routing. |
+| Occupancy tree strip (ADR-HA-080) | active | Done | Released | Tree dock is compact **Occupancy** (chip + latest note); **C-021** + docs updated; v0.2.44. |
 
 ## Parallel-work guardrails
 

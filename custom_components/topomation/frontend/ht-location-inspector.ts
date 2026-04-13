@@ -157,8 +157,6 @@ export class HtLocationInspector extends LitElement {
   private _climateLinkIndexLoadPromise?: Promise<void>;
   @state() private _syncImportInProgress = false;
   @state() private _managedShadowAutoRepairInProgress = false;
-  @state() private _showRecentOccupancyEvents = false;
-  @state() private _recentEventsDrawerOpen = true;
   @state() private _adjacencyNeighborId = "";
   @state() private _adjacencyBoundaryType = "door";
   @state() private _adjacencyDirection = "bidirectional";
@@ -225,8 +223,7 @@ export class HtLocationInspector extends LitElement {
       .inspector-body-content,
       .header,
       .tabs,
-      .tab-content,
-      .recent-events-drawer {
+      .tab-content {
         width: min(100%, var(--inspector-content-max-width));
       }
 
@@ -253,78 +250,6 @@ export class HtLocationInspector extends LitElement {
 
       .inspector-body-content {
         align-self: flex-start;
-      }
-
-      .recent-events-drawer {
-        position: sticky;
-        bottom: 0;
-        z-index: 4;
-        margin-top: var(--spacing-lg);
-        width: min(100%, var(--inspector-content-max-width));
-        align-self: flex-start;
-        border: 1px solid var(--divider-color);
-        border-radius: 14px 14px 0 0;
-        background: rgba(var(--rgb-card-background-color, 255, 255, 255), 0.96);
-        backdrop-filter: blur(8px);
-        box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.08);
-        overflow: hidden;
-      }
-
-      .recent-events-drawer.collapsed .recent-events-drawer-body {
-        display: none;
-      }
-
-      .recent-events-drawer.compact .recent-events-drawer-body {
-        max-height: 140px;
-      }
-
-      .recent-events-drawer.medium .recent-events-drawer-body {
-        max-height: 240px;
-      }
-
-      .recent-events-drawer.tall .recent-events-drawer-body {
-        max-height: 360px;
-      }
-
-      .recent-events-drawer-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 12px;
-        padding: 10px 14px;
-        background: rgba(var(--rgb-primary-color), 0.05);
-        border-bottom: 1px solid var(--divider-color);
-      }
-
-      .recent-events-drawer-title {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        font-size: 13px;
-        font-weight: 700;
-        letter-spacing: 0.04em;
-        text-transform: uppercase;
-      }
-
-      .recent-events-drawer-controls {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-      }
-
-      .recent-events-drawer-body {
-        padding: 12px 14px 14px;
-        overflow: auto;
-      }
-
-      .recent-events-drawer-help {
-        display: flex;
-        justify-content: space-between;
-        align-items: baseline;
-        gap: 8px;
-        margin-bottom: 8px;
-        color: var(--text-secondary-color);
-        font-size: 12px;
       }
 
       .header {
@@ -1058,6 +983,27 @@ export class HtLocationInspector extends LitElement {
       .occupancy-status-chip.is-vacant {
         background: rgba(var(--rgb-warning-color), 0.12);
         color: var(--warning-color);
+      }
+
+      .occupancy-at-a-glance {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .occupancy-primary-detail {
+        font-size: 13px;
+        line-height: 1.45;
+        color: var(--primary-text-color);
+      }
+
+      .occupancy-meta-lines {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        font-size: 12px;
+        line-height: 1.4;
+        color: var(--secondary-text-color);
       }
 
       .occupancy-summary-lines {
@@ -2629,7 +2575,6 @@ export class HtLocationInspector extends LitElement {
         this._wiabShowAllEntities = false;
         this._managedShadowAutoRepairKey = undefined;
         this._managedShadowAutoRepairInProgress = false;
-        this._showRecentOccupancyEvents = false;
         this._onTimeoutMemory = {};
         this._actionRulesDraft = undefined;
         this._actionRulesDraftDirty = false;
@@ -3981,6 +3926,7 @@ export class HtLocationInspector extends LitElement {
   private _renderDerivedOccupancyTab() {
     if (!this.location) return "";
     const currentState = this._recentExplainabilityCurrentState();
+    const recentChanges = this._recentExplainabilityChanges();
     const type = this._locationType() || "location";
     const typeLabel =
       type === "building"
@@ -3990,7 +3936,14 @@ export class HtLocationInspector extends LitElement {
           : type === "property"
             ? "Property"
             : "Location";
-    const activeChildren = (currentState?.contributors || []).map((item) => item.sourceLabel);
+
+    const hasSummary = Boolean(currentState || recentChanges.length);
+    const primaryDetail = hasSummary
+      ? this._occupancyAtAGlancePrimary(currentState, recentChanges)
+      : "";
+    const metaLines: string[] = [];
+    if (currentState?.nextChange) metaLines.push(currentState.nextChange);
+    if (currentState?.lockedSummary) metaLines.push(currentState.lockedSummary);
 
     return html`
       <div>
@@ -4006,58 +3959,30 @@ export class HtLocationInspector extends LitElement {
           <div class="subsection-help">
             This ${type} becomes occupied when one of its descendant locations is occupied.
           </div>
-          ${currentState
+          ${hasSummary
             ? html`
-                <div class="occupancy-explainability-grid" style="margin-top: 12px;">
-                  <div class="occupancy-explainability-panel">
-                    <div class="occupancy-explainability-panel-title">Current state</div>
-                    <div class="occupancy-status-chip ${currentState.occupied ? "is-occupied" : "is-vacant"}">
-                      ${currentState.occupied ? "Occupied" : "Vacant"}
-                    </div>
-                    <div class="occupancy-summary-lines">
-                      <div class="occupancy-summary-line">
-                        <div class="occupancy-summary-label">Why</div>
-                        <div class="occupancy-summary-value">${currentState.why}</div>
-                      </div>
-                      ${currentState.nextChange
-                        ? html`
-                            <div class="occupancy-summary-line">
-                              <div class="occupancy-summary-label">Next change</div>
-                              <div class="occupancy-summary-value">${currentState.nextChange}</div>
-                            </div>
-                          `
-                        : ""}
-                    </div>
-                  </div>
-                  <div class="occupancy-explainability-panel">
-                    <div class="occupancy-explainability-panel-title">Active child locations</div>
-                    ${activeChildren.length
-                      ? html`
-                          <div class="occupancy-events">
-                            ${activeChildren.map((label) => html`
-                              <div class="occupancy-event">
-                                <span class="occupancy-event-source">${label}</span>
-                              </div>
-                            `)}
-                          </div>
-                        `
-                      : html`
-                          <div class="occupancy-empty-state">
-                            No child locations are actively holding this ${type} occupied.
-                          </div>
-                        `}
-                  </div>
-                  ${this._renderStructureSummaryPanel()}
+                <div class="occupancy-at-a-glance" style="margin-top: 12px;">
+                  ${currentState
+                    ? html`
+                        <div
+                          class="occupancy-status-chip ${currentState.occupied ? "is-occupied" : "is-vacant"}"
+                        >
+                          ${currentState.occupied ? "Occupied" : "Vacant"}
+                        </div>
+                      `
+                    : ""}
+                  <div class="occupancy-primary-detail">${primaryDetail}</div>
+                  ${metaLines.length
+                    ? html`<div class="occupancy-meta-lines">${metaLines.map((line) => html`<div>${line}</div>`)}</div>`
+                    : ""}
                 </div>
+                ${this._renderStructureSummaryPanel()}
               `
             : html`
-                <div class="occupancy-explainability-grid" style="margin-top: 12px;">
-                  <div class="occupancy-explainability-panel">
-                    <div class="occupancy-explainability-panel-title">Current state</div>
-                    <div class="occupancy-empty-state">No derived occupancy state is available yet.</div>
-                  </div>
-                  ${this._renderStructureSummaryPanel()}
+                <div class="occupancy-at-a-glance" style="margin-top: 12px;">
+                  <div class="occupancy-empty-state">No derived occupancy state is available yet.</div>
                 </div>
+                ${this._renderStructureSummaryPanel()}
               `}
         </div>
       </div>
@@ -4096,7 +4021,8 @@ export class HtLocationInspector extends LitElement {
 
   private _renderStructuralCurrentStatePanel() {
     const currentState = this._recentExplainabilityCurrentState();
-    if (!currentState) {
+    const recentChanges = this._recentExplainabilityChanges();
+    if (!currentState && recentChanges.length === 0) {
       return html`
         <div class="occupancy-explainability-panel">
           <div class="occupancy-explainability-panel-title">Occupancy</div>
@@ -4104,24 +4030,26 @@ export class HtLocationInspector extends LitElement {
         </div>
       `;
     }
+    const primaryDetail = this._occupancyAtAGlancePrimary(currentState, recentChanges);
+    const metaLines: string[] = [];
+    if (currentState?.nextChange) metaLines.push(currentState.nextChange);
+    if (currentState?.lockedSummary) metaLines.push(currentState.lockedSummary);
     return html`
       <div class="occupancy-explainability-panel">
         <div class="occupancy-explainability-panel-title">Occupancy</div>
-        <div class="occupancy-status-chip ${currentState.occupied ? "is-occupied" : "is-vacant"}">
-          ${currentState.occupied ? "Occupied" : "Vacant"}
-        </div>
-        <div class="occupancy-summary-lines">
-          <div class="occupancy-summary-line">
-            <div class="occupancy-summary-label">Why</div>
-            <div class="occupancy-summary-value">${currentState.why}</div>
-          </div>
-          ${currentState.nextChange
+        <div class="occupancy-at-a-glance">
+          ${currentState
             ? html`
-                <div class="occupancy-summary-line">
-                  <div class="occupancy-summary-label">Next change</div>
-                  <div class="occupancy-summary-value">${currentState.nextChange}</div>
+                <div
+                  class="occupancy-status-chip ${currentState.occupied ? "is-occupied" : "is-vacant"}"
+                >
+                  ${currentState.occupied ? "Occupied" : "Vacant"}
                 </div>
               `
+            : ""}
+          <div class="occupancy-primary-detail">${primaryDetail}</div>
+          ${metaLines.length
+            ? html`<div class="occupancy-meta-lines">${metaLines.map((line) => html`<div>${line}</div>`)}</div>`
             : ""}
         </div>
       </div>
@@ -4171,137 +4099,26 @@ export class HtLocationInspector extends LitElement {
     `;
   }
 
-  private _renderRecentOccupancyEventsDrawer() {
-    const currentState = this._recentExplainabilityCurrentState();
-    const recentChanges = this._recentExplainabilityChanges();
-    if (!currentState && recentChanges.length === 0) return "";
-    const recentChangesToRender = this._showRecentOccupancyEvents
-      ? recentChanges
-      : recentChanges.slice(0, 5);
-
-    return html`
-      <div
-        class="recent-events-drawer ${this._recentEventsDrawerOpen ? "medium" : "collapsed"}"
-        data-testid="recent-occupancy-events-drawer"
-      >
-        <div class="recent-events-drawer-header">
-          <div class="recent-events-drawer-title">
-            <ha-icon .icon=${"mdi:timeline-clock-outline"}></ha-icon>
-            Occupancy Explainability
-          </div>
-          <div class="recent-events-drawer-controls">
-            <button
-              class="button button-secondary"
-              type="button"
-              style="padding: 2px 8px; font-size: 11px;"
-              data-testid="recent-events-collapse-toggle"
-              @click=${() => {
-                this._recentEventsDrawerOpen = !this._recentEventsDrawerOpen;
-              }}
-            >
-              ${this._recentEventsDrawerOpen ? "Collapse" : "Open"}
-            </button>
-          </div>
-        </div>
-        <div class="recent-events-drawer-body">
-          <div class="recent-events-drawer-help">
-            <span>See why this location is in its current state and what changed most recently.</span>
-            ${recentChanges.length > 5
-              ? html`
-                  <button
-                    class="button button-secondary"
-                    type="button"
-                    style="padding: 2px 8px; font-size: 11px;"
-                    data-testid="recent-events-toggle"
-                    @click=${() => {
-                      this._showRecentOccupancyEvents = !this._showRecentOccupancyEvents;
-                    }}
-                  >
-                    ${this._showRecentOccupancyEvents ? "Show less" : "Show all"}
-                  </button>
-                `
-              : ""}
-          </div>
-          <div class="occupancy-explainability">
-            ${currentState
-              ? html`
-                  <div class="occupancy-explainability-grid">
-                    <div class="occupancy-explainability-panel">
-                      <div class="occupancy-explainability-panel-title">Current state</div>
-                      <div
-                        class="occupancy-status-chip ${currentState.occupied ? "is-occupied" : "is-vacant"}"
-                      >
-                        ${currentState.occupied ? "Occupied" : "Vacant"}
-                      </div>
-                      <div class="occupancy-summary-lines">
-                        <div class="occupancy-summary-line">
-                          <div class="occupancy-summary-label">Why</div>
-                          <div class="occupancy-summary-value">${currentState.why}</div>
-                        </div>
-                        ${currentState.nextChange
-                          ? html`
-                              <div class="occupancy-summary-line">
-                                <div class="occupancy-summary-label">Next change</div>
-                                <div class="occupancy-summary-value">${currentState.nextChange}</div>
-                              </div>
-                            `
-                          : ""}
-                        ${currentState.lockedSummary
-                          ? html`
-                              <div class="occupancy-summary-line">
-                                <div class="occupancy-summary-label">Lock</div>
-                                <div class="occupancy-summary-value">${currentState.lockedSummary}</div>
-                              </div>
-                            `
-                          : ""}
-                      </div>
-                    </div>
-                    <div class="occupancy-explainability-panel">
-                      <div class="occupancy-explainability-panel-title">Active contributors</div>
-                      ${currentState.contributors.length
-                        ? html`
-                            <div class="occupancy-events">
-                              ${currentState.contributors.map(
-                                (item) => html`
-                                  <div class="occupancy-event">
-                                    <span class="occupancy-event-source">${item.sourceLabel}</span>
-                                    <span class="occupancy-event-meta">${item.stateLabel}</span>
-                                    <span class="occupancy-event-meta">${item.relativeTime}</span>
-                                  </div>
-                                `
-                              )}
-                            </div>
-                          `
-                        : html`<div class="occupancy-empty-state">No active contributors.</div>`}
-                    </div>
-                  </div>
-                `
-              : ""}
-            <div class="occupancy-explainability-panel">
-              <div class="occupancy-explainability-panel-title">Recent changes</div>
-              ${recentChangesToRender.length
-                ? html`
-                    <div class="occupancy-events">
-                      ${recentChangesToRender.map(
-                        (item) => html`
-                          <div class="occupancy-event">
-                            <span class="occupancy-event-time">${item.timeLabel}</span>
-                            <div class="occupancy-event-copy">
-                              <span class="occupancy-event-source">${item.title}</span>
-                              <span class="occupancy-event-description">${item.description}</span>
-                            </div>
-                            <span class="occupancy-event-meta">${item.relativeTime}</span>
-                          </div>
-                        `
-                      )}
-                    </div>
-                  `
-                : html`<div class="occupancy-empty-state">No recent occupancy changes yet.</div>`}
-            </div>
-          </div>
-        </div>
-      </div>
-    `;
+  private _occupancyAtAGlancePrimary(
+    currentState:
+      | {
+          occupied: boolean;
+          why: string;
+          nextChange?: string;
+          lockedSummary?: string;
+          contributors: unknown[];
+        }
+      | undefined,
+    recentChanges: Array<{ title: string; description: string; relativeTime: string }>
+  ): string {
+    if (recentChanges.length > 0) {
+      const latest = recentChanges[0];
+      return `Last event: ${latest.title} — ${latest.description} (${latest.relativeTime})`;
+    }
+    if (currentState?.why) {
+      return currentState.why;
+    }
+    return "No recent occupancy events are logged yet.";
   }
 
   private _isAmbientStateChangeRelevant(entityId: string, newStateObj: any, oldStateObj: any): boolean {
@@ -10184,7 +10001,7 @@ export class HtLocationInspector extends LitElement {
 
   /**
    * Structural hosts (property/building/floor/grounds): occupied if this row or any descendant
-   * is occupied — matches tree dots and Occupancy Explainability dock (ADR-HA-078).
+   * is occupied — matches tree dots and the Occupancy strip under the tree (ADR-HA-078).
    */
   private _aggregateOccupiedStateForStructural(): boolean | undefined {
     if (!this.location || !this._isStructuralSummaryLocation()) return undefined;
@@ -10671,7 +10488,16 @@ export class HtLocationInspector extends LitElement {
       : [];
 
     const nowMs = this._nowEpochMs;
-    const rows = rawContributions
+    type InspectorContributionRow = {
+      sourceLabel: string;
+      sourceId: string;
+      stateLabel: string;
+      relativeTime: string;
+      _timestampMs: number;
+      _active: boolean;
+    };
+
+    const mapped = rawContributions
       .map((contribution: any) => {
         const rawSourceId =
           typeof contribution?.source_id === "string" && contribution.source_id
@@ -10704,9 +10530,17 @@ export class HtLocationInspector extends LitElement {
           _active: this._isContributionActive(contribution),
         };
       })
-      .filter((item): item is { sourceLabel: string; sourceId: string; stateLabel: string; relativeTime: string; _timestampMs: number; _active: boolean } =>
-        Boolean(item)
-      );
+      .filter((item): item is InspectorContributionRow => Boolean(item));
+
+    const dedupedBySource = new Map<string, InspectorContributionRow>();
+    for (const item of mapped) {
+      const prev = dedupedBySource.get(item.sourceId);
+      if (!prev || item._timestampMs > prev._timestampMs) {
+        dedupedBySource.set(item.sourceId, item);
+      }
+    }
+
+    const rows = [...dedupedBySource.values()];
 
     const ordered = [...rows].sort((left, right) => {
       if (left._active !== right._active) return left._active ? -1 : 1;
@@ -10784,16 +10618,48 @@ export class HtLocationInspector extends LitElement {
       return `${label}: ${this._locationName(locationId)}`;
     };
 
+    const groupMemberLabel = (): string | undefined => {
+      const markerColon = "__group_member__:";
+      const markerDot = "__group_member__.";
+      let memberId = "";
+      if (raw.startsWith(markerColon)) {
+        memberId = raw.slice(markerColon.length).trim();
+      } else if (raw.startsWith(markerDot)) {
+        memberId = raw.slice(markerDot.length).trim();
+      }
+      if (!memberId) return undefined;
+      return `Occupancy group: ${this._displayNameForLocationOrAreaId(memberId)}`;
+    };
+
     return (
       prefixedLocationLabel("__child__", ":", "Child location") ||
       prefixedLocationLabel("__child__", ".", "Child location") ||
       prefixedLocationLabel("__follow__", ":", "Parent location") ||
       prefixedLocationLabel("__follow__", ".", "Parent location") ||
+      groupMemberLabel() ||
       (raw.startsWith("linked:")
         ? `Linked location: ${this._locationName(raw.slice("linked:".length).trim())}`
         : undefined) ||
       this._knownLocationLabel(raw)
     );
+  }
+
+  private _displayNameForLocationOrAreaId(rawId: string): string {
+    const id = String(rawId || "").trim();
+    if (!id) return "";
+    const haArea = this.hass?.areas?.[id];
+    if (haArea && typeof haArea.name === "string" && haArea.name.trim()) {
+      return haArea.name.trim();
+    }
+    const topo = this._locationName(id);
+    if (topo !== id) return topo;
+    return this._humanizeTechnicalId(id);
+  }
+
+  private _humanizeTechnicalId(id: string): string {
+    const stripped = id.replace(/^area_/i, "").replace(/_/g, " ").trim();
+    if (!stripped) return id;
+    return stripped.replace(/\b\w/g, (ch) => ch.toUpperCase());
   }
 
   private _knownLocationLabel(locationId: string): string | undefined {

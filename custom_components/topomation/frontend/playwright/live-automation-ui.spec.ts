@@ -564,12 +564,10 @@ test("live detection explainability reflects trigger activation and contributor 
 
   const inspector = page.locator("ht-location-inspector");
   const explainability = page.locator("ht-room-explainability").getByTestId("room-explainability-panel");
-  const currentStatePanel = explainability.locator(".occupancy-explainability-panel").first();
-  const activeContributorsPanel = explainability.locator(".occupancy-explainability-panel").nth(1);
   await openDetectionTab(page);
 
   await expect(explainability).toBeVisible();
-  await expect(explainability).toContainText("Occupancy Explainability");
+  await expect(explainability).toContainText("Occupancy");
   await expect(inspector.getByTestId("adjacency-advanced-toggle")).toHaveCount(0);
   await expect(inspector.getByText("Advanced Occupancy Relationships")).toHaveCount(0);
 
@@ -584,23 +582,22 @@ test("live detection explainability reflects trigger activation and contributor 
     source_id: sourceId,
     include_locked: true,
   });
-  await expect(currentStatePanel).toContainText("Vacant", { timeout: 10000 });
-  await expect(activeContributorsPanel).toContainText("No active contributors", { timeout: 10000 });
+  await expect(explainability).toContainText("Vacant", { timeout: 10000 });
 
   await callTopomationService("trigger", {
     location_id: location.id,
     source_id: sourceId,
     timeout: 300,
   });
-  await expect(currentStatePanel).toContainText("Occupied", { timeout: 20000 });
-  await expect(activeContributorsPanel).toContainText(sourceId, { timeout: 20000 });
+  await expect(explainability).toContainText("Occupied", { timeout: 20000 });
+  await expect(explainability).toContainText(sourceId, { timeout: 20000 });
 
   await callTopomationService("clear", {
     location_id: location.id,
     source_id: sourceId,
     trailing_timeout: 0,
   });
-  await expect(activeContributorsPanel).not.toContainText(sourceId, { timeout: 10000 });
+  await expect(explainability).not.toContainText(sourceId, { timeout: 10000 });
 });
 
 test("live floor occupancy groups save shared occupancy_group_id membership", async ({ page }) => {

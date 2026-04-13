@@ -295,6 +295,7 @@ describe('TopomationPanel integration (fake hass)', () => {
               {
                 kind: "state",
                 event: "occupied",
+                reason: "event:trigger",
                 changed_at: new Date(Date.now() - 1_000).toISOString(),
               },
               {
@@ -353,16 +354,12 @@ describe('TopomationPanel integration (fake hass)', () => {
       '[data-testid="room-explainability-panel"]'
     ) as HTMLElement | null;
     expect(panel).to.exist;
-    expect(panel?.textContent || "").to.include("Occupancy Explainability");
-    expect(panel?.textContent || "").to.include("Current state");
-    expect(panel?.textContent || "").to.include("Kitchen Motion");
+    expect(panel?.textContent || "").to.include("Occupancy");
+    expect(panel?.textContent || "").to.include("Occupied");
+    expect(panel?.textContent || "").to.include("Last event:");
+    expect(panel?.textContent || "").to.include("Location became occupied");
     expect(panel?.textContent || "").to.include("Occupied by trigger");
     expect(panel?.textContent || "").not.to.include("Vacated by trigger");
-    expect(panel?.textContent || "").to.include("Location became occupied");
-
-    const dockBody = explainability?.shadowRoot?.querySelector(".dock-body") as HTMLElement | null;
-    expect(dockBody).to.exist;
-    expect(getComputedStyle(dockBody!).resize).to.equal("vertical");
   });
 
   it("shows aggregate occupancy explainability for a parent location with an occupied child", async () => {
@@ -465,8 +462,6 @@ describe('TopomationPanel integration (fake hass)', () => {
     const panelText = (explainability?.shadowRoot?.textContent || "").trim();
     expect(panelText).to.include("Occupied");
     expect(panelText).to.include("Occupied via Kitchen: Kitchen Motion");
-    expect(panelText).to.include("Kitchen: Kitchen Motion");
-    expect(panelText).not.to.include("No active contributors are keeping this room occupied right now.");
   });
 
   it("skips managed shadow locations for default selection and dialog parent candidates", async () => {

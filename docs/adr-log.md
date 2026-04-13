@@ -3994,6 +3994,72 @@ operator needs were under-specified:
 
 ---
 
+### ADR-HA-080: Occupancy at-a-glance strip (scope-aligned UI) (2026-04-13)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+
+- ADR-HA-064 and ADR-HA-072 established **occupancy explainability** in the panel:
+  human-oriented copy, not a raw engine log, with `recent_changes` on the
+  occupancy entity for a short buffer.
+- In practice the tree dock grew **multi-panel** UI (current state, long
+  contributor lists, full recent-changes list). For many homes—especially
+  **occupancy groups** and aggregate parents—the same underlying synthetic
+  sources appeared many times, and internal ids such as `__group_member__:…`
+  read as debug output, not operator language.
+- The primary user question in the tree is narrow: **“Is this location occupied,
+  and what is the latest useful note?”** A full contributor matrix and event feed
+  overlaps **Home Assistant History / Logbook** without matching user intent.
+
+**Decision**:
+
+1. **Rename** the tree dock user-facing label from **Occupancy Explainability** to
+   **Occupancy** (component remains `ht-room-explainability`).
+2. **Tree dock content** is a compact strip:
+   - occupied / vacant chip
+   - **one primary line**: if `recent_changes` is non-empty, show the newest
+     normalized entry as **Last event: …**; otherwise show the same merged
+     **“why”** string already computed for aggregate/direct occupancy (timeout /
+     lock lines stay as secondary meta when present).
+3. **Do not** render separate **Active contributors** or **Recent changes** lists
+   in the tree dock for v1; operators use HA for deep timelines.
+4. **Inspector** derived / structural occupancy summaries follow the same
+   at-a-glance pattern (chip + primary line + optional meta).
+5. **Remove** the legacy inspector **explainability drawer** implementation that
+   was never wired into the template (dead code).
+6. **Presentation fixes** (same release): resolve synthetic `__group_member__:*`
+   source ids to readable labels (HA area name, topology name, or humanized
+   slug); dedupe duplicate `source_id` rows in contribution lists; merge
+   duplicate aggregate contributors across children for parent selection.
+
+**Rationale**:
+
+1. Aligns UI surface with the **one question** users ask from the tree.
+2. Avoids implying a complete audit trail in-panel; **C-021** still requires
+   `recent_changes` on entities for the **single** newest-event line and for
+   future evolution.
+3. Reduces noise for occupancy groups without changing kernel or integration
+   occupancy semantics.
+
+**Consequences**:
+
+- ✅ Cleaner default experience; less duplicate and cryptic text.
+- ⚠️ Power users no longer see the full contributor list in the tree dock; they
+  use the **Occupancy** tab, entity attributes, or HA tools for detail.
+- ℹ️ `recent_changes` buffer and throttling rules in the integration are
+  unchanged; only **how much** of the buffer is shown in the default tree UI.
+- ℹ️ `docs/contracts.md` **C-021** updated for label and presentation rules.
+
+**Alternatives Considered**:
+
+- Keep multi-panel UI but only fix labels — rejected; list volume remained wrong
+  for the stated user question.
+- Remove the tree dock entirely — rejected; at-a-glance occupancy is still
+  high value next to the tree.
+
+---
+
 ## How to Use This Log
 
 ### When to Create an ADR

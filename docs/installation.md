@@ -54,9 +54,9 @@ After the integration loads, open **TopoMation** from the Home Assistant sidebar
 
 The main workspace is split into:
 
-- the location tree on the left, with **Occupancy Explainability** for the
-  selected location (current state, contributors, and a short recent-activity
-  summary—not a replacement for HA History or Logbook)
+- the location tree on the left, with a compact **Occupancy** strip for the
+  selected location (occupied/vacant, one latest note, optional timeout/lock
+  hints—not a replacement for HA History or Logbook)
 - a right-side inspector with:
 
 - `Occupancy`
@@ -102,12 +102,13 @@ Important mixed-source rule:
 - if you want presence to be authoritative, do not also configure motion or
   other occupancy contributors that can hold the room occupied
 
-### Occupancy explainability vs automations
+### Occupancy strip vs automations
 
-**Occupancy Explainability** (under the location tree) answers “why is this
-location occupied or vacant right now?” and “what happened recently?” in plain
-language. It may omit or combine lines when the room **stays occupied** but many
-updates arrive in a short period, so the list stays readable.
+The **Occupancy** strip (under the location tree) answers “is this location
+occupied or vacant?” and surfaces the **latest** occupancy-related note when the
+integration’s `recent_changes` buffer has entries; otherwise it shows the same
+merged summary string as the panel logic. It is intentionally brief—not a full
+contributor list or event feed.
 
 That summary is **not** what drives your automations. Managed rules (for example
 **Lighting** `On occupied` / `On vacant`) are stored as normal Home Assistant

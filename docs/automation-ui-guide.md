@@ -1,8 +1,8 @@
 # Automation UI Guide (Workspace + Inspector)
 
-**Last reviewed**: 2026-04-10  
+**Last reviewed**: 2026-04-13  
 **Status**: Active (design baseline)  
-**Authority**: ADR-HA-055, ADR-HA-056, ADR-HA-060, ADR-HA-066, ADR-HA-068, ADR-HA-069 + `docs/contracts.md`
+**Authority**: ADR-HA-055, ADR-HA-056, ADR-HA-060, ADR-HA-066, ADR-HA-068, ADR-HA-069, ADR-HA-078, ADR-HA-080 + `docs/contracts.md`
 
 This guide defines the intended user interaction model for Topomation's
 automation workspace and inspector tabs.
@@ -12,7 +12,8 @@ automation workspace and inspector tabs.
 1. Left panel hosts:
    - structure header/actions
    - location tree
-   - docked `Room Explainability` panel tied to the selected location
+   - docked **Occupancy** strip under the tree tied to the selected location
+     (at-a-glance state + latest note; see **C-021**)
 2. Right panel hosts the location inspector directly.
    - the older dedicated device-assignment workspace is mothballed in the
      active product UI; its implementation may remain in the repo but is not
@@ -24,6 +25,22 @@ automation workspace and inspector tabs.
    - `Appliances`
    - `Media`
    - `HVAC`
+
+## 1.1 Structural aggregate hosts (`property`, `floor`, `building`, `grounds`)
+
+These locations use **derived** occupancy surfaces (summary or occupancy groups),
+not room-style source lists on `building` / `grounds`—see `docs/contracts.md` and
+ADR-HA-073 (intent) as amended by **ADR-HA-078** (current tab policy).
+
+1. **Tabs shown**: `Occupancy`, `Ambient`, `Lighting`, `Media`, `HVAC`.
+2. **Not shown**: `Appliances` on these structural summary rows (appliance-style
+   targets stay on room-like `area` / `subarea` nodes).
+3. **Device and lux enumeration** (Ambient selector, Lighting/Media/HVAC action
+   targets): union of the host’s `entity_ids` and `ha_area_id` with the **managed
+   shadow** wrapper’s `ha_area_id` and `entity_ids` (`_meta.shadow_area_id` on the
+   host). This matches HA assignment remap for aggregate hosts (ADR-HA-049).
+4. **ADR-HA-073** previously removed automation tabs from structural nodes; **ADR-HA-078**
+   supersedes that tab-removal decision while keeping rollup-first occupancy UX.
 
 ## 2. Header Status Behavior
 
@@ -39,8 +56,8 @@ Top-to-bottom layout order:
 2. Add-source composer
 3. Shared-space section (`Shared Space`)
 4. WIAB controls
-5. Occupancy no longer owns the Explainability renderer; that panel is docked
-   under the tree on the left and follows the selected location.
+5. Occupancy no longer owns the tree **Occupancy** strip renderer; that strip is
+   docked under the tree on the left and follows the selected location.
 6. State-held direct-presence sources render `Occupied state` guidance and keep
    `Vacant delay` controls visible; the UI should not show disabled ON-timeout
    sliders for those sources.
@@ -78,7 +95,8 @@ Top-to-bottom layout order:
    - `Save changes` commits draft
    - `Discard changes` restores persisted state.
 4. Ambient assignment uses one selector control:
-   - direct sensor options for the location
+   - direct sensor options for the location (including HA areas and entities tied to
+     the host’s **managed shadow** when applicable; see ADR-HA-078 / C-015)
    - `Inherit from parent` as the empty/default option
    - do not render a separate inherit checkbox alongside the selector.
 5. Rule-authoring tabs (`Lighting`, `Appliances`, `Media`, `HVAC`) use

@@ -389,7 +389,8 @@ shared location tree selection context.
   active inspector:
   - room-style automation tabs are not rendered for them
   - `floor` keeps occupancy-group management as its structural authoring role
-  - `building` and `grounds` render informational summary/explainability
+  - `building` and `grounds` render informational occupancy summary (at-a-glance
+    copy; see **C-021**)
     surfaces only
 - Room-like integration-owned nodes (`subarea`) continue to use room-scoped
   occupancy authoring.

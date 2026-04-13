@@ -599,21 +599,29 @@ Additional save points:
   `docs/work-tracking.md`, active issue checklists, and release/live validation
   docs) must stay aligned in the same change set.
 
-## C-021 Inspector Explainability Contract
+## C-021 Occupancy tree strip (formerly “explainability”) contract
 
-- Explainability is rendered as a docked panel under the location tree in the
-  left workspace rail.
-- The panel follows the currently selected location.
-- This section is not a raw debug log. It answers:
-  - why the location is in its current occupancy state now
-  - what meaningful occupancy-related changes happened most recently
-- V1 explainability is occupancy-scoped only:
-  - current occupancy state
-  - active contributors
-  - next vacancy/timeout when available
-  - recent source-level signal events and location-level occupied/vacant transitions
+- Occupancy context for the selected location is rendered as a **compact docked
+  strip** under the location tree in the left workspace rail (implementation:
+  `ht-room-explainability`).
+- The strip follows the currently selected location.
+- It is **not** a raw debug log and **not** a full event timeline. It answers the
+  primary operator question: **is this location occupied or vacant, and what is
+  the latest useful note?**
+- V1 tree UI is occupancy-scoped only and shows:
+  - current occupancy state (occupied / vacant)
+  - **one primary text line**: if `recent_changes` on the occupancy entity is
+    non-empty, the **newest** normalized entry is summarized as a last-event
+    line; otherwise the same merged **reason / “why”** string used for aggregate
+    or direct occupancy (see integration formatting rules)
+  - optional secondary lines for **next vacancy / timeout** and **lock** summary
+    when present
+- V1 **does not** require listing every active contributor or the full
+  `recent_changes` deque in the tree strip. Those details may be inspected via
+  the **Occupancy** inspector tab, entity attributes, or Home Assistant
+  **History** / **Logbook**.
 - V1 does not require raw internal engine traces or lock/unlock timeline
-  history.
+  history in the tree strip.
 - A separate global runtime event log is not exposed in the primary workspace
   for occupancy v1.
 - Occupancy entity attributes must expose a small recent-change buffer as
@@ -636,11 +644,12 @@ Additional save points:
   recorded. `occupancy.signal` rows are unchanged. Home Assistant still receives
   `EVENT_TOPOMATION_OCCUPANCY_CHANGED` for every kernel `occupancy.changed`; only
   the explainability `recent_changes` deque is throttled.
-- The section title and help text must describe explainability, not imply a
-  generic event log when only current-state contributors are shown.
-- The active user-facing label is `Occupancy Explainability`, not
-  `Room Explainability`.
-- Explainability is universal, but copy must adapt to location type:
+- The section title and help text must describe **occupancy at a glance**, not
+  imply a complete logbook or contributor matrix in the tree strip.
+- The active user-facing label for the tree strip is **`Occupancy`** (historical
+  docs may say “Occupancy Explainability”; ADR-HA-080). Do not use legacy
+  `Room Explainability` as the product label.
+- The strip is universal, but copy must adapt to location type:
   - structural locations (`property`, `floor`, `building`, `grounds`) are described as
     derived from child locations (or occupancy groups on `floor`)
   - room-like locations (`area`, `subarea`) may describe direct sources

@@ -101,13 +101,13 @@ The switch interaction becomes the occupancy signal. No extra hardware required.
 - Native HA-managed rules for lighting, appliances, media, and HVAC
 - Manual trigger, clear, vacate, lock, and unlock services
 - Lock scopes for a single location or an entire subtree
-- Occupancy Explainability in the panel: a short summary of why each location is occupied or vacant and what changed recently (not a full HA logbook)
+- **Occupancy** strip under the tree: occupied/vacant plus a single latest note (from `recent_changes` or merged reason)—not a full HA logbook
 
 ### Occupancy and your automations
 
 Managed rules (for example **Lighting** with `On occupied` and `On vacant`) are normal Home Assistant automations. They react to each location’s **occupancy binary sensor** (and any ambient or time conditions you configured)—the same fused state you set up under the **Occupancy** tab, including sources, timeouts, sync, and locks.
 
-Use **Occupancy Explainability** when you want a quick read on contributors and recent context. For a complete timeline or deep debugging, use HA **History**, **Logbook**, and automation **Traces**; the explainability list is intentionally brief and may roll together repeated “still occupied” activity so fast bursts stay readable.
+Use the tree **Occupancy** strip for a quick read on current state and the latest occupancy-related note. For a complete timeline or deep debugging, use HA **History**, **Logbook**, and automation **Traces**.
 
 ## Installation
 
