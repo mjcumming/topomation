@@ -3805,7 +3805,8 @@ operator needs were under-specified:
   (`exit_grace` + trigger rescue).
 - `docs/contracts.md` **C-003A** / **C-003B** must stay aligned with payload
   and kernel behavior.
-- Requires `home-topology` **1.0.3+**.
+- Requires `home-topology` **1.0.3+** for the occupancy payloads above; Topomation
+  pins **1.0.4** to include ambient `extra_lux_entity_ids` for managed-shadow lux.
 
 ---
 

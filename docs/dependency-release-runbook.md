@@ -1,6 +1,6 @@
 # Dependency Release Runbook
 
-**Last reviewed**: 2026-02-26  
+**Last reviewed**: 2026-04-14  
 **Scope**: Updating Topomation when `home-topology` publishes a new release.
 
 ## 1) Confirm the exact upstream release
@@ -33,7 +33,7 @@ Required files to update:
 Find stale references:
 
 ```bash
-rg -n "home-topology(==|>=)|0\\.2\\.0a0|0\\.2\\.0-alpha|1\\.0\\.0" \
+rg -n "home-topology(==|>=)|0\\.2\\.0a0|0\\.2\\.0-alpha|1\\.0\\.[0-3]" \
   custom_components/topomation/manifest.json pyproject.toml docs README.md -S
 ```
 

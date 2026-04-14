@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.47] - 2026-04-14
+
+### Changed
+
+- **Dependencies**: pin **`home-topology==1.0.4`** (PyPI). Use stock
+  **`AmbientLightModule`** `extra_lux_entity_ids` / `invalidate_ambient_sensor_cache`
+  from the published kernel; remove in-tree **`TopomationAmbientLightModule`** backport.
+
 ## [0.2.46] - 2026-04-13
 
 ### Fixed
