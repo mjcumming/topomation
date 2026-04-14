@@ -579,6 +579,62 @@ describe('HtLocationTree - shouldUpdate Performance', () => {
     expect(lockDetail?.lock).to.equal(true);
   });
 
+  it('renders human-readable lock source labels in lock tooltip', async () => {
+    const element = await fixture<HtLocationTree>(html`
+      <ht-location-tree
+        .hass=${{
+          ...mockHass,
+          states: {
+            "binary_sensor.occupancy_kitchen": {
+              entity_id: "binary_sensor.occupancy_kitchen",
+              state: "on",
+              attributes: {
+                device_class: "occupancy",
+                location_id: "kitchen",
+                is_locked: true,
+                locked_by: ["manual_ui"],
+              },
+            },
+          },
+        } as HomeAssistant}
+        .locations=${mockLocations}
+      ></ht-location-tree>
+    `);
+
+    await element.updateComplete;
+    const lockBtn = element.shadowRoot!.querySelector('[data-id="kitchen"] .lock-btn') as HTMLElement;
+    expect(lockBtn).to.exist;
+    expect(lockBtn.getAttribute("title")).to.contain("Manual panel");
+  });
+
+  it('maps lock state for managed-shadow hosts using effective occupancy id', async () => {
+    const element = await fixture<HtLocationTree>(html`
+      <ht-location-tree
+        .hass=${{
+          ...mockHass,
+          states: {
+            "binary_sensor.occupancy_area_shadow_main_floor": {
+              entity_id: "binary_sensor.occupancy_area_shadow_main_floor",
+              state: "on",
+              attributes: {
+                device_class: "occupancy",
+                location_id: "area_shadow_main_floor",
+                is_locked: true,
+                locked_by: ["manual_ui"],
+              },
+            },
+          },
+        } as HomeAssistant}
+        .locations=${floorWithHostMappedShadowWithoutAreaTags}
+      ></ht-location-tree>
+    `);
+
+    await element.updateComplete;
+    const floorLockBtn = element.shadowRoot!.querySelector('[data-id="main-floor"] .lock-btn') as HTMLElement;
+    expect(floorLockBtn).to.exist;
+    expect(floorLockBtn.classList.contains("locked")).to.equal(true);
+  });
+
   it('dispatches location-occupancy-toggle when occupancy icon is clicked', async () => {
     const element = await fixture<HtLocationTree>(html`
       <ht-location-tree
@@ -604,6 +660,37 @@ describe('HtLocationTree - shouldUpdate Performance', () => {
     expect(occupancyDetail).to.exist;
     expect(occupancyDetail?.locationId).to.equal('kitchen');
     expect(occupancyDetail?.occupied).to.equal(true);
+  });
+
+  it('uses effective occupancy state for managed-shadow host toggle intent and title', async () => {
+    const element = await fixture<HtLocationTree>(html`
+      <ht-location-tree
+        .hass=${mockHass as HomeAssistant}
+        .locations=${floorWithHostMappedShadowWithoutAreaTags}
+        .occupancyStates=${{ area_shadow_main_floor: true }}
+      ></ht-location-tree>
+    `);
+
+    await element.updateComplete;
+
+    let occupancyDetail: { locationId: string; occupied: boolean } | undefined;
+    element.addEventListener('location-occupancy-toggle', (e: Event) => {
+      occupancyDetail = (e as CustomEvent).detail;
+    });
+
+    const floorOccupancyBtn = element.shadowRoot!.querySelector(
+      '[data-id="main-floor"] .occupancy-btn'
+    ) as HTMLElement;
+    expect(floorOccupancyBtn).to.exist;
+    expect(floorOccupancyBtn.getAttribute('title')).to.equal('Set vacant');
+
+    floorOccupancyBtn.click();
+    await element.updateComplete;
+
+    expect(occupancyDetail).to.deep.equal({
+      locationId: 'main-floor',
+      occupied: false,
+    });
   });
 
   it('does not render row delete buttons', async () => {

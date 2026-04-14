@@ -10,7 +10,12 @@ import type {
 } from "./types";
 import { sharedStyles } from "./styles";
 import { getLocationType } from "./hierarchy-rules";
-import { isSystemShadowLocation, managedShadowLocationIdSet } from "./shadow-location-utils";
+import {
+  effectiveOccupancyTopologyId,
+  isSystemShadowLocation,
+  managedShadowLocationIdSet,
+} from "./shadow-location-utils";
+import { humanReadableLockSource } from "./lock-source-utils";
 
 import "./ht-location-tree";
 import "./ht-location-inspector";
@@ -38,6 +43,7 @@ const TREE_PANEL_SPLIT_DEFAULT = 0.4;
 const TREE_PANEL_SPLIT_MIN = 0.25;
 const TREE_PANEL_SPLIT_MAX = 0.75;
 const ENTITY_DND_MIME = "application/x-topomation-entity-id";
+const MANUAL_OPERATOR_SOURCE_ID = "manual_ui";
 
 type DeviceGroup = {
   key: string;
@@ -1735,20 +1741,35 @@ export class TopomationPanel extends LitElement {
 
     await this._enqueueLocationOp(locationId, async () => {
       try {
-        const service = lock ? "lock" : "unlock";
-        await this.hass.callWS({
-          type: "call_service",
-          domain: "topomation",
-          service,
-          service_data: this._serviceDataWithEntryId({
-            location_id: locationId,
-            source_id: "manual_ui",
-          }),
-        });
+        if (lock) {
+          await this.hass.callWS({
+            type: "call_service",
+            domain: "topomation",
+            service: "lock",
+            service_data: this._serviceDataWithEntryId({
+              location_id: locationId,
+              source_id: MANUAL_OPERATOR_SOURCE_ID,
+              mode: "freeze",
+              scope: "subtree",
+            }),
+          });
+        } else {
+          const subtreeIds = this._collectSubtreeLocationIds(locationId);
+          for (const targetId of subtreeIds) {
+            await this.hass.callWS({
+              type: "call_service",
+              domain: "topomation",
+              service: "unlock_all",
+              service_data: this._serviceDataWithEntryId({
+                location_id: targetId,
+              }),
+            });
+          }
+        }
         await this._loadLocations(true);
         this._locationsVersion += 1;
         const locationName = this._locations.find((loc) => loc.id === locationId)?.name || locationId;
-        this._showToast(`${lock ? "Locked" : "Unlocked"} "${locationName}"`, "success");
+        this._showToast(`${lock ? "Locked" : "Unlocked"} subtree "${locationName}"`, "success");
       } catch (error: any) {
         console.error("Failed to toggle lock:", error);
         this._showToast(error?.message || "Failed to update lock", "error");
@@ -1756,12 +1777,36 @@ export class TopomationPanel extends LitElement {
     });
   }
 
+  private _collectSubtreeLocationIds(rootId: string): string[] {
+    const childrenByParent = new Map<string, string[]>();
+    for (const location of this._locations) {
+      if (!location.parent_id) continue;
+      const existing = childrenByParent.get(location.parent_id) || [];
+      existing.push(location.id);
+      childrenByParent.set(location.parent_id, existing);
+    }
+
+    const queue = [rootId];
+    const result: string[] = [];
+    while (queue.length) {
+      const current = queue.shift()!;
+      result.push(current);
+      const children = childrenByParent.get(current) || [];
+      for (const child of children) {
+        queue.push(child);
+      }
+    }
+    return result;
+  }
+
   private _getLocationLockState(locationId: string): { isLocked: boolean; lockedBy: string[] } {
+    const location = this._locations.find((item) => item.id === locationId);
+    const effectiveId = effectiveOccupancyTopologyId(location, this._locations);
     const states = this.hass?.states || {};
     for (const state of Object.values(states) as any[]) {
       const attrs = state?.attributes || {};
       if (attrs?.device_class !== "occupancy") continue;
-      if (String(attrs?.location_id) !== String(locationId)) continue;
+      if (String(attrs?.location_id) !== String(effectiveId || locationId)) continue;
       const lockedBy = Array.isArray(attrs?.locked_by)
         ? attrs.locked_by.map((item: unknown) => String(item))
         : [];
@@ -1774,10 +1819,23 @@ export class TopomationPanel extends LitElement {
     return { isLocked: false, lockedBy: [] };
   }
 
+  private _getLocationOccupiedState(locationId: string): boolean | undefined {
+    const location = this._locations.find((item) => item.id === locationId);
+    const effectiveId = effectiveOccupancyTopologyId(location, this._locations);
+    const states = this.hass?.states || {};
+    for (const state of Object.values(states) as any[]) {
+      const attrs = state?.attributes || {};
+      if (attrs?.device_class !== "occupancy") continue;
+      if (String(attrs?.location_id) !== String(effectiveId || locationId)) continue;
+      return state?.state === "on";
+    }
+    return undefined;
+  }
+
   private async _handleLocationOccupancyToggle(e: CustomEvent): Promise<void> {
     e.stopPropagation();
     const locationId = e?.detail?.locationId as string | undefined;
-    const occupied = Boolean(e?.detail?.occupied);
+    const requestedOccupied = Boolean(e?.detail?.occupied);
     if (!locationId) {
       this._showToast("Invalid occupancy request", "error");
       return;
@@ -1788,7 +1846,9 @@ export class TopomationPanel extends LitElement {
       const locationName = location?.name || locationId;
       const { isLocked, lockedBy } = this._getLocationLockState(locationId);
       if (isLocked) {
-        const lockDetails = lockedBy.length ? ` (${lockedBy.join(", ")})` : "";
+        const lockDetails = lockedBy.length
+          ? ` (${lockedBy.map((item) => humanReadableLockSource(item)).join(", ")})`
+          : "";
         this._showToast(`Hey, can't do it. "${locationName}" is locked${lockDetails}.`, "warning");
         return;
       }
@@ -1799,10 +1859,15 @@ export class TopomationPanel extends LitElement {
           return;
         }
 
+        // Resolve occupancy intent from current effective HA state at click-time.
+        // This avoids stale UI-derived toggle payloads selecting the wrong action.
+        const currentOccupied = this._getLocationOccupiedState(locationId);
+        const occupied =
+          typeof currentOccupied === "boolean" ? !currentOccupied : requestedOccupied;
         const service = occupied ? "trigger" : "vacate_area";
         const serviceData: Record<string, unknown> = {
           location_id: locationId,
-          source_id: "manual_ui",
+          source_id: MANUAL_OPERATOR_SOURCE_ID,
         };
 
         if (occupied) {

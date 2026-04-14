@@ -7,7 +7,12 @@ import { sharedStyles } from "./styles";
 import Sortable from "sortablejs";
 import { getLocationType, isDescendant, canMoveLocation } from "./hierarchy-rules";
 import { getLocationIcon } from "./icon-utils";
-import { isSystemShadowLocation, managedShadowLocationIdSet } from "./shadow-location-utils";
+import {
+  effectiveOccupancyTopologyId,
+  isSystemShadowLocation,
+  managedShadowLocationIdSet,
+} from "./shadow-location-utils";
+import { humanReadableLockSource } from "./lock-source-utils";
 import {
   buildFlatTree,
   zoneFromPointerInRow,
@@ -757,7 +762,7 @@ export class HtLocationTree extends LitElement {
             this._renderItem(
               node,
               occupancyStatusByLocation[node.location.id] || "unknown",
-              lockStateByLocation[node.location.id] || { isLocked: false, lockedBy: [] }
+              this._lockStateForLocation(node.location, lockStateByLocation)
             )
         )}
         ${this._dropIndicator
@@ -790,10 +795,10 @@ export class HtLocationTree extends LitElement {
     const lockIcon = lockState.isLocked ? "mdi:lock" : "mdi:lock-open-variant-outline";
     const lockTitle = lockState.isLocked
       ? lockState.lockedBy.length
-        ? `Locked (${lockState.lockedBy.join(", ")})`
+        ? `Locked (${lockState.lockedBy.map((item) => humanReadableLockSource(item)).join(", ")})`
         : "Locked"
       : "Unlocked";
-    const isDirectlyOccupied = this.occupancyStates?.[location.id] === true;
+    const isDirectlyOccupied = this._isEffectivelyOccupied(location);
     const occupancyIcon = "mdi:home-switch-outline";
     const occupancyTitle = isDirectlyOccupied ? "Set vacant" : "Set occupied";
 
@@ -940,6 +945,22 @@ export class HtLocationTree extends LitElement {
       };
     }
     return lockByLocation;
+  }
+
+  private _lockStateForLocation(
+    location: Location,
+    lockStateByLocation: Record<string, LockState>
+  ): LockState {
+    const effectiveId = effectiveOccupancyTopologyId(location, this.locations);
+    return lockStateByLocation[effectiveId] || { isLocked: false, lockedBy: [] };
+  }
+
+  private _isEffectivelyOccupied(location: Location): boolean {
+    const effectiveId = effectiveOccupancyTopologyId(location, this.locations);
+    if (typeof this.occupancyStates?.[effectiveId] === "boolean") {
+      return this.occupancyStates[effectiveId] === true;
+    }
+    return this.occupancyStates?.[location.id] === true;
   }
 
   private _visibleTreeLocations(): Location[] {

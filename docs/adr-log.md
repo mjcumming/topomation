@@ -4061,6 +4061,65 @@ operator needs were under-specified:
 
 ---
 
+### ADR-HA-081: Defer policy modes module; harden lock UX on current primitives first (2026-04-14)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+
+Lock primitives (`lock`, `unlock`, `unlock_all` with `mode` and `scope`) already
+exist and are contract-backed. Recent operator review confirmed immediate user
+pain is in lock UX correctness/clarity (for example floor lock icon not updating,
+source-mismatch unlock confusion, raw internal lock-holder ids in UI), not in
+missing low-level lock capabilities.
+
+A broader "modes" concept (for example party/away/sleep/custom contexts) is
+promising, but naming and combinatorial expectation risk is high:
+
+1. fixed built-in mode lists do not scale to user-specific scenarios
+2. introducing a full policy-orchestration module expands scope significantly
+3. lock UX reliability should be fixed before adding a higher abstraction layer.
+
+**Decision**:
+
+1. Keep and harden existing lock primitives as the active policy foundation.
+2. Prioritize lock UX correctness + test coverage now (ISSUE-060), including:
+   - managed-shadow host lock-state mapping correctness
+   - source-aware unlock messaging/flows
+   - direct vs inherited lock clarity in inspector/tree
+   - readable lock-owner labels.
+3. Explicitly defer implementation of a new policy "modes module" to a future
+   track after lock workflows are stable and validated.
+4. If/when revisited, future modes should be designed as an orchestration layer
+   over existing primitives rather than replacing lock semantics.
+
+**Rationale**:
+
+1. Fixing correctness/clarity gaps now delivers immediate user value with lower risk.
+2. Deferral avoids scope creep while preserving a clear future path.
+3. Existing contracts already support core use cases (away/security, party/hold)
+   without new runtime primitives.
+4. A later modes design can be informed by real lock usage and test outcomes.
+
+**Consequences**:
+
+- ✅ Current work remains bounded to lock UX + contract hardening.
+- ✅ Existing automation-first lock design remains stable and reusable.
+- ✅ Test effort targets concrete regressions observed in live usage.
+- ⚠️ User-facing "mode" authoring remains deferred.
+- ℹ️ Future mode orchestration requires a separate ADR/issue with explicit scope.
+
+**Alternatives Considered**:
+
+- Implement a full modes module immediately:
+  rejected due to scope expansion and unresolved naming/expectation risks.
+- Replace lock language entirely with fixed built-in modes:
+  rejected because it would reduce flexibility and likely create frequent "missing mode" requests.
+- Keep current behavior and docs only:
+  rejected because known lock UX bugs would remain unresolved.
+
+---
+
 ## How to Use This Log
 
 ### When to Create an ADR

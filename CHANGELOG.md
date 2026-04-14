@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.52] - 2026-04-14
+
+### Fixed
+
+- **Tree lock controls (operator mode)**: manual lock/unlock now use subtree
+  semantics by default for fast testing workflows.
+  - Lock: `topomation.lock(..., mode=freeze, scope=subtree, source_id=manual_ui)`
+  - Unlock: force-clear subtree lock directives via `unlock_all`.
+- **Tree lock status accuracy**: managed-shadow host rows now resolve lock state
+  from the effective occupancy topology id, so floor/host lock icons and state
+  messages match actual runtime lock state.
+- **Lock source readability**: lock holder/source labels are human-readable in
+  tree/inspector surfaces (for example `Manual panel` instead of `manual_ui`).
+- **Tree occupancy toggle**: manual row toggle intent now resolves from the
+  current effective HA occupancy entity state at click time (with event payload
+  only as fallback), preventing stale UI payloads from re-sending `trigger`
+  when a location is already occupied.
+- **Tree occupancy button UX**: host rows with managed-shadow occupancy now use
+  effective occupancy state for button title/action intent (`Set occupied` /
+  `Set vacant`) so tooltips and dispatched toggle behavior match what will
+  actually execute.
+
 ## [0.2.51] - 2026-04-14
 
 ### Tests

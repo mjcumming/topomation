@@ -97,6 +97,12 @@ Multi-entry routing:
   - lock toggle icon (`mdi:lock*`)
 - Occupancy icon reflects effective occupancy state for the location row.
 - Lock icon reflects lock state from occupancy entity attributes (`is_locked`, `locked_by`).
+- Manual tree lock controls are operator/test-first:
+  - lock click maps to `topomation.lock(location_id, source_id="manual_ui", mode="freeze", scope="subtree")`
+  - unlock click maps to force clear lock policy for the selected subtree via
+    `topomation.unlock_all` across the selected location and descendants.
+- Tree lock owner copy should use human-readable labels (for example `Manual panel`)
+  instead of raw source id tokens when a readable label is known.
 
 ## C-006 Persistence contract
 

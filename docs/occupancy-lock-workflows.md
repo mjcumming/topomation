@@ -54,3 +54,11 @@ They provide default automation wiring for the two canonical workflows.
 ## UI note
 
 The location manager lock control remains a fast testing/operator surface. Production policy behavior should be expressed in Home Assistant automations using stable `source_id` values.
+
+Current manual tree-control behavior:
+
+- `Lock` applies `freeze + subtree` for the selected location (`source_id=manual_ui`).
+- `Unlock` is a force-clear operator action for the selected subtree (clears all
+  lock sources under that subtree).
+- Lock holder labels in UI should be human-readable (for example `Manual panel`)
+  when available.

@@ -13,6 +13,7 @@ Status markers:
 - Active focus: managed shadow area contract + implementation checklist (ADR-HA-049 / ISSUE-057).
 - Active focus: HA-canonical managed-rule sync (ADR-HA-053) with stable rule identity and in-place upserts.
 - Active focus: automation UX + persistence realignment (ADR-HA-054/055/056/060/061/062/063/066/067): the active rule UI is scoped to Lighting/Media/HVAC, Detection uses `Shared Space` as the primary occupancy relationship model, and shared-space occupancy is now documented as binary-sensor authoritative with contribution-union timeout semantics.
+- Active focus: lock UX contract hardening (ADR-HA-081 / ISSUE-060): fix managed-shadow host lock-state rendering, source-aware unlock behavior, and direct-vs-inherited lock readability before any future modes-module expansion.
 - Active execution checklist: `project/issues/issue-058-automation-ui-contract-implementation.md`.
 - New planning track: ambient light v1 design baseline captured in `docs/ambient-light-v1-design.md` before dusk/dawn coupling work.
 - Future work captured: a house-wide modes/activities context layer (for example `watching_tv`, `evening`, `overnight`, `party`, `bedtime`) that can modulate lighting/media/HVAC behavior is promising, but is intentionally deferred until the simpler lighting-behavior UX lands.
@@ -28,6 +29,7 @@ Status markers:
 | Automation UX + contracts reset | active | Done | Live-validated | Detection `Shared Space`, docked explainability refinements, and panel shell reload fixes reran through `make test-release-live` on the exact 2026-03-17 branch state. |
 | Automation UX implementation checklist (ISSUE-058) | active | Done | Live-validated | Detection/Ambient draft flow, HA-canonical/card-local Lighting workflow, dev-mode no-legacy cleanup, and Media/HVAC card simplification are in repo and reran against local live HA on 2026-03-17. |
 | Ambient light v1 design + implementation sequencing | active | In progress | Target | Design guide added; next step is phase-A inspector read path and config UX. |
+| Lock UX contract hardening (ISSUE-060) | active | Pending | Target | Scope is lock correctness/readability/testing only; modes-module orchestration is explicitly deferred by ADR-HA-081. |
 | Parallel branch updates | multiple | In progress | n/a | Verify `git status` before editing overlapping files. |
 | Managed action rule resilience | active | Done | Live-validated | Added fallback/reconciliation contracts + production smoke coverage; live managed-actions contract rerun passed on 2026-03-06. |
 | Managed rule HA-canonical upsert sync | active | Done | Live-validated | Save path now upserts by automation id + stable `rule_uuid`; live lighting rule UUID upsert/delete contract passed on 2026-03-06, and the post-create list race was fixed the same day. |

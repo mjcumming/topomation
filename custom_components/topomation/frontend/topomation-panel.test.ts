@@ -1062,7 +1062,7 @@ describe('TopomationPanel integration (fake hass)', () => {
     expect((rightHeader?.textContent || "").trim()).to.equal("Automation");
   });
 
-  it("handles lock toggle from tree via topomation lock service", async () => {
+  it("handles lock toggle from tree via topomation lock subtree service", async () => {
     const callWsCalls: any[] = [];
     const hass: HomeAssistant = {
       callWS: async <T>(req: Record<string, any>): Promise<T> => {
@@ -1114,10 +1114,81 @@ describe('TopomationPanel integration (fake hass)', () => {
             call.type === "call_service" &&
             call.domain === "topomation" &&
             call.service === "lock" &&
-            call.service_data?.location_id === "kitchen"
+            call.service_data?.location_id === "kitchen" &&
+            call.service_data?.mode === "freeze" &&
+            call.service_data?.scope === "subtree" &&
+            call.service_data?.source_id === "manual_ui"
         ),
       "lock service was not called"
     );
+  });
+
+  it("handles unlock toggle from tree via topomation unlock_all across subtree", async () => {
+    const callWsCalls: any[] = [];
+    const hass: HomeAssistant = {
+      callWS: async <T>(req: Record<string, any>): Promise<T> => {
+        callWsCalls.push(req);
+        if (req.type === "topomation/locations/list") {
+          return { locations } as T;
+        }
+        if (req.type === "config/entity_registry/list") {
+          return [] as T;
+        }
+        if (req.type === "config/device_registry/list") {
+          return [] as T;
+        }
+        if (req.type === "call_service") {
+          return {} as T;
+        }
+        throw new Error("Unexpected WS call");
+      },
+      connection: {},
+      states: {},
+      areas: {},
+      floors: {},
+      config: {
+        location_name: "Test Property",
+      },
+      localize: (key: string) => key,
+    };
+
+    const element = await fixture<HTMLDivElement>(html`
+      <topomation-panel .hass=${hass}></topomation-panel>
+    `);
+
+    await waitUntil(() => (element as any)._loading === false, "panel did not finish loading");
+    const tree = element.shadowRoot!.querySelector("ht-location-tree") as HTMLElement;
+    expect(tree).to.exist;
+
+    tree.dispatchEvent(
+      new CustomEvent("location-lock-toggle", {
+        detail: { locationId: "main_floor", lock: false },
+        bubbles: true,
+        composed: true,
+      })
+    );
+
+    await waitUntil(
+      () =>
+        callWsCalls.some(
+          (call) =>
+            call.type === "call_service" &&
+            call.domain === "topomation" &&
+            call.service === "unlock_all" &&
+            call.service_data?.location_id === "main_floor"
+        ),
+      "unlock_all was not called for subtree root"
+    );
+
+    expect(
+      callWsCalls.some(
+        (call) =>
+          call.type === "call_service" &&
+          call.domain === "topomation" &&
+          call.service === "unlock_all" &&
+          call.service_data?.location_id === "kitchen"
+      )
+    ).to.equal(true);
   });
 
   it("handles occupancy toggle from tree via topomation trigger service", async () => {
@@ -1306,6 +1377,75 @@ describe('TopomationPanel integration (fake hass)', () => {
             call.service_data?.location_id === "kitchen"
         ),
       "vacate_area service was not called"
+    );
+  });
+
+  it("derives occupancy toggle intent from HA state when payload is stale", async () => {
+    const callWsCalls: any[] = [];
+    const hass: HomeAssistant = {
+      callWS: async <T>(req: Record<string, any>): Promise<T> => {
+        callWsCalls.push(req);
+        if (req.type === "topomation/locations/list") {
+          return { locations } as T;
+        }
+        if (req.type === "config/entity_registry/list") {
+          return [] as T;
+        }
+        if (req.type === "config/device_registry/list") {
+          return [] as T;
+        }
+        if (req.type === "call_service") {
+          return {} as T;
+        }
+        throw new Error("Unexpected WS call");
+      },
+      connection: {},
+      states: {
+        "binary_sensor.occupancy_kitchen": {
+          entity_id: "binary_sensor.occupancy_kitchen",
+          state: "on",
+          attributes: {
+            device_class: "occupancy",
+            location_id: "kitchen",
+            is_locked: false,
+          },
+        },
+      },
+      areas: {},
+      floors: {},
+      config: {
+        location_name: "Test Property",
+      },
+      localize: (key: string) => key,
+    };
+
+    const element = await fixture<HTMLDivElement>(html`
+      <topomation-panel .hass=${hass}></topomation-panel>
+    `);
+
+    await waitUntil(() => (element as any)._loading === false, "panel did not finish loading");
+    const tree = element.shadowRoot!.querySelector("ht-location-tree") as HTMLElement;
+    expect(tree).to.exist;
+
+    // Simulate stale UI payload that still requests "occupied" while the location is already occupied.
+    tree.dispatchEvent(
+      new CustomEvent("location-occupancy-toggle", {
+        detail: { locationId: "kitchen", occupied: true },
+        bubbles: true,
+        composed: true,
+      })
+    );
+
+    await waitUntil(
+      () =>
+        callWsCalls.some(
+          (call) =>
+            call.type === "call_service" &&
+            call.domain === "topomation" &&
+            call.service === "vacate_area" &&
+            call.service_data?.location_id === "kitchen"
+        ),
+      "vacate_area service was not called from effective occupied state"
     );
   });
 

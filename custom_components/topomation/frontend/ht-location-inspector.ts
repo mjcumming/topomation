@@ -30,6 +30,7 @@ import {
   deleteTopomationActionRule,
   listTopomationActionRules,
 } from "./ha-automation-rules";
+import { humanReadableLockSource } from "./lock-source-utils";
 
 type SourceSignalKey = OccupancySource["signal_key"];
 type CandidateItem = { key: string; entityId: string; signalKey?: SourceSignalKey };
@@ -3906,7 +3907,7 @@ export class HtLocationInspector extends LitElement {
               <div class="lock-title">Locked</div>
               <div class="lock-details">
                 ${lockState.lockedBy.length
-                  ? html`Held by ${lockState.lockedBy.join(", ")}.`
+                  ? html`Held by ${lockState.lockedBy.map((sourceId) => this._lockSourceLabel(sourceId)).join(", ")}.`
                   : html`Occupancy is currently held by a lock.`}
               </div>
               ${lockState.lockModes.length
@@ -3921,7 +3922,7 @@ export class HtLocationInspector extends LitElement {
                     <div class="lock-directive-list">
                       ${lockState.directLocks.map((directive) => html`
                         <div class="lock-directive">
-                          <span class="lock-pill">${directive.sourceId}</span>
+                          <span class="lock-pill">${this._lockSourceLabel(directive.sourceId)}</span>
                           <span>${this._lockModeLabel(directive.mode)}</span>
                           <span>${this._lockScopeLabel(directive.scope)}</span>
                         </div>
@@ -10422,7 +10423,7 @@ export class HtLocationInspector extends LitElement {
     let lockedSummary: string | undefined;
     if (lockState.isLocked) {
       lockedSummary = lockState.lockedBy.length
-        ? `Held by ${lockState.lockedBy.join(", ")}`
+        ? `Held by ${lockState.lockedBy.map((sourceId) => this._lockSourceLabel(sourceId)).join(", ")}`
         : "Occupancy is held by a lock";
     }
 
@@ -10807,6 +10808,14 @@ export class HtLocationInspector extends LitElement {
   private _lockScopeLabel(scope: string): string {
     if (scope === "subtree") return "Subtree";
     return "Self";
+  }
+
+  private _lockSourceLabel(sourceId: string): string {
+    const sourceLabel = this._sourceLabelForSourceId(this._getOccupancyConfig(), sourceId);
+    if (sourceLabel && sourceLabel !== sourceId) {
+      return sourceLabel;
+    }
+    return humanReadableLockSource(sourceId);
   }
 
   private _startClockTicker(): void {
