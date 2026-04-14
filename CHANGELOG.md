@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.51] - 2026-04-14
+
+### Tests
+
+- **Frontend**: `ambient-lux-enumeration.ts` + Vitest `vitest/ambient-lux-enumeration.test.ts`
+  cover HA area name matching for Ambient lux; inspector adds an integration
+  case for `sensor.illuminance` when no topology row maps the native HA area.
+
 ## [0.2.50] - 2026-04-14
 
 ### Fixed

@@ -19,9 +19,10 @@ Comprehensive test suite for the Topomation Home Assistant integration.
 - **`test-realworld.py`** - ✨ Real-world integration tests with realistic scenarios
 - **`test-live-managed-actions-contract.py`** - Live HA contract test for managed automation rule registration/enumeration/deletion
 
-### Frontend (Web Test Runner + Playwright)
+### Frontend (Vitest + Web Test Runner + Playwright)
 
-- **`custom_components/topomation/frontend/ht-location-inspector.test.ts`** - Room inspector: occupancy, ambient, managed rules for Lighting / Appliances / Media / HVAC (including fan split: appliance vs climate-linked targets), save flows
+- **`custom_components/topomation/frontend/vitest/ambient-lux-enumeration.test.ts`** - Pure HA area id set for Ambient lux picker (name-matched `hass.areas` vs structural host; fast regression guard)
+- **`custom_components/topomation/frontend/ht-location-inspector.test.ts`** - Room inspector: occupancy, ambient (including lux picker / HA area alignment), managed rules for Lighting / Appliances / Media / HVAC (including fan split: appliance vs climate-linked targets), save flows. Run under Vitest (`npm run test:unit`) and Web Test Runner (`npm test`)
 - **`custom_components/topomation/frontend/topomation-panel.test.ts`** - Panel shell, tree, deep links (e.g. `/topomation-appliances` → Appliances tab)
 - **`custom_components/topomation/frontend/playwright/*.spec.ts`** - Mock harness and live HA UI workflows (`npm run test:e2e`)
 

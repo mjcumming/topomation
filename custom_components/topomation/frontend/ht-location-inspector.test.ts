@@ -6646,6 +6646,117 @@ describe("HtLocationInspector ambient lux HA area selection", () => {
     );
   });
 
+  it("lists sensor.illuminance when HA area name matches and no topology row maps that area_id", async () => {
+    const hostId = "prop_illuminance_only";
+    const shadowId = "shadow_prop_illuminance_only";
+    const queenHa = "ha_area_queen_registry_only";
+
+    const registry = [
+      { entity_id: "sensor.illuminance", area_id: queenHa, device_id: null },
+    ];
+
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>): Promise<T> => {
+        if (request.type === "config/entity_registry/list") return registry as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        if (request.type === "topomation/actions/rules/list") return { rules: [] } as T;
+        if (request.type === "topomation/locations/set_module_config") return { success: true } as T;
+        return {} as T;
+      },
+      connection: {},
+      states: {
+        "sensor.illuminance": {
+          entity_id: "sensor.illuminance",
+          state: "3",
+          attributes: {
+            friendly_name: "Illuminance",
+            device_class: "illuminance",
+            unit_of_measurement: "lx",
+          },
+        },
+      },
+      areas: {
+        [queenHa]: { area_id: queenHa, name: "Queen" },
+        shadow_ha: { area_id: "shadow_ha", name: "System" },
+      },
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const host: Location = {
+      ...structuredClone(baseLocation),
+      id: hostId,
+      name: "Queen",
+      parent_id: null,
+      ha_area_id: null,
+      entity_ids: [],
+      modules: {
+        _meta: { type: "property", shadow_area_id: shadowId },
+        occupancy: {
+          enabled: true,
+          default_timeout: 300,
+          default_trailing_timeout: 120,
+          occupancy_sources: [],
+        },
+        ambient: {
+          lux_sensor: null,
+          auto_discover: false,
+          inherit_from_parent: true,
+          dark_threshold: 50,
+          bright_threshold: 500,
+          fallback_to_sun: true,
+          assume_dark_on_error: true,
+        },
+      },
+    };
+
+    const shadow: Location = {
+      ...structuredClone(baseLocation),
+      id: shadowId,
+      name: "Managed system area",
+      parent_id: hostId,
+      ha_area_id: "shadow_ha",
+      entity_ids: [],
+      modules: {
+        _meta: {
+          type: "area",
+          role: "managed_shadow",
+          shadow_for_location_id: hostId,
+        },
+        occupancy: {
+          enabled: true,
+          default_timeout: 300,
+          default_trailing_timeout: 120,
+          occupancy_sources: [],
+        },
+      },
+    };
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${host}
+        .allLocations=${[host, shadow] as Location[]}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
+    await switchTopTab(element, "Ambient");
+    await element.updateComplete;
+
+    const sensorSelect = element.shadowRoot?.querySelector(
+      '[data-testid="ambient-lux-sensor-select"]'
+    ) as HTMLSelectElement | null;
+    expect(sensorSelect).to.exist;
+
+    await waitUntil(
+      () => {
+        const opts = Array.from(sensorSelect!.options).map((o) => o.value);
+        return opts.includes("sensor.illuminance");
+      },
+      "sensor.illuminance missing from lux picker (name-matched HA area without topology row)"
+    );
+  });
+
   it("property ambient lux omits illuminance from descendant room HA areas (name mismatch)", async () => {
     const hostId = "prop_lux_filter";
     const shadowId = "shadow_prop_lux_filter";

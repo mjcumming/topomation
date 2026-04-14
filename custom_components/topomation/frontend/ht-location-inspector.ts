@@ -23,6 +23,7 @@ import {
   managedShadowAreaIdForHost,
   managedShadowLocationIdSet,
 } from "./shadow-location-utils";
+import { ambientLuxEnumerationHaAreaIds } from "./ambient-lux-enumeration";
 import { applyModeDefaults, getSourceDefaultsForEntity } from "./source-profile-utils";
 import {
   createTopomationActionRule,
@@ -3317,23 +3318,13 @@ export class HtLocationInspector extends LitElement {
    * every illuminance sensor under descendant room areas.
    */
   private _ambientLuxEnumerationHaAreaIds(): string[] {
-    const ids = new Set(this._deviceEnumerationHaAreaIdsCore());
-    if (!this.location || !this._isManagedShadowHost()) {
-      return [...ids];
-    }
-    const label = (this.location.name || "").trim().toLowerCase();
-    if (!label) return [...ids];
-    const areas = this.hass?.areas;
-    if (!areas || typeof areas !== "object") return [...ids];
-    for (const entry of Object.values(areas as Record<string, Record<string, unknown>>)) {
-      const aid =
-        typeof entry?.area_id === "string" && entry.area_id.trim()
-          ? entry.area_id.trim()
-          : "";
-      const nm = typeof entry?.name === "string" ? entry.name.trim().toLowerCase() : "";
-      if (aid && nm === label) ids.add(aid);
-    }
-    return [...ids];
+    if (!this.location) return [];
+    return ambientLuxEnumerationHaAreaIds({
+      coreHaAreaIds: this._deviceEnumerationHaAreaIdsCore(),
+      includeNameMatchedHomeAssistantAreas: this._isManagedShadowHost(),
+      hostDisplayName: this.location.name || "",
+      hassAreas: this.hass?.areas,
+    });
   }
 
   /** True when `nodeId` is a strict descendant of `ancestorId` in `allLocations`. */
