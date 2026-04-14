@@ -3250,7 +3250,7 @@ export class HtLocationInspector extends LitElement {
     }
 
     const states = this.hass?.states || {};
-    for (const areaId of this._deviceEnumerationHaAreaIds()) {
+    for (const areaId of this._ambientLuxEnumerationHaAreaIds()) {
       for (const entityId of Object.keys(states)) {
         if (!this._entityIsInArea(entityId, areaId)) continue;
         if (!this._isLuxSensorEntity(entityId)) continue;
@@ -3268,16 +3268,10 @@ export class HtLocationInspector extends LitElement {
   }
 
   /**
-   * HA area ids used to enumerate devices (ambient lux, action rules: lighting,
-   * media, HVAC-linked fans, appliances, etc.).
-   *
-   * For structural **managed-shadow hosts** (property / building / grounds / floor):
-   * includes this row's `ha_area_id`, the managed shadow HA area, and every strict
-   * descendant topology location's `ha_area_id`, so entities in native HA-backed
-   * child wrappers (e.g. site "Queen" under a property) appear even when the host
-   * row has no direct `ha_area_id`.
+   * Core HA area ids for this inspector row: topology `ha_area_id` plus managed
+   * shadow HA area when this is a structural host. No descendant walk.
    */
-  private _deviceEnumerationHaAreaIds(): string[] {
+  private _deviceEnumerationHaAreaIdsCore(): string[] {
     if (!this.location) return [];
     const ids = new Set<string>();
     const direct = this.location.ha_area_id;
@@ -3293,13 +3287,51 @@ export class HtLocationInspector extends LitElement {
           ids.add(shadowHa.trim());
         }
       }
-      const hostId = this.location.id;
-      for (const loc of this.allLocations || []) {
-        if (!loc?.id || loc.id === hostId) continue;
-        if (!this._isTopologyDescendantOf(hostId, loc.id)) continue;
-        const ha = typeof loc.ha_area_id === "string" ? loc.ha_area_id.trim() : "";
-        if (ha) ids.add(ha);
-      }
+    }
+    return [...ids];
+  }
+
+  /**
+   * HA area ids for action rules (lighting, media, HVAC, appliances): core plus
+   * every descendant topology location's `ha_area_id` for managed-shadow hosts.
+   */
+  private _deviceEnumerationHaAreaIds(): string[] {
+    const ids = new Set(this._deviceEnumerationHaAreaIdsCore());
+    if (!this.location || !this._isManagedShadowHost()) {
+      return [...ids];
+    }
+    const hostId = this.location.id;
+    for (const loc of this.allLocations || []) {
+      if (!loc?.id || loc.id === hostId) continue;
+      if (!this._isTopologyDescendantOf(hostId, loc.id)) continue;
+      const ha = typeof loc.ha_area_id === "string" ? loc.ha_area_id.trim() : "";
+      if (ha) ids.add(ha);
+    }
+    return [...ids];
+  }
+
+  /**
+   * HA area ids for the Ambient lux picker only: core areas plus any HA area whose
+   * registry name equals this location's display name (case-insensitive). Matches
+   * site illuminance in HA "Queen" to topology property "Queen" without listing
+   * every illuminance sensor under descendant room areas.
+   */
+  private _ambientLuxEnumerationHaAreaIds(): string[] {
+    const ids = new Set(this._deviceEnumerationHaAreaIdsCore());
+    if (!this.location || !this._isManagedShadowHost()) {
+      return [...ids];
+    }
+    const label = (this.location.name || "").trim().toLowerCase();
+    if (!label) return [...ids];
+    const areas = this.hass?.areas;
+    if (!areas || typeof areas !== "object") return [...ids];
+    for (const entry of Object.values(areas as Record<string, Record<string, unknown>>)) {
+      const aid =
+        typeof entry?.area_id === "string" && entry.area_id.trim()
+          ? entry.area_id.trim()
+          : "";
+      const nm = typeof entry?.name === "string" ? entry.name.trim().toLowerCase() : "";
+      if (aid && nm === label) ids.add(aid);
     }
     return [...ids];
   }
@@ -4172,7 +4204,7 @@ export class HtLocationInspector extends LitElement {
 
     const resolvedArea = this._resolveEntityAreaId(entityId, candidateState);
     if (resolvedArea) {
-      for (const areaId of this._deviceEnumerationHaAreaIds()) {
+      for (const areaId of this._ambientLuxEnumerationHaAreaIds()) {
         if (resolvedArea === areaId) return true;
       }
     }

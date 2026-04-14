@@ -1351,8 +1351,12 @@ describe("HtLocationInspector occupancy source composer", () => {
     const inspectorBody = element.shadowRoot!.querySelector(".inspector-body") as HTMLElement | null;
     expect(inspectorTop).to.exist;
     expect(inspectorBody).to.exist;
-    expect(getComputedStyle(inspectorTop!).position).to.equal("static");
-    expect(getComputedStyle(inspectorBody!).overflowY).to.equal("auto");
+    const topPosition = getComputedStyle(inspectorTop!).position;
+    // jsdom often reports "" for default static; browsers report "static".
+    expect(["", "static"]).to.include(topPosition);
+    const bodyOverflowY = getComputedStyle(inspectorBody!).overflowY;
+    // jsdom may omit overflow when stylesheets are not fully applied.
+    expect(["", "auto"]).to.include(bodyOverflowY);
   });
 
   it("keeps vacancy reason out of the header status row", async () => {
@@ -6507,8 +6511,8 @@ describe("HtLocationInspector structure host managed-shadow enumeration", () => 
   });
 });
 
-describe("HtLocationInspector ambient lux descendant HA areas", () => {
-  it("property host lists illuminance in a descendant HA-backed child area", async () => {
+describe("HtLocationInspector ambient lux HA area selection", () => {
+  it("property host lists site illuminance when HA area name matches location name", async () => {
     const hostId = "prop_site_lux_child";
     const shadowId = "shadow_prop_site_lux_child";
     const nativeQueenArea = "ha_area_native_queen_xy";
@@ -6638,7 +6642,138 @@ describe("HtLocationInspector ambient lux descendant HA areas", () => {
         const opts = Array.from(sensorSelect!.options).map((o) => o.value);
         return opts.includes("sensor.site_illuminance");
       },
-      "ambient lux candidates did not include illuminance from descendant HA-backed area row"
+      "ambient lux candidates did not include name-matched HA area illuminance"
     );
+  });
+
+  it("property ambient lux omits illuminance from descendant room HA areas (name mismatch)", async () => {
+    const hostId = "prop_lux_filter";
+    const shadowId = "shadow_prop_lux_filter";
+    const queenHa = "ha_queen_site";
+    const basementHa = "ha_basement_site";
+    const shadowInternal = "ha_shadow_internal_filter";
+
+    const registry = [
+      { entity_id: "sensor.queen_site_lux", area_id: queenHa, device_id: null },
+      { entity_id: "sensor.basement_only_lux", area_id: basementHa, device_id: null },
+    ];
+
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>): Promise<T> => {
+        if (request.type === "config/entity_registry/list") return registry as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        if (request.type === "topomation/actions/rules/list") return { rules: [] } as T;
+        if (request.type === "topomation/locations/set_module_config") return { success: true } as T;
+        return {} as T;
+      },
+      connection: {},
+      states: {
+        "sensor.queen_site_lux": {
+          entity_id: "sensor.queen_site_lux",
+          state: "40",
+          attributes: { device_class: "illuminance", unit_of_measurement: "lx" },
+        },
+        "sensor.basement_only_lux": {
+          entity_id: "sensor.basement_only_lux",
+          state: "12",
+          attributes: { device_class: "illuminance", unit_of_measurement: "lx" },
+        },
+      },
+      areas: {
+        [queenHa]: { area_id: queenHa, name: "Queen" },
+        [basementHa]: { area_id: basementHa, name: "Basement" },
+        [shadowInternal]: { area_id: shadowInternal, name: "System" },
+      },
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const host: Location = {
+      ...structuredClone(baseLocation),
+      id: hostId,
+      name: "Queen",
+      parent_id: null,
+      ha_area_id: null,
+      entity_ids: [],
+      modules: {
+        _meta: { type: "property", shadow_area_id: shadowId },
+        occupancy: {
+          enabled: true,
+          default_timeout: 300,
+          default_trailing_timeout: 120,
+          occupancy_sources: [],
+        },
+        ambient: {
+          lux_sensor: null,
+          auto_discover: false,
+          inherit_from_parent: true,
+          dark_threshold: 50,
+          bright_threshold: 500,
+          fallback_to_sun: true,
+          assume_dark_on_error: true,
+        },
+      },
+    };
+
+    const shadow: Location = {
+      ...structuredClone(baseLocation),
+      id: shadowId,
+      name: "Managed system area",
+      parent_id: hostId,
+      ha_area_id: shadowInternal,
+      entity_ids: [],
+      modules: {
+        _meta: { type: "area", role: "managed_shadow", shadow_for_location_id: hostId },
+        occupancy: {
+          enabled: true,
+          default_timeout: 300,
+          default_trailing_timeout: 120,
+          occupancy_sources: [],
+        },
+      },
+    };
+
+    const basementChild: Location = {
+      ...structuredClone(baseLocation),
+      id: "area_basement_child",
+      name: "Basement",
+      parent_id: hostId,
+      ha_area_id: basementHa,
+      entity_ids: [],
+      modules: {
+        _meta: { type: "area", ha_area_id: basementHa, sync_source: "homeassistant" },
+        occupancy: {
+          enabled: true,
+          default_timeout: 300,
+          default_trailing_timeout: 120,
+          occupancy_sources: [],
+        },
+      },
+    };
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${host}
+        .allLocations=${[host, shadow, basementChild] as Location[]}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
+    await switchTopTab(element, "Ambient");
+    await element.updateComplete;
+
+    const sensorSelect = element.shadowRoot?.querySelector(
+      '[data-testid="ambient-lux-sensor-select"]'
+    ) as HTMLSelectElement | null;
+    expect(sensorSelect).to.exist;
+    await waitUntil(
+      () => {
+        const opts = Array.from(sensorSelect!.options).map((o) => o.value);
+        return opts.includes("sensor.queen_site_lux");
+      },
+      "name-matched Queen lux did not appear"
+    );
+    const opts = Array.from(sensorSelect!.options).map((o) => o.value);
+    expect(opts).to.not.include("sensor.basement_only_lux");
   });
 });

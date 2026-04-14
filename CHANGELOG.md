@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.50] - 2026-04-14
+
+### Fixed
+
+- **Inspector / Ambient**: lux picker no longer unions **every** descendant-room HA
+  area (which listed unrelated illuminance sensors). It now uses **core** areas
+  (host + shadow) plus HA registry areas whose **name matches** the structural
+  host’s **display name** (case-insensitive), e.g. HA area “Queen” ↔ topology
+  property “Queen” for `sensor.illuminance`. **Lighting / Media / HVAC /
+  Appliances** still use the full descendant-area union for action rules.
+
 ## [0.2.49] - 2026-04-14
 
 ### Fixed

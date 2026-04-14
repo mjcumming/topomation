@@ -1,9 +1,18 @@
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
+  // Match tsconfig-wtr.json / Vite build: Lit legacy decorators need these flags.
+  esbuild: {
+    tsconfigRaw: {
+      compilerOptions: {
+        experimentalDecorators: true,
+        useDefineForClassFields: false,
+      },
+    },
+  },
   test: {
     environment: "jsdom",
-    include: ["vitest/**/*.test.ts"],
+    include: ["vitest/**/*.test.ts", "*.test.ts"],
     globals: true,
     coverage: {
       provider: "v8",
