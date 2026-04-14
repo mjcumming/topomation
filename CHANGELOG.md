@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.49] - 2026-04-14
+
+### Fixed
+
+- **Inspector / managed-shadow hosts**: the same **descendant `ha_area_id` union**
+  used for ambient lux now applies to **all** device enumeration on structural
+  hosts (**Lighting**, **Media**, **HVAC**, **Appliances** action rules), not only
+  the Ambient tab.
+
 ## [0.2.48] - 2026-04-14
 
 ### Fixed

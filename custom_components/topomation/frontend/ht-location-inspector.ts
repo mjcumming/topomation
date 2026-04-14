@@ -3250,7 +3250,7 @@ export class HtLocationInspector extends LitElement {
     }
 
     const states = this.hass?.states || {};
-    for (const areaId of this._ambientEnumerationHaAreaIds()) {
+    for (const areaId of this._deviceEnumerationHaAreaIds()) {
       for (const entityId of Object.keys(states)) {
         if (!this._entityIsInArea(entityId, areaId)) continue;
         if (!this._isLuxSensorEntity(entityId)) continue;
@@ -3268,13 +3268,14 @@ export class HtLocationInspector extends LitElement {
   }
 
   /**
-   * HA area ids used to enumerate devices for action rules and other tabs.
-   * Includes the location's own `ha_area_id` plus the managed shadow's HA area
-   * when this node is a shadow host (property / building / grounds / floor).
+   * HA area ids used to enumerate devices (ambient lux, action rules: lighting,
+   * media, HVAC-linked fans, appliances, etc.).
    *
-   * Ambient lux additionally uses `_ambientEnumerationHaAreaIds` so site sensors
-   * in descendant HA-backed topology rows still appear when the host has no
-   * direct `ha_area_id`.
+   * For structural **managed-shadow hosts** (property / building / grounds / floor):
+   * includes this row's `ha_area_id`, the managed shadow HA area, and every strict
+   * descendant topology location's `ha_area_id`, so entities in native HA-backed
+   * child wrappers (e.g. site "Queen" under a property) appear even when the host
+   * row has no direct `ha_area_id`.
    */
   private _deviceEnumerationHaAreaIds(): string[] {
     if (!this.location) return [];
@@ -3292,28 +3293,13 @@ export class HtLocationInspector extends LitElement {
           ids.add(shadowHa.trim());
         }
       }
-    }
-    return [...ids];
-  }
-
-  /**
-   * HA area ids for ambient lux candidates and ambient-related live updates.
-   * Unions `_deviceEnumerationHaAreaIds` with every descendant location's
-   * `ha_area_id` under a structural host, so illuminance assigned to a native HA
-   * area on a child `area_*` wrapper (common for property/site rows) appears in
-   * the lux dropdown even when the host row has no `ha_area_id`.
-   */
-  private _ambientEnumerationHaAreaIds(): string[] {
-    const ids = new Set(this._deviceEnumerationHaAreaIds());
-    if (!this.location || !this._isManagedShadowHost()) {
-      return [...ids];
-    }
-    const hostId = this.location.id;
-    for (const loc of this.allLocations || []) {
-      if (!loc?.id || loc.id === hostId) continue;
-      if (!this._isTopologyDescendantOf(hostId, loc.id)) continue;
-      const ha = typeof loc.ha_area_id === "string" ? loc.ha_area_id.trim() : "";
-      if (ha) ids.add(ha);
+      const hostId = this.location.id;
+      for (const loc of this.allLocations || []) {
+        if (!loc?.id || loc.id === hostId) continue;
+        if (!this._isTopologyDescendantOf(hostId, loc.id)) continue;
+        const ha = typeof loc.ha_area_id === "string" ? loc.ha_area_id.trim() : "";
+        if (ha) ids.add(ha);
+      }
     }
     return [...ids];
   }
@@ -4186,7 +4172,7 @@ export class HtLocationInspector extends LitElement {
 
     const resolvedArea = this._resolveEntityAreaId(entityId, candidateState);
     if (resolvedArea) {
-      for (const areaId of this._ambientEnumerationHaAreaIds()) {
+      for (const areaId of this._deviceEnumerationHaAreaIds()) {
         if (resolvedArea === areaId) return true;
       }
     }

@@ -3894,7 +3894,7 @@ const $e = class $e extends ot {
     for (const r of this.location.entity_ids || [])
       this._isLuxSensorEntity(r) && t.add(r);
     const n = ((a = this.hass) == null ? void 0 : a.states) || {};
-    for (const r of this._ambientEnumerationHaAreaIds())
+    for (const r of this._deviceEnumerationHaAreaIds())
       for (const s of Object.keys(n))
         this._entityIsInArea(s, r) && this._isLuxSensorEntity(s) && t.add(s);
     for (const r of this._deviceEnumerationExtraEntityIds())
@@ -3902,13 +3902,14 @@ const $e = class $e extends ot {
     return [...t].sort((r, s) => this._entityName(r).localeCompare(this._entityName(s)));
   }
   /**
-   * HA area ids used to enumerate devices for action rules and other tabs.
-   * Includes the location's own `ha_area_id` plus the managed shadow's HA area
-   * when this node is a shadow host (property / building / grounds / floor).
+   * HA area ids used to enumerate devices (ambient lux, action rules: lighting,
+   * media, HVAC-linked fans, appliances, etc.).
    *
-   * Ambient lux additionally uses `_ambientEnumerationHaAreaIds` so site sensors
-   * in descendant HA-backed topology rows still appear when the host has no
-   * direct `ha_area_id`.
+   * For structural **managed-shadow hosts** (property / building / grounds / floor):
+   * includes this row's `ha_area_id`, the managed shadow HA area, and every strict
+   * descendant topology location's `ha_area_id`, so entities in native HA-backed
+   * child wrappers (e.g. site "Queen" under a property) appear even when the host
+   * row has no direct `ha_area_id`.
    */
   _deviceEnumerationHaAreaIds() {
     if (!this.location) return [];
@@ -3916,28 +3917,15 @@ const $e = class $e extends ot {
     if (typeof e == "string" && e.trim() && t.add(e.trim()), this._isManagedShadowHost()) {
       const i = de(this.location);
       if (i) {
-        const n = this._managedShadowAreaById(i), o = n == null ? void 0 : n.ha_area_id;
-        typeof o == "string" && o.trim() && t.add(o.trim());
+        const o = this._managedShadowAreaById(i), a = o == null ? void 0 : o.ha_area_id;
+        typeof a == "string" && a.trim() && t.add(a.trim());
       }
-    }
-    return [...t];
-  }
-  /**
-   * HA area ids for ambient lux candidates and ambient-related live updates.
-   * Unions `_deviceEnumerationHaAreaIds` with every descendant location's
-   * `ha_area_id` under a structural host, so illuminance assigned to a native HA
-   * area on a child `area_*` wrapper (common for property/site rows) appears in
-   * the lux dropdown even when the host row has no `ha_area_id`.
-   */
-  _ambientEnumerationHaAreaIds() {
-    const t = new Set(this._deviceEnumerationHaAreaIds());
-    if (!this.location || !this._isManagedShadowHost())
-      return [...t];
-    const e = this.location.id;
-    for (const i of this.allLocations || []) {
-      if (!(i != null && i.id) || i.id === e || !this._isTopologyDescendantOf(e, i.id)) continue;
-      const n = typeof i.ha_area_id == "string" ? i.ha_area_id.trim() : "";
-      n && t.add(n);
+      const n = this.location.id;
+      for (const o of this.allLocations || []) {
+        if (!(o != null && o.id) || o.id === n || !this._isTopologyDescendantOf(n, o.id)) continue;
+        const a = typeof o.ha_area_id == "string" ? o.ha_area_id.trim() : "";
+        a && t.add(a);
+      }
     }
     return [...t];
   }
@@ -4498,7 +4486,7 @@ const $e = class $e extends ot {
     if (t === o || t === a || (this.location.entity_ids || []).includes(t)) return !0;
     const d = this._resolveEntityAreaId(t, l);
     if (d) {
-      for (const _ of this._ambientEnumerationHaAreaIds())
+      for (const _ of this._deviceEnumerationHaAreaIds())
         if (d === _) return !0;
     }
     return !!(this._deviceEnumerationExtraEntityIds() || []).includes(t);
