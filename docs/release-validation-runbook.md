@@ -170,8 +170,32 @@ That command now runs:
    - If behavior changed in the live UI path, confirm the local `make test-release-live` run stayed green on the release commit/worktree before considering the push releasable.
 9. Verify `Auto Release` job result is green before considering the release complete.
    If any required check/release job fails, treat release as failed and fix before retry.
+10. Publish GitHub Release notes for the same version/tag (required, concise):
+   - Keep `CHANGELOG.md` as canonical detail.
+   - GitHub release notes should be a short digest (3-6 bullets) and include a
+     link to the matching changelog section.
+   - Example:
+     - Title: `vX.Y.Z`
+     - Body: top highlights + `Full changelog: https://github.com/<org>/<repo>/blob/main/CHANGELOG.md#xyz`
 
 CI runs the same backend/frontend/comprehensive checks. **Auto Release** runs when any of the three version files change and creates the release once CI passes. It also runs the release job when the release for the current version does not exist yet (e.g. after fixing CI or the changelog step without bumping again). If a release was skipped and you did not push another version-file change, go to **Actions → Auto Release → Run workflow** to create the release for the current version.
+
+### 4.1 GitHub release notes standard template
+
+Use this format for consistency:
+
+```md
+## Highlights
+- <most important user-facing fix/change>
+- <second important fix/change>
+- <third important fix/change>
+
+## Notes
+- Breaking changes: <none|details>
+- Upgrade actions: <none|details>
+
+Full changelog: <link to CHANGELOG.md section>
+```
 
 ## 5) Rule for discovered prerequisites
 

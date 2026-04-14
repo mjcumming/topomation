@@ -110,24 +110,22 @@ Outcome:
 
 ## 8. Current Release Candidate Record
 
-Commit under test: run `git rev-parse HEAD` after the `0.2.41` version bump commit lands on the branch you release.
-Frontend bundle rebuilt from same commit: yes
+Commit under test: Topomation `0.2.53` as **annotated tag `v0.2.53`** (exact object: `git rev-parse v0.2.53^{}`).
+Frontend bundle rebuilt from same commit: no (no frontend source or bundle changes in `0.2.53`)
 
 Touched workflows:
-- Structural inspector: **Occupancy** + **Ambient** tabs (property / building / grounds / floor)
-- Panel forced-tab / deep-link reconciliation when tree selection changes
-- Occupancy binary sensor registration for shadow hosts vs managed shadow areas
-- Managed actions rule list (metadata filter + concurrent automation config fetch)
-- WebSocket `locations/list` contract (bootstrap counts / sibling order)
+- **Managed shadow occupancy reconcile** (SyncManager: stamp mirror occupancy on shadow rows; create path)
+- **Integration startup**: occupancy engine rebuild after managed-shadow reconcile
+- **Backend tests**: SyncManager managed-shadow contract sweep + kernel occupancy invariant
 
 Commands run:
 - `./scripts/test-comprehensive.sh` (ruff, mypy, `pytest tests/`, Vitest, `npm run build` + bundle parity, Web Test Runner, Playwright `npm run test:e2e`)
-- `make test-release-live` (invoked; live step blocked below)
+- `make test-release-live` — run with HA up before treating the release as fully live-validated per `docs/release-validation-runbook.md` §3.
 
 Outcome:
-- Local comprehensive gate (`./scripts/test-comprehensive.sh`): PASS
-- `make test-release-live` live Home Assistant step: **BLOCKED** — cannot connect to `http://localhost:8123` (HA not running in this environment). Run `make test-release-live` with HA up before treating the release as fully validated per `docs/release-validation-runbook.md`.
+- Local comprehensive gate (`./scripts/test-comprehensive.sh`): PASS (recorded at release prep)
+- `make test-release-live`: **not run** in this prep session unless dev HA is available; treat as **pending** for full live gate.
 
 Notes:
-- Release `0.2.41` ships structural Ambient editing, shadow-host occupancy entity cleanup, managed-actions listing hardening, and contract/test updates.
+- Release `0.2.53` ships managed-shadow occupancy mirror hardening, startup rebuild hook, contract/tests, and release-docs guidance.
 - After push to `main`, confirm CI and **Auto Release** are green for the release commit before considering the release complete.

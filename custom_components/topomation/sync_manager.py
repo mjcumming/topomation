@@ -37,6 +37,7 @@ _MANAGED_SHADOW_ROLE = "managed_shadow"
 _SHADOW_HOST_TYPES = frozenset({"floor", "building", "grounds", "property"})
 _MANAGED_SHADOW_NAME_TAG = "Topomation"
 _MANAGED_SHADOW_NAME_MAX_ATTEMPTS = 100
+_MANAGED_SHADOW_OCCUPANCY_STRATEGY = "follow_parent"
 
 
 def _location_type(location: object) -> str:
@@ -890,6 +891,7 @@ class SyncManager:
             if host_location is None or shadow_location is None:
                 continue
             self._reconcile_managed_shadow_area_name(host_location, shadow_location)
+            self._ensure_managed_shadow_occupancy_config(shadow_location)
 
         # Pass 5: create missing managed shadow areas.
         for host_id in sorted(host_ids):
@@ -902,6 +904,55 @@ class SyncManager:
             if not shadow_location_id:
                 continue
             shadow_ids_by_host[host_id] = [shadow_location_id]
+            shadow_location = self.loc_mgr.get_location(shadow_location_id)
+            if shadow_location is not None:
+                self._ensure_managed_shadow_occupancy_config(shadow_location)
+
+    def _ensure_managed_shadow_occupancy_config(
+        self,
+        shadow_location: Location,
+    ) -> None:
+        """Ensure managed shadow occupancy mirrors host occupancy only.
+
+        Managed shadow areas are integration plumbing for HA-facing entities. Their
+        occupancy must follow the structural host and must never contribute back to
+        the host, otherwise host/shadow state can diverge and create toggle loops.
+        """
+        shadow_id = str(getattr(shadow_location, "id", "") or "")
+        if not shadow_id:
+            return
+
+        existing = self.loc_mgr.get_module_config(shadow_id, "occupancy")
+        if isinstance(existing, dict):
+            next_config = dict(existing)
+        else:
+            next_config = {}
+
+        changed = False
+        if next_config.get("enabled") is not True:
+            next_config["enabled"] = True
+            changed = True
+        if next_config.get("occupancy_strategy") != _MANAGED_SHADOW_OCCUPANCY_STRATEGY:
+            next_config["occupancy_strategy"] = _MANAGED_SHADOW_OCCUPANCY_STRATEGY
+            changed = True
+        if next_config.get("contributes_to_parent") is not False:
+            next_config["contributes_to_parent"] = False
+            changed = True
+        if "default_timeout" not in next_config:
+            next_config["default_timeout"] = 300
+            changed = True
+        if "default_trailing_timeout" not in next_config:
+            next_config["default_trailing_timeout"] = 120
+            changed = True
+        if "occupancy_group_id" not in next_config:
+            next_config["occupancy_group_id"] = None
+            changed = True
+        if "linked_locations" not in next_config:
+            next_config["linked_locations"] = []
+            changed = True
+
+        if changed:
+            self.loc_mgr.set_module_config(shadow_id, "occupancy", next_config)
 
     # =========================================================================
     # Utility Methods

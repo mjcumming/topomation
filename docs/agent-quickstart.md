@@ -67,6 +67,8 @@ HA_URL_DEV="$HA_URL_LOCAL" HA_TOKEN_DEV="$HA_TOKEN_LOCAL" make test-release-live
   - `docs/dependency-release-runbook.md`
 - Release-candidate workflow:
   - `docs/release-validation-runbook.md`
+  - Standard now includes publishing concise GitHub Release notes per version/tag
+    with `CHANGELOG.md` as canonical detail.
 
 ## 5) Home Assistant runtime (dev container)
 

@@ -482,6 +482,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Managed shadow areas for floor/building/grounds/property hosts must exist before
     # platforms register occupancy entities (hosts no longer expose their own sensors).
     sync_manager.reconcile_managed_shadow_areas()
+    # Rebuild occupancy runtime after managed-shadow reconcile because SyncManager may
+    # stamp shadow occupancy strategy/contribution config post-create.
+    occupancy_rebuild = getattr(occupancy_module, "on_location_config_changed", None)
+    if callable(occupancy_rebuild):
+        occupancy_rebuild("__managed_shadow_reconcile__", {})
 
     # 9. Set up event bridge (HA → kernel)
     event_bridge = EventBridge(hass, bus, loc_mgr, modules.get("occupancy"))

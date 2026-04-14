@@ -9,6 +9,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.53] - 2026-04-14
+
+### Fixed
+
+- **Managed shadow occupancy**: structural host managed shadows (`area_*` rows for
+  floor / building / grounds / property) now always reconcile to
+  `occupancy_strategy: follow_parent` and `contributes_to_parent: false`, with
+  sensible occupancy defaults when missing. Prevents host vs shadow runtime
+  divergence (for example tree/summary occupied while inspector showed vacant,
+  or confusing manual toggle behavior).
+- **Startup ordering**: after `reconcile_managed_shadow_areas()` during setup,
+  the occupancy module is notified via `on_location_config_changed` so the
+  engine rebuilds with the stamped shadow config.
+
+### Tests
+
+- **SyncManager**: `assert_all_managed_shadows_mirror_host_occupancy` and a
+  combined import test assert the mirror contract for every managed shadow.
+- **Kernel regression**: `tests/test_managed_shadow_occupancy_invariant.py`
+  covers correct mirror behavior when a descendant room triggers, and documents
+  the failure mode when shadow occupancy is misconfigured as independent.
+
+### Documentation
+
+- **C-014**: managed shadow validity now explicitly requires mirror occupancy
+  config for tree vs inspector consistency.
+- **Release workflow**: `docs/release-validation-runbook.md` and
+  `docs/agent-quickstart.md` note publishing concise GitHub Release notes with
+  `CHANGELOG.md` as canonical detail.
+
 ## [0.2.52] - 2026-04-14
 
 ### Fixed

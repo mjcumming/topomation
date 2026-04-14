@@ -18,6 +18,26 @@ from custom_components.topomation.sync_manager import (
     managed_shadow_entity_ids_for_ambient,
 )
 
+
+def assert_all_managed_shadows_mirror_host_occupancy(loc_mgr: LocationManager) -> None:
+    """Managed shadows must never diverge from structural host rollup (C-014).
+
+    Regression guard: wrong ``occupancy_strategy`` / ``contributes_to_parent`` on
+    the shadow ``area_*`` row produced vacant shadow vs occupied host in the UI.
+    """
+    for loc in loc_mgr.all_locations():
+        meta = loc.modules.get("_meta", {})
+        if not isinstance(meta, dict):
+            continue
+        if str(meta.get("role", "")).strip().lower() != "managed_shadow":
+            continue
+        occ = loc.modules.get("occupancy", {})
+        assert isinstance(occ, dict), f"{loc.id}: managed shadow missing occupancy dict"
+        assert occ.get("enabled") is True, loc.id
+        assert occ.get("occupancy_strategy") == "follow_parent", loc.id
+        assert occ.get("contributes_to_parent") is False, loc.id
+
+
 # =============================================================================
 # Fixtures
 # =============================================================================
@@ -705,6 +725,9 @@ class TestHAToTopologySync:
         assert shadow_area_loc.name == "Main Floor [Topomation]"
         assert area_meta.get("role") == "managed_shadow"
         assert area_meta.get("shadow_for_location_id") == floor_loc_id
+        occupancy_meta = shadow_area_loc.modules.get("occupancy", {})
+        assert occupancy_meta.get("occupancy_strategy") == "follow_parent"
+        assert occupancy_meta.get("contributes_to_parent") is False
 
     async def test_reconcile_renames_legacy_system_shadow_suffix(
         self,
@@ -753,6 +776,59 @@ class TestHAToTopologySync:
         assert updated_shadow_area.name.startswith("Main Floor [Topomation")
         assert "System" not in updated_shadow_area.name
         assert updated_shadow_loc.name == updated_shadow_area.name
+        occupancy_meta = updated_shadow_loc.modules.get("occupancy", {})
+        assert occupancy_meta.get("occupancy_strategy") == "follow_parent"
+        assert occupancy_meta.get("contributes_to_parent") is False
+
+    async def test_all_managed_shadows_mirror_host_occupancy_after_combined_import(
+        self,
+        hass: HomeAssistant,
+        sync_manager: SyncManager,
+        loc_mgr: LocationManager,
+        clean_registries,
+    ):
+        """Every managed shadow row must have mirror occupancy after reconcile."""
+        area_reg = ar.async_get(hass)
+        floor_reg = fr.async_get(hass)
+        basement = floor_reg.async_create("Basement")
+        area_reg.async_create("Basement", floor_id=basement.floor_id)
+        area_reg.async_create("Rec Room", floor_id=basement.floor_id)
+
+        loc_mgr.create_location(
+            id="building_main",
+            name="Home",
+            parent_id=None,
+            is_explicit_root=False,
+        )
+        loc_mgr.set_module_config(
+            "building_main",
+            "_meta",
+            {"type": "building", "sync_source": "topology"},
+        )
+        loc_mgr.create_location(
+            id="grounds",
+            name="Grounds",
+            parent_id=None,
+            is_explicit_root=False,
+        )
+        loc_mgr.set_module_config(
+            "grounds",
+            "_meta",
+            {"type": "grounds", "sync_source": "topology"},
+        )
+
+        await sync_manager.import_all_areas_and_floors()
+        await sync_manager.async_setup()
+
+        managed_shadow_count = sum(
+            1
+            for loc in loc_mgr.all_locations()
+            if isinstance(loc.modules.get("_meta"), dict)
+            and str(loc.modules["_meta"].get("role", "")).strip().lower() == "managed_shadow"
+        )
+        assert managed_shadow_count >= 3
+
+        assert_all_managed_shadows_mirror_host_occupancy(loc_mgr)
 
     async def test_building_auto_creates_managed_shadow_area(
         self,

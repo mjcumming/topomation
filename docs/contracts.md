@@ -396,6 +396,9 @@ Additional save points:
   - shadow is HA-backed `area`
   - shadow is parented directly under the host location
   - exactly one active managed shadow per host
+  - shadow `modules.occupancy` must use `occupancy_strategy: follow_parent`,
+    `contributes_to_parent: false`, and `enabled: true` so runtime occupancy cannot
+    diverge from the structural host rollup (tree vs inspector consistency)
 - Lifecycle authority:
   - Home Assistant remains registry source of truth
   - Topomation is authoritative for managed shadow creation/tagging
