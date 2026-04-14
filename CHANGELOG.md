@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.48] - 2026-04-14
+
+### Fixed
+
+- **Inspector / Ambient**: lux sensor dropdown for **property / building / grounds /
+  floor** hosts now unions **descendant** topology locations’ native `ha_area_id`
+  values (not only the host row and managed shadow). Site illuminance in a child
+  HA-backed area (e.g. native “Queen” under the property) appears for assignment
+  when the structural host row has no direct `ha_area_id`.
+
 ## [0.2.47] - 2026-04-14
 
 ### Changed

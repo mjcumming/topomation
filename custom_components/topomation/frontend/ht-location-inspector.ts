@@ -3250,7 +3250,7 @@ export class HtLocationInspector extends LitElement {
     }
 
     const states = this.hass?.states || {};
-    for (const areaId of this._deviceEnumerationHaAreaIds()) {
+    for (const areaId of this._ambientEnumerationHaAreaIds()) {
       for (const entityId of Object.keys(states)) {
         if (!this._entityIsInArea(entityId, areaId)) continue;
         if (!this._isLuxSensorEntity(entityId)) continue;
@@ -3268,9 +3268,13 @@ export class HtLocationInspector extends LitElement {
   }
 
   /**
-   * HA area ids used to enumerate devices for ambient lux, action rules, etc.
+   * HA area ids used to enumerate devices for action rules and other tabs.
    * Includes the location's own `ha_area_id` plus the managed shadow's HA area
    * when this node is a shadow host (property / building / grounds / floor).
+   *
+   * Ambient lux additionally uses `_ambientEnumerationHaAreaIds` so site sensors
+   * in descendant HA-backed topology rows still appear when the host has no
+   * direct `ha_area_id`.
    */
   private _deviceEnumerationHaAreaIds(): string[] {
     if (!this.location) return [];
@@ -3290,6 +3294,47 @@ export class HtLocationInspector extends LitElement {
       }
     }
     return [...ids];
+  }
+
+  /**
+   * HA area ids for ambient lux candidates and ambient-related live updates.
+   * Unions `_deviceEnumerationHaAreaIds` with every descendant location's
+   * `ha_area_id` under a structural host, so illuminance assigned to a native HA
+   * area on a child `area_*` wrapper (common for property/site rows) appears in
+   * the lux dropdown even when the host row has no `ha_area_id`.
+   */
+  private _ambientEnumerationHaAreaIds(): string[] {
+    const ids = new Set(this._deviceEnumerationHaAreaIds());
+    if (!this.location || !this._isManagedShadowHost()) {
+      return [...ids];
+    }
+    const hostId = this.location.id;
+    for (const loc of this.allLocations || []) {
+      if (!loc?.id || loc.id === hostId) continue;
+      if (!this._isTopologyDescendantOf(hostId, loc.id)) continue;
+      const ha = typeof loc.ha_area_id === "string" ? loc.ha_area_id.trim() : "";
+      if (ha) ids.add(ha);
+    }
+    return [...ids];
+  }
+
+  /** True when `nodeId` is a strict descendant of `ancestorId` in `allLocations`. */
+  private _isTopologyDescendantOf(ancestorId: string, nodeId: string): boolean {
+    if (!ancestorId || !nodeId || nodeId === ancestorId) return false;
+    const byId = new Map<string, Location>();
+    for (const loc of this.allLocations || []) {
+      if (loc?.id) byId.set(loc.id, loc);
+    }
+    let cur: string | undefined = nodeId;
+    for (let guard = 0; guard < 256 && cur; guard++) {
+      const parentRaw = byId.get(cur)?.parent_id;
+      const parent =
+        parentRaw === null || parentRaw === undefined ? "" : String(parentRaw).trim();
+      if (!parent) return false;
+      if (parent === ancestorId) return true;
+      cur = parent;
+    }
+    return false;
   }
 
   /** Entity ids attached to this host's managed shadow wrapper (if any). */
@@ -4141,7 +4186,7 @@ export class HtLocationInspector extends LitElement {
 
     const resolvedArea = this._resolveEntityAreaId(entityId, candidateState);
     if (resolvedArea) {
-      for (const areaId of this._deviceEnumerationHaAreaIds()) {
+      for (const areaId of this._ambientEnumerationHaAreaIds()) {
         if (resolvedArea === areaId) return true;
       }
     }
