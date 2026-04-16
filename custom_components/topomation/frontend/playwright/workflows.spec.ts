@@ -262,6 +262,7 @@ test("lighting media and appliances tabs each save managed rules", async ({ page
   await inspector.getByRole("button", { name: "Add rule" }).click();
   const lightingRule = inspector.locator(".dusk-block-row[data-testid^='action-rule-']").last();
   await expect(lightingRule).toBeVisible();
+  await lightingRule.getByRole("button", { name: "Room becomes occupied" }).click();
   await lightingRule.getByRole("button", { name: "Save rule" }).click();
   await expect
     .poll(async () => {
@@ -278,8 +279,10 @@ test("lighting media and appliances tabs each save managed rules", async ({ page
   await inspector.getByRole("button", { name: "Add rule" }).click();
   const mediaRule = inspector.locator(".dusk-block-row[data-testid^='action-rule-']").last();
   await expect(mediaRule).toBeVisible();
-  await mediaRule.getByRole("combobox").nth(0).selectOption("media_player.kitchen_speaker");
-  await mediaRule.getByRole("combobox").nth(1).selectOption("media_pause");
+  await mediaRule
+    .locator('input[type="radio"][name^="media-target-"][value="media_player.kitchen_speaker"]')
+    .check();
+  await mediaRule.locator('input[type="radio"][name^="media-cmd-"][value="media_pause"]').check();
   await mediaRule.getByRole("button", { name: "Save rule" }).click();
   await expect
     .poll(async () => {
@@ -296,8 +299,10 @@ test("lighting media and appliances tabs each save managed rules", async ({ page
   await inspector.getByRole("button", { name: "Add rule" }).click();
   const appliancesRule = inspector.locator(".dusk-block-row[data-testid^='action-rule-']").last();
   await expect(appliancesRule).toBeVisible();
-  await appliancesRule.getByRole("combobox").nth(0).selectOption("fan.kitchen_bathroom_exhaust");
-  await appliancesRule.getByRole("combobox").nth(1).selectOption("turn_on");
+  await appliancesRule
+    .locator('input[type="radio"][name^="appl-equip-target-"][value="fan.kitchen_bathroom_exhaust"]')
+    .check();
+  await appliancesRule.locator('input[type="radio"][name^="appl-equip-cmd-"][value="turn_on"]').check();
   await appliancesRule.getByRole("button", { name: "Save rule" }).click();
   await expect
     .poll(async () => {

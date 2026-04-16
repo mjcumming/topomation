@@ -4120,6 +4120,66 @@ promising, but naming and combinatorial expectation risk is high:
 
 ---
 
+### ADR-HA-082: Future climate (thermostat) managed actions — user journeys vs fans-first v1 (2026-04-16)
+
+**Status**: 🟡 PROPOSED (design intent; no `climate.*` authoring in panel yet)
+
+**Context**:
+
+- Today’s **HVAC** automation tab (ADR-HA-060, ADR-HA-069) targets **climate-linked
+  `fan.*` entities** only: circulation / air-handler style actions (`turn_on`,
+  `turn_off`, `set_percentage`) with optional **time windows** for setback-style
+  schedules (e.g. lower fan speed overnight).
+- Users also think in terms of **thermostats**: heat/cool **setpoints**, **preset
+  modes** (away, sleep, vacation), or switching **HVAC mode** when the house
+  transitions between occupied and vacant.
+- Home Assistant already exposes these as `climate.*` services (`set_temperature`,
+  `set_hvac_mode`, `set_preset_mode`, etc.), but adding them to Topomation managed
+  rules expands **validation, device diversity, and UX** quickly if we try to be
+  exhaustive.
+
+**Decision (intent for a future, separate track)**:
+
+1. **Keep v1 HVAC** as **fans-first** + time windows; do not block releases on
+   full thermostat authoring.
+2. When we add `climate.*` targets, optimize for a **small set of high-value
+   recipes** aligned with arrive/leave, not a full climate IDE:
+   - **Comfort shift**: raise/lower setpoint or switch preset when **occupied vs
+     vacant** (per user’s heat/cool preference), bounded by HA-supported ranges.
+   - **Air movement**: continue to pair with **fan** actions already supported.
+   - **Away / eco**: optional **preset** or **hvac_mode** step when unoccupied,
+     and a clear “resume” path when occupied—**only** if we can name services
+     consistently across common integrations.
+3. **Explicitly defer** “every climate attribute for every integration” until
+   user demand and contract tests justify it.
+4. Document that **vacation/away** style behavior may map to **presets** or
+   **eco modes** depending on the entity; the integration should surface **safe
+   defaults** and validate service data per entity capability.
+
+**Rationale**:
+
+1. Occupancy automation is event-driven; users want predictable outcomes in a few
+   taps, not twenty optional fields.
+2. Fan actions already cover a large “comfort while people are home” story without
+   thermostat APIs.
+3. Climate services vary by device; a narrow, tested matrix reduces support burden.
+
+**Consequences**:
+
+- ✅ Current shipped HVAC UI and contracts remain valid.
+- ✅ Product direction for “what users want when coming home / leaving” is
+   captured without implementing climate in this release.
+- ⚠️ Adding `climate.*` to managed rules requires a follow-up ADR + contract
+   updates (`docs/contracts.md`) and likely per-service UX (not just more pills).
+
+**Alternatives Considered**:
+
+- Add full climate authoring immediately — rejected: high integration variance and
+  UX risk before fans-first is fully exercised.
+- Never add climate — rejected: setpoint/preset is a common ask; defer, not deny.
+
+---
+
 ## How to Use This Log
 
 ### When to Create an ADR

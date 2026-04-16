@@ -1,6 +1,6 @@
 # Current work
 
-**Last updated**: 2026-04-13
+**Last updated**: 2026-04-16
 **Purpose**: short live context for parallel work, handoff, and branch safety.
 
 Status markers:
@@ -9,6 +9,10 @@ Status markers:
 
 ## Snapshot
 
+- Shipped **0.2.54**: panel automation UX (scrollable inspector tabs; pill-based
+  Media/HVAC/Appliances actions; Lighting draft triggers + default brightness;
+  occupancy source ordering); ADR-HA-082 captures future climate vs fans-first
+  scope; managed-shadow host occupancy toggle fix from the same release train.
 - Active focus: repo workflow reset and authority-chain hardening (ADR-HA-063): dev mode only, ambiguity stop rule, and exact touched-workflow validation gate.
 - Active focus: managed shadow area contract + implementation checklist (ADR-HA-049 / ISSUE-057).
 - Active focus: HA-canonical managed-rule sync (ADR-HA-053) with stable rule identity and in-place upserts.

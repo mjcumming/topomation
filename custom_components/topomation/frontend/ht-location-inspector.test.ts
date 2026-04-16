@@ -3258,19 +3258,18 @@ describe("HtLocationInspector occupancy source composer", () => {
       | HTMLButtonElement
       | undefined;
     const occupiedChoice = Array.from(
-      element.shadowRoot?.querySelectorAll('[data-testid^="action-rule-"] .choice-pill') || []
+      element.shadowRoot?.querySelectorAll(
+        '[data-testid^="action-rule-"][data-testid$="-trigger-family-occupancy"] .choice-pill'
+      ) || []
     ).find((pill) => (pill.textContent || "").includes("Room becomes occupied")) as
       | HTMLButtonElement
       | undefined;
-    const darkChoice = element.shadowRoot?.querySelector(
-      'input[name^="lighting-trigger-"][name$="-occupancy-condition"][value="dark"]'
-    ) as HTMLInputElement | null;
     const targetSelect = element.shadowRoot?.querySelector(
       'select[data-testid^="action-rule-"][data-testid$="-device-action-0"]'
     ) as HTMLSelectElement | null;
     expect(saveButton?.disabled).to.equal(false);
     expect(occupiedChoice?.disabled).to.equal(false);
-    expect(darkChoice?.disabled).to.equal(false);
+    expect(occupiedChoice?.getAttribute("aria-pressed")).to.equal("false");
     expect(targetSelect?.disabled).to.equal(false);
 
     resolveRules({ rules: [] });
@@ -3479,15 +3478,15 @@ describe("HtLocationInspector occupancy source composer", () => {
       () => {
         const row = element.shadowRoot!.querySelector(".dusk-block-row") as HTMLElement | null;
         if (!row) return false;
-        const sel = row.querySelector("select.dusk-wide-select") as HTMLSelectElement | null;
-        if (!sel) return false;
-        const opts = Array.from(sel.options).map((o) => o.value);
+        const values = Array.from(
+          row.querySelectorAll('input[type="radio"][name^="appl-equip-target-"]')
+        ).map((r) => (r as HTMLInputElement).value);
         return (
-          opts.includes("fan.bathroom_fan") &&
-          opts.includes("switch.kitchen_accent") &&
-          !opts.includes("fan.kitchen_hood") &&
-          !opts.includes("light.kitchen_ceiling") &&
-          !opts.includes("media_player.kitchen_speaker")
+          values.includes("fan.bathroom_fan") &&
+          values.includes("switch.kitchen_accent") &&
+          !values.includes("fan.kitchen_hood") &&
+          !values.includes("light.kitchen_ceiling") &&
+          !values.includes("media_player.kitchen_speaker")
         );
       },
       "appliance rule targets did not match standalone fan + switch filter"
@@ -3577,13 +3576,13 @@ describe("HtLocationInspector occupancy source composer", () => {
       () => {
         const row = element.shadowRoot!.querySelector(".dusk-block-row") as HTMLElement | null;
         if (!row) return false;
-        const sel = row.querySelector("select.dusk-wide-select") as HTMLSelectElement | null;
-        if (!sel) return false;
-        const opts = Array.from(sel.options).map((o) => o.value);
+        const values = Array.from(
+          row.querySelectorAll('input[type="radio"][name^="appl-equip-target-"]')
+        ).map((r) => (r as HTMLInputElement).value);
         return (
-          opts.includes("fan.bathroom_fan") &&
-          !opts.includes("switch.legacy_fan_hidden") &&
-          !opts.includes("switch.legacy_fan_disabled")
+          values.includes("fan.bathroom_fan") &&
+          !values.includes("switch.legacy_fan_hidden") &&
+          !values.includes("switch.legacy_fan_disabled")
         );
       },
       "hidden/disabled location entities should not appear as appliance targets"
@@ -3654,8 +3653,8 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect((row!.textContent || "")).to.include("Time window");
     expect((row!.textContent || "")).to.not.include("Ambient light change");
 
-    const selects = Array.from(row!.querySelectorAll("select.dusk-wide-select")) as HTMLSelectElement[];
-    expect(selects.length).to.equal(2);
+    expect(row!.querySelector('[data-testid="hvac-rule-actions"]')).to.exist;
+    expect(row!.querySelectorAll("select.dusk-wide-select").length).to.equal(0);
 
     expect(row!.querySelectorAll('input[type="time"]').length).to.equal(0);
     const limitTime = Array.from(row!.querySelectorAll("button")).find((btn) =>
@@ -3755,13 +3754,14 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(row).to.exist;
     expect((row!.textContent || "")).to.not.include("Occupancy must be");
 
-    const selects = Array.from(row!.querySelectorAll("select.dusk-wide-select")) as HTMLSelectElement[];
-    expect(selects.length).to.equal(2);
-    const targetOptions = Array.from(selects[0].options).map((option) => option.value);
-    expect(targetOptions).to.include("fan.kitchen_hood");
-    expect(targetOptions).to.not.include("switch.kitchen_accent");
-    expect(targetOptions).to.not.include("light.kitchen_ceiling");
-    expect(targetOptions).to.not.include("media_player.kitchen_speaker");
+    expect(row!.querySelectorAll("select.dusk-wide-select").length).to.equal(0);
+    const targetValues = Array.from(
+      row!.querySelectorAll('input[type="radio"][name^="hvac-equip-target-"]')
+    ).map((r) => (r as HTMLInputElement).value);
+    expect(targetValues).to.include("fan.kitchen_hood");
+    expect(targetValues).to.not.include("switch.kitchen_accent");
+    expect(targetValues).to.not.include("light.kitchen_ceiling");
+    expect(targetValues).to.not.include("media_player.kitchen_speaker");
   });
 
   it("saves HVAC action rules with occupancy, time, and execution settings", async () => {
@@ -3871,11 +3871,17 @@ describe("HtLocationInspector occupancy source composer", () => {
     vacantRadio!.click();
     await element.updateComplete;
 
-    let selects = Array.from(row!.querySelectorAll("select.dusk-wide-select")) as HTMLSelectElement[];
-    selects[0].value = "fan.kitchen_hood";
-    selects[0].dispatchEvent(new Event("change", { bubbles: true, composed: true }));
-    selects[1].value = "turn_off";
-    selects[1].dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+    const hoodRadio = row!.querySelector(
+      'input[type="radio"][name^="hvac-equip-target-"][value="fan.kitchen_hood"]'
+    ) as HTMLInputElement | null;
+    expect(hoodRadio).to.exist;
+    hoodRadio!.click();
+    await element.updateComplete;
+    const turnOffCmd = row!.querySelector(
+      'input[type="radio"][name^="hvac-equip-cmd-"][value="turn_off"]'
+    ) as HTMLInputElement | null;
+    expect(turnOffCmd).to.exist;
+    turnOffCmd!.click();
     await element.updateComplete;
 
     const limitTime = Array.from(row!.querySelectorAll("button")).find((btn) =>
@@ -3980,17 +3986,20 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect((row!.textContent || "")).to.not.include("Ambient must be");
     expect((row!.textContent || "")).to.not.include("Occupancy must be");
 
-    const selects = Array.from(row!.querySelectorAll("select.dusk-wide-select")) as HTMLSelectElement[];
-    expect(selects.length).to.equal(2);
-    selects[0].value = "media_player.kitchen_speaker";
-    selects[0].dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+    expect(row!.querySelector('[data-testid="media-rule-actions"]')).to.exist;
+    expect(row!.querySelectorAll("select.dusk-wide-select").length).to.equal(0);
+
+    const playerRadio = row!.querySelector(
+      'input[type="radio"][name^="media-target-"][value="media_player.kitchen_speaker"]'
+    ) as HTMLInputElement | null;
+    expect(playerRadio).to.exist;
+    playerRadio!.click();
     await element.updateComplete;
 
-    const actionSelect = Array.from(
-      row!.querySelectorAll("select.dusk-wide-select")
-    )[1] as HTMLSelectElement;
-    const actionOptionValues = Array.from(actionSelect.options).map((option) => option.value);
-    expect(new Set(actionOptionValues)).to.deep.equal(
+    const commandValues = Array.from(
+      row!.querySelectorAll('input[type="radio"][name^="media-cmd-"]')
+    ).map((input) => (input as HTMLInputElement).value);
+    expect(new Set(commandValues)).to.deep.equal(
       new Set([
         "media_play",
         "turn_on",
@@ -4044,14 +4053,18 @@ describe("HtLocationInspector occupancy source composer", () => {
     await element.updateComplete;
 
     const row = element.shadowRoot!.querySelector(".dusk-block-row") as HTMLElement;
-    const selects = Array.from(row.querySelectorAll("select.dusk-wide-select")) as HTMLSelectElement[];
-    selects[0].value = "media_player.kitchen_speaker";
-    selects[0].dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+    const playerRadio = row.querySelector(
+      'input[type="radio"][name^="media-target-"][value="media_player.kitchen_speaker"]'
+    ) as HTMLInputElement | null;
+    expect(playerRadio).to.exist;
+    playerRadio!.click();
     await element.updateComplete;
 
-    let actionSelect = Array.from(row.querySelectorAll("select.dusk-wide-select"))[1] as HTMLSelectElement;
-    actionSelect.value = "volume_set";
-    actionSelect.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+    const volumeSetRadio = row.querySelector(
+      'input[type="radio"][name^="media-cmd-"][value="volume_set"]'
+    ) as HTMLInputElement | null;
+    expect(volumeSetRadio).to.exist;
+    volumeSetRadio!.click();
     await element.updateComplete;
 
     expect((row.textContent || "")).to.include("Volume");
@@ -4099,9 +4112,17 @@ describe("HtLocationInspector occupancy source composer", () => {
     await element.updateComplete;
 
     const row = element.shadowRoot!.querySelector(".dusk-block-row") as HTMLElement;
-    const actionSelect = Array.from(row.querySelectorAll("select.dusk-wide-select"))[1] as HTMLSelectElement;
-    actionSelect.value = "set_percentage";
-    actionSelect.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+    const fanRadio = row.querySelector(
+      'input[type="radio"][name^="appl-equip-target-"][value="fan.kitchen_hood"]'
+    ) as HTMLInputElement | null;
+    expect(fanRadio).to.exist;
+    fanRadio!.click();
+    await element.updateComplete;
+    const pctRadio = row.querySelector(
+      'input[type="radio"][name^="appl-equip-cmd-"][value="set_percentage"]'
+    ) as HTMLInputElement | null;
+    expect(pctRadio).to.exist;
+    pctRadio!.click();
     await element.updateComplete;
 
     expect((row.textContent || "")).to.include("Fan speed");
@@ -5492,6 +5513,13 @@ describe("HtLocationInspector WIAB configuration", () => {
     expect((draftRule?.textContent || "")).to.include("Lights");
     expect(draftRule?.querySelectorAll(".lighting-situation-card").length || 0).to.equal(2);
 
+    const occupiedPill = Array.from(draftRule?.querySelectorAll(".choice-pill") || []).find((pill) =>
+      (pill.textContent || "").includes("Room becomes occupied")
+    ) as HTMLButtonElement | null;
+    expect(occupiedPill).to.exist;
+    occupiedPill!.click();
+    await element.updateComplete;
+
     const saveButton = element.shadowRoot?.querySelector(
       '[data-testid^="action-rule-"][data-testid$="-save"]'
     ) as HTMLButtonElement | null;
@@ -5507,7 +5535,7 @@ describe("HtLocationInspector WIAB configuration", () => {
     expect(payload.actions.length).to.equal(1);
     expect(payload.action_entity_id).to.equal("light.kitchen_ceiling");
     expect(payload.action_service).to.equal("turn_on");
-    expect(payload.ambient_condition).to.equal("dark");
+    expect(payload.ambient_condition).to.equal("any");
     expect(payload.must_be_occupied).to.equal(undefined);
     expect(typeof payload.rule_uuid).to.equal("string");
     expect(String(payload.rule_uuid || "").length).to.be.greaterThan(0);
@@ -5615,6 +5643,14 @@ describe("HtLocationInspector WIAB configuration", () => {
       () => (element.shadowRoot?.querySelectorAll(".dusk-block-row").length || 0) === 1,
       "expected one draft lighting rule row"
     );
+
+    const draftRow = element.shadowRoot?.querySelector(".dusk-block-row") as HTMLElement | null;
+    const occupiedPillMulti = Array.from(draftRow?.querySelectorAll(".choice-pill") || []).find((pill) =>
+      (pill.textContent || "").includes("Room becomes occupied")
+    ) as HTMLButtonElement | null;
+    expect(occupiedPillMulti).to.exist;
+    occupiedPillMulti!.click();
+    await element.updateComplete;
 
     const firstOnlyIfOffToggle = Array.from(
       element.shadowRoot?.querySelectorAll(".choice-pill") || []
@@ -6309,9 +6345,10 @@ describe("HtLocationInspector structure host managed-shadow enumeration", () => 
       await waitUntil(
         () => {
           const row = element.shadowRoot!.querySelector(".dusk-block-row") as HTMLElement | null;
-          const sel = row?.querySelector("select.dusk-wide-select") as HTMLSelectElement | null;
-          if (!sel) return false;
-          return Array.from(sel.options).some((o) => o.value === `media_player.${metaType}_shadow_receiver`);
+          const radio = row?.querySelector(
+            `input[type="radio"][name^="media-target-"][value="media_player.${metaType}_shadow_receiver"]`
+          );
+          return Boolean(radio);
         },
         `media targets did not include shadow-area media_player for ${metaType}`
       );
@@ -6348,12 +6385,13 @@ describe("HtLocationInspector structure host managed-shadow enumeration", () => 
       await waitUntil(
         () => {
           const row = element.shadowRoot!.querySelector(".dusk-block-row") as HTMLElement | null;
-          const sel = row?.querySelector("select.dusk-wide-select") as HTMLSelectElement | null;
-          if (!sel) return false;
-          const opts = Array.from(sel.options).map((o) => o.value);
-          return (
-            opts.includes(`fan.${metaType}_hvac_fan`) && !opts.includes(`climate.${metaType}_hvac`)
+          const radio = row?.querySelector(
+            `input[type="radio"][name^="hvac-equip-target-"][value="fan.${metaType}_hvac_fan"]`
           );
+          const climateOption = row?.querySelector(
+            `input[type="radio"][name^="hvac-equip-target-"][value="climate.${metaType}_hvac"]`
+          );
+          return Boolean(radio) && !climateOption;
         },
         `HVAC targets did not include shadow-area HVAC fan for ${metaType}`
       );

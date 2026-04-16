@@ -110,22 +110,32 @@ Outcome:
 
 ## 8. Current Release Candidate Record
 
-Commit under test: Topomation `0.2.53` as **annotated tag `v0.2.53`** (exact object: `git rev-parse v0.2.53^{}`).
-Frontend bundle rebuilt from same commit: no (no frontend source or bundle changes in `0.2.53`)
+Commit under test: Topomation **`0.2.54`** — use `git rev-parse HEAD` on the release
+commit after push (replace this line with the exact SHA).
+Frontend bundle rebuilt from same commit: **yes** (`npm run build` → committed
+`topomation-panel.js`)
 
 Touched workflows:
-- **Managed shadow occupancy reconcile** (SyncManager: stamp mirror occupancy on shadow rows; create path)
-- **Integration startup**: occupancy engine rebuild after managed-shadow reconcile
-- **Backend tests**: SyncManager managed-shadow contract sweep + kernel occupancy invariant
+- **Inspector**: horizontal scroll for tab strip on narrow viewports
+- **Lighting managed rules**: empty draft triggers; default brightness 100%;
+  occupancy source list ordering
+- **Media / HVAC / Appliances managed rules**: pill-based device + command
+  selection (replaces `<select>`)
+- **Tree**: managed-shadow host occupancy toggle rollup fix
+- **Docs**: `CHANGELOG.md`, `docs/contracts.md`, ADR-HA-082, `docs/current-work.md`
 
 Commands run:
+- `./scripts/check-docs-consistency.sh`
 - `./scripts/test-comprehensive.sh` (ruff, mypy, `pytest tests/`, Vitest, `npm run build` + bundle parity, Web Test Runner, Playwright `npm run test:e2e`)
-- `make test-release-live` — run with HA up before treating the release as fully live-validated per `docs/release-validation-runbook.md` §3.
+- `make test-release-live` — **required** before claiming **Live-validated** for
+  panel UI per `docs/release-validation-runbook.md` §3 when dev HA is available.
 
 Outcome:
-- Local comprehensive gate (`./scripts/test-comprehensive.sh`): PASS (recorded at release prep)
-- `make test-release-live`: **not run** in this prep session unless dev HA is available; treat as **pending** for full live gate.
+- Local comprehensive gate (`./scripts/test-comprehensive.sh`): record PASS/FAIL after run
+- `make test-release-live`: record PASS/FAIL when run
 
 Notes:
-- Release `0.2.53` ships managed-shadow occupancy mirror hardening, startup rebuild hook, contract/tests, and release-docs guidance.
-- After push to `main`, confirm CI and **Auto Release** are green for the release commit before considering the release complete.
+- Release **`0.2.54`** ships panel automation UX iteration + shadow toggle fix +
+  documentation/ADR updates.
+- After push to `main`, confirm CI and **Auto Release** are green for the release
+  commit before considering the release complete.

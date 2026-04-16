@@ -9,6 +9,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.54] - 2026-04-16
+
+### Added
+
+- **ADR-HA-082**: Records intended user journeys for future **climate** (thermostat)
+  managed actions (setpoints, presets, fan) versus today’s **fans-first** HVAC tab,
+  and sets a bar for keeping that surface simple when implemented.
+
+### Changed
+
+- **Inspector tabs (narrow / mobile)**: location inspector tabs (Occupancy, Ambient,
+  Lighting, Media, HVAC, etc.) scroll horizontally when they do not fit on one line.
+- **Lighting managed rules**: new drafts start with **no** occupancy or ambient
+  trigger selected; validation still requires at least one trigger before save.
+  Default light action brightness for dimmable ``turn_on`` is **100%** (was 30%).
+- **Occupancy sources list**: configured sources sort to the **top** of the area
+  candidate list for quicker scanning after save.
+- **Media / HVAC / Appliances managed rules**: device targets and commands use
+  **choice-pill / radio** controls instead of dropdowns (small per-area entity
+  pools). HVAC includes a short hint tying **time windows** to setback-style fan
+  schedules; thermostat setpoints/presets remain **out of scope** until a
+  dedicated climate contract lands (see ADR-HA-082).
+
+### Fixed
+
+- **Tree occupancy toggle (managed-shadow hosts)**: manual row toggle now treats
+  a floor/building/grounds/property as occupied when either the effective HA
+  occupancy entity is on **or** the same descendant rollup that drives the tree
+  dot is occupied. Fixes repeated ``trigger`` / “marked occupied” when children
+  were occupied but the shadow sensor read ``off`` (panel location lists omit the
+  shadow row, so click-time HA resolution alone could miss that case).
+
+### Tests
+
+- **Frontend**: Vitest coverage for ``rollupOccupancyStatusByLocation`` /
+  ``isManagedShadowOccupancyHost``; panel integration test for vacate on shadow
+  host when rollup occupied and shadow entity is off. Playwright and inspector
+  tests updated for pill-based media/HVAC/appliances actions.
+
+### Documentation
+
+- **Contracts**: panel enumeration for Media/HVAC/Appliances; Lighting draft
+  trigger default; ADR-HA-082 added to ``docs/adr-log.md``.
+
 ## [0.2.53] - 2026-04-14
 
 ### Fixed

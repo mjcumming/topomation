@@ -12,8 +12,10 @@ import { sharedStyles } from "./styles";
 import { getLocationType } from "./hierarchy-rules";
 import {
   effectiveOccupancyTopologyId,
+  isManagedShadowOccupancyHost,
   isSystemShadowLocation,
   managedShadowLocationIdSet,
+  rollupOccupancyStatusByLocation,
 } from "./shadow-location-utils";
 import { humanReadableLockSource } from "./lock-source-utils";
 
@@ -1832,6 +1834,34 @@ export class TopomationPanel extends LitElement {
     return undefined;
   }
 
+  /**
+   * Occupancy used for tree manual toggle: for managed-shadow hosts, treat the row as
+   * occupied when either the effective HA entity is on or the tree rollup (descendants)
+   * is occupied — matching the green dot and avoiding repeated ``trigger`` when the
+   * shadow sensor lags behind child-driven occupancy.
+   */
+  private _getLocationOccupiedForToggle(locationId: string): boolean | undefined {
+    const location = this._locations.find((loc) => loc.id === locationId);
+    const fromHa = this._getLocationOccupiedState(locationId);
+    if (!location || !isManagedShadowOccupancyHost(location, this._locations)) {
+      return fromHa;
+    }
+    const rollupMap = rollupOccupancyStatusByLocation(
+      this._locations,
+      this._occupancyStateByLocation
+    );
+    if (rollupMap[locationId] === "occupied" || fromHa === true) {
+      return true;
+    }
+    if (rollupMap[locationId] === "vacant" && fromHa !== true) {
+      return false;
+    }
+    if (fromHa === false && rollupMap[locationId] !== "occupied") {
+      return false;
+    }
+    return fromHa;
+  }
+
   private async _handleLocationOccupancyToggle(e: CustomEvent): Promise<void> {
     e.stopPropagation();
     const locationId = e?.detail?.locationId as string | undefined;
@@ -1861,7 +1891,7 @@ export class TopomationPanel extends LitElement {
 
         // Resolve occupancy intent from current effective HA state at click-time.
         // This avoids stale UI-derived toggle payloads selecting the wrong action.
-        const currentOccupied = this._getLocationOccupiedState(locationId);
+        const currentOccupied = this._getLocationOccupiedForToggle(locationId);
         const occupied =
           typeof currentOccupied === "boolean" ? !currentOccupied : requestedOccupied;
         const service = occupied ? "trigger" : "vacate_area";

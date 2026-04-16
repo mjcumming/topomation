@@ -60,8 +60,10 @@ async function addBasicKitchenActionRule(
     .first();
   await expect(rule).toBeVisible();
   await rule.locator('input[type="radio"][value="on_occupied"]').check();
-  await rule.getByRole("combobox").nth(0).selectOption("media_player.kitchen_speaker");
-  await rule.getByRole("combobox").nth(1).selectOption("media_pause");
+  await rule
+    .locator('input[type="radio"][name^="media-target-"][value="media_player.kitchen_speaker"]')
+    .check();
+  await rule.locator('input[type="radio"][name^="media-cmd-"][value="media_pause"]').check();
   await rule.getByRole("button", { name: "Save rule" }).click();
 }
 

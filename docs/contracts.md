@@ -1,6 +1,6 @@
 # Contracts
 
-**Last reviewed**: 2026-03-18
+**Last reviewed**: 2026-04-16
 **Purpose**: canonical behavior contracts for Topomation runtime and panel actions.
 
 Use this file as the quick contract surface. Keep it synchronized with:
@@ -511,6 +511,9 @@ Additional save points:
     control only when selected.
   - `Appliances` and `HVAC` expose `fan.set_percentage` as a first-class action
     for `fan.*` targets with a visible percent control only when selected.
+  - In the panel, `Media`, `HVAC`, and `Appliances` enumerate compatible
+    targets and commands as choice-pill / radio groups (not `<select>`
+    dropdowns) for the small per-tab entity pools.
 - Lighting rule persistence contract:
   - HA automation entities/config are canonical for Lighting rule state.
   - save path is upsert+diff with stable metadata identity (`rule_uuid`).
@@ -536,6 +539,8 @@ Additional save points:
   - Lighting renders exactly two explicit trigger-family rows:
     occupancy change and ambient light change.
   - a trigger family with no selected trigger is inactive.
+  - new Lighting rule drafts start with no trigger family selected; at least one
+    trigger is required before save.
   - ambient and occupancy conditions are shown inline with their trigger
     family, not as separate generic situation rows.
   - condition controls only render when their trigger family is active.

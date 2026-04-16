@@ -1449,6 +1449,113 @@ describe('TopomationPanel integration (fake hass)', () => {
     );
   });
 
+  it("vacates managed-shadow floor when rollup is occupied but shadow entity is off", async () => {
+    const floorHostLocations: Location[] = [
+      {
+        id: "floor_basement",
+        name: "Basement",
+        parent_id: "main_building",
+        is_explicit_root: false,
+        ha_area_id: null,
+        entity_ids: [],
+        modules: { _meta: { type: "floor", shadow_area_id: "area_shadow_basement" } },
+      },
+      {
+        id: "rec_room",
+        name: "Rec Room",
+        parent_id: "floor_basement",
+        is_explicit_root: false,
+        ha_area_id: null,
+        entity_ids: [],
+        modules: { _meta: { type: "area" } },
+      },
+      {
+        id: "main_building",
+        name: "Home",
+        parent_id: null,
+        is_explicit_root: false,
+        ha_area_id: null,
+        entity_ids: [],
+        modules: { _meta: { type: "building" } },
+      },
+    ];
+
+    const callWsCalls: any[] = [];
+    const hass: HomeAssistant = {
+      callWS: async <T>(req: Record<string, any>): Promise<T> => {
+        callWsCalls.push(req);
+        if (req.type === "topomation/locations/list") {
+          return { locations: floorHostLocations } as T;
+        }
+        if (req.type === "config/entity_registry/list") {
+          return [] as T;
+        }
+        if (req.type === "config/device_registry/list") {
+          return [] as T;
+        }
+        if (req.type === "call_service") {
+          return {} as T;
+        }
+        throw new Error("Unexpected WS call");
+      },
+      connection: {},
+      states: {
+        "binary_sensor.occupancy_area_shadow_basement": {
+          entity_id: "binary_sensor.occupancy_area_shadow_basement",
+          state: "off",
+          attributes: {
+            device_class: "occupancy",
+            location_id: "area_shadow_basement",
+            is_locked: false,
+          },
+        },
+        "binary_sensor.occupancy_rec_room": {
+          entity_id: "binary_sensor.occupancy_rec_room",
+          state: "on",
+          attributes: {
+            device_class: "occupancy",
+            location_id: "rec_room",
+            is_locked: false,
+          },
+        },
+      },
+      areas: {},
+      floors: {},
+      config: {
+        location_name: "Test Property",
+      },
+      localize: (key: string) => key,
+    };
+
+    const element = await fixture<HTMLDivElement>(html`
+      <topomation-panel .hass=${hass}></topomation-panel>
+    `);
+
+    await waitUntil(() => (element as any)._loading === false, "panel did not finish loading");
+    const tree = element.shadowRoot!.querySelector("ht-location-tree") as HTMLElement;
+    expect(tree).to.exist;
+
+    tree.dispatchEvent(
+      new CustomEvent("location-occupancy-toggle", {
+        detail: { locationId: "floor_basement", occupied: true },
+        bubbles: true,
+        composed: true,
+      })
+    );
+
+    await waitUntil(
+      () =>
+        callWsCalls.some(
+          (call) =>
+            call.type === "call_service" &&
+            call.domain === "topomation" &&
+            call.service === "vacate_area" &&
+            call.service_data?.location_id === "floor_basement"
+        ),
+      "vacate_area was not called for shadow host when children drive rollup occupied"
+    );
+  });
+
   it("updates inspector header occupancy from event-driven location occupancy state", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(req: Record<string, any>): Promise<T> => {

@@ -82,3 +82,85 @@ export function effectiveOccupancyTopologyId(
 
   return shadowId;
 }
+
+/** Rollup occupancy used by the topology tree dot and shadow-host toggle intent. */
+export type RollupOccupancyStatus = "occupied" | "vacant" | "unknown";
+
+/**
+ * Merge each location's direct occupancy sensor state (when present) with
+ * descendant rows, mirroring the tree's green/red dot semantics.
+ *
+ * Keys in ``occupancyStates`` are topology ids from HA ``binary_sensor`` attributes
+ * (``location_id``), typically one row per sensor — not necessarily every location id.
+ */
+export function rollupOccupancyStatusByLocation(
+  locations: readonly Location[],
+  occupancyStates: Readonly<Record<string, boolean | undefined>>
+): Record<string, RollupOccupancyStatus> {
+  const statusByLocation: Record<string, RollupOccupancyStatus> = {};
+  const byId = new Map(locations.map((loc) => [loc.id, loc]));
+  const childrenByParent = new Map<string, string[]>();
+
+  for (const loc of locations) {
+    if (!loc.parent_id) continue;
+    if (!childrenByParent.has(loc.parent_id)) {
+      childrenByParent.set(loc.parent_id, []);
+    }
+    childrenByParent.get(loc.parent_id)!.push(loc.id);
+  }
+
+  const resolved = new Map<string, RollupOccupancyStatus>();
+
+  const visit = (locationId: string): RollupOccupancyStatus => {
+    const cached = resolved.get(locationId);
+    if (cached) return cached;
+    if (!byId.has(locationId)) return "unknown";
+
+    const direct = occupancyStates?.[locationId];
+    const own: RollupOccupancyStatus =
+      direct === true ? "occupied" : direct === false ? "vacant" : "unknown";
+
+    const childIds = childrenByParent.get(locationId) || [];
+    if (!childIds.length) {
+      resolved.set(locationId, own);
+      return own;
+    }
+
+    const childStatuses = childIds.map((id) => visit(id));
+
+    let merged: RollupOccupancyStatus;
+    if (own === "occupied" || childStatuses.includes("occupied")) {
+      merged = "occupied";
+    } else if (own === "vacant") {
+      merged = "vacant";
+    } else if (childStatuses.length > 0 && childStatuses.every((s) => s === "vacant")) {
+      merged = "vacant";
+    } else {
+      merged = "unknown";
+    }
+
+    resolved.set(locationId, merged);
+    return merged;
+  };
+
+  for (const loc of locations) {
+    statusByLocation[loc.id] = visit(loc.id);
+  }
+
+  return statusByLocation;
+}
+
+/**
+ * True when this topology row is a structural host that uses a managed-shadow
+ * occupancy entity (``_meta.shadow_area_id``), including when the shadow row is
+ * omitted from ``allLocations`` (for example the panel's visible location list).
+ */
+export function isManagedShadowOccupancyHost(
+  location: Location | undefined,
+  _allLocations?: readonly Location[] | undefined
+): boolean {
+  if (!location || location.is_explicit_root) return false;
+  const type = getLocationType(location);
+  if (!SHADOW_HOST_TYPES.has(type)) return false;
+  return Boolean(managedShadowAreaIdForHost(location));
+}

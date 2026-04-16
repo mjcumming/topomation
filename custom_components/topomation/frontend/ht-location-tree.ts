@@ -11,6 +11,7 @@ import {
   effectiveOccupancyTopologyId,
   isSystemShadowLocation,
   managedShadowLocationIdSet,
+  rollupOccupancyStatusByLocation,
 } from "./shadow-location-utils";
 import { humanReadableLockSource } from "./lock-source-utils";
 import {
@@ -877,57 +878,10 @@ export class HtLocationTree extends LitElement {
   }
 
   private _computeOccupancyStatusByLocation(): Record<string, OccupancyStatus> {
-    const statusByLocation: Record<string, OccupancyStatus> = {};
-    const byId = new Map(this.locations.map((loc) => [loc.id, loc]));
-    const childrenByParent = new Map<string, string[]>();
-
-    for (const loc of this.locations) {
-      if (!loc.parent_id) continue;
-      if (!childrenByParent.has(loc.parent_id)) {
-        childrenByParent.set(loc.parent_id, []);
-      }
-      childrenByParent.get(loc.parent_id)!.push(loc.id);
-    }
-
-    const resolved = new Map<string, OccupancyStatus>();
-
-    const visit = (locationId: string): OccupancyStatus => {
-      const cached = resolved.get(locationId);
-      if (cached) return cached;
-      if (!byId.has(locationId)) return "unknown";
-
-      const direct = this.occupancyStates?.[locationId];
-      const own: OccupancyStatus =
-        direct === true ? "occupied" : direct === false ? "vacant" : "unknown";
-
-      const childIds = childrenByParent.get(locationId) || [];
-      if (!childIds.length) {
-        resolved.set(locationId, own);
-        return own;
-      }
-
-      const childStatuses = childIds.map((id) => visit(id));
-
-      let merged: OccupancyStatus;
-      if (own === "occupied" || childStatuses.includes("occupied")) {
-        merged = "occupied";
-      } else if (own === "vacant") {
-        merged = "vacant";
-      } else if (childStatuses.length > 0 && childStatuses.every((s) => s === "vacant")) {
-        merged = "vacant";
-      } else {
-        merged = "unknown";
-      }
-
-      resolved.set(locationId, merged);
-      return merged;
-    };
-
-    for (const loc of this.locations) {
-      statusByLocation[loc.id] = visit(loc.id);
-    }
-
-    return statusByLocation;
+    return rollupOccupancyStatusByLocation(
+      this.locations,
+      this.occupancyStates || {}
+    ) as Record<string, OccupancyStatus>;
   }
 
   private _computeLockStateByLocation(): Record<string, LockState> {

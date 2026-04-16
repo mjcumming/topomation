@@ -538,6 +538,22 @@ export class HtLocationInspector extends LitElement {
         margin-top: 12px;
       }
 
+      .dusk-media-actions-row {
+        align-items: start;
+      }
+
+      .dusk-media-actions-row .config-value {
+        min-width: 0;
+      }
+
+      .dusk-equipment-actions-hint {
+        margin: 4px 0 0;
+        max-width: min(100%, 720px);
+        font-size: 12px;
+        line-height: 1.45;
+        color: var(--secondary-text-color);
+      }
+
       .dusk-trigger-groups {
         display: grid;
         gap: 10px;
@@ -1245,15 +1261,32 @@ export class HtLocationInspector extends LitElement {
 
       .tabs {
         display: flex;
+        flex-wrap: nowrap;
         gap: var(--spacing-sm);
+        min-width: 0;
         margin-bottom: 0;
         border-bottom: 1px solid var(--divider-color);
         position: relative;
         z-index: 1;
         background-color: var(--card-background-color);
+        overflow-x: auto;
+        overflow-y: hidden;
+        overscroll-behavior-x: contain;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: thin;
+      }
+
+      .tabs::-webkit-scrollbar {
+        height: 6px;
+      }
+
+      .tabs::-webkit-scrollbar-thumb {
+        background: var(--divider-color);
+        border-radius: 3px;
       }
 
       .tab {
+        flex: 0 0 auto;
         padding: var(--spacing-sm) var(--spacing-md);
         background: transparent;
         border: none;
@@ -5833,6 +5866,11 @@ export class HtLocationInspector extends LitElement {
         signalKey: this._normalizedSignalKeyForSource(source),
       }));
     const items = [...visibleCandidateItems, ...configuredExtraItems].sort((a, b) => {
+      const aConfigured = sourceIndexByKey.has(a.key) ? 1 : 0;
+      const bConfigured = sourceIndexByKey.has(b.key) ? 1 : 0;
+      if (aConfigured !== bConfigured) {
+        return bConfigured - aConfigured;
+      }
       const byName = this._entityName(a.entityId).localeCompare(this._entityName(b.entityId));
       if (byName !== 0) return byName;
 
@@ -6963,6 +7001,9 @@ export class HtLocationInspector extends LitElement {
     rawValue: unknown,
     fallbackTriggerType?: TopomationActionRule["trigger_type"]
   ): TopomationActionRule["trigger_type"][] {
+    if (Array.isArray(rawValue) && rawValue.length === 0) {
+      return [];
+    }
     let occupancyTrigger: TopomationActionRule["trigger_type"] | undefined;
     let ambientTrigger: TopomationActionRule["trigger_type"] | undefined;
     if (Array.isArray(rawValue)) {
@@ -7108,7 +7149,7 @@ export class HtLocationInspector extends LitElement {
         ...(occupancyTrigger ? [occupancyTrigger] : []),
         ...(ambientTrigger ? [ambientTrigger] : []),
       ],
-      occupancyTrigger || ambientTrigger || "on_occupied"
+      undefined
     );
   }
 
@@ -7122,7 +7163,6 @@ export class HtLocationInspector extends LitElement {
     const occupancyTrigger = enabled
       ? nextOccupancyTrigger || currentOccupancyTrigger || "on_occupied"
       : undefined;
-    if (!occupancyTrigger && !currentAmbientTrigger) return;
     this._updateActionRule(ruleId, {
       trigger_types: this._composeLightingTriggerTypes({
         occupancyTrigger,
@@ -7141,7 +7181,6 @@ export class HtLocationInspector extends LitElement {
     const ambientTrigger = enabled
       ? nextAmbientTrigger || currentAmbientTrigger || "on_dark"
       : undefined;
-    if (!currentOccupancyTrigger && !ambientTrigger) return;
     this._updateActionRule(ruleId, {
       trigger_types: this._composeLightingTriggerTypes({
         occupancyTrigger: currentOccupancyTrigger,
@@ -7514,7 +7553,7 @@ export class HtLocationInspector extends LitElement {
     );
   }
 
-  private _normalizeActionBrightnessPct(rawValue: unknown, fallback = 30): number {
+  private _normalizeActionBrightnessPct(rawValue: unknown, fallback = 100): number {
     const numeric = Number(rawValue);
     if (Number.isFinite(numeric) && numeric > 0) {
       return Math.max(1, Math.min(100, Math.round(numeric)));
@@ -7564,7 +7603,7 @@ export class HtLocationInspector extends LitElement {
 
     if (Object.prototype.hasOwnProperty.call(data, "brightness_pct")) {
       if (dimmableLightTurnOn) {
-        data.brightness_pct = this._normalizeActionBrightnessPct(data.brightness_pct, 30);
+        data.brightness_pct = this._normalizeActionBrightnessPct(data.brightness_pct, 100);
       } else {
         delete data.brightness_pct;
       }
@@ -8112,7 +8151,8 @@ export class HtLocationInspector extends LitElement {
       const actionEntityId = candidates[0] || "";
       const defaultEdge: TopomationActionRule["trigger_type"] =
         tab === "media" ? "on_vacant" : "on_occupied";
-      const triggerTypes: TopomationActionRule["trigger_type"][] = [defaultEdge];
+      const triggerTypes: TopomationActionRule["trigger_type"][] =
+        tab === "lighting" ? [] : [defaultEdge];
       const triggerType = this._primaryActionTriggerType(triggerTypes);
       const nextRuleId = `action_rule_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
       this._actionRuleTabById[nextRuleId] = tab;
@@ -8133,10 +8173,7 @@ export class HtLocationInspector extends LitElement {
           : [],
         action_entity_id: actionEntityId || undefined,
         action_service: this._defaultActionServiceForTrigger(actionEntityId, triggerType),
-        ambient_condition:
-          tab === "lighting"
-            ? "dark"
-            : "any",
+        ambient_condition: "any",
         must_be_occupied:
           tab === "lighting"
             ? undefined
@@ -8881,7 +8918,7 @@ export class HtLocationInspector extends LitElement {
           const targetData = this._normalizeActionDataForRule(target?.data, entityId, activeService);
           const brightnessPct = this._normalizeActionBrightnessPct(
             (targetData as { brightness_pct?: unknown } | undefined)?.brightness_pct,
-            30
+            100
           );
           const canUseOnlyIfOff = this._actionSupportsOnlyIfOff(entityId, activeService);
           const onlyIfOff = canUseOnlyIfOff ? Boolean(target?.only_if_off) : false;
@@ -9200,8 +9237,7 @@ export class HtLocationInspector extends LitElement {
     `;
   }
 
-  private _renderOccupancyOnlyActionsBlock(
-    tab: DeviceAutomationTab,
+  private _renderMediaOccupancyOnlyActionsBlock(
     ruleId: string,
     rule: TopomationActionRule,
     busy: boolean,
@@ -9221,132 +9257,262 @@ export class HtLocationInspector extends LitElement {
       normalizedActionData
     );
     const showMediaVolumeRow =
-      tab === "media" &&
       selectedActionEntityId.startsWith("media_player.") &&
       selectedServiceOptionValue === "volume_set";
-    const showFanSpeedRow =
-      (tab === "hvac" || tab === "appliances") &&
-      selectedActionEntityId.startsWith("fan.") &&
-      selectedServiceOptionValue === "set_percentage";
+
     return html`
-      <div class="dusk-rule-section-title">Actions</div>
-      <div class="dusk-rule-row">
-        <span class="config-label">Target device</span>
-        <select
-          class="dusk-wide-select"
-          .value=${selectedActionEntityId}
-          ?disabled=${busy}
-          @change=${(ev: Event) => {
-            const entityId = String((ev.target as HTMLSelectElement).value || "").trim();
-            if (!entityId) {
-              this._updateActionRule(ruleId, {
-                action_entity_id: undefined,
-                action_service: undefined,
-                action_data: {},
-              });
-              return;
-            }
-            const nextService = this._defaultActionServiceForTrigger(entityId, triggerType);
-            this._updateActionRule(ruleId, {
-              action_entity_id: entityId,
-              action_service: nextService,
-              action_data: {},
-            });
-          }}
-        >
-          <option value="">Select device...</option>
-          ${entityOptions.map(
-            (entityId) => html`
-              <option value=${entityId}>${this._entityName(entityId)}</option>
+      <div class="dusk-media-actions" data-testid="media-rule-actions">
+        <div class="dusk-rule-section-title">Actions</div>
+        <div class="dusk-rule-row dusk-media-actions-row">
+          <span class="config-label">Player</span>
+          <div class="config-value">
+            ${entityOptions.length === 0
+              ? html`<div class="text-muted">No media players in this location.</div>`
+              : html`
+                  <div class="choice-pill-group" role="radiogroup" aria-label="Media player">
+                    ${entityOptions.map((entityId) =>
+                      this._renderChoicePill(
+                        `media-target-${ruleId}`,
+                        entityId,
+                        this._entityName(entityId),
+                        selectedActionEntityId === entityId,
+                        busy,
+                        () => {
+                          if (selectedActionEntityId === entityId) return;
+                          const nextService = this._defaultActionServiceForTrigger(entityId, triggerType);
+                          this._updateActionRule(ruleId, {
+                            action_entity_id: entityId,
+                            action_service: nextService,
+                            action_data: {},
+                          });
+                        }
+                      )
+                    )}
+                  </div>
+                `}
+          </div>
+        </div>
+        <div class="dusk-rule-row dusk-media-actions-row">
+          <span class="config-label">Command</span>
+          <div class="config-value">
+            ${!selectedActionEntityId
+              ? html`<div class="text-muted">Choose a player first.</div>`
+              : html`
+                  <div class="choice-pill-group" role="radiogroup" aria-label="Media command">
+                    ${serviceOptions.map((option) =>
+                      this._renderChoicePill(
+                        `media-cmd-${ruleId}`,
+                        option.value,
+                        option.label,
+                        selectedServiceOptionValue === option.value,
+                        busy,
+                        () => {
+                          if (selectedServiceOptionValue === option.value) return;
+                          const nextAction = this._actionServiceSelection(
+                            option.value,
+                            selectedActionEntityId,
+                            triggerType
+                          );
+                          this._updateActionRule(ruleId, {
+                            action_service: nextAction.service,
+                            action_data: nextAction.data || {},
+                          });
+                        }
+                      )
+                    )}
+                  </div>
+                `}
+          </div>
+        </div>
+        ${showMediaVolumeRow
+          ? html`
+              <div class="dusk-rule-row">
+                <span class="config-label">Volume</span>
+                <div class="config-value">
+                  <div class="dusk-slider-row">
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      step="1"
+                      .value=${String(this._mediaVolumePercent(normalizedActionData))}
+                      ?disabled=${busy}
+                      @input=${(ev: Event) => {
+                        const percent = this._normalizeActionPercent(
+                          (ev.target as HTMLInputElement).value,
+                          30
+                        );
+                        this._updateActionRule(ruleId, {
+                          action_data: { volume_level: percent / 100 },
+                        });
+                      }}
+                    />
+                    <span class="text-muted">${this._mediaVolumePercent(normalizedActionData)}%</span>
+                  </div>
+                </div>
+              </div>
             `
-          )}
-        </select>
+          : ""}
       </div>
-      <div class="dusk-rule-row">
-        <span class="config-label">Action</span>
-        <select
-          class="dusk-wide-select"
-          .value=${selectedServiceOptionValue}
-          ?disabled=${busy || !selectedActionEntityId}
-          @change=${(ev: Event) => {
-            const nextSelection = String((ev.target as HTMLSelectElement).value || "").trim();
-            const nextAction = this._actionServiceSelection(
-              nextSelection,
-              selectedActionEntityId,
-              triggerType
-            );
-            this._updateActionRule(ruleId, {
-              action_service: nextAction.service,
-              action_data: nextAction.data || {},
-            });
-          }}
-        >
-          ${!selectedActionEntityId
-            ? html`<option value="">Select device first...</option>`
-            : serviceOptions.map(
-                (option) => html`<option value=${option.value}>${option.label}</option>`
-              )}
-        </select>
-      </div>
-      ${showMediaVolumeRow
-        ? html`
-            <div class="dusk-rule-row">
-              <span class="config-label">Volume</span>
-              <div class="config-value">
-                <div class="dusk-slider-row">
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    step="1"
-                    .value=${String(this._mediaVolumePercent(normalizedActionData))}
-                    ?disabled=${busy}
-                    @input=${(ev: Event) => {
-                      const percent = this._normalizeActionPercent(
-                        (ev.target as HTMLInputElement).value,
-                        30
-                      );
-                      this._updateActionRule(ruleId, {
-                        action_data: { volume_level: percent / 100 },
-                      });
-                    }}
-                  />
-                  <span class="text-muted">${this._mediaVolumePercent(normalizedActionData)}%</span>
-                </div>
-              </div>
-            </div>
-          `
-        : ""}
-      ${showFanSpeedRow
-        ? html`
-            <div class="dusk-rule-row">
-              <span class="config-label">Fan speed</span>
-              <div class="config-value">
-                <div class="dusk-slider-row">
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    step="1"
-                    .value=${String(this._fanSpeedPercent(normalizedActionData))}
-                    ?disabled=${busy}
-                    @input=${(ev: Event) => {
-                      const percent = this._normalizeActionPercent(
-                        (ev.target as HTMLInputElement).value,
-                        30
-                      );
-                      this._updateActionRule(ruleId, {
-                        action_data: { percentage: percent },
-                      });
-                    }}
-                  />
-                  <span class="text-muted">${this._fanSpeedPercent(normalizedActionData)}%</span>
-                </div>
-              </div>
-            </div>
-          `
-        : ""}
     `;
+  }
+
+  /**
+   * HVAC / appliances: enumerate entities and commands as choice pills (same interaction model as media).
+   */
+  private _renderEquipmentPillActionsBlock(
+    variant: "hvac" | "appliances",
+    ruleId: string,
+    rule: TopomationActionRule,
+    busy: boolean,
+    entityOptions: string[]
+  ) {
+    const triggerTypes = this._normalizeActionTriggerTypes(rule.trigger_types, rule.trigger_type);
+    const triggerType = this._primaryActionTriggerType(triggerTypes);
+    const selectedActionEntityId = String(rule.action_entity_id || "").trim();
+    const normalizedActionData = this._normalizeActionDataForRule(
+      rule.action_data,
+      selectedActionEntityId,
+      String(rule.action_service || "")
+    );
+    const serviceOptions = this._actionServiceOptionsForRule(selectedActionEntityId, triggerType);
+    const selectedServiceOptionValue = this._actionServiceOptionValue(
+      rule.action_service,
+      normalizedActionData
+    );
+    const showFanSpeedRow =
+      selectedActionEntityId.startsWith("fan.") && selectedServiceOptionValue === "set_percentage";
+    const testId = variant === "hvac" ? "hvac-rule-actions" : "appliances-rule-actions";
+    const targetGroupName = variant === "hvac" ? `hvac-equip-target-${ruleId}` : `appl-equip-target-${ruleId}`;
+    const cmdGroupName = variant === "hvac" ? `hvac-equip-cmd-${ruleId}` : `appl-equip-cmd-${ruleId}`;
+    const deviceLabel = variant === "hvac" ? "Equipment" : "Device";
+    const emptyPool =
+      variant === "hvac"
+        ? "No HVAC-linked fans in this location."
+        : "No fans or switches in this location.";
+    return html`
+      <div class="dusk-equipment-actions" data-testid=${testId}>
+        <div class="dusk-rule-section-title">Actions</div>
+        ${variant === "hvac"
+          ? html`
+              <p class="dusk-equipment-actions-hint">
+                Climate-linked fans (air handler, circulation, etc.) appear here. Use a time window above
+                for setback-style schedules—e.g. lower fan speed during certain hours when occupied or
+                vacant.
+              </p>
+            `
+          : ""}
+        <div class="dusk-rule-row dusk-media-actions-row">
+          <span class="config-label">${deviceLabel}</span>
+          <div class="config-value">
+            ${entityOptions.length === 0
+              ? html`<div class="text-muted">${emptyPool}</div>`
+              : html`
+                  <div class="choice-pill-group" role="radiogroup" aria-label=${deviceLabel}>
+                    ${entityOptions.map((entityId) =>
+                      this._renderChoicePill(
+                        targetGroupName,
+                        entityId,
+                        this._entityName(entityId),
+                        selectedActionEntityId === entityId,
+                        busy,
+                        () => {
+                          if (selectedActionEntityId === entityId) return;
+                          const nextService = this._defaultActionServiceForTrigger(entityId, triggerType);
+                          this._updateActionRule(ruleId, {
+                            action_entity_id: entityId,
+                            action_service: nextService,
+                            action_data: {},
+                          });
+                        }
+                      )
+                    )}
+                  </div>
+                `}
+          </div>
+        </div>
+        <div class="dusk-rule-row dusk-media-actions-row">
+          <span class="config-label">Command</span>
+          <div class="config-value">
+            ${!selectedActionEntityId
+              ? html`<div class="text-muted">Choose ${variant === "hvac" ? "equipment" : "a device"} first.</div>`
+              : html`
+                  <div class="choice-pill-group" role="radiogroup" aria-label="Command">
+                    ${serviceOptions.map((option) =>
+                      this._renderChoicePill(
+                        cmdGroupName,
+                        option.value,
+                        option.label,
+                        selectedServiceOptionValue === option.value,
+                        busy,
+                        () => {
+                          if (selectedServiceOptionValue === option.value) return;
+                          const nextAction = this._actionServiceSelection(
+                            option.value,
+                            selectedActionEntityId,
+                            triggerType
+                          );
+                          this._updateActionRule(ruleId, {
+                            action_service: nextAction.service,
+                            action_data: nextAction.data || {},
+                          });
+                        }
+                      )
+                    )}
+                  </div>
+                `}
+          </div>
+        </div>
+        ${showFanSpeedRow
+          ? html`
+              <div class="dusk-rule-row">
+                <span class="config-label">Fan speed</span>
+                <div class="config-value">
+                  <div class="dusk-slider-row">
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      step="1"
+                      .value=${String(this._fanSpeedPercent(normalizedActionData))}
+                      ?disabled=${busy}
+                      @input=${(ev: Event) => {
+                        const percent = this._normalizeActionPercent(
+                          (ev.target as HTMLInputElement).value,
+                          30
+                        );
+                        this._updateActionRule(ruleId, {
+                          action_data: { percentage: percent },
+                        });
+                      }}
+                    />
+                    <span class="text-muted">${this._fanSpeedPercent(normalizedActionData)}%</span>
+                  </div>
+                </div>
+              </div>
+            `
+          : ""}
+      </div>
+    `;
+  }
+
+  private _renderOccupancyOnlyActionsBlock(
+    tab: DeviceAutomationTab,
+    ruleId: string,
+    rule: TopomationActionRule,
+    busy: boolean,
+    entityOptions: string[]
+  ) {
+    if (tab === "media") {
+      return this._renderMediaOccupancyOnlyActionsBlock(ruleId, rule, busy, entityOptions);
+    }
+    if (tab === "hvac") {
+      return this._renderEquipmentPillActionsBlock("hvac", ruleId, rule, busy, entityOptions);
+    }
+    if (tab === "appliances") {
+      return this._renderEquipmentPillActionsBlock("appliances", ruleId, rule, busy, entityOptions);
+    }
+    return html``;
   }
 
   private _renderOccupancyOnlyRuleEditor(
