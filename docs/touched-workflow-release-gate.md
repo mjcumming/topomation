@@ -110,8 +110,7 @@ Outcome:
 
 ## 8. Current Release Candidate Record
 
-Commit under test: Topomation **`0.2.54`** — use `git rev-parse HEAD` on the release
-commit after push (replace this line with the exact SHA).
+Commit under test: **`78aff11`** (Topomation **0.2.54**).
 Frontend bundle rebuilt from same commit: **yes** (`npm run build` → committed
 `topomation-panel.js`)
 
@@ -131,8 +130,8 @@ Commands run:
   panel UI per `docs/release-validation-runbook.md` §3 when dev HA is available.
 
 Outcome:
-- Local comprehensive gate (`./scripts/test-comprehensive.sh`): record PASS/FAIL after run
-- `make test-release-live`: record PASS/FAIL when run
+- Local comprehensive gate (`./scripts/test-comprehensive.sh`): **PASS** (2026-04-16)
+- `make test-release-live`: not run (record when dev HA available per runbook §3)
 
 Notes:
 - Release **`0.2.54`** ships panel automation UX iteration + shadow toggle fix +
