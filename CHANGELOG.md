@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.55] - 2026-04-17
+
+### Added
+
+- **Lighting managed rules**: **Test rule** runs the configured light actions
+  immediately via Home Assistant ``callService`` (works for drafts, dirty edits,
+  and saved rules).
+
+### Changed
+
+- **Lighting managed rules**: for a **saved** rule with no pending edits, lights
+  that are part of the rule are listed **first** (then other area lights); drafts
+  and dirty rows keep name-sorted order so the list does not jump while editing.
+
+### Tests
+
+- **Frontend**: Vitest coverage for configured-first row order and for **Test rule**
+  ``callService`` sequencing.
+
 ## [0.2.54] - 2026-04-16
 
 ### Added

@@ -21,6 +21,12 @@
 
 export interface HomeAssistant {
   callWS<T>(request: Record<string, any>): Promise<T>;
+  /** Home Assistant frontend: invoke a service (used for “Test rule” on lighting actions). */
+  callService?(
+    domain: string,
+    service: string,
+    serviceData?: Record<string, unknown>
+  ): Promise<unknown>;
   callApi?<T>(
     method: "get" | "post" | "put" | "delete" | string,
     endpoint: string,

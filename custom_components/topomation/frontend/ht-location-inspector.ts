@@ -126,6 +126,7 @@ export class HtLocationInspector extends LitElement {
     occupancyTransitions: { attribute: false },
     handoffTraces: { attribute: false },
     _climateDeviceLinkRevision: { state: true },
+    _testingLightingRuleId: { state: true },
   };
 
   @state() private _activeTab: InspectorTab = "detection";
@@ -143,6 +144,7 @@ export class HtLocationInspector extends LitElement {
   @state() private _actionRulesDraft?: TopomationActionRule[];
   @state() private _actionRulesDraftDirty = false;
   @state() private _savingActionRules = false;
+  @state() private _testingLightingRuleId?: string;
   @state() private _loadingActionRules = false;
   @state() private _actionRulesError?: string;
   @state() private _actionRulesSaveError?: string;
@@ -1961,6 +1963,15 @@ export class HtLocationInspector extends LitElement {
         margin-top: 6px;
         color: var(--text-secondary-color);
         font-size: 11px;
+        font-weight: 600;
+      }
+
+      .occupancy-source-device-class {
+        font-weight: 500;
+      }
+
+      .occupancy-source-device-class .candidate-device-class-value {
+        font-family: var(--code-font-family, monospace);
         font-weight: 600;
       }
 
@@ -5899,6 +5910,23 @@ export class HtLocationInspector extends LitElement {
       itemGroups.push(created);
     }
 
+    // Flat `items` are sorted configured-first, but integrated cards merge rows later; reorder
+    // cards so any source with an enabled checkbox stays above purely optional rows.
+    itemGroups.sort((ga, gb) => {
+      const groupHasConfigured = (group: { items: CandidateItem[] }) =>
+        group.items.some((row) => sourceIndexByKey.has(row.key));
+      const aHas = groupHasConfigured(ga);
+      const bHas = groupHasConfigured(gb);
+      if (aHas !== bHas) {
+        return aHas ? -1 : 1;
+      }
+      const idA = ga.items[0]?.entityId ?? "";
+      const idB = gb.items[0]?.entityId ?? "";
+      const nameCmp = this._entityName(idA).localeCompare(this._entityName(idB));
+      if (nameCmp !== 0) return nameCmp;
+      return ga.key.localeCompare(gb.key);
+    });
+
     if (!itemGroups.length) {
       return html`
         <div class="empty-state">
@@ -5984,6 +6012,7 @@ export class HtLocationInspector extends LitElement {
                               : ""}
                           </div>
                         </div>
+                        ${this._occupancySourceDeviceClassMeta(item.entityId)}
                         ${(this._isMediaEntity(item.entityId) || item.entityId.startsWith("light.")) && item.signalKey
                           ? html`<div class="candidate-submeta">Activity trigger: ${this._mediaSignalLabel(item.signalKey)}</div>`
                           : ""}
@@ -6089,6 +6118,7 @@ export class HtLocationInspector extends LitElement {
                     : ""}
                 </div>
               </div>
+              ${this._occupancySourceDeviceClassMeta(entityId)}
               <div class="candidate-submeta">Activity triggers</div>
               <div class="light-signal-toggles">
                 ${signalItems.map((signalItem) => {
@@ -6215,6 +6245,7 @@ export class HtLocationInspector extends LitElement {
                     : ""}
                 </div>
               </div>
+              ${this._occupancySourceDeviceClassMeta(entityId)}
               <div class="candidate-submeta">Activity triggers</div>
               <div class="light-signal-toggles">
                 ${signalItems.map((signalItem) => {
@@ -8635,6 +8666,64 @@ export class HtLocationInspector extends LitElement {
     }
   }
 
+  private _serviceCallPayloadForActionTarget(target: RuleActionTarget): Record<string, unknown> {
+    const service = String(target.service || "").trim() || "turn_on";
+    const normalizedData =
+      this._normalizeActionDataForRule(target.data, target.entity_id, service) || {};
+    const payload: Record<string, unknown> = { ...normalizedData, entity_id: target.entity_id };
+    if (
+      this._actionSupportsOnlyIfOff(target.entity_id, service) &&
+      typeof target.only_if_off === "boolean"
+    ) {
+      payload.only_if_off = target.only_if_off;
+    }
+    return payload;
+  }
+
+  private async _testLightingActionRule(ruleId: string): Promise<void> {
+    if (!this.hass || this._testingLightingRuleId || this._savingActionRules) {
+      return;
+    }
+    if (typeof this.hass.callService !== "function") {
+      this._showToast("Testing rules is not available in this environment.", "error");
+      return;
+    }
+    const rules = this._workingActionRules();
+    const ruleIndex = rules.findIndex((rule) => String(rule.id || "") === ruleId);
+    if (ruleIndex < 0) {
+      return;
+    }
+    const rule = this._normalizeActionRule(rules[ruleIndex], ruleIndex);
+    const targets = this._actionTargetsForRule(rule);
+    if (targets.length === 0) {
+      this._showToast("Select at least one light before testing.", "error");
+      return;
+    }
+
+    this._testingLightingRuleId = ruleId;
+    this.requestUpdate();
+    try {
+      for (const target of targets) {
+        const domain = String(target.entity_id || "").split(".", 1)[0];
+        const service = String(target.service || "").trim();
+        if (!domain || !service) {
+          continue;
+        }
+        await this.hass.callService!(
+          domain,
+          service,
+          this._serviceCallPayloadForActionTarget(target)
+        );
+      }
+      this._showToast("Rule actions ran", "success");
+    } catch (err: any) {
+      this._showToast(err?.message || "Failed to test rule", "error");
+    } finally {
+      this._testingLightingRuleId = undefined;
+      this.requestUpdate();
+    }
+  }
+
   private async _deleteActionRule(ruleId: string): Promise<void> {
     if (!this.location || !this.hass || this._savingActionRules) {
       return;
@@ -8888,14 +8977,25 @@ export class HtLocationInspector extends LitElement {
     ruleId: string,
     rule: TopomationActionRule,
     busy: boolean,
-    entityOptions: string[]
+    entityOptions: string[],
+    preferConfiguredLightsFirst: boolean
   ) {
     const ruleTargets = this._actionTargetsForRule(rule);
     const targetByEntity = new Map(ruleTargets.map((target) => [target.entity_id, target] as const));
-    const rowEntityIds = [...entityOptions];
-    for (const target of ruleTargets) {
-      if (!rowEntityIds.includes(target.entity_id)) {
-        rowEntityIds.unshift(target.entity_id);
+    let rowEntityIds: string[];
+    if (preferConfiguredLightsFirst) {
+      const configuredIds = ruleTargets.map((t) => t.entity_id);
+      const configuredSet = new Set(configuredIds);
+      rowEntityIds = [
+        ...configuredIds,
+        ...entityOptions.filter((entityId) => !configuredSet.has(entityId)),
+      ];
+    } else {
+      rowEntityIds = [...entityOptions];
+      for (const target of ruleTargets) {
+        if (!rowEntityIds.includes(target.entity_id)) {
+          rowEntityIds.unshift(target.entity_id);
+        }
       }
     }
     if (rowEntityIds.length === 0) {
@@ -9110,7 +9210,8 @@ export class HtLocationInspector extends LitElement {
     ruleId: string,
     rule: TopomationActionRule,
     busy: boolean,
-    entityOptions: string[]
+    entityOptions: string[],
+    preferConfiguredLightsFirst: boolean
   ) {
     return html`
       ${this._renderLightingTriggerRows(ruleId, rule, busy)}
@@ -9180,7 +9281,13 @@ export class HtLocationInspector extends LitElement {
       </div>
 
       <div class="dusk-rule-section-title">Lights</div>
-      ${this._renderLightingRuleActionRows(ruleId, rule, busy, entityOptions)}
+      ${this._renderLightingRuleActionRows(
+        ruleId,
+        rule,
+        busy,
+        entityOptions,
+        preferConfiguredLightsFirst
+      )}
     `;
   }
 
@@ -9591,6 +9698,24 @@ export class HtLocationInspector extends LitElement {
     `;
   }
 
+  private _renderLightingTestRuleButton(tab: DeviceAutomationTab, ruleId: string, busy: boolean) {
+    if (tab !== "lighting") {
+      return html``;
+    }
+    const testingThis = this._testingLightingRuleId === ruleId;
+    return html`
+      <button
+        class="button button-secondary"
+        type="button"
+        data-testid=${`action-rule-${ruleId}-test`}
+        ?disabled=${busy || testingThis}
+        @click=${() => void this._testLightingActionRule(ruleId)}
+      >
+        Test rule
+      </button>
+    `;
+  }
+
   private _renderDeviceAutomationTab(tab: DeviceAutomationTab) {
     if (!this.location) return "";
     const busy = this._savingActionRules;
@@ -9642,6 +9767,7 @@ export class HtLocationInspector extends LitElement {
                 const persistedRule = this._persistedActionRuleForDraft(rule);
                 const isPersisted = Boolean(persistedRule);
                 const hasRuleEdits = this._isActionRuleDirty(rule, index, persistedRule);
+                const preferConfiguredLightsFirst = isPersisted && !hasRuleEdits;
                 return html`
                   <div class="dusk-block-row" data-testid=${`action-rule-${ruleId}`}>
                     <div class="dusk-block-head">
@@ -9689,7 +9815,13 @@ export class HtLocationInspector extends LitElement {
                     </div>
 
                     ${tab === "lighting"
-                      ? this._renderLightingRuleEditor(ruleId, rule, busy, entityOptions)
+                      ? this._renderLightingRuleEditor(
+                          ruleId,
+                          rule,
+                          busy,
+                          entityOptions,
+                          preferConfiguredLightsFirst
+                        )
                       : this._renderOccupancyOnlyRuleEditor(tab, ruleId, rule, busy, entityOptions)}
                     <div class="dusk-block-footer">
                       ${!isPersisted
@@ -9721,6 +9853,7 @@ export class HtLocationInspector extends LitElement {
                             >
                               Duplicate rule
                             </button>
+                            ${this._renderLightingTestRuleButton(tab, ruleId, busy)}
                           `
                         : hasRuleEdits
                           ? html`
@@ -9760,6 +9893,7 @@ export class HtLocationInspector extends LitElement {
                               >
                                 Duplicate rule
                               </button>
+                              ${this._renderLightingTestRuleButton(tab, ruleId, busy)}
                             `
                           : html`
                               <button
@@ -9780,6 +9914,7 @@ export class HtLocationInspector extends LitElement {
                               >
                                 Duplicate rule
                               </button>
+                              ${this._renderLightingTestRuleButton(tab, ruleId, busy)}
                             `}
                     </div>
                     <div class="config-help dusk-rule-footer-help">
@@ -11180,6 +11315,24 @@ export class HtLocationInspector extends LitElement {
 
   private _entityName(entityId: string): string {
     return this.hass.states[entityId]?.attributes?.friendly_name || entityId;
+  }
+
+  /** Home Assistant `device_class` when set (used for occupancy source UX). */
+  private _entityDeviceClass(entityId: string): string | undefined {
+    const raw = this.hass?.states?.[entityId]?.attributes?.device_class;
+    if (raw === undefined || raw === null) return undefined;
+    const s = String(raw).trim();
+    return s || undefined;
+  }
+
+  private _occupancySourceDeviceClassMeta(entityId: string) {
+    const dc = this._entityDeviceClass(entityId);
+    if (!dc) return "";
+    return html`
+      <div class="candidate-submeta occupancy-source-device-class">
+        Device class: <span class="candidate-device-class-value">${dc}</span>
+      </div>
+    `;
   }
 
   private _entityState(entityId: string): string {

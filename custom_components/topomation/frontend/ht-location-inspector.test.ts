@@ -302,6 +302,7 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(element.shadowRoot!.querySelector("#source-on-timeout-0")).to.equal(null);
     expect(element.shadowRoot!.textContent || "").to.not.include("Indefinite (until Not detected)");
     expect(element.shadowRoot!.querySelector("#source-off-trailing-0")).to.exist;
+    expect(element.shadowRoot!.textContent || "").to.include("Device class: presence");
   });
 
   it("renders light power editor when source_id is keyed but signal_key is missing", async () => {
@@ -913,6 +914,78 @@ describe("HtLocationInspector occupancy source composer", () => {
       (row.textContent || "").includes("Camera Estimated Occupancy")
     );
     expect(estimatedCard).to.not.equal(undefined);
+    expect((estimatedCard!.textContent || "")).to.include("Device class: occupancy");
+  });
+
+  it("lists configured occupancy source cards before unconfigured cards", async () => {
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>): Promise<T> => {
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        return {} as T;
+      },
+      connection: {},
+      states: {
+        "binary_sensor.source_alpha_motion": {
+          entity_id: "binary_sensor.source_alpha_motion",
+          state: "off",
+          attributes: {
+            friendly_name: "Alpha Motion",
+            device_class: "motion",
+            area_id: "room1",
+          },
+        },
+        "binary_sensor.source_zebra_motion": {
+          entity_id: "binary_sensor.source_zebra_motion",
+          state: "off",
+          attributes: {
+            friendly_name: "Zebra Motion",
+            device_class: "motion",
+            area_id: "room1",
+          },
+        },
+      },
+      areas: { room1: { area_id: "room1", name: "Room 1" } },
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_room1";
+    location.name = "Room 1";
+    location.ha_area_id = "room1";
+    location.modules._meta = { type: "area" };
+    location.entity_ids = [
+      "binary_sensor.source_alpha_motion",
+      "binary_sensor.source_zebra_motion",
+    ];
+    location.modules.occupancy = {
+      ...location.modules.occupancy!,
+      enabled: true,
+      occupancy_sources: [
+        {
+          entity_id: "binary_sensor.source_zebra_motion",
+          source_id: "binary_sensor.source_zebra_motion",
+          mode: "specific_states",
+          on_event: "trigger",
+          on_timeout: 1800,
+          off_event: "none",
+          off_trailing: 0,
+        },
+      ],
+    };
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector .hass=${hass} .location=${location}></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    const cards = Array.from(element.shadowRoot!.querySelectorAll(".source-card"));
+    const zebraIdx = cards.findIndex((row) => (row.textContent || "").includes("Zebra Motion"));
+    const alphaIdx = cards.findIndex((row) => (row.textContent || "").includes("Alpha Motion"));
+    expect(zebraIdx).to.be.at.least(0);
+    expect(alphaIdx).to.be.at.least(0);
+    expect(zebraIdx).to.be.lessThan(alphaIdx);
   });
 
   it("shows only core detection entities in area source candidates while keeping generic switches in Add Source", async () => {
@@ -1105,14 +1178,22 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(mudroomSpeakerCardText).to.include("Volume changes");
     expect(mudroomSpeakerCardText).to.include("Mute changes");
     expect(cardsText).to.include("Mudroom Relay Light");
+    expect(cardsText).to.include("Device class: light");
     expect(cardsText).to.include("Mudroom Exhaust");
     expect(cardsText).to.not.include("Mudroom Speaker — Playback");
     expect(cardsText).to.not.include("Mudroom Speaker — Volume changes");
     expect(cardsText).to.not.include("Mudroom Speaker — Mute changes");
     expect(cardsText).to.include("Mudroom Motion");
+    expect(cardsText).to.include("Device class: motion");
     expect(cardsText).to.include("Mudroom Glass Vibration");
+    expect(cardsText).to.include("Device class: vibration");
     expect(cardsText).to.include("Mudroom Alarm Sound");
+    expect(cardsText).to.include("Device class: sound");
     expect(cardsText).to.include("Mudroom Camera Person");
+    const mudroomCameraPersonCard = Array.from(element.shadowRoot!.querySelectorAll(".source-card")).find((card) =>
+      (card.textContent || "").includes("Mudroom Camera Person")
+    );
+    expect(mudroomCameraPersonCard?.textContent || "").to.not.include("Device class:");
     expect(cardsText).to.not.include("All Lights KeypadLinc Indicator");
     expect(cardsText).to.not.include("Mudroom Occupancy");
     expect(cardsText).to.not.include("Mudroom Heat");
@@ -5856,6 +5937,212 @@ describe("HtLocationInspector WIAB configuration", () => {
     expect(saveRuleCount).to.equal(1);
     expect(duplicateRuleCount).to.equal(2);
     expect(deleteRuleCount).to.equal(1);
+  });
+
+  it("renders configured lighting entities first when a persisted rule is clean", async () => {
+    const persistedRules = [
+      {
+        id: "rule_existing",
+        entity_id: "automation.rule_existing",
+        name: "Island only",
+        trigger_type: "on_vacant",
+        trigger_types: ["on_vacant"],
+        rule_uuid: "rule_existing_uuid",
+        actions: [{ entity_id: "light.kitchen_island", service: "turn_off" }],
+        action_entity_id: "light.kitchen_island",
+        action_service: "turn_off",
+        ambient_condition: "any",
+        must_be_occupied: false,
+        time_condition_enabled: false,
+        start_time: "18:00",
+        end_time: "23:59",
+        enabled: true,
+      },
+    ];
+
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>): Promise<T> => {
+        if (request.type === "topomation/actions/rules/list") {
+          return { rules: persistedRules } as T;
+        }
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        return {} as T;
+      },
+      connection: {},
+      states: {
+        "light.kitchen_ceiling": {
+          entity_id: "light.kitchen_ceiling",
+          state: "off",
+          attributes: {
+            friendly_name: "Kitchen Ceiling",
+            supported_color_modes: ["brightness"],
+          },
+        },
+        "light.kitchen_island": {
+          entity_id: "light.kitchen_island",
+          state: "off",
+          attributes: {
+            friendly_name: "Kitchen Island",
+            supported_color_modes: ["brightness"],
+          },
+        },
+      },
+      areas: {
+        kitchen: { area_id: "kitchen", name: "Kitchen" },
+      },
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_kitchen";
+    location.name = "Kitchen";
+    location.ha_area_id = "kitchen";
+    location.entity_ids = ["light.kitchen_ceiling", "light.kitchen_island"];
+    location.modules._meta = { type: "area" };
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${location}
+        .forcedTab=${"lighting"}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    await waitUntil(
+      () => (element.shadowRoot?.querySelectorAll(".dusk-block-row").length || 0) === 1,
+      "expected persisted lighting rule row to render"
+    );
+
+    const row0 = element.shadowRoot?.querySelector(
+      '[data-testid="action-rule-rule_existing-device-row-0"]'
+    );
+    expect(row0?.textContent || "").to.include("light.kitchen_island");
+
+    const persistedRow = element.shadowRoot?.querySelector(
+      '[data-testid="action-rule-rule_existing"]'
+    ) as HTMLElement | null;
+    expect(persistedRow).to.exist;
+    const brightAmbientTrigger = Array.from(
+      persistedRow?.querySelectorAll(".choice-pill") || []
+    ).find((pill) => (pill.textContent || "").includes("It becomes bright")) as
+      | HTMLButtonElement
+      | undefined;
+    expect(brightAmbientTrigger).to.exist;
+    brightAmbientTrigger!.click();
+    await element.updateComplete;
+
+    await waitUntil(
+      () => !!element.shadowRoot?.querySelector('[data-testid="action-rule-rule_existing-update"]'),
+      "expected dirty persisted row"
+    );
+
+    const row0Dirty = element.shadowRoot?.querySelector(
+      '[data-testid="action-rule-rule_existing-device-row-0"]'
+    );
+    expect(row0Dirty?.textContent || "").to.include("light.kitchen_ceiling");
+  });
+
+  it("calls hass.callService for each configured action when Test rule is clicked", async () => {
+    const serviceCalls: Array<{ domain: string; service: string; data?: Record<string, unknown> }> = [];
+    const persistedRules = [
+      {
+        id: "rule_existing",
+        entity_id: "automation.rule_existing",
+        name: "Multi",
+        trigger_type: "on_vacant",
+        trigger_types: ["on_vacant"],
+        rule_uuid: "rule_existing_uuid",
+        actions: [
+          { entity_id: "light.kitchen_ceiling", service: "turn_off" },
+          { entity_id: "light.kitchen_island", service: "turn_on", data: { brightness_pct: 42 } },
+        ],
+        action_entity_id: "light.kitchen_ceiling",
+        action_service: "turn_off",
+        ambient_condition: "any",
+        must_be_occupied: false,
+        time_condition_enabled: false,
+        start_time: "18:00",
+        end_time: "23:59",
+        enabled: true,
+      },
+    ];
+
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>): Promise<T> => {
+        if (request.type === "topomation/actions/rules/list") {
+          return { rules: persistedRules } as T;
+        }
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        return {} as T;
+      },
+      callService: async (domain, service, data) => {
+        serviceCalls.push({ domain, service, data });
+      },
+      connection: {},
+      states: {
+        "light.kitchen_ceiling": {
+          entity_id: "light.kitchen_ceiling",
+          state: "off",
+          attributes: {
+            friendly_name: "Kitchen Ceiling",
+            supported_color_modes: ["brightness"],
+          },
+        },
+        "light.kitchen_island": {
+          entity_id: "light.kitchen_island",
+          state: "off",
+          attributes: {
+            friendly_name: "Kitchen Island",
+            supported_color_modes: ["brightness"],
+          },
+        },
+      },
+      areas: {
+        kitchen: { area_id: "kitchen", name: "Kitchen" },
+      },
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_kitchen";
+    location.name = "Kitchen";
+    location.ha_area_id = "kitchen";
+    location.entity_ids = ["light.kitchen_ceiling", "light.kitchen_island"];
+    location.modules._meta = { type: "area" };
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${location}
+        .forcedTab=${"lighting"}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    await waitUntil(
+      () => (element.shadowRoot?.querySelectorAll(".dusk-block-row").length || 0) === 1,
+      "expected persisted lighting rule row to render"
+    );
+
+    const testBtn = element.shadowRoot?.querySelector(
+      '[data-testid="action-rule-rule_existing-test"]'
+    ) as HTMLButtonElement | null;
+    expect(testBtn).to.exist;
+    testBtn!.click();
+
+    await waitUntil(() => serviceCalls.length === 2, "expected two callService invocations");
+    expect(serviceCalls[0]?.domain).to.equal("light");
+    expect(serviceCalls[0]?.service).to.equal("turn_off");
+    expect(serviceCalls[0]?.data?.entity_id).to.equal("light.kitchen_ceiling");
+    expect(serviceCalls[1]?.domain).to.equal("light");
+    expect(serviceCalls[1]?.service).to.equal("turn_on");
+    expect(serviceCalls[1]?.data?.entity_id).to.equal("light.kitchen_island");
+    expect(serviceCalls[1]?.data?.brightness_pct).to.equal(42);
   });
 
   it("shows situation requirement choices for occupancy-based lighting rules", async () => {
