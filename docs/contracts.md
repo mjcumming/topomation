@@ -1,6 +1,6 @@
 # Contracts
 
-**Last reviewed**: 2026-04-16
+**Last reviewed**: 2026-04-17
 **Purpose**: canonical behavior contracts for Topomation runtime and panel actions.
 
 Use this file as the quick contract surface. Keep it synchronized with:
@@ -666,6 +666,49 @@ Additional save points:
 - The strip is universal, but copy must adapt to location type:
   - structural locations (`property`, `floor`, `building`, `grounds`) are described as
     derived from child locations (or occupancy groups on `floor`)
-  - room-like locations (`area`, `subarea`) may describe direct sources
+  - room-like locations (`area`, `subarea`) may describe direct sources; **`subarea`**
+    is a hierarchy label only (see **C-022**), not a separate HA entity class
 - Internal contributor IDs must not be shown raw when a human-readable location
   or source label can be resolved.
+
+## C-022 Topology ↔ Home Assistant area anchoring
+
+- **Invariant**: Every topology location row that operators treat as part of the
+  home tree for room-like semantics **must** resolve to a **Home Assistant Area**
+  registry entry for `area_id` / entity interoperability. There are two patterns:
+  1. **Direct HA-backed area**: the row is an `area_*` topology wrapper with a
+     real `ha_area_id` (user `area` rows and, when used, **`subarea`** rows—same
+     registry backing as any other area; see below).
+  2. **Aggregate structural host**: the row is a managed-shadow **host** (`property`,
+     `floor`, `building`, `grounds`) and **must** own exactly one **managed shadow**
+     HA-backed child area per **C-014** (integration-created HA area used as plumbing).
+- **`subarea` is not a parallel “non-area” type**: it marks **nested placement in the
+  Topomation tree only** (parent/child edges HA does not natively store). For
+  contracts and product semantics, a **`subarea` node is still one normal HA area**
+  at persistence level (same obligations as `area` for registry linkage); only the
+  **topology hierarchy** differs.
+- **Managed shadow areas** (`role: managed_shadow`) are integration-owned rows;
+  they satisfy the anchoring invariant for their **host** and are not optional
+  “extra” user rooms; operators may hide them in the UI, but assignment and
+  reconciliation semantics remain per **C-014**.
+- **HA area removed — respect user intent vs auto-heal (split policy)**:
+  - **Room-like rows** (`modules._meta.type` is `area` or **`subarea`** / hierarchy-only
+    room row): if the user deletes that area in **Home Assistant Settings**, treat
+    HA as **source of truth for deletion**. Remove or reconcile the matching topology
+    wrapper, **reparent child topology locations** to the deleted node’s parent (or
+    another documented safe parent), and clean up integration-owned dependents as
+    needed. **Do not** silently recreate the same logical room in HA solely because
+    topology still had a row—that would override an explicit user delete.
+  - **Managed shadow areas only**: if HA removes the shadow **`area_*`** backing a
+    structural host (`property`, `floor`, `building`, `grounds`), treat that as
+    **integration drift** (or mistaken cleanup), **not** as intent to delete the
+    host. **Auto-heal**: recreate the managed shadow HA area and re-wire the host
+    pointer per **C-014** / reconciliation passes.
+- **HA area created**: the integration **must** listen for Home Assistant
+  `area_registry_updated` **`create`** (and `update` / `remove`) and **import or
+  reconcile** topology wrappers so areas the user adds in HA appear in the tree
+  according to existing sync rules (see `SyncManager._setup_ha_listeners` /
+  `_handle_area_created`).
+- This contract is the **policy source** for ADR-HA-083; implementation must converge
+  to it without weakening the invariant (legacy stores may require one-time heal
+  or migration paths).

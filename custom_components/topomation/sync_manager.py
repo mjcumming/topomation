@@ -3,6 +3,10 @@
 Projects Home Assistant area/floor/entity registry changes into topology
 locations. Topology-originated registry mutations are intentionally out of
 scope (ADR-HA-017).
+
+Area removal policy (C-022 / ADR-HA-083): user-deleted HA areas that back
+room-like topology rows remove those rows and reparent children; managed-shadow
+HA areas are recreated by reconciliation when removed.
 """
 
 from __future__ import annotations
@@ -61,6 +65,19 @@ def _is_shadow_host(location: object) -> bool:
     if bool(getattr(location, "is_explicit_root", False)):
         return False
     return _location_type(location) in _SHADOW_HOST_TYPES
+
+
+def _is_managed_shadow_area_location(location: object) -> bool:
+    """Return True when location is an integration-managed shadow area row."""
+    if _location_type(location) != "area":
+        return False
+    modules = getattr(location, "modules", {}) or {}
+    if not isinstance(modules, dict):
+        return False
+    meta = modules.get("_meta", {})
+    if not isinstance(meta, dict):
+        return False
+    return str(meta.get(_META_ROLE_KEY, "")).strip().lower() == _MANAGED_SHADOW_ROLE
 
 
 def managed_shadow_entity_ids_for_ambient(
@@ -171,12 +188,120 @@ class SyncManager:
 
         # Map entities to locations
         await self._map_entities()
+        self.reconcile_missing_ha_area_wrappers(run_shadow_reconcile=False)
         self._reconcile_managed_shadow_areas()
 
         _LOGGER.info(
             "Import complete: %d locations created",
             len(self.loc_mgr.all_locations()),
         )
+
+    def reconcile_missing_ha_area_wrappers(self, *, run_shadow_reconcile: bool = True) -> None:
+        """Remove ``area_*`` topology rows whose HA area id no longer exists in HA.
+
+        Managed-shadow rows and user room wrappers are both dropped here; managed
+        shadows are then recreated by :meth:`_reconcile_managed_shadow_areas` when
+        ``run_shadow_reconcile`` is True (default). During import, pass
+        ``run_shadow_reconcile=False`` and call :meth:`_reconcile_managed_shadow_areas`
+        once afterward to batch work.
+        """
+        stale_ids: list[str] = []
+        for location in list(self.loc_mgr.all_locations()):
+            loc_id = str(getattr(location, "id", "") or "")
+            if not loc_id.startswith("area_"):
+                continue
+            modules = getattr(location, "modules", {}) or {}
+            meta = modules.get("_meta", {}) if isinstance(modules, dict) else {}
+            ha_raw = getattr(location, "ha_area_id", None)
+            if not ha_raw and isinstance(meta, dict):
+                ha_raw = meta.get("ha_area_id")
+            ha_id = str(ha_raw).strip() if ha_raw else ""
+            if not ha_id:
+                continue
+            if self.area_registry.async_get_area(ha_id) is not None:
+                continue
+            stale_ids.append(loc_id)
+
+        for loc_id in stale_ids:
+            _LOGGER.warning(
+                "HA area missing for topology row %s; pruning wrapper (startup drift).",
+                loc_id,
+            )
+            try:
+                self._reparent_direct_children_then_delete_location(
+                    loc_id, run_shadow_reconcile=False
+                )
+            except ValueError as err:
+                _LOGGER.error(
+                    "Failed to prune stale topology wrapper %s (children reparent blocked): %s",
+                    loc_id,
+                    err,
+                )
+
+        if run_shadow_reconcile:
+            self._reconcile_managed_shadow_areas()
+
+    def _reparent_direct_children_then_delete_location(
+        self,
+        location_id: str,
+        *,
+        run_shadow_reconcile: bool = True,
+    ) -> None:
+        """Reparent direct children to this node's parent, then delete the location.
+
+        Does not call ``area_registry.async_delete`` (HA removal is already done or
+        must not be repeated). Optionally runs managed-shadow reconciliation.
+        """
+        from .websocket_api import (
+            _location_ha_area_id,
+            _subtree_location_ids,
+            _sync_ha_area_floor_assignment,
+            _validate_parent_for_type,
+        )
+
+        location = self.loc_mgr.get_location(location_id)
+        if location is None:
+            return
+
+        parent_id = getattr(location, "parent_id", None)
+        children = self.loc_mgr.children_of(location_id)
+
+        for child in children:
+            child_id = str(getattr(child, "id", "") or "")
+            child_type = _location_type(child)
+            is_parent_valid, parent_error = _validate_parent_for_type(
+                self.loc_mgr, child_type, parent_id
+            )
+            if not is_parent_valid:
+                raise ValueError(
+                    f"Cannot reparent child '{child_id}' to '{parent_id}': "
+                    f"{parent_error or 'invalid parent'}"
+                )
+
+        impacted_ids: set[str] = set()
+        for child in children:
+            child_id = str(getattr(child, "id", "") or "")
+            if child_id:
+                impacted_ids.update(_subtree_location_ids(self.loc_mgr, child_id))
+
+        for child in children:
+            child_id = str(getattr(child, "id", "") or "")
+            self.loc_mgr.update_location(
+                child_id,
+                parent_id=parent_id if parent_id is not None else "",
+            )
+
+        self.loc_mgr.delete_location(location_id)
+
+        for impacted_id in impacted_ids:
+            impacted = self.loc_mgr.get_location(impacted_id)
+            if impacted is None:
+                continue
+            if _location_ha_area_id(impacted):
+                _sync_ha_area_floor_assignment(self.hass, self.loc_mgr, impacted)
+
+        if run_shadow_reconcile:
+            self._reconcile_managed_shadow_areas()
 
     async def _import_floors(self) -> None:
         """Import HA floors as parent locations."""
@@ -424,24 +549,44 @@ class SyncManager:
         self._reconcile_managed_shadow_areas()
 
     def _handle_area_removed(self, area_id: str) -> None:
-        """Handle area deleted in HA."""
+        """Handle area deleted in HA (C-022 / ADR-HA-083).
+
+        Managed-shadow HA areas: drop stale wrapper and let reconciliation recreate
+        plumbing. All other ``area_*`` rows: respect HA delete — reparent children
+        then remove the topology wrapper (including ``sync_source: topology``).
+        """
         location_id = f"area_{area_id}"
         location = self.loc_mgr.get_location(location_id)
 
         if not location:
             return
 
-        if not self._can_sync_from_ha(location):
-            _LOGGER.debug("Skipping HA area remove for location %s due to sync policy", location_id)
-            return
+        if _is_managed_shadow_area_location(location):
+            _LOGGER.info(
+                "Managed shadow HA area removed (%s); pruning stale wrapper for reconcile",
+                location_id,
+            )
+        else:
+            _LOGGER.info(
+                "HA area removed; pruning topology wrapper %s (respect user delete)",
+                location_id,
+            )
 
         try:
-            # Delete the location
-            self.loc_mgr.delete_location(location_id)
-            self._reconcile_managed_shadow_areas()
-            _LOGGER.info("Deleted location for removed area: %s", location_id)
-        except Exception as e:
-            _LOGGER.error("Failed to delete location %s: %s", location_id, e)
+            self._reparent_direct_children_then_delete_location(location_id)
+        except ValueError as err:
+            _LOGGER.error(
+                "Failed to reconcile topology after HA area remove (%s): %s",
+                location_id,
+                err,
+            )
+        except Exception as err:
+            _LOGGER.error(
+                "Failed to reconcile topology after HA area remove (%s): %s",
+                location_id,
+                err,
+                exc_info=True,
+            )
 
     @callback
     def _on_floor_registry_updated(self, event: HAEvent) -> None:

@@ -616,6 +616,73 @@ class TestHAToTopologySync:
         assert sitting_loc.name == "Lounge"
         assert sitting_loc.parent_id == suite_loc_id
 
+    async def test_ha_area_delete_reparents_overlay_children(
+        self,
+        hass: HomeAssistant,
+        sync_manager: SyncManager,
+        loc_mgr: LocationManager,
+        clean_registries,
+    ) -> None:
+        """When HA removes an area, topology children move to the former HA parent."""
+        area_reg = ar.async_get(hass)
+        floor_reg = fr.async_get(hass)
+        floor = floor_reg.async_create("Ground Floor")
+        suite = area_reg.async_create("Master Suite", floor_id=floor.floor_id)
+        sitting = area_reg.async_create("Master Sitting", floor_id=floor.floor_id)
+
+        await sync_manager.import_all_areas_and_floors()
+        await sync_manager.async_setup()
+
+        suite_loc_id = f"area_{suite.id}"
+        sitting_loc_id = f"area_{sitting.id}"
+        floor_loc_id = f"floor_{floor.floor_id}"
+
+        loc_mgr.update_location(sitting_loc_id, parent_id=suite_loc_id)
+
+        area_reg.async_delete(suite.id)
+        await hass.async_block_till_done()
+
+        assert loc_mgr.get_location(suite_loc_id) is None
+        sitting_loc = loc_mgr.get_location(sitting_loc_id)
+        assert sitting_loc is not None
+        assert sitting_loc.parent_id == floor_loc_id
+
+    async def test_reconcile_missing_ha_removes_stale_area_wrapper(
+        self,
+        hass: HomeAssistant,
+        sync_manager: SyncManager,
+        loc_mgr: LocationManager,
+        clean_registries,
+    ) -> None:
+        """Startup-style pass drops ``area_*`` rows whose HA area id does not exist."""
+        floor_reg = fr.async_get(hass)
+        fl = floor_reg.async_create("F")
+        await sync_manager.import_all_areas_and_floors()
+
+        floor_loc_id = f"floor_{fl.floor_id}"
+        fake_ha = "abcdefabcdefabcdefabcdefabcdefab"
+        ghost_id = f"area_{fake_ha}"
+        loc_mgr.create_location(
+            id=ghost_id,
+            name="Ghost Room",
+            parent_id=floor_loc_id,
+            is_explicit_root=False,
+            ha_area_id=fake_ha,
+        )
+        loc_mgr.set_module_config(
+            ghost_id,
+            "_meta",
+            {
+                "type": "area",
+                "ha_area_id": fake_ha,
+                "sync_source": "topology",
+                "sync_enabled": True,
+            },
+        )
+
+        sync_manager.reconcile_missing_ha_area_wrappers()
+        assert loc_mgr.get_location(ghost_id) is None
+
     async def test_floor_delete_reparents_children_and_clears_floor_meta(
         self,
         hass: HomeAssistant,

@@ -846,6 +846,20 @@ with integration-owned structure where HA has no native concept.
    - Existing floor/area-only topologies remain valid.
    - New node types and policy bindings are opt-in and additive.
 
+9. **Amendment (2026-04-17) — topology ↔ HA area anchoring (ADR-HA-083, C-022)**:
+   - **Narrowing of (3) and (5)**: `building`, `grounds`, and `property` remain
+     integration-owned **structure** in the tree, but each such host **must** own a
+     **managed shadow HA area** for registry interoperability (see **C-014**);
+     that shadow **is** an HA registry object—created and maintained by Topomation,
+     not entered manually by the user for each device.
+   - **`subarea` clarification**: `subarea` denotes **nested tree placement only**
+     (topology hierarchy HA does not store). It is **not** permission to omit an
+     HA **Area** backing: contractually, a `subarea` row is still **one HA area per
+     row** with parent/child edges maintained in Topomation only (**C-022**).
+   - **Source assignment**: until implementation fully converges, treat `subarea`
+     like other HA-backed room rows for discovery defaults; aggregate hosts keep
+     explicit/cross-area assignment where the product already requires it.
+
 **Rationale**:
 1. Preserves HA alignment where HA is strong (`floor`/`area` metadata and
    entity assignment).
@@ -4177,6 +4191,94 @@ promising, but naming and combinatorial expectation risk is high:
 - Add full climate authoring immediately — rejected: high integration variance and
   UX risk before fans-first is fully exercised.
 - Never add climate — rejected: setpoint/preset is a common ask; defer, not deny.
+
+---
+
+### ADR-HA-083: Every topology row anchors to a Home Assistant Area (2026-04-17)
+
+**Status**: ✅ APPROVED (policy + contracts; implementation may trail)
+
+**Context**:
+
+- Operators and downstream features (occupancy, entity `area_id`, managed
+  actions) assume a stable **HA Area** registry anchor for “things in this room.”
+- Prior wording (ADR-HA-020) allowed reading **`subarea`** and some structural
+  nodes as “no HA registry object,” which drifted from how the integration already
+  uses **managed shadow areas** for hosts and from the desired mental model:
+  **the tree is hierarchy; HA areas are the flat assignment surface.**
+
+**Decision**:
+
+1. **Anchoring invariant**: Every topology location that participates in the home
+   tree for room-like or aggregate-host semantics **must** resolve to exactly one
+   logical HA **Area** anchor path:
+   - **Room rows** (`area`, and **`subarea`**): the row **is** (or must become) an
+     HA-backed `area_*` wrapper with a real `ha_area_id`. **`subarea` is only a
+     hierarchy marker** in `_meta.type`; it does not define a second class of
+     non-area persistence.
+   - **Structural hosts** (`property`, `floor`, `building`, `grounds`): the row
+     uses a **managed shadow** child area per **C-014** so HA-native `area_id`
+     interoperability exists without pretending the host row itself is an HA
+     “room” duplicate.
+2. **Maintenance (narrowed)**: On **startup** and after **topology** mutations,
+   reconcile **managed shadow** hosts so missing shadow HA areas are **auto-healed**
+   per **C-022**. For **user room** HA areas (`area` / hierarchy-only **`subarea`**),
+   an HA **remove** is treated as **authoritative user delete**: fix topology
+   (including **reparent children**), do **not** auto-recreate that area in HA to
+   override the user. Full event listening for HA area **create/update/remove**
+   remains required so manually added HA areas still flow into topology.
+3. **Documentation alignment**: **C-022** is the canonical contract; ADR-HA-020 is
+   **amended** by item (9) there; ADR-HA-002’s historical “area entities only”
+   story remains narrowed for aggregate hosts only as already documented.
+
+**Rationale**:
+
+1. One anchor model reduces “why is this room missing from HA Areas?” support load.
+2. Matches existing managed-shadow machinery instead of inventing a third model.
+3. Keeps HA’s flat area model while preserving deep tree UX.
+
+**Consequences**:
+
+- ✅ Clear product story: tree = organization; HA area = device/entity container.
+- ✅ `subarea` documented as topology-only label, not a waiver for HA backing.
+- ⚠️ Code paths that still create `subarea` without `async_create` / linkage must
+  be brought in line without breaking stable installs (heal/migrate).
+- ⚠️ ADR-HA-020 bullets (3) and (5) must be read together with **item (9)** and **C-022**.
+
+**Alternatives Considered**:
+
+- Keep `subarea` as integration-only without HA areas — rejected: breaks the
+  anchoring invariant and real-world expectations.
+- Duplicate every structural node as a user-managed HA room — rejected: managed
+  shadow already solves `area_id` without cluttering HA’s area list with fake rooms.
+
+---
+
+### ADR-HA-084: HA area removal + startup stale-wrapper reconcile (implementation) (2026-04-17)
+
+**Status**: ✅ APPROVED (shipped in runtime; see **C-022**)
+
+**Context**: Policy split in **ADR-HA-083** / **C-022** required runtime behavior: user
+HA area deletes must prune topology (with child reparent); managed shadows must
+heal; startup must not retain ``area_*`` rows pointing at deleted HA ids.
+
+**Decision**:
+
+1. **Live ``area_registry`` remove**: ``SyncManager._handle_area_removed`` always
+   calls ``_reparent_direct_children_then_delete_location`` (same reparent + floor
+   sync helpers as ``locations/delete``, without ``async_delete`` on HA). Managed
+   shadow rows use the same path so the stale child is removed before
+   ``_reconcile_managed_shadow_areas`` recreates plumbing.
+2. **Startup / import**: ``import_all_areas_and_floors`` runs
+   ``reconcile_missing_ha_area_wrappers(run_shadow_reconcile=False)`` after
+   ``_map_entities``, then a single ``_reconcile_managed_shadow_areas`` pass.
+
+**Consequences**:
+
+- ✅ HA remains authoritative for user room deletes across ``sync_source`` values.
+- ✅ Managed shadow auto-heal preserved without special-casing in the event handler.
+- ⚠️ Reparent validation failures log an error and leave the wrapper until fixed
+  manually (same class as websocket delete validation).
 
 ---
 

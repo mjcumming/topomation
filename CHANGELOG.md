@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.56] - 2026-04-17
+
+### Fixed
+
+- **HA → topology sync** (C-022): when Home Assistant **removes an area**, the
+  matching ``area_*`` topology wrapper is now removed after **reparenting direct
+  children** to the deleted node’s parent (same semantics as ``locations/delete``,
+  without calling ``area_registry.async_delete`` again). This applies to
+  **``sync_source: topology``** room rows as well, so HA remains authoritative for
+  user-deleted areas.
+- **Managed shadow** HA areas that disappear from the registry still **reconcile**
+  back via existing managed-shadow passes after the stale wrapper is pruned.
+
+### Changed
+
+- **Startup import**: after entity mapping, **``reconcile_missing_ha_area_wrappers``**
+  runs so persisted topology cannot keep ``area_*`` rows whose ``ha_area_id`` no
+  longer exists in HA, before the managed-shadow reconcile pass.
+
+### Tests
+
+- **Backend**: ``test_ha_area_delete_reparents_overlay_children`` and
+  ``test_reconcile_missing_ha_removes_stale_area_wrapper`` in ``test_sync_manager.py``.
+
 ## [0.2.55] - 2026-04-17
 
 ### Added
