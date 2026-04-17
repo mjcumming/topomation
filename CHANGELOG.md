@@ -33,6 +33,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Backend**: ``test_ha_area_delete_reparents_overlay_children`` and
   ``test_reconcile_missing_ha_removes_stale_area_wrapper`` in ``test_sync_manager.py``.
 
+### Fixed (CI)
+
+- **Version sync**: align ``const.py`` and ``pyproject.toml`` with ``0.2.56`` (was
+  only bumped in ``manifest.json`` in the first commit, which failed
+  ``scripts/verify-version-sync.py`` on CI).
+
 ## [0.2.55] - 2026-04-17
 
 ### Added
