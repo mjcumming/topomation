@@ -313,24 +313,27 @@ shared location tree selection context.
 - Occupancy quick-controls are source-aware (`manual_ui`) and respect lock invariants (no mutation while locked).
 - Inspector IA is split into top-level tabs:
   - `Occupancy` for room-level occupancy authoring
-  - `Occupancy Groups` when a `floor` is selected
+  - `Occupancy Groups` when an eligible structural host is selected
   - `Ambient`
   - `Lighting`
   - `Media`
   - `HVAC`
 - Advanced occupancy relationship controls are currently hidden from the active
   `Occupancy` inspector until that workflow is revalidated.
-- Occupancy's primary shared-space workflow is floor-scoped `Occupancy Groups`,
+- Occupancy's primary shared-space workflow is host-local `Occupancy Groups`,
   with borrowed coverage handled by `Add Source`.
-- Floor-selected `Occupancy Groups` author shared occupancy among direct child
-  `area` locations only; the UI does not expose floor-to-floor grouping.
-- Floor-selected `Occupancy Groups` apply immediately and do not use the
+- Eligible hosts are `property`, `building`, `grounds`, and `floor`.
+- Host-selected `Occupancy Groups` author shared occupancy among direct child
+  `area` locations only; the UI does not expose descendant-wide or cross-host grouping.
+- Host-selected `Occupancy Groups` apply immediately and do not use the
   room-level occupancy draft bar.
 - Occupancy group membership is behavioral, not structural:
   - rooms remain normal topology nodes
   - grouped rooms keep their own devices, labels, automations, and detection
     sources
   - occupancy authority moves to the occupancy group runtime object
+- The `home-topology` runtime primitive is type-agnostic; host eligibility and
+  managed-shadow exclusion are enforced in the Home Assistant integration layer.
 - Occupancy binary sensors remain the authoritative room-state API for both
   Home Assistant automations and the Topomation UI; frontend diagnostics may
   explain that state, but must not synthesize a contradictory occupied/vacant

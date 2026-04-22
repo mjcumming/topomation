@@ -29,10 +29,10 @@ automation workspace and inspector tabs.
 ## 1.1 Structural aggregate hosts (`property`, `floor`, `building`, `grounds`)
 
 These locations use **derived** occupancy surfaces (summary or occupancy groups),
-not room-style source lists on `building` / `grounds`—see `docs/contracts.md` and
+not room-style source lists on structural hosts—see `docs/contracts.md` and
 ADR-HA-073 (intent) as amended by **ADR-HA-078** (current tab policy).
 
-1. **Tabs shown**: `Occupancy`, `Ambient`, `Lighting`, `Media`, `HVAC`.
+1. **Tabs shown**: `Occupancy Groups`, `Ambient`, `Lighting`, `Media`, `HVAC`.
 2. **Not shown**: `Appliances` on these structural summary rows (appliance-style
    targets stay on room-like `area` / `subarea` nodes).
 3. **Device and lux enumeration** (Ambient selector, Lighting/Media/HVAC action
@@ -62,18 +62,17 @@ Top-to-bottom layout order:
    `Vacant delay` controls visible; the UI should not show disabled ON-timeout
    sliders for those sources.
 
-## 4. Shared Space Scope
+## 4. Occupancy Groups Scope
 
-1. `Shared Space` edits one occupancy group, not one local directional link.
+1. `Occupancy Groups` edits one occupancy group, not one local directional link.
 2. Saving normalizes membership across all selected members of that group.
-3. Shared-space membership is sibling-scoped (same `parent_id`).
-4. Allowed shared-space pairings:
-   - `area` with sibling `area` when parent type is `area`, `floor`, or `building`
-   - `floor` with sibling `floor` when parent type is `building`
-5. Primary UI label is `Shared Space`.
-6. Borrowed coverage remains in `Add Source`; users should not need a separate
+3. Group membership is immediate-child scoped to the selected host.
+4. Eligible hosts are `property`, `building`, `grounds`, and `floor`.
+5. Eligible members are immediate child `area` rows only.
+6. `subarea` rows and managed shadow/system rows are excluded.
+7. Borrowed coverage remains in `Add Source`; users should not need a separate
    directional relationship editor for common room-coverage workflows.
-7. Directional linked contributors remain hidden from the active Occupancy UI
+8. Directional linked contributors remain hidden from the active Occupancy UI
    until that workflow is revalidated.
 
 ## 5. Managed System Area Messaging

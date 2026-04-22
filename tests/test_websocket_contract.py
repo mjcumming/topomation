@@ -2011,7 +2011,7 @@ async def test_set_module_config_rejects_linked_rooms_outside_same_floor_sibling
 
 
 @pytest.mark.asyncio
-async def test_set_module_config_accepts_occupancy_group_id_for_floor_child_areas(
+async def test_set_module_config_accepts_occupancy_group_id_for_building_child_areas(
     hass: HomeAssistant,
 ) -> None:
     """Area occupancy_group_id values are accepted and normalized."""
@@ -2026,9 +2026,7 @@ async def test_set_module_config_accepts_occupancy_group_id_for_floor_child_area
     if loc_mgr.get_location("building_main") is None:
         loc_mgr.create_location(id="building_main", name="Home", parent_id=None)
     loc_mgr.set_module_config("building_main", "_meta", {"type": "building"})
-    loc_mgr.create_location(id="floor_main", name="Main Floor", parent_id="building_main")
-    loc_mgr.set_module_config("floor_main", "_meta", {"type": "floor"})
-    loc_mgr.create_location(id="area_office", name="Office", parent_id="floor_main")
+    loc_mgr.create_location(id="area_office", name="Office", parent_id="building_main")
     loc_mgr.set_module_config("area_office", "_meta", {"type": "area"})
 
     connection = _fake_connection()
@@ -2100,7 +2098,7 @@ async def test_set_module_config_rejects_occupancy_group_id_for_floor_locations(
 
 
 @pytest.mark.asyncio
-async def test_set_module_config_occupancy_group_id_uses_shared_runtime_state(
+async def test_set_module_config_occupancy_group_id_uses_shared_runtime_state_for_building_child_areas(
     hass: HomeAssistant,
 ) -> None:
     """Grouped areas should share occupancy through the loaded home-topology runtime."""
@@ -2118,11 +2116,9 @@ async def test_set_module_config_occupancy_group_id_uses_shared_runtime_state(
     if loc_mgr.get_location("building_main") is None:
         loc_mgr.create_location(id="building_main", name="Home", parent_id=None)
     loc_mgr.set_module_config("building_main", "_meta", {"type": "building"})
-    loc_mgr.create_location(id="floor_main", name="Main Floor", parent_id="building_main")
-    loc_mgr.set_module_config("floor_main", "_meta", {"type": "floor"})
-    loc_mgr.create_location(id="area_kitchen", name="Kitchen", parent_id="floor_main")
+    loc_mgr.create_location(id="area_kitchen", name="Kitchen", parent_id="building_main")
     loc_mgr.set_module_config("area_kitchen", "_meta", {"type": "area"})
-    loc_mgr.create_location(id="area_family_room", name="Family Room", parent_id="floor_main")
+    loc_mgr.create_location(id="area_family_room", name="Family Room", parent_id="building_main")
     loc_mgr.set_module_config("area_family_room", "_meta", {"type": "area"})
 
     connection = _fake_connection()

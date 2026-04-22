@@ -237,23 +237,24 @@ Additional save points:
 - Occupancy Group membership is explicit room config, using
   `occupancy_group_id: string | null`.
 - The active authoring model is `Occupancy Groups`.
-- Occupancy Groups v1 are floor-scoped UI clusters:
-  - when a `floor` is selected, the first inspector tab becomes
+- Occupancy Groups v1 are HA-authored host-local UI clusters:
+  - when an eligible host (`property`, `building`, `grounds`, or `floor`) is
+    selected, the first inspector tab becomes
     `Occupancy Groups`
   - that tab manages shared-occupancy groups among direct child `area`
-    locations of the selected floor
+    locations of the selected host
   - an `area` may belong to zero or one occupancy group
-  - a floor may contain zero or more occupancy groups
+  - an eligible host may contain zero or more occupancy groups
   - a valid occupancy group contains at least two areas
   - room-level Occupancy authoring remains room-scoped; area inspectors may
     summarize current group membership but do not own group editing
-- Floor occupancy-group actions apply immediately; they do not use the room
+- Host occupancy-group actions apply immediately; they do not use the room
   occupancy draft bar or `Save changes` / `Discard`.
-- Creating, deleting, or editing a floor occupancy group updates explicit
-  group membership on the affected rooms and updates the floor-scoped group
+- Creating, deleting, or editing a host occupancy group updates explicit
+  group membership on the affected rooms and updates the host-scoped group
   definition/registry used by occupancy runtime.
 - `Create group` is enabled only when:
-  - at least two ungrouped candidate areas remain on the selected floor
+  - at least two ungrouped candidate areas remain on the selected host
   - the user has selected at least two of those ungrouped areas
 - If an existing group is edited down to one or zero members, the group is
   removed automatically instead of persisting an invalid one-member group.
@@ -281,10 +282,12 @@ Additional save points:
   - explainability should explicitly identify the group, using wording
     equivalent to `via occupancy group`
 - Occupancy Groups v1 candidate scope is intentionally narrow:
-  - only direct child `area` locations under the selected `floor` are eligible
+  - only direct child `area` locations under the selected eligible host are eligible
     group members
+  - eligible hosts are `property`, `building`, `grounds`, and `floor`
+  - `subarea` locations are excluded
   - managed/system shadow areas are excluded
-  - floor-to-floor grouping is not part of the active UI
+  - descendant-of-descendant and cross-host grouping are not part of the active UI
 - No new Home Assistant entity is created for an occupancy group in v1; member
   rooms remain the public occupancy entities.
 - Borrowed coverage belongs in `Add Source`, not in shared-space membership.
@@ -310,9 +313,9 @@ Additional save points:
 - Structural occupancy authoring is derived-only in the active UI:
   - `building` and `grounds` do not expose direct occupancy source editing
   - `building` and `grounds` do not expose `Add Source`
-  - `building` and `grounds` do not expose WIAB or occupancy-group controls
-  - those location types render a read-only derived-occupancy summary instead
-    of a room-style occupancy editor
+  - structural hosts do not expose WIAB
+  - structural hosts may expose `Occupancy Groups` for immediate child `area`
+    locations, but they do not expose a room-style source editor
   - structural occupancy is expected to roll up from descendant locations
 - Structural nodes are informational pages in the active inspector for **occupancy
   rollup** (no direct source authoring on aggregate hosts), but they **do** expose
@@ -321,16 +324,17 @@ Additional save points:
   - `property`, `floor`, `building`, and `grounds` use the same managed-shadow
     HA area as the device container for aggregate automation targets (ADR-HA-049,
     ADR-HA-078)
-  - `floor` remains the occupancy-group authoring scope for child areas
-  - `building` and `grounds` render derived-occupancy summary on Occupancy, not
-    a room-style source editor
+  - `property`, `floor`, `building`, and `grounds` may manage occupancy groups
+    for immediate child `area` locations only
+  - `building` and `grounds` still render derived-occupancy summary and not a
+    room-style source editor
   - whole-home/floor aggregate scenes may still be authored as normal Home
     Assistant automations when operators prefer HA-native automation UI
 
 ## C-014 Inspector Draft Bar Contract
 
 - `Occupancy` and `Ambient` use one shared tab-level draft interaction model.
-- Exception: floor-scoped `Occupancy Groups` do not use this draft model; they
+- Exception: host-scoped `Occupancy Groups` do not use this draft model; they
   apply immediately.
 - Clean state:
   - no `Save changes` / `Discard` controls are rendered.

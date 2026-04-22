@@ -1,4 +1,4 @@
-import { LitElement, html, css } from "lit";
+import { LitElement, html, css, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
 import type {
@@ -22,6 +22,7 @@ import {
   isSystemShadowLocation,
   managedShadowAreaIdForHost,
   managedShadowLocationIdSet,
+  rollupOccupancyStatusByLocation,
 } from "./shadow-location-utils";
 import { ambientLuxEnumerationHaAreaIds } from "./ambient-lux-enumeration";
 import { applyModeDefaults, getSourceDefaultsForEntity } from "./source-profile-utils";
@@ -152,6 +153,8 @@ export class HtLocationInspector extends LitElement {
   @state() private _nowEpochMs = Date.now();
   @state() private _editingActionRuleNameId?: string;
   @state() private _editingActionRuleNameValue = "";
+  /** If the user clears the rename field, commit restores this value (usually the name when the dialog opened). */
+  @state() private _editingActionRuleNameFallback = "";
   private _actionRuleTabById: Record<string, DeviceAutomationTab> = {};
   /** Bumped after async load of entity/device registry climate link index. */
   @state() private _climateDeviceLinkRevision = 0;
@@ -524,12 +527,6 @@ export class HtLocationInspector extends LitElement {
 
       .dusk-block-title-button:hover {
         background: rgba(var(--rgb-primary-color), 0.08);
-      }
-
-      .dusk-block-title-input {
-        width: min(100%, 380px);
-        font-size: 16px;
-        font-weight: 600;
       }
 
       .dusk-rule-row {
@@ -2225,6 +2222,27 @@ export class HtLocationInspector extends LitElement {
         line-height: 1.45;
       }
 
+      .action-rule-rename-dialog-content {
+        display: grid;
+        gap: 10px;
+        min-width: min(520px, 100%);
+        box-sizing: border-box;
+      }
+
+      .action-rule-rename-hint {
+        margin: 0;
+        font-size: 13px;
+        line-height: 1.45;
+        color: var(--secondary-text-color);
+      }
+
+      .action-rule-rename-dialog-input {
+        width: 100%;
+        box-sizing: border-box;
+        min-width: 0;
+        font-size: 15px;
+      }
+
       .external-composer {
         display: grid;
         grid-template-columns: minmax(180px, 240px) minmax(220px, 1fr) auto;
@@ -2570,6 +2588,7 @@ export class HtLocationInspector extends LitElement {
         </div>
       </div>
       ${this._renderExternalSourceDialog()}
+      ${this._renderActionRuleRenameDialog()}
     `;
   }
 
@@ -2627,6 +2646,7 @@ export class HtLocationInspector extends LitElement {
         this._actionRulesSaveError = undefined;
         this._editingActionRuleNameId = undefined;
         this._editingActionRuleNameValue = "";
+        this._editingActionRuleNameFallback = "";
         this._actionRuleTabById = {};
         this._ambientReading = undefined;
         this._ambientReadingError = undefined;
@@ -2681,6 +2701,12 @@ export class HtLocationInspector extends LitElement {
     if (changedProps.has("entityRegistryRevision")) {
       void this._loadEntityAreaAssignments();
       void this._loadClimateDeviceLinkIndex();
+    }
+  }
+
+  protected updated(changedProps: PropertyValues): void {
+    if (changedProps.has("_editingActionRuleNameId") && this._editingActionRuleNameId) {
+      this._focusActionRuleRenameInput();
     }
   }
 
@@ -2875,7 +2901,7 @@ export class HtLocationInspector extends LitElement {
   }
 
   private _detectionTabLabel(): string {
-    return this._isFloorLocation() ? "Occupancy Groups" : "Occupancy";
+    return this._isOccupancyGroupHostLocation() ? "Occupancy Groups" : "Occupancy";
   }
 
   private _locationType(): string | null {
@@ -2885,6 +2911,14 @@ export class HtLocationInspector extends LitElement {
   private _isAreaLikeLocation(): boolean {
     const type = this._locationType();
     return type === "area" || type === "subarea";
+  }
+
+  private _isOccupancyGroupHostType(type: string | null): boolean {
+    return type === "property" || type === "building" || type === "grounds" || type === "floor";
+  }
+
+  private _isOccupancyGroupHostLocation(location: Location | undefined = this.location): boolean {
+    return !!location && this._isOccupancyGroupHostType(getLocationType(location));
   }
 
   private _isStructuralSummaryLocation(): boolean {
@@ -3506,9 +3540,7 @@ export class HtLocationInspector extends LitElement {
     const metaValue = areaId || this.location.id;
     const lockState = this._getLockState();
     const occupancyState = this._getOccupancyState();
-    const occupiedState = this._isStructuralSummaryLocation()
-      ? this._aggregateOccupiedStateForStructural()
-      : this._resolveOccupiedState(occupancyState);
+    const occupiedState = this._treeAlignedOccupiedState(occupancyState);
     const occupied = occupiedState === true;
     const occupancyLabel =
       occupiedState === true ? "Occupied" : occupiedState === false ? "Vacant" : "Unknown";
@@ -3906,13 +3938,14 @@ export class HtLocationInspector extends LitElement {
     if (!this.location) return "";
 
     const config = this._getOccupancyConfig();
-    const isFloor = this._isFloorLocation();
+    const isGroupHost = this._isOccupancyGroupHostLocation();
     const isDerived = this._isDerivedOccupancyLocation();
     const hasHaAreaLink = !!this.location.ha_area_id;
     const siblingAreaSourceScope = this._isSiblingAreaSourceScope();
-    const floorSourceCount = (config.occupancy_sources || []).length;
+    const hostSourceCount = (config.occupancy_sources || []).length;
     const lockState = this._getLockState();
-    if (isFloor) {
+    if (isGroupHost) {
+      const hostTypeLabel = this._locationType() || "location";
       return html`
         <div>
           <div class="card-section">
@@ -3921,14 +3954,14 @@ export class HtLocationInspector extends LitElement {
               Occupancy Groups
             </div>
             <div class="policy-note">
-              Group this floor's child areas when they should behave like one occupied space.
+              Group this ${hostTypeLabel}'s direct child areas when they should behave like one occupied space.
               Group membership is authored here and persisted onto the member areas.
             </div>
-            ${floorSourceCount > 0
+            ${hostSourceCount > 0
               ? html`
                   <div class="policy-warning">
-                    This floor still has ${floorSourceCount} unsupported source${floorSourceCount === 1 ? "" : "s"} in
-                    config. Floor sources are unsupported and should be moved to areas.
+                    This ${hostTypeLabel} still has ${hostSourceCount} unsupported source${hostSourceCount === 1 ? "" : "s"} in
+                    config. Structural-host sources are unsupported and should be moved to areas.
                   </div>
                 `
               : ""}
@@ -4673,20 +4706,28 @@ export class HtLocationInspector extends LitElement {
     return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
   }
 
+  private _occupancyGroupHostForLocation(location: Location): Location | undefined {
+    const locationType = getLocationType(location);
+    if (this._isOccupancyGroupHostType(locationType)) {
+      return location;
+    }
+    if (locationType !== "area") {
+      return undefined;
+    }
+    const parent = this._locationById(location.parent_id ?? null);
+    if (!parent || !this._isOccupancyGroupHostLocation(parent)) {
+      return undefined;
+    }
+    return parent;
+  }
+
   private _occupancyGroupCandidatesForLocation(location: Location): Location[] {
     const managedShadowIds = this._managedShadowLocationIds();
-    const locationType = getLocationType(location);
-    const floorId =
-      locationType === "floor"
-        ? location.id
-        : locationType === "area"
-          ? this._locationById(location.parent_id ?? null)?.id ?? null
-          : null;
-    const floorLocation = floorId ? this._locationById(floorId) : undefined;
-    if (!floorLocation || getLocationType(floorLocation) !== "floor") return [];
+    const hostLocation = this._occupancyGroupHostForLocation(location);
+    if (!hostLocation) return [];
 
     return (this.allLocations || [])
-      .filter((candidate) => candidate.parent_id === floorLocation.id)
+      .filter((candidate) => candidate.parent_id === hostLocation.id)
       .filter((candidate) => getLocationType(candidate) === "area")
       .filter((candidate) => !this._isManagedShadowLocation(candidate, managedShadowIds))
       .sort((left, right) => left.name.localeCompare(right.name));
@@ -4775,8 +4816,8 @@ export class HtLocationInspector extends LitElement {
 
   private _renderAreaOccupancyGroupSection(config: OccupancyConfig) {
     if (!this.location) return "";
-    const floorParentId = this._linkedLocationFloorParentId();
-    if (!floorParentId) {
+    const hostLocation = this._occupancyGroupHostForLocation(this.location);
+    if (!hostLocation) {
       return html`
         <div class="card-section">
           <div class="section-title">
@@ -4784,7 +4825,7 @@ export class HtLocationInspector extends LitElement {
             Occupancy Group
           </div>
           <div class="subsection-help">
-            Occupancy groups are managed from the parent floor.
+            Occupancy groups are managed from the parent host.
           </div>
         </div>
       `;
@@ -4792,7 +4833,7 @@ export class HtLocationInspector extends LitElement {
 
     const sharedSpaceMemberIds = this._occupancyGroupMemberIds(this.location.id);
     const sharedPeerIds = sharedSpaceMemberIds.filter((locationId) => locationId !== this.location!.id);
-    const floorName = this._locationName(floorParentId);
+    const hostName = this._locationName(hostLocation.id);
 
     return html`
       <div class="card-section" data-testid="occupancy-group-summary-section">
@@ -4800,7 +4841,7 @@ export class HtLocationInspector extends LitElement {
           <ha-icon .icon=${"mdi:link-lock"}></ha-icon>
           Occupancy Group
         </div>
-        <div class="subsection-help">Managed from ${floorName}.</div>
+        <div class="subsection-help">Managed from ${hostName}.</div>
         ${sharedPeerIds.length === 0
           ? html`
               <div class="adjacency-empty">No occupancy group assigned.</div>
@@ -4815,7 +4856,7 @@ export class HtLocationInspector extends LitElement {
   }
 
   private _floorGroupAreaCandidates(): Location[] {
-    if (!this.location || !this._isFloorLocation()) return [];
+    if (!this.location || !this._isOccupancyGroupHostLocation()) return [];
     return this._occupancyGroupCandidatesForLocation(this.location);
   }
 
@@ -5007,6 +5048,7 @@ export class HtLocationInspector extends LitElement {
     const groups = this._floorOccupancyGroups();
     const ungroupedIds = this._ungroupedFloorAreaIds();
     const createSelection = new Set(this._floorGroupCreateSelection.filter((locationId) => ungroupedIds.includes(locationId)));
+    const hostLabel = this.location.name || "this location";
 
     return html`
       <div class="card-section" data-testid="occupancy-groups-section">
@@ -5015,14 +5057,14 @@ export class HtLocationInspector extends LitElement {
           Occupancy Groups
         </div>
         <div class="subsection-help">
-          Create local shared-occupancy groups for this floor. Each area can belong to at most one group.
+          Create local shared-occupancy groups for ${hostLabel}. Each area can belong to at most one group.
         </div>
         ${candidates.length === 0
-          ? html`<div class="adjacency-empty">No eligible child areas found on this floor.</div>`
+          ? html`<div class="adjacency-empty">No eligible direct child areas found on ${hostLabel}.</div>`
           : html`
               <div class="linked-location-list">
                 ${groups.length === 0
-                  ? html`<div class="adjacency-empty">No occupancy groups on this floor yet.</div>`
+                  ? html`<div class="adjacency-empty">No occupancy groups on ${hostLabel} yet.</div>`
                   : repeat(
                       groups,
                       (group) => group.id,
@@ -5076,7 +5118,7 @@ export class HtLocationInspector extends LitElement {
                   Select two or more ungrouped areas to create another occupancy group.
                 </div>
                 ${ungroupedIds.length === 0
-                  ? html`<div class="adjacency-empty">No ungrouped areas remain on this floor.</div>`
+                  ? html`<div class="adjacency-empty">No ungrouped areas remain on ${hostLabel}.</div>`
                   : ungroupedIds.length === 1
                     ? html`<div class="adjacency-empty">Only one ungrouped area remains, so a new group cannot be created.</div>`
                   : html`
@@ -5567,9 +5609,7 @@ export class HtLocationInspector extends LitElement {
 
   private _renderRuntimeStatus(lockState: InspectorLockState) {
     const occupancyState = this._getOccupancyState();
-    const occupiedState = this._isStructuralSummaryLocation()
-      ? this._aggregateOccupiedStateForStructural()
-      : this._resolveOccupiedState(occupancyState);
+    const occupiedState = this._treeAlignedOccupiedState(occupancyState);
     if (!occupancyState && occupiedState === undefined) {
       return html`
         <div class="runtime-summary">
@@ -6409,6 +6449,84 @@ export class HtLocationInspector extends LitElement {
       </ha-dialog>
     `;
   }
+
+  private _renderActionRuleRenameDialog() {
+    const ruleId = this._editingActionRuleNameId;
+    if (!ruleId) {
+      return "";
+    }
+    return html`
+      <ha-dialog
+        .open=${true}
+        .heading=${"Rule name"}
+        data-testid="action-rule-rename-dialog"
+        @closed=${this._handleActionRuleRenameDialogClosed}
+      >
+        <div class="action-rule-rename-dialog-content">
+          <p class="action-rule-rename-hint">This label is stored on the Home Assistant automation.</p>
+          <label class="config-label" for="action-rule-rename-input">Name</label>
+          <input
+            type="text"
+            id="action-rule-rename-input"
+            data-testid="action-rule-rename-input"
+            class="input action-rule-rename-dialog-input"
+            .value=${this._editingActionRuleNameValue}
+            ?disabled=${this._savingActionRules}
+            autocomplete="off"
+            @input=${(ev: Event) => {
+              this._editingActionRuleNameValue = (ev.target as HTMLInputElement).value;
+            }}
+            @keydown=${(ev: KeyboardEvent) => {
+              if (ev.key === "Enter") {
+                ev.preventDefault();
+                this._commitActionRuleNameEdit(ruleId);
+              } else if (ev.key === "Escape") {
+                ev.preventDefault();
+                ev.stopPropagation();
+                this._cancelActionRuleNameEdit();
+              }
+            }}
+          />
+        </div>
+        <button
+          slot="secondaryAction"
+          class="button button-secondary"
+          type="button"
+          data-testid="action-rule-rename-cancel"
+          ?disabled=${this._savingActionRules}
+          @click=${() => this._cancelActionRuleNameEdit()}
+        >
+          Cancel
+        </button>
+        <button
+          slot="primaryAction"
+          class="button button-primary"
+          type="button"
+          data-testid="action-rule-rename-save"
+          ?disabled=${this._savingActionRules}
+          @click=${() => this._commitActionRuleNameEdit(ruleId)}
+        >
+          Save
+        </button>
+      </ha-dialog>
+    `;
+  }
+
+  private _handleActionRuleRenameDialogClosed = (): void => {
+    if (this._editingActionRuleNameId) {
+      this._cancelActionRuleNameEdit();
+    }
+  };
+
+  private _focusActionRuleRenameInput = (): void => {
+    requestAnimationFrame(() => {
+      const input = this.shadowRoot?.querySelector(
+        '[data-testid="action-rule-rename-input"]'
+      ) as HTMLInputElement | null;
+      input?.focus();
+      input?.select();
+    });
+  };
 
   private _renderWiabSection(config: OccupancyConfig) {
     const wiab = this._getWiabConfig(config);
@@ -7354,6 +7472,56 @@ export class HtLocationInspector extends LitElement {
     return /^Rule \d+$/i.test(trimmed) || /^New rule$/i.test(trimmed);
   }
 
+  /**
+   * When the stored name is exactly the auto title, or that title plus one or more
+   * " copy" segments (from Duplicate rule), keep it aligned with trigger/target/time edits.
+   * Returns the suffix after the auto title ("" or " copy", " copy copy", …), or undefined if
+   * the name should not be auto-adjusted.
+   */
+  private _actionRuleAutoNameDuplicateSuffix(
+    explicitName: string,
+    autoName: string
+  ): string | undefined {
+    const name = String(explicitName || "").trim();
+    const auto = String(autoName || "").trim();
+    if (!auto) {
+      return undefined;
+    }
+    if (name === auto) {
+      return "";
+    }
+    if (!name.startsWith(auto)) {
+      return undefined;
+    }
+    const suffix = name.slice(auto.length);
+    if (suffix === "" || /^( copy)+$/.test(suffix)) {
+      return suffix;
+    }
+    return undefined;
+  }
+
+  private _maybeSyncActionRuleNameFromStructure(
+    previousRule: TopomationActionRule,
+    merged: TopomationActionRule,
+    index: number,
+    patch: Partial<TopomationActionRule>
+  ): void {
+    if (Object.prototype.hasOwnProperty.call(patch, "name")) {
+      return;
+    }
+    const prevAuto = this._autoActionRuleName(previousRule, index);
+    const suffix = this._actionRuleAutoNameDuplicateSuffix(
+      String(previousRule.name || "").trim(),
+      prevAuto
+    );
+    if (suffix === undefined) {
+      return;
+    }
+    const normalizedNext = this._normalizeActionRule({ ...merged, name: "New rule" }, index);
+    const nextAuto = this._autoActionRuleName(normalizedNext, index);
+    merged.name = `${nextAuto}${suffix}`;
+  }
+
   private _resolveActionRuleName(rule: TopomationActionRule, index: number): string {
     const explicitName = String(rule.name || "").trim();
     if (!this._isPlaceholderRuleName(explicitName)) return explicitName;
@@ -7938,6 +8106,7 @@ export class HtLocationInspector extends LitElement {
     this._actionRulesSaveError = undefined;
     this._editingActionRuleNameId = undefined;
     this._editingActionRuleNameValue = "";
+    this._editingActionRuleNameFallback = "";
     this._actionRuleTabById = {};
     for (const rule of normalizedRules) {
       const ruleId = String(rule.id || "");
@@ -8386,6 +8555,12 @@ export class HtLocationInspector extends LitElement {
       merged.action_entity_id = targetFields.action_entity_id;
       merged.action_service = targetFields.action_service;
       merged.action_data = targetFields.action_data;
+      this._maybeSyncActionRuleNameFromStructure(
+        rule,
+        merged as TopomationActionRule,
+        index,
+        patch
+      );
       return this._normalizeActionRule(merged, index);
     });
     this._setActionRulesDraft(rules);
@@ -8437,15 +8612,19 @@ export class HtLocationInspector extends LitElement {
   private _startActionRuleNameEdit(ruleId: string, currentName: string): void {
     this._editingActionRuleNameId = ruleId;
     this._editingActionRuleNameValue = currentName;
+    this._editingActionRuleNameFallback = currentName;
     this.requestUpdate();
   }
 
   private _cancelActionRuleNameEdit(): void {
     this._editingActionRuleNameId = undefined;
     this._editingActionRuleNameValue = "";
+    this._editingActionRuleNameFallback = "";
   }
 
-  private _commitActionRuleNameEdit(ruleId: string, fallback: string): void {
+  private _commitActionRuleNameEdit(ruleId: string): void {
+    const fallback =
+      String(this._editingActionRuleNameFallback || "").trim() || "New rule";
     const value = this._editingActionRuleNameValue.trim() || fallback;
     this._cancelActionRuleNameEdit();
     this._updateActionRule(ruleId, { name: value });
@@ -9762,7 +9941,6 @@ export class HtLocationInspector extends LitElement {
               `
             : rules.map((rule, index) => {
                 const ruleId = String(rule.id || "");
-                const editingName = this._editingActionRuleNameId === ruleId;
                 const label = rule.name?.trim() || `Rule ${index + 1}`;
                 const persistedRule = this._persistedActionRuleForDraft(rule);
                 const isPersisted = Boolean(persistedRule);
@@ -9771,47 +9949,14 @@ export class HtLocationInspector extends LitElement {
                 return html`
                   <div class="dusk-block-row" data-testid=${`action-rule-${ruleId}`}>
                     <div class="dusk-block-head">
-                      ${editingName
-                        ? html`
-                            <input
-                              type="text"
-                              class="input dusk-block-title-input"
-                              .value=${this._editingActionRuleNameValue}
-                              ?disabled=${busy}
-                              @input=${(ev: Event) => {
-                                this._editingActionRuleNameValue = (ev.target as HTMLInputElement).value;
-                              }}
-                              @blur=${() =>
-                                this._commitActionRuleNameEdit(
-                                  ruleId,
-                                  "New rule"
-                                )}
-                              @keydown=${(ev: KeyboardEvent) => {
-                                if (ev.key === "Enter") {
-                                  this._commitActionRuleNameEdit(
-                                    ruleId,
-                                    "New rule"
-                                  );
-                                } else if (ev.key === "Escape") {
-                                  this._cancelActionRuleNameEdit();
-                                }
-                              }}
-                            />
-                          `
-                        : html`
-                            <button
-                              type="button"
-                              class="dusk-block-title-button"
-                              ?disabled=${busy}
-                              @click=${() =>
-                                this._startActionRuleNameEdit(
-                                  ruleId,
-                                  label
-                                )}
-                            >
-                              ${label}
-                            </button>
-                          `}
+                      <button
+                        type="button"
+                        class="dusk-block-title-button"
+                        ?disabled=${busy}
+                        @click=${() => this._startActionRuleNameEdit(ruleId, label)}
+                      >
+                        ${label}
+                      </button>
                     </div>
 
                     ${tab === "lighting"
@@ -10013,8 +10158,8 @@ export class HtLocationInspector extends LitElement {
     options?: { resetExternalPicker?: boolean; signalKey?: SourceSignalKey }
   ): boolean {
     if (!this.location) return false;
-    if (this._isFloorLocation()) {
-      this._showToast("Floor locations do not support occupancy sources.", "error");
+    if (this._isOccupancyGroupHostLocation()) {
+      this._showToast("Structural hosts do not support occupancy sources.", "error");
       return false;
     }
     const existing = this._workingSources(config);
@@ -10359,6 +10504,27 @@ export class HtLocationInspector extends LitElement {
    * Structural hosts (property/building/floor/grounds): occupied if this row or any descendant
    * is occupied — matches tree dots and the Occupancy strip under the tree (ADR-HA-078).
    */
+  /**
+   * Occupancy chip / runtime summary: align with topology tree dots (rollup of this row ∪
+   * descendants). Structural hosts keep the dedicated aggregate path (shadow + descendants).
+   */
+  private _treeAlignedOccupiedState(occupancyState?: Record<string, any>): boolean | undefined {
+    if (!this.location) return undefined;
+    if (this._isStructuralSummaryLocation()) {
+      return this._aggregateOccupiedStateForStructural();
+    }
+    const locations = this.allLocations || [];
+    if (!locations.length) {
+      return this._resolveOccupiedState(occupancyState);
+    }
+    const rolled = rollupOccupancyStatusByLocation(locations, this.occupancyStates || {})[
+      this.location.id
+    ];
+    if (rolled === "occupied") return true;
+    if (rolled === "vacant") return false;
+    return this._resolveOccupiedState(occupancyState);
+  }
+
   private _aggregateOccupiedStateForStructural(): boolean | undefined {
     if (!this.location || !this._isStructuralSummaryLocation()) return undefined;
     const ownState = this._resolveOccupiedState(this._getOccupancyState());
@@ -10687,9 +10853,7 @@ export class HtLocationInspector extends LitElement {
     if (!occupancyState) return undefined;
 
     const structural = this._isStructuralSummaryLocation();
-    const occupied = structural
-      ? this._aggregateOccupiedStateForStructural() === true
-      : this._resolveOccupiedState(occupancyState) === true;
+    const occupied = this._treeAlignedOccupiedState(occupancyState) === true;
     const attrs = occupancyState.attributes || {};
     const contributors = structural
       ? (() => {
@@ -10702,10 +10866,7 @@ export class HtLocationInspector extends LitElement {
     const lockState = this._getLockState();
     const why = occupied
       ? structural
-        ? this._resolveOccupiedReason(
-            occupancyState,
-            this._resolveOccupiedState(occupancyState) === true
-          ) ||
+        ? this._resolveOccupiedReason(occupancyState, true) ||
           (contributors.length
             ? `Occupied via ${contributors[0].sourceLabel}`
             : "Active source events detected")
@@ -11342,7 +11503,7 @@ export class HtLocationInspector extends LitElement {
   }
 
   private async _handleTestSource(source: any, action: "trigger" | "clear"): Promise<void> {
-    if (!this.location || this._isFloorLocation()) return;
+    if (!this.location || this._isOccupancyGroupHostLocation()) return;
 
     try {
       if (action === "trigger") {
@@ -11486,7 +11647,7 @@ export class HtLocationInspector extends LitElement {
   }
 
   private _toggleEnabled(_e?: Event): void {
-    if (!this.location || this._isFloorLocation()) return;
+    if (!this.location || this._isOccupancyGroupHostLocation()) return;
 
     const config = this._getOccupancyConfig();
     const newEnabled = !(config.enabled ?? true);
@@ -11542,7 +11703,7 @@ export class HtLocationInspector extends LitElement {
       if (numberInput) numberInput.value = String(minutes);
     }
 
-    if (!this.location || this._isFloorLocation()) return;
+    if (!this.location || this._isOccupancyGroupHostLocation()) return;
 
     const config = this._getOccupancyConfig();
     this._setOccupancyDraft({ ...config, default_timeout: seconds });

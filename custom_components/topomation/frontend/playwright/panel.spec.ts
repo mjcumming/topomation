@@ -298,7 +298,8 @@ test("lighting tab contract: clickable rule title, footer lifecycle controls, ad
   const titleButton = firstRule.locator(".dusk-block-title-button");
   await expect(titleButton).toBeVisible();
   await titleButton.click();
-  await expect(firstRule.locator("input.dusk-block-title-input")).toBeVisible();
+  await expect(inspector.getByTestId("action-rule-rename-dialog")).toBeVisible();
+  await expect(inspector.getByTestId("action-rule-rename-input")).toBeVisible();
   await expect(firstRule.locator(".dusk-block-footer").getByRole("button", { name: "Save rule" })).toBeVisible();
   await expect(firstRule.locator(".dusk-block-footer").getByRole("button", { name: "Remove rule" })).toBeVisible();
   await expect(firstRule.locator(".dusk-block-footer").getByRole("button", { name: "Delete rule" })).toHaveCount(0);
@@ -598,8 +599,11 @@ test("integration-owned building shows derived occupancy guidance", async ({ pag
   const inspector = page.locator("ht-location-inspector");
   await expect(inspector).toBeVisible();
   await expect(inspector).toContainText("Main Building");
-  await expect(inspector).toContainText("Derived Occupancy");
-  await expect(inspector).toContainText("Building occupancy is derived from child locations");
+  await expect(inspector).toContainText("Occupancy Groups");
+  await expect(inspector).toContainText(
+    "This building is a structural summary node. Use child areas for direct automation and source authoring."
+  );
+  await expect(inspector).toContainText("No eligible direct child areas found on Main Building.");
   await expect(inspector.getByTestId("open-external-source-dialog")).toHaveCount(0);
   await expect(inspector.getByRole("button", { name: "Ambient" })).toBeVisible();
 });

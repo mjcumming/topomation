@@ -472,7 +472,9 @@ test("live automation lighting workflow matches contracted lifecycle controls", 
     const firstSituation = draftRule.locator(".lighting-situation-card").first();
     await expect(firstSituation).toBeVisible();
     await expect(firstSituation).toContainText("Room becomes occupied");
-    await expect(firstSituation).toContainText("It is dark");
+    await expect(firstSituation).toContainText("Room becomes vacant");
+    await firstSituation.getByRole("button", { name: "Room becomes occupied" }).click();
+    await expect(firstSituation).toContainText("Any");
 
     const firstTwoLightRows = draftRule.locator(".dusk-light-action-row");
     await expect(firstTwoLightRows).toHaveCount(Math.max(2, location.lightIds.length));
@@ -540,7 +542,7 @@ test("live automation lighting workflow matches contracted lifecycle controls", 
         .locator(".lighting-situation-row")
         .nth(1)
         .locator(".choice-pill.active")
-        .filter({ hasText: "It is dark" })
+        .filter({ hasText: "Any" })
     ).toHaveCount(1);
 
     const persistedSelectedCount = await persistedRule
@@ -590,14 +592,19 @@ test("live detection explainability reflects trigger activation and contributor 
     timeout: 300,
   });
   await expect(explainability).toContainText("Occupied", { timeout: 20000 });
-  await expect(explainability).toContainText(sourceId, { timeout: 20000 });
+  await expect(explainability).toContainText("Occupied by trigger", { timeout: 20000 });
 
   await callTopomationService("clear", {
     location_id: location.id,
     source_id: sourceId,
     trailing_timeout: 0,
   });
-  await expect(explainability).not.toContainText(sourceId, { timeout: 10000 });
+  await callTopomationService("vacate_area", {
+    location_id: location.id,
+    source_id: sourceId,
+    include_locked: true,
+  });
+  await expect(explainability).toContainText("Vacant", { timeout: 10000 });
 });
 
 test("live floor occupancy groups save shared occupancy_group_id membership", async ({ page }) => {

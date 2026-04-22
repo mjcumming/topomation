@@ -1533,6 +1533,65 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(element.shadowRoot!.querySelector('[data-testid="header-vacancy-reason"]')).to.not.exist;
   });
 
+  it("header occupancy matches tree rollup when only a descendant area is occupied", async () => {
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>) => {
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        return [] as T;
+      },
+      connection: {},
+      states: {
+        "binary_sensor.occupancy_area_family": {
+          entity_id: "binary_sensor.occupancy_area_family",
+          state: "off",
+          attributes: {
+            device_class: "occupancy",
+            location_id: "area_family",
+          },
+        },
+        "binary_sensor.occupancy_area_nook": {
+          entity_id: "binary_sensor.occupancy_area_nook",
+          state: "on",
+          attributes: {
+            device_class: "occupancy",
+            location_id: "area_nook",
+          },
+        },
+      },
+      areas: {},
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const family = structuredClone(baseLocation);
+    family.id = "area_family";
+    family.name = "Family Room";
+    family.parent_id = "floor_main";
+    family.modules._meta = { type: "area" };
+
+    const nook = structuredClone(baseLocation);
+    nook.id = "area_nook";
+    nook.name = "TV Nook";
+    nook.parent_id = "area_family";
+    nook.modules._meta = { type: "subarea" };
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${family}
+        .allLocations=${[family, nook]}
+        .occupancyStates=${{ area_family: false, area_nook: true }}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    const occupancyStatusText = (
+      element.shadowRoot!.querySelector('[data-testid="header-occupancy-status"]')?.textContent || ""
+    ).trim();
+    expect(occupancyStatusText).to.equal("Occupied");
+  });
+
   it("hides advanced occupancy relationship controls", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>) => {
@@ -2317,7 +2376,7 @@ describe("HtLocationInspector occupancy source composer", () => {
     }, "full occupancy group writes were not observed");
   });
 
-  it("shows floor occupancy groups for child areas on the selected floor", async () => {
+  it("shows occupancy groups for child areas on the selected floor host", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>) => {
         if (request.type === "config/entity_registry/list") return [] as T;
@@ -2418,7 +2477,7 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(element.shadowRoot?.querySelector('[data-testid="structural-overview-section"]')).to.exist;
   });
 
-  it("floor occupancy groups exclude managed shadow child areas", async () => {
+  it("occupancy groups exclude managed shadow child areas", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>) => {
         if (request.type === "config/entity_registry/list") return [] as T;
@@ -2533,6 +2592,129 @@ describe("HtLocationInspector occupancy source composer", () => {
 
     expect(familyCheckbox).to.exist;
     expect(managedShadowCheckbox).to.equal(null);
+  });
+
+  it("shows occupancy groups for direct child areas on a building host only", async () => {
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>) => {
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        return {} as T;
+      },
+      connection: {},
+      states: {},
+      areas: {},
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "building_main";
+    location.name = "Main Building";
+    location.parent_id = null;
+    location.modules._meta = { type: "building" };
+    location.modules.occupancy = {
+      enabled: true,
+      default_timeout: 300,
+      default_trailing_timeout: 120,
+      occupancy_sources: [],
+      linked_locations: [],
+      occupancy_group_id: null,
+    };
+
+    const allLocations: Location[] = [
+      location,
+      {
+        ...structuredClone(baseLocation),
+        id: "area_entry",
+        name: "Entry",
+        parent_id: "building_main",
+        modules: {
+          _meta: { type: "area" },
+          occupancy: {
+            enabled: true,
+            default_timeout: 300,
+            default_trailing_timeout: 120,
+            occupancy_sources: [],
+            linked_locations: [],
+            occupancy_group_id: null,
+          },
+        },
+      },
+      {
+        ...structuredClone(baseLocation),
+        id: "area_office",
+        name: "Office",
+        parent_id: "building_main",
+        modules: {
+          _meta: { type: "area" },
+          occupancy: {
+            enabled: true,
+            default_timeout: 300,
+            default_trailing_timeout: 120,
+            occupancy_sources: [],
+            linked_locations: [],
+            occupancy_group_id: null,
+          },
+        },
+      },
+      {
+        ...structuredClone(baseLocation),
+        id: "floor_upper",
+        name: "Upper Floor",
+        parent_id: "building_main",
+        modules: { _meta: { type: "floor" } },
+      },
+      {
+        ...structuredClone(baseLocation),
+        id: "area_loft",
+        name: "Loft",
+        parent_id: "floor_upper",
+        modules: {
+          _meta: { type: "area" },
+          occupancy: {
+            enabled: true,
+            default_timeout: 300,
+            default_trailing_timeout: 120,
+            occupancy_sources: [],
+            linked_locations: [],
+            occupancy_group_id: null,
+          },
+        },
+      },
+    ];
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${location}
+        .allLocations=${allLocations}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    const tabLabels = Array.from(element.shadowRoot!.querySelectorAll(".tabs > .tab")).map((tab) =>
+      tab.textContent?.trim()
+    );
+    expect(tabLabels).to.deep.equal([
+      "Occupancy Groups",
+      "Ambient",
+      "Lighting",
+      "Media",
+      "HVAC",
+    ]);
+    expect(
+      element.shadowRoot!.querySelector('[data-testid="occupancy-group-create-location-area_entry"]')
+    ).to.exist;
+    expect(
+      element.shadowRoot!.querySelector('[data-testid="occupancy-group-create-location-area_office"]')
+    ).to.exist;
+    expect(
+      element.shadowRoot!.querySelector('[data-testid="occupancy-group-create-location-area_loft"]')
+    ).to.equal(null);
+    expect(element.shadowRoot?.textContent || "").to.include(
+      "Create local shared-occupancy groups for Main Building."
+    );
   });
 
   it("disables Create group when fewer than two ungrouped areas remain", async () => {
@@ -2770,8 +2952,6 @@ describe("HtLocationInspector occupancy source composer", () => {
 
     const linkedRows = element.shadowRoot!.querySelectorAll('[data-testid^="linked-location-"]');
     expect(linkedRows.length).to.equal(0);
-    expect(element.shadowRoot!.textContent || "").to.not.include("Occupancy Group");
-    expect(element.shadowRoot!.textContent || "").to.not.include("Occupancy groups are managed from the parent floor.");
     expect(element.shadowRoot!.textContent || "").to.not.include("Wasp In A Box");
     expect(element.shadowRoot!.textContent || "").to.not.include("Managed System Area");
   });
@@ -4593,19 +4773,24 @@ describe("HtLocationInspector WIAB configuration", () => {
     const buildingTabs = Array.from(element.shadowRoot?.querySelectorAll(".tabs > .tab") || []).map((t) =>
       (t.textContent || "").trim()
     );
-    expect(buildingTabs).to.deep.equal(["Occupancy", "Ambient", "Lighting", "Media", "HVAC"]);
-    expect(element.shadowRoot?.querySelector('[data-testid="derived-occupancy-section"]')).to.exist;
+    expect(buildingTabs).to.deep.equal(["Occupancy Groups", "Ambient", "Lighting", "Media", "HVAC"]);
+    expect(element.shadowRoot?.querySelector('[data-testid="occupancy-groups-section"]')).to.exist;
     expect(element.shadowRoot?.querySelector('[data-testid="structure-summary-panel"]')).to.exist;
     expect(element.shadowRoot?.querySelector('[data-testid="open-external-source-dialog"]')).to.equal(null);
-    expect(element.shadowRoot?.textContent || "").to.include("Derived Occupancy");
-    expect(element.shadowRoot?.textContent || "").to.include("Building occupancy is derived from child locations");
+    expect(element.shadowRoot?.textContent || "").to.include("Building Summary");
+    expect(element.shadowRoot?.textContent || "").to.include(
+      "This building is a structural summary node. Use child areas for direct automation and source authoring."
+    );
+    expect(element.shadowRoot?.textContent || "").to.include(
+      "No eligible direct child areas found on Home."
+    );
     expect(element.shadowRoot?.querySelector('[data-testid="wiab-preset-select"]')).to.equal(null);
     expect(element.shadowRoot?.querySelector('[data-testid="managed-shadow-section"]')).to.equal(null);
     expect(element.shadowRoot?.textContent || "").to.not.include("Wasp In A Box");
     expect(element.shadowRoot?.textContent || "").to.not.include("Managed System Area");
   });
 
-  it("does not render occupancy group, WIAB, or managed system area controls for grounds", async () => {
+  it("renders occupancy groups plus derived summary for grounds without room-style controls", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>): Promise<T> => {
         if (request.type === "config/entity_registry/list") return [] as T;
@@ -4638,16 +4823,19 @@ describe("HtLocationInspector WIAB configuration", () => {
     const groundsTabs = Array.from(element.shadowRoot?.querySelectorAll(".tabs > .tab") || []).map((t) =>
       (t.textContent || "").trim()
     );
-    expect(groundsTabs).to.deep.equal(["Occupancy", "Ambient", "Lighting", "Media", "HVAC"]);
-    expect(element.shadowRoot?.querySelector('[data-testid="derived-occupancy-section"]')).to.exist;
+    expect(groundsTabs).to.deep.equal(["Occupancy Groups", "Ambient", "Lighting", "Media", "HVAC"]);
+    expect(element.shadowRoot?.querySelector('[data-testid="occupancy-groups-section"]')).to.exist;
     expect(element.shadowRoot?.querySelector('[data-testid="structure-summary-panel"]')).to.exist;
     expect(element.shadowRoot?.querySelector('[data-testid="open-external-source-dialog"]')).to.equal(null);
-    expect(element.shadowRoot?.textContent || "").to.include("Derived Occupancy");
-    expect(element.shadowRoot?.textContent || "").to.include("Grounds occupancy is derived from child locations");
-    expect(element.shadowRoot?.querySelector('[data-testid="occupancy-group-summary-section"]')).to.equal(null);
+    expect(element.shadowRoot?.textContent || "").to.include("Grounds Summary");
+    expect(element.shadowRoot?.textContent || "").to.include(
+      "This grounds is a structural summary node. Use child areas for direct automation and source authoring."
+    );
+    expect(element.shadowRoot?.textContent || "").to.include(
+      "No eligible direct child areas found on Grounds."
+    );
     expect(element.shadowRoot?.querySelector('[data-testid="wiab-preset-select"]')).to.equal(null);
     expect(element.shadowRoot?.querySelector('[data-testid="managed-shadow-section"]')).to.equal(null);
-    expect(element.shadowRoot?.textContent || "").to.not.include("Occupancy Group");
     expect(element.shadowRoot?.textContent || "").to.not.include("Wasp In A Box");
     expect(element.shadowRoot?.textContent || "").to.not.include("Managed System Area");
   });

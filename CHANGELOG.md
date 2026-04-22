@@ -9,6 +9,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.57] - 2026-04-22
+
+### Changed
+
+- **Occupancy Groups authoring**: the Home Assistant inspector now treats
+  `property`, `building`, `grounds`, and `floor` as eligible group hosts,
+  while still limiting membership to **immediate child `area`** rows only.
+- **Structural occupancy UX**: structural hosts keep derived occupancy/source
+  behavior, but now surface `Occupancy Groups` plus the structural summary in
+  the active inspector workflow instead of reserving group authoring to floors.
+
+### Fixed
+
+- **Frontend bundle publish**: the production panel build now publishes
+  ``topomation-panel.js`` via an **atomic temp-file rename** instead of copying
+  over the served file in place, reducing intermittent blank custom-panel loads
+  when Home Assistant requests the module during a rebuild.
+
+### Documentation
+
+- **ADR / contracts alignment**: clarified that occupancy-group runtime remains
+  in `home-topology`, while host eligibility, managed-shadow exclusion, and
+  immediate-child candidate discovery are Home Assistant integration policy.
+
+### Tests
+
+- **Frontend**: inspector unit coverage for building-host occupancy groups,
+  managed-shadow exclusion, and updated structural-host occupancy-group copy.
+- **Backend**: websocket contract coverage now verifies `occupancy_group_id`
+  acceptance and shared runtime behavior for direct child `area` rows under a
+  `building`, matching the kernel’s type-agnostic grouping model.
+
 ## [0.2.56] - 2026-04-17
 
 ### Fixed

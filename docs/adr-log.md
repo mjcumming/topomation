@@ -4282,6 +4282,120 @@ heal; startup must not retain ``area_*`` rows pointing at deleted HA ids.
 
 ---
 
+### ADR-HA-085: HA Occupancy Group Authoring Scopes to Immediate Child Areas of One Host (2026-04-22)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+
+Occupancy Groups already exist as a runtime primitive in `home-topology`:
+member rooms share an `occupancy_group_id`, and the occupancy module resolves
+that to one synthetic group authority. That runtime is intentionally
+type-agnostic and does not know Home Assistant structural concepts such as
+`floor`, `building`, `grounds`, `property`, or managed shadow areas.
+
+What remains integration-specific is the **authoring policy** in the Home
+Assistant UI: which selected host can edit groups, which child locations are
+eligible candidates, and which HA-specific synthetic rows must stay hidden.
+
+Historically the HA workflow was floor-scoped: select a `floor`, group its
+direct child `area` locations, and treat them like one shared occupancy space.
+Since then, the topology model has widened:
+
+- `area` locations may live directly under `property`, `building`, `grounds`,
+  or `floor`
+- structural hosts use managed shadow `area_*` wrappers for HA interoperability
+- some installs have meaningful grouped areas without any explicit floor layer
+
+This creates a product gap: hierarchy allows direct child areas under multiple
+structural hosts, but HA occupancy-group authoring is still framed as "a floor
+feature."
+At the same time, widening grouping carelessly would create ambiguity:
+
+1. managed shadow areas must never look like real grouping candidates
+2. grouping all descendants under a building/property would blur structural
+   hierarchy and behavioral grouping
+3. allowing `subarea` membership would overlap with structural nesting rather
+   than solving the shared-space use case
+
+We need a scope rule that generalizes the feature where it is useful without
+turning it into arbitrary cross-tree grouping.
+
+**Decision**:
+
+1. This ADR governs **Home Assistant integration authoring policy only**. It
+   does not move occupancy-group runtime rules into the HA adapter.
+2. Occupancy Group authoring scope in the HA integration is generalized from
+   `floor` to an eligible **single selected host**.
+3. Eligible group hosts are: `property`, `building`, `grounds`, and `floor`.
+4. Group membership candidates are only the selected host's **immediate child**
+   locations whose type is exactly `area`.
+5. `subarea` locations are not eligible occupancy-group members.
+6. Managed shadow/system shadow locations are never eligible as occupancy-group
+   candidates, even when they are immediate children of the selected host.
+7. Grouping never crosses host boundaries:
+   - no descendant-of-descendant grouping
+   - no grouping of areas from different floors under one building
+   - no grouping of mixed direct children plus deeper descendants
+8. Room-level occupancy authoring remains room-scoped; host inspectors own
+   group editing for their immediate child areas only.
+9. Structural occupancy remains derived:
+   - this ADR expands which hosts may manage child-area grouping
+   - it does not re-allow direct occupancy source authoring on structural hosts
+10. Room and subarea inspectors may summarize effective occupancy-group
+   membership, but they do not own group editing.
+
+**Rationale**:
+
+1. The real user intent is local sibling grouping, not floor-ness specifically.
+2. Immediate-child scope preserves a simple mental model: "group sibling areas
+   under this one parent."
+3. Excluding managed shadows prevents fake/system-owned topology rows from
+   leaking into behavioral authoring.
+4. Excluding `subarea` keeps occupancy grouping focused on peer rooms/areas and
+   avoids competing with structural decomposition.
+5. Keeping grouping inside one selected host avoids the debugging and
+   explainability complexity of cross-floor or cross-branch behavioral graphs.
+6. Keeping the host/type/shadow rules in the HA integration preserves the
+   kernel's type-agnostic design instead of coupling `home-topology` to Home
+   Assistant structural metadata.
+
+**Consequences**:
+
+- ✅ Installs without explicit floors can still use Occupancy Groups when
+  `area` locations are direct children of `property`, `building`, or `grounds`.
+- ✅ Managed shadow areas stay invisible to grouping workflows.
+- ✅ The feature remains local and understandable because scope is still
+  immediate-child only.
+- ✅ Existing runtime intent stays coherent with `occupancy_group_id` on member
+  areas; this ADR is strictly an HA authoring-scope rule.
+- ✅ `home-topology` core remains reusable by other integrations with different
+  authoring rules.
+- ⚠️ Existing docs/contracts/UI copy that say "floor-scoped" will need follow-up
+  updates before implementation lands.
+- ⚠️ Host inspector behavior must be explicit so users understand why a building
+  with only floor children does not offer floor-grandchild grouping.
+
+**Alternatives Considered**:
+
+- Keep grouping floor-only forever:
+  rejected because hierarchy already supports direct child areas under other
+  structural hosts, and forcing a fake floor to unlock grouping is poor UX.
+- Allow grouping across all descendants of a selected structural host:
+  rejected because it hides important hierarchy boundaries and makes grouping
+  harder to reason about.
+- Allow `subarea` membership:
+  rejected because subareas already express structural containment and are not
+  the primary shared-space grouping target.
+- Allow managed shadow areas as candidates:
+  rejected because they are integration-owned interoperability wrappers, not
+  user-authored spaces.
+- Move host eligibility and shadow exclusion into `home-topology` core:
+  rejected because those are Home Assistant authoring concerns, not kernel
+  runtime semantics.
+
+---
+
 ## How to Use This Log
 
 ### When to Create an ADR

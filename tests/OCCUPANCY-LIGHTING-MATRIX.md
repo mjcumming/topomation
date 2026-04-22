@@ -22,12 +22,12 @@
 
 ---
 
-## 2. Floor occupancy groups (integration)
+## 2. Host-local occupancy groups (integration)
 
 | Requirement / behavior | Test(s) |
 | --- | --- |
-| `occupancy_group_id` normalized on set_module_config (areas only) | `test_set_module_config_accepts_occupancy_group_id_for_floor_child_areas`, `test_set_module_config_rejects_occupancy_group_id_for_floor_locations` |
-| Grouped areas share runtime occupancy; trigger from one member; `origin_location_id` preserved | `test_set_module_config_occupancy_group_id_uses_shared_runtime_state` |
+| `occupancy_group_id` normalized on set_module_config (areas only) | `test_set_module_config_accepts_occupancy_group_id_for_building_child_areas`, `test_set_module_config_rejects_occupancy_group_id_for_floor_locations` |
+| Grouped areas share runtime occupancy; trigger from one member; `origin_location_id` preserved | `test_set_module_config_occupancy_group_id_uses_shared_runtime_state_for_building_child_areas` |
 | Member occupancy **binary sensors** stay aligned on group timeout | `test_grouped_area_binary_sensors_timeout_together` |
 | `vacate_area` clears grouped occupancy | `test_grouped_area_vacate_area_service_clears_all_members` |
 | Sync peer reconciliation with groups (if applicable) | `test_set_module_config_reconciles_current_sync_peer_occupancy_immediately` (and related in same file) |
