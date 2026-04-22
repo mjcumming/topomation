@@ -9,6 +9,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Location inspector (Detection)**: removed the read-only **Occupancy Group**
+  helper copy (“managed from host”, “no group assigned”, and the no-host
+  explainer). The **Members:** summary still appears when the area shares an
+  `occupancy_group_id` with at least one peer; authoring remains on the host’s
+  **Occupancy Groups** tab.
+
+### Fixed
+
+- **Startup room-anchor repair**: startup/import now repairs legacy or drifted
+  room-like topology rows (`area` / `subarea`) that are missing a valid HA area
+  anchor. Topomation first relinks to an unambiguous existing HA area when
+  possible, otherwise creates the missing HA area, then migrates the room onto
+  the canonical `area_<ha_area_id>` wrapper while preserving children, entities,
+  and adjacency edges.
+
+### Documentation
+
+- **ADR-HA-086 / C-022**: clarified the split between explicit HA room deletes
+  (prune topology + reparent children) and ambiguous startup drift (auto-heal
+  missing room anchors).
+
+### Tests
+
+- **Backend**: added startup sync coverage for unanchored legacy room rows and
+  non-canonical room wrapper migration into canonical HA-backed `area_*` rows.
+
 ## [0.2.57] - 2026-04-22
 
 ### Changed

@@ -313,6 +313,173 @@ class TestInitialImport:
         assert meta["sync_source"] == "homeassistant"
         assert meta["sync_enabled"] is True
 
+    async def test_import_repairs_legacy_room_without_ha_anchor(
+        self,
+        hass: HomeAssistant,
+        sync_manager: SyncManager,
+        loc_mgr: LocationManager,
+        clean_registries,
+    ):
+        """Startup import should create an HA area for a legacy unanchored room row."""
+        floor_reg = fr.async_get(hass)
+        floor = floor_reg.async_create("Second Floor")
+        floor_loc_id = f"floor_{floor.floor_id}"
+        loc_mgr.create_location(
+            id=floor_loc_id,
+            name="Second Floor",
+            parent_id=None,
+            is_explicit_root=False,
+        )
+        loc_mgr.set_module_config(
+            floor_loc_id,
+            "_meta",
+            {
+                "type": "floor",
+                "ha_floor_id": floor.floor_id,
+                "sync_source": "homeassistant",
+                "sync_enabled": True,
+            },
+        )
+
+        loc_mgr.create_location(
+            id="legacy_master_suite",
+            name="Master Suite",
+            parent_id=floor_loc_id,
+            is_explicit_root=False,
+            ha_area_id=None,
+        )
+        loc_mgr.set_module_config(
+            "legacy_master_suite",
+            "_meta",
+            {
+                "type": "area",
+                "sync_source": "topology",
+                "sync_enabled": True,
+            },
+        )
+        loc_mgr.create_location(
+            id="legacy_master_sitting",
+            name="Master Sitting",
+            parent_id="legacy_master_suite",
+            is_explicit_root=False,
+            ha_area_id=None,
+        )
+        loc_mgr.set_module_config(
+            "legacy_master_sitting",
+            "_meta",
+            {
+                "type": "subarea",
+                "sync_source": "topology",
+                "sync_enabled": True,
+            },
+        )
+
+        await sync_manager.import_all_areas_and_floors()
+
+        areas = ar.async_get(hass)
+        created_area = next(
+            area for area in areas.areas.values() if area.name == "Master Suite"
+        )
+        suite_loc_id = f"area_{created_area.id}"
+        suite_loc = loc_mgr.get_location(suite_loc_id)
+        assert suite_loc is not None
+        assert suite_loc.ha_area_id == created_area.id
+        assert suite_loc.parent_id == floor_loc_id
+        assert loc_mgr.get_location("legacy_master_suite") is None
+
+        child_candidates = [
+            loc for loc in loc_mgr.all_locations() if loc.name == "Master Sitting"
+        ]
+        assert len(child_candidates) == 1
+        child_loc = child_candidates[0]
+        assert child_loc.parent_id == suite_loc_id
+        assert child_loc.ha_area_id is not None
+        assert child_loc.id == f"area_{child_loc.ha_area_id}"
+
+    async def test_import_merges_legacy_room_into_imported_canonical_wrapper(
+        self,
+        hass: HomeAssistant,
+        sync_manager: SyncManager,
+        loc_mgr: LocationManager,
+        clean_registries,
+    ):
+        """Startup import should merge legacy room rows into the imported HA wrapper."""
+        area_reg = ar.async_get(hass)
+        floor_reg = fr.async_get(hass)
+        floor = floor_reg.async_create("Second Floor")
+        suite = area_reg.async_create("Master Suite", floor_id=floor.floor_id)
+
+        floor_loc_id = f"floor_{floor.floor_id}"
+        loc_mgr.create_location(
+            id=floor_loc_id,
+            name="Second Floor",
+            parent_id=None,
+            is_explicit_root=False,
+        )
+        loc_mgr.set_module_config(
+            floor_loc_id,
+            "_meta",
+            {
+                "type": "floor",
+                "ha_floor_id": floor.floor_id,
+                "sync_source": "homeassistant",
+                "sync_enabled": True,
+            },
+        )
+        loc_mgr.create_location(
+            id="legacy_master_suite",
+            name="Master Suite",
+            parent_id=floor_loc_id,
+            is_explicit_root=False,
+            ha_area_id=None,
+        )
+        loc_mgr.set_module_config(
+            "legacy_master_suite",
+            "_meta",
+            {
+                "type": "area",
+                "sync_source": "topology",
+                "sync_enabled": True,
+            },
+        )
+        loc_mgr.create_location(
+            id="legacy_child",
+            name="Legacy Child",
+            parent_id="legacy_master_suite",
+            is_explicit_root=False,
+        )
+        loc_mgr.set_module_config(
+            "legacy_child",
+            "_meta",
+            {"type": "subarea", "sync_source": "topology", "sync_enabled": True},
+        )
+        loc_mgr.add_entity_to_location("binary_sensor.master_suite_motion", "legacy_master_suite")
+        loc_mgr.create_adjacency_edge(  # type: ignore[attr-defined]
+            edge_id="edge_legacy_master_suite_hall",
+            from_location_id="legacy_master_suite",
+            to_location_id="legacy_child",
+        )
+
+        await sync_manager.import_all_areas_and_floors()
+
+        canonical_id = f"area_{suite.id}"
+        canonical = loc_mgr.get_location(canonical_id)
+        assert canonical is not None
+        assert canonical.ha_area_id == suite.id
+        assert canonical.parent_id == floor_loc_id
+        assert loc_mgr.get_location("legacy_master_suite") is None
+
+        child_candidates = [loc for loc in loc_mgr.all_locations() if loc.name == "Legacy Child"]
+        assert len(child_candidates) == 1
+        child = child_candidates[0]
+        assert child is not None
+        assert child.parent_id == canonical_id
+
+        edge = loc_mgr.get_adjacency_edge("edge_legacy_master_suite_hall")  # type: ignore[attr-defined]
+        assert edge is not None
+        assert edge.from_location_id == canonical_id
+        assert edge.to_location_id == child.id
+
     async def test_import_preserves_existing_area_overlay_parent(
         self,
         hass: HomeAssistant,

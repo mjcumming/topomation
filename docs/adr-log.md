@@ -4286,6 +4286,51 @@ heal; startup must not retain ``area_*`` rows pointing at deleted HA ids.
 
 **Status**: ✅ APPROVED
 
+---
+
+### ADR-HA-086: Startup Re-Heals Legacy Room Rows Missing HA Area Anchors (2026-04-22)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+
+- ADR-HA-083 / C-022 define the anchoring invariant: room-like topology rows must
+  resolve to real HA areas.
+- In practice, legacy persisted rows, disable/re-enable flows, or partial drift can
+  leave room rows present in topology without a valid `ha_area_id`, even though
+  managed shadows already self-heal.
+- Treating every missing anchor as a respected delete is too brittle on startup,
+  because the integration cannot distinguish old drift from explicit current user
+  intent when the row is already unanchored.
+
+**Decision**:
+
+1. On **startup/import**, every room-like row (`area` / `subarea`) that does not
+   resolve to a valid HA area must be **repaired**.
+2. Repair order:
+   - first, relink to an existing plausible HA area when there is an unambiguous
+     match
+   - otherwise create the missing HA area in Home Assistant
+3. The repaired row must land on the canonical `area_<ha_area_id>` topology wrapper.
+   Legacy non-canonical room IDs are migrated while preserving children, entities,
+   adjacency edges, and topology overlay parents/orders.
+4. This does **not** weaken ADR-HA-084 delete semantics: when HA explicitly removes
+   a currently linked room area, Topomation still prunes that topology wrapper and
+   reparents direct children instead of recreating it immediately.
+
+**Rationale**:
+
+1. Startup drift is ambiguous; healing is safer than silently keeping topology-only rooms.
+2. Users may disable/re-enable the integration or modify HA while Topomation is off.
+3. Canonical wrapper normalization reduces downstream edge cases and keeps contracts true.
+
+**Consequences**:
+
+- ✅ Legacy room rows self-heal into proper HA-backed wrappers during startup.
+- ✅ Explicit HA area deletes remain authoritative once a live link exists.
+- ⚠️ Matching existing HA areas is intentionally conservative; ambiguous matches fall
+  back to creating a new area.
+
 **Context**:
 
 Occupancy Groups already exist as a runtime primitive in `home-topology`:

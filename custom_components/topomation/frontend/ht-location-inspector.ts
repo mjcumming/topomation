@@ -4145,44 +4145,6 @@ export class HtLocationInspector extends LitElement {
         </div>
         <div class="occupancy-explainability-grid" style="margin-top: 12px;">
           ${this._renderStructureSummaryPanel()}
-          ${this._renderStructuralCurrentStatePanel()}
-        </div>
-      </div>
-    `;
-  }
-
-  private _renderStructuralCurrentStatePanel() {
-    const currentState = this._recentExplainabilityCurrentState();
-    const recentChanges = this._recentExplainabilityChanges();
-    if (!currentState && recentChanges.length === 0) {
-      return html`
-        <div class="occupancy-explainability-panel">
-          <div class="occupancy-explainability-panel-title">Occupancy</div>
-          <div class="occupancy-empty-state">No occupancy state is available yet.</div>
-        </div>
-      `;
-    }
-    const primaryDetail = this._occupancyAtAGlancePrimary(currentState, recentChanges);
-    const metaLines: string[] = [];
-    if (currentState?.nextChange) metaLines.push(currentState.nextChange);
-    if (currentState?.lockedSummary) metaLines.push(currentState.lockedSummary);
-    return html`
-      <div class="occupancy-explainability-panel">
-        <div class="occupancy-explainability-panel-title">Occupancy</div>
-        <div class="occupancy-at-a-glance">
-          ${currentState
-            ? html`
-                <div
-                  class="occupancy-status-chip ${currentState.occupied ? "is-occupied" : "is-vacant"}"
-                >
-                  ${currentState.occupied ? "Occupied" : "Vacant"}
-                </div>
-              `
-            : ""}
-          <div class="occupancy-primary-detail">${primaryDetail}</div>
-          ${metaLines.length
-            ? html`<div class="occupancy-meta-lines">${metaLines.map((line) => html`<div>${line}</div>`)}</div>`
-            : ""}
         </div>
       </div>
     `;
@@ -4818,22 +4780,14 @@ export class HtLocationInspector extends LitElement {
     if (!this.location) return "";
     const hostLocation = this._occupancyGroupHostForLocation(this.location);
     if (!hostLocation) {
-      return html`
-        <div class="card-section">
-          <div class="section-title">
-            <ha-icon .icon=${"mdi:link-lock"}></ha-icon>
-            Occupancy Group
-          </div>
-          <div class="subsection-help">
-            Occupancy groups are managed from the parent host.
-          </div>
-        </div>
-      `;
+      return "";
     }
 
     const sharedSpaceMemberIds = this._occupancyGroupMemberIds(this.location.id);
     const sharedPeerIds = sharedSpaceMemberIds.filter((locationId) => locationId !== this.location!.id);
-    const hostName = this._locationName(hostLocation.id);
+    if (sharedPeerIds.length === 0) {
+      return "";
+    }
 
     return html`
       <div class="card-section" data-testid="occupancy-group-summary-section">
@@ -4841,16 +4795,9 @@ export class HtLocationInspector extends LitElement {
           <ha-icon .icon=${"mdi:link-lock"}></ha-icon>
           Occupancy Group
         </div>
-        <div class="subsection-help">Managed from ${hostName}.</div>
-        ${sharedPeerIds.length === 0
-          ? html`
-              <div class="adjacency-empty">No occupancy group assigned.</div>
-            `
-          : html`
-              <div class="linked-location-meta">
-                Members: ${sharedSpaceMemberIds.map((locationId) => this._locationName(locationId)).join(", ")}
-              </div>
-            `}
+        <div class="linked-location-meta">
+          Members: ${sharedSpaceMemberIds.map((locationId) => this._locationName(locationId)).join(", ")}
+        </div>
       </div>
     `;
   }

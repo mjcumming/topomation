@@ -80,6 +80,11 @@ def _is_managed_shadow_area_location(location: object) -> bool:
     return str(meta.get(_META_ROLE_KEY, "")).strip().lower() == _MANAGED_SHADOW_ROLE
 
 
+def _is_room_like_location(location: object) -> bool:
+    """Return True when the location is a user room row that needs an HA anchor."""
+    return _location_type(location) in {"area", "subarea"}
+
+
 def managed_shadow_entity_ids_for_ambient(
     location_manager: LocationManager, location_id: str
 ) -> tuple[str, ...]:
@@ -185,6 +190,7 @@ class SyncManager:
 
         # Import areas
         await self._import_areas()
+        self.reconcile_room_area_anchors()
 
         # Map entities to locations
         await self._map_entities()
@@ -240,6 +246,13 @@ class SyncManager:
 
         if run_shadow_reconcile:
             self._reconcile_managed_shadow_areas()
+
+    def reconcile_room_area_anchors(self) -> None:
+        """Repair room-like topology rows so they resolve to canonical HA wrappers."""
+        for location in list(self.loc_mgr.all_locations()):
+            if _is_managed_shadow_area_location(location) or not _is_room_like_location(location):
+                continue
+            self._ensure_room_area_anchor(location.id)
 
     def _reparent_direct_children_then_delete_location(
         self,
@@ -302,6 +315,238 @@ class SyncManager:
 
         if run_shadow_reconcile:
             self._reconcile_managed_shadow_areas()
+
+    def _ensure_room_area_anchor(self, location_id: str) -> str | None:
+        """Ensure one room-like location resolves to a canonical HA area wrapper."""
+        location = self.loc_mgr.get_location(location_id)
+        if location is None or _is_managed_shadow_area_location(location):
+            return None
+        if not _is_room_like_location(location):
+            return location_id
+
+        linked_area_id = self._linked_room_ha_area_id(location)
+        area = self.area_registry.async_get_area(linked_area_id) if linked_area_id else None
+        if area is None:
+            area = self._find_matching_ha_area_for_room(location)
+
+        if area is None:
+            floor_id = self._nearest_floor_id(location.parent_id)
+            area = self.area_registry.async_create(name=location.name, floor_id=floor_id)
+            _LOGGER.info(
+                "Created missing HA area '%s' to anchor room-like topology row %s",
+                area.id,
+                location_id,
+            )
+        elif not linked_area_id:
+            _LOGGER.info(
+                "Re-linked room-like topology row %s to existing HA area '%s'",
+                location_id,
+                area.id,
+            )
+
+        return self._canonicalize_room_wrapper(location_id, area)
+
+    def _linked_room_ha_area_id(self, location: Location) -> str | None:
+        """Return a valid linked HA area id for a room-like location, if any."""
+        candidate_ids: list[str] = []
+        linked = str(getattr(location, "ha_area_id", "") or "").strip()
+        if linked:
+            candidate_ids.append(linked)
+
+        meta = location.modules.get("_meta", {})
+        if isinstance(meta, dict):
+            meta_area_id = str(meta.get("ha_area_id", "") or "").strip()
+            if meta_area_id and meta_area_id not in candidate_ids:
+                candidate_ids.append(meta_area_id)
+
+        for area_id in candidate_ids:
+            if self.area_registry.async_get_area(area_id) is not None:
+                return area_id
+        return None
+
+    def _nearest_floor_id(self, start_parent_id: str | None) -> str | None:
+        """Find the nearest ancestor carrying HA floor linkage."""
+        current_id = start_parent_id
+        visited: set[str] = set()
+
+        while current_id and current_id not in visited:
+            visited.add(current_id)
+            current = self.loc_mgr.get_location(current_id)
+            if current is None:
+                return None
+
+            meta = current.modules.get("_meta", {})
+            if isinstance(meta, dict):
+                floor_id = str(meta.get("ha_floor_id", "") or "").strip()
+                if floor_id:
+                    return floor_id
+
+            current_id = getattr(current, "parent_id", None)
+
+        return None
+
+    def _claimed_room_area_ids(
+        self,
+        *,
+        exclude_location_id: str | None = None,
+    ) -> dict[str, str]:
+        """Return HA area ids already consumed by room-like topology rows."""
+        claimed: dict[str, str] = {}
+        for candidate in self.loc_mgr.all_locations():
+            candidate_id = str(getattr(candidate, "id", "") or "")
+            if exclude_location_id is not None and candidate_id == exclude_location_id:
+                continue
+            if _is_managed_shadow_area_location(candidate) or not _is_room_like_location(candidate):
+                continue
+            linked_area_id = self._linked_room_ha_area_id(candidate)
+            if linked_area_id:
+                claimed[linked_area_id] = candidate_id
+        return claimed
+
+    def _find_matching_ha_area_for_room(self, location: Location) -> AreaEntry | None:
+        """Find an existing HA area that likely represents this room row."""
+        desired_name = str(getattr(location, "name", "") or "").strip()
+        if not desired_name:
+            return None
+
+        desired_floor_id = self._nearest_floor_id(getattr(location, "parent_id", None))
+        claimed_ids = self._claimed_room_area_ids(exclude_location_id=str(location.id))
+
+        candidates: list[AreaEntry] = []
+        fallback_candidates: list[AreaEntry] = []
+        for area in self.area_registry.areas.values():
+            claimed_location_id = claimed_ids.get(area.id)
+            if claimed_location_id and claimed_location_id != f"area_{area.id}":
+                continue
+            if str(area.name).strip().casefold() != desired_name.casefold():
+                continue
+            area_floor_id = str(getattr(area, "floor_id", "") or "").strip() or None
+            if desired_floor_id is not None and area_floor_id == desired_floor_id:
+                candidates.append(area)
+            elif desired_floor_id is None:
+                candidates.append(area)
+            else:
+                fallback_candidates.append(area)
+
+        pool = candidates or fallback_candidates
+        if len(pool) == 1:
+            return pool[0]
+        return None
+
+    def _canonicalize_room_wrapper(self, source_location_id: str, area: AreaEntry) -> str:
+        """Move one room-like row onto the canonical ``area_<ha_id>`` wrapper."""
+        source = self.loc_mgr.get_location(source_location_id)
+        target_location_id = f"area_{area.id}"
+        if source is None:
+            return target_location_id
+
+        floor_parent_id = self._ensure_floor_location(area.floor_id) if getattr(area, "floor_id", None) else None
+        target = self.loc_mgr.get_location(target_location_id)
+
+        if target is None:
+            target = self.loc_mgr.create_location(
+                id=target_location_id,
+                name=area.name,
+                parent_id=getattr(source, "parent_id", None),
+                is_explicit_root=False,
+                ha_area_id=area.id,
+                order=getattr(source, "order", None),
+            )
+        elif target_location_id != source_location_id:
+            update_kwargs: dict[str, Any] = {}
+            if target.name != area.name:
+                update_kwargs["name"] = area.name
+            if target.ha_area_id != area.id:
+                update_kwargs["ha_area_id"] = area.id
+            source_parent_id = getattr(source, "parent_id", None)
+            if source_parent_id != getattr(target, "parent_id", None):
+                update_kwargs["parent_id"] = source_parent_id if source_parent_id is not None else ""
+            source_order = getattr(source, "order", None)
+            if source_order is not None and source_order != getattr(target, "order", None):
+                update_kwargs["order"] = source_order
+            if update_kwargs:
+                target = self.loc_mgr.update_location(target_location_id, **update_kwargs)
+        else:
+            update_kwargs = {}
+            if source.name != area.name:
+                update_kwargs["name"] = area.name
+            if source.ha_area_id != area.id:
+                update_kwargs["ha_area_id"] = area.id
+            if self._should_reconcile_area_parent_to_floor(source) and source.parent_id != floor_parent_id:
+                update_kwargs["parent_id"] = floor_parent_id if floor_parent_id is not None else ""
+            if update_kwargs:
+                target = self.loc_mgr.update_location(source_location_id, **update_kwargs)
+            else:
+                target = source
+
+        self._merge_room_location_state(source_location_id, target_location_id)
+        self._set_room_wrapper_meta(target_location_id, source, area)
+        return target_location_id
+
+    def _merge_room_location_state(self, source_location_id: str, target_location_id: str) -> None:
+        """Move entities, children, module config, and adjacency from source to target."""
+        if source_location_id == target_location_id:
+            return
+
+        source = self.loc_mgr.get_location(source_location_id)
+        target = self.loc_mgr.get_location(target_location_id)
+        if source is None or target is None:
+            return
+
+        if source.entity_ids:
+            self.loc_mgr.move_entities(list(source.entity_ids), target_location_id)
+
+        for child in self.loc_mgr.children_of(source_location_id):
+            self.loc_mgr.update_location(child.id, parent_id=target_location_id)
+
+        list_edges = getattr(self.loc_mgr, "all_adjacency_edges", None)
+        update_edge = getattr(self.loc_mgr, "update_adjacency_edge", None)
+        if callable(list_edges) and callable(update_edge):
+            for edge in list(list_edges()):
+                updates: dict[str, Any] = {}
+                if getattr(edge, "from_location_id", None) == source_location_id:
+                    updates["from_location_id"] = target_location_id
+                if getattr(edge, "to_location_id", None) == source_location_id:
+                    updates["to_location_id"] = target_location_id
+                if updates:
+                    update_edge(edge.edge_id, **updates)
+
+        for module_id, config in (source.modules or {}).items():
+            if not isinstance(module_id, str) or not isinstance(config, dict):
+                continue
+            if module_id == "_meta":
+                continue
+            self.loc_mgr.set_module_config(target_location_id, module_id, dict(config))
+
+        self.loc_mgr.delete_location(source_location_id)
+
+    def _set_room_wrapper_meta(
+        self,
+        location_id: str,
+        source: Location,
+        area: AreaEntry,
+    ) -> None:
+        """Persist canonical metadata for a room-like HA-backed wrapper."""
+        location = self.loc_mgr.get_location(location_id)
+        if location is None:
+            return
+
+        source_meta = source.modules.get("_meta", {})
+        next_meta = dict(source_meta) if isinstance(source_meta, dict) else {}
+        next_meta.update(
+            {
+                "type": str(next_meta.get("type", "area") or "area"),
+                "ha_area_id": area.id,
+                "sync_source": "homeassistant",
+                "sync_enabled": True,
+                "last_synced": datetime.now(UTC).isoformat(),
+            }
+        )
+        if getattr(area, "floor_id", None):
+            next_meta["ha_floor_id"] = area.floor_id
+        else:
+            next_meta.pop("ha_floor_id", None)
+        self.loc_mgr.set_module_config(location_id, "_meta", next_meta)
 
     async def _import_floors(self) -> None:
         """Import HA floors as parent locations."""

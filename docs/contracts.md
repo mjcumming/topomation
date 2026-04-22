@@ -713,6 +713,13 @@ Additional save points:
   reconcile** topology wrappers so areas the user adds in HA appear in the tree
   according to existing sync rules (see `SyncManager._setup_ha_listeners` /
   `_handle_area_created`).
+- **Startup / restore drift healing for room rows**: when persisted topology contains
+  a room-like row (`area` / `subarea`) that does **not** resolve to a valid HA area
+  anchor, startup reconcile must repair it instead of leaving a topology-only room:
+  - if exactly one plausible existing HA area match is available, relink to it
+  - otherwise create the missing HA area
+  - normalize the topology row onto the canonical `area_<ha_area_id>` wrapper while
+    preserving children, entities, and topology-only overlay relationships
 - This contract is the **policy source** for ADR-HA-083; implementation must converge
   to it without weakening the invariant (legacy stores may require one-time heal
   or migration paths).

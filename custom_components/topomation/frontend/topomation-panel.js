@@ -286,7 +286,7 @@ Tt.elementStyles = [], Tt.shadowRootOptions = { mode: "open" }, Tt[Ut("elementPr
  */
 const Wt = globalThis, ye = Wt.trustedTypes, Ei = ye ? ye.createPolicy("lit-html", { createHTML: (s) => s }) : void 0, dn = "$lit$", lt = `lit$${Math.random().toFixed(9).slice(2)}$`, un = "?" + lt, Gn = `<${un}>`, xt = document, Xt = () => xt.createComment(""), Qt = (s) => s === null || typeof s != "object" && typeof s != "function", gi = Array.isArray, qn = (s) => gi(s) || typeof (s == null ? void 0 : s[Symbol.iterator]) == "function", Oe = `[ 	
 \f\r]`, zt = /<(?:(!--|\/[^a-zA-Z])|(\/?[a-zA-Z][^>\s]*)|(\/?$))/g, Ri = /-->/g, Di = />/g, gt = RegExp(`>|${Oe}(?:([^\\s"'>=/]+)(${Oe}*=${Oe}*(?:[^ 	
-\f\r"'\`<>=]|("|')|))|$)`, "g"), Ci = /'/g, Li = /"/g, hn = /^(?:script|style|textarea|title)$/i, Kn = (s) => (t, ...e) => ({ _$litType$: s, strings: t, values: e }), g = Kn(1), wt = Symbol.for("lit-noChange"), F = Symbol.for("lit-nothing"), Ii = /* @__PURE__ */ new WeakMap(), vt = xt.createTreeWalker(xt, 129);
+\f\r"'\`<>=]|("|')|))|$)`, "g"), Li = /'/g, Ci = /"/g, hn = /^(?:script|style|textarea|title)$/i, Kn = (s) => (t, ...e) => ({ _$litType$: s, strings: t, values: e }), g = Kn(1), wt = Symbol.for("lit-noChange"), F = Symbol.for("lit-nothing"), Ii = /* @__PURE__ */ new WeakMap(), vt = xt.createTreeWalker(xt, 129);
 function pn(s, t) {
   if (!gi(s) || !s.hasOwnProperty("raw")) throw Error("invalid template strings array");
   return Ei !== void 0 ? Ei.createHTML(t) : t;
@@ -297,7 +297,7 @@ const Yn = (s, t) => {
   for (let r = 0; r < e; r++) {
     const c = s[r];
     let l, d, u = -1, p = 0;
-    for (; p < c.length && (a.lastIndex = p, d = a.exec(c), d !== null); ) p = a.lastIndex, a === zt ? d[1] === "!--" ? a = Ri : d[1] !== void 0 ? a = Di : d[2] !== void 0 ? (hn.test(d[2]) && (n = RegExp("</" + d[2], "g")), a = gt) : d[3] !== void 0 && (a = gt) : a === gt ? d[0] === ">" ? (a = n ?? zt, u = -1) : d[1] === void 0 ? u = -2 : (u = a.lastIndex - d[2].length, l = d[1], a = d[3] === void 0 ? gt : d[3] === '"' ? Li : Ci) : a === Li || a === Ci ? a = gt : a === Ri || a === Di ? a = zt : (a = gt, n = void 0);
+    for (; p < c.length && (a.lastIndex = p, d = a.exec(c), d !== null); ) p = a.lastIndex, a === zt ? d[1] === "!--" ? a = Ri : d[1] !== void 0 ? a = Di : d[2] !== void 0 ? (hn.test(d[2]) && (n = RegExp("</" + d[2], "g")), a = gt) : d[3] !== void 0 && (a = gt) : a === gt ? d[0] === ">" ? (a = n ?? zt, u = -1) : d[1] === void 0 ? u = -2 : (u = a.lastIndex - d[2].length, l = d[1], a = d[3] === void 0 ? gt : d[3] === '"' ? Ci : Li) : a === Ci || a === Li ? a = gt : a === Ri || a === Di ? a = zt : (a = gt, n = void 0);
     const f = a === gt && s[r + 1].startsWith("/>") ? " " : "";
     o += a === zt ? c + Gn : u >= 0 ? (i.push(l), c.slice(0, u) + dn + c.slice(u) + lt + f) : c + lt + (u === -2 ? r : f);
   }
@@ -340,12 +340,12 @@ class Zt {
     return i.innerHTML = t, i;
   }
 }
-function Ct(s, t, e = s, i) {
+function Lt(s, t, e = s, i) {
   var a, r;
   if (t === wt) return t;
   let n = i !== void 0 ? (a = e._$Co) == null ? void 0 : a[i] : e._$Cl;
   const o = Qt(t) ? void 0 : t._$litDirective$;
-  return (n == null ? void 0 : n.constructor) !== o && ((r = n == null ? void 0 : n._$AO) == null || r.call(n, !1), o === void 0 ? n = void 0 : (n = new o(s), n._$AT(s, e, i)), i !== void 0 ? (e._$Co ?? (e._$Co = []))[i] = n : e._$Cl = n), n !== void 0 && (t = Ct(s, n._$AS(s, t.values), n, i)), t;
+  return (n == null ? void 0 : n.constructor) !== o && ((r = n == null ? void 0 : n._$AO) == null || r.call(n, !1), o === void 0 ? n = void 0 : (n = new o(s), n._$AT(s, e, i)), i !== void 0 ? (e._$Co ?? (e._$Co = []))[i] = n : e._$Cl = n), n !== void 0 && (t = Lt(s, n._$AS(s, t.values), n, i)), t;
 }
 let Xn = class {
   constructor(t, e) {
@@ -395,7 +395,7 @@ class Mt {
     return this._$AB;
   }
   _$AI(t, e = this) {
-    t = Ct(this, t, e), Qt(t) ? t === F || t == null || t === "" ? (this._$AH !== F && this._$AR(), this._$AH = F) : t !== this._$AH && t !== wt && this._(t) : t._$litType$ !== void 0 ? this.$(t) : t.nodeType !== void 0 ? this.T(t) : qn(t) ? this.k(t) : this._(t);
+    t = Lt(this, t, e), Qt(t) ? t === F || t == null || t === "" ? (this._$AH !== F && this._$AR(), this._$AH = F) : t !== this._$AH && t !== wt && this._(t) : t._$litType$ !== void 0 ? this.$(t) : t.nodeType !== void 0 ? this.T(t) : qn(t) ? this.k(t) : this._(t);
   }
   O(t) {
     return this._$AA.parentNode.insertBefore(t, this._$AB);
@@ -451,11 +451,11 @@ class Re {
   _$AI(t, e = this, i, n) {
     const o = this.strings;
     let a = !1;
-    if (o === void 0) t = Ct(this, t, e, 0), a = !Qt(t) || t !== this._$AH && t !== wt, a && (this._$AH = t);
+    if (o === void 0) t = Lt(this, t, e, 0), a = !Qt(t) || t !== this._$AH && t !== wt, a && (this._$AH = t);
     else {
       const r = t;
       let c, l;
-      for (t = o[0], c = 0; c < o.length - 1; c++) l = Ct(this, r[i + c], e, c), l === wt && (l = this._$AH[c]), a || (a = !Qt(l) || l !== this._$AH[c]), l === F ? t = F : t !== F && (t += (l ?? "") + o[c + 1]), this._$AH[c] = l;
+      for (t = o[0], c = 0; c < o.length - 1; c++) l = Lt(this, r[i + c], e, c), l === wt && (l = this._$AH[c]), a || (a = !Qt(l) || l !== this._$AH[c]), l === F ? t = F : t !== F && (t += (l ?? "") + o[c + 1]), this._$AH[c] = l;
     }
     a && !n && this.j(t);
   }
@@ -484,7 +484,7 @@ class Jn extends Re {
     super(t, e, i, n, o), this.type = 5;
   }
   _$AI(t, e = this) {
-    if ((t = Ct(this, t, e, 0) ?? F) === wt) return;
+    if ((t = Lt(this, t, e, 0) ?? F) === wt) return;
     const i = this._$AH, n = t === F && i !== F || t.capture !== i.capture || t.once !== i.once || t.passive !== i.passive, o = t !== F && (i === F || n);
     n && this.element.removeEventListener(this.name, this, i), o && this.element.addEventListener(this.name, this, t), this._$AH = t;
   }
@@ -501,7 +501,7 @@ class to {
     return this._$AM._$AU;
   }
   _$AI(t) {
-    Ct(this, t);
+    Lt(this, t);
   }
 }
 const eo = { I: Mt }, Me = Wt.litHtmlPolyfillSupport;
@@ -714,7 +714,7 @@ function oo(s) {
   const t = String(s ?? "area").trim().toLowerCase(), e = no[t] ?? t;
   return e === "floor" || e === "area" || e === "building" || e === "grounds" || e === "subarea" || e === "property" ? e : "area";
 }
-function C(s) {
+function L(s) {
   var t, e;
   return oo((e = (t = s.modules) == null ? void 0 : t._meta) == null ? void 0 : e.type);
 }
@@ -730,15 +730,15 @@ function ro(s) {
   if (i === e || i && Je(t, e, i)) return !1;
   const n = new Map(t.map((l) => [l.id, l])), o = n.get(e);
   if (!o || i && !n.get(i) || i && ((c = n.get(i)) != null && c.is_explicit_root)) return !1;
-  const a = C(o);
+  const a = L(o);
   if (a === "property")
     return i === null;
   if (a === "building" || a === "grounds") {
     if (i === null) return !0;
     const l = n.get(i);
-    return l ? C(l) === "property" : !1;
+    return l ? L(l) === "property" : !1;
   }
-  const r = i === null ? "root" : C(n.get(i) ?? {});
+  const r = i === null ? "root" : L(n.get(i) ?? {});
   return !!ao(a, r);
 }
 function Je(s, t, e) {
@@ -765,7 +765,7 @@ const so = "managed_shadow", gn = /* @__PURE__ */ new Set(["floor", "building", 
     n && gn.has(lo(e)) && t.add(n);
   }
   return t;
-}, Ce = (s, t) => {
+}, Le = (s, t) => {
   if (!s) return !1;
   if (t != null && t.has(s.id))
     return !0;
@@ -779,7 +779,7 @@ const so = "managed_shadow", gn = /* @__PURE__ */ new Set(["floor", "building", 
 function St(s, t) {
   if (!s) return "";
   if (s.is_explicit_root) return s.id;
-  const e = C(s);
+  const e = L(s);
   if (!(e === "floor" || e === "building" || e === "grounds" || e === "property")) return s.id;
   const n = Ht(s);
   return !n || !(t || []).find((r) => r.id === n) ? s.id : n;
@@ -805,7 +805,7 @@ function fi(s, t) {
 }
 function uo(s, t) {
   if (!s || s.is_explicit_root) return !1;
-  const e = C(s);
+  const e = L(s);
   return gn.has(e) ? !!Ht(s) : !1;
 }
 function _i(s) {
@@ -1113,7 +1113,7 @@ function Fi(s, t, e) {
   }
   return !1;
 }
-function Lt(s, t, e, i) {
+function Ct(s, t, e, i) {
   for (var n = 0, o = 0, a = s.children; o < a.length; ) {
     if (a[o].style.display !== "none" && a[o] !== S.ghost && (i || a[o] !== S.dragged) && J(a[o], e.draggable, s, !1)) {
       if (n === t)
@@ -1346,7 +1346,7 @@ var Do = ["evt"], V = function(t, e) {
     dragEl: v,
     parentEl: M,
     ghostEl: A,
-    rootEl: L,
+    rootEl: C,
     nextEl: yt,
     lastDownEl: ge,
     cloneEl: I,
@@ -1381,22 +1381,22 @@ function H(s) {
     putSortable: j,
     cloneEl: I,
     targetEl: v,
-    rootEl: L,
+    rootEl: C,
     oldIndex: Rt,
     oldDraggableIndex: qt,
     newIndex: Y,
     newDraggableIndex: ct
   }, s));
 }
-var v, M, A, L, yt, ge, I, dt, Rt, Y, qt, ct, ae, j, Et = !1, be = !1, xe = [], _t, Z, Be, je, ji, Ui, Ft, kt, Kt, Yt = !1, re = !1, fe, U, Ue = [], ti = !1, we = [], Le = typeof document < "u", se = mi, Wi = ie || rt ? "cssFloat" : "float", Co = Le && !fn && !mi && "draggable" in document.createElement("div"), Sn = function() {
-  if (Le) {
+var v, M, A, C, yt, ge, I, dt, Rt, Y, qt, ct, ae, j, Et = !1, be = !1, xe = [], _t, Z, Be, je, ji, Ui, Ft, kt, Kt, Yt = !1, re = !1, fe, U, Ue = [], ti = !1, we = [], Ce = typeof document < "u", se = mi, Wi = ie || rt ? "cssFloat" : "float", Lo = Ce && !fn && !mi && "draggable" in document.createElement("div"), Sn = function() {
+  if (Ce) {
     if (rt)
       return !1;
     var s = document.createElement("x");
     return s.style.cssText = "pointer-events:auto", s.style.pointerEvents === "auto";
   }
 }(), An = function(t, e) {
-  var i = w(t), n = parseInt(i.width) - parseInt(i.paddingLeft) - parseInt(i.paddingRight) - parseInt(i.borderLeftWidth) - parseInt(i.borderRightWidth), o = Lt(t, 0, e), a = Lt(t, 1, e), r = o && w(o), c = a && w(a), l = r && parseInt(r.marginLeft) + parseInt(r.marginRight) + N(o).width, d = c && parseInt(c.marginLeft) + parseInt(c.marginRight) + N(a).width;
+  var i = w(t), n = parseInt(i.width) - parseInt(i.paddingLeft) - parseInt(i.paddingRight) - parseInt(i.borderLeftWidth) - parseInt(i.borderRightWidth), o = Ct(t, 0, e), a = Ct(t, 1, e), r = o && w(o), c = a && w(a), l = r && parseInt(r.marginLeft) + parseInt(r.marginRight) + N(o).width, d = c && parseInt(c.marginLeft) + parseInt(c.marginRight) + N(a).width;
   if (i.display === "flex")
     return i.flexDirection === "column" || i.flexDirection === "column-reverse" ? "vertical" : "horizontal";
   if (i.display === "grid")
@@ -1406,7 +1406,7 @@ var v, M, A, L, yt, ge, I, dt, Rt, Y, qt, ct, ae, j, Et = !1, be = !1, xe = [], 
     return a && (c.clear === "both" || c.clear === u) ? "vertical" : "horizontal";
   }
   return o && (r.display === "block" || r.display === "flex" || r.display === "table" || r.display === "grid" || l >= n && i[Wi] === "none" || a && i[Wi] === "none" && l + d > n) ? "vertical" : "horizontal";
-}, Lo = function(t, e, i) {
+}, Co = function(t, e, i) {
   var n = i ? t.left : t.top, o = i ? t.right : t.bottom, a = i ? t.width : t.height, r = i ? e.left : e.top, c = i ? e.right : e.bottom, l = i ? e.width : e.height;
   return n === r || o === c || n + a / 2 === r + l / 2;
 }, Io = function(t, e) {
@@ -1444,7 +1444,7 @@ var v, M, A, L, yt, ge, I, dt, Rt, Y, qt, ct, ae, j, Et = !1, be = !1, xe = [], 
 }, Tn = function() {
   !Sn && A && w(A, "display", "");
 };
-Le && !fn && document.addEventListener("click", function(s) {
+Ce && !fn && document.addEventListener("click", function(s) {
   if (be)
     return s.preventDefault(), s.stopPropagation && s.stopPropagation(), s.stopImmediatePropagation && s.stopImmediatePropagation(), be = !1, !1;
 }, !0);
@@ -1518,7 +1518,7 @@ function S(s, t) {
   $n(t);
   for (var n in this)
     n.charAt(0) === "_" && typeof this[n] == "function" && (this[n] = this[n].bind(this));
-  this.nativeDraggable = t.forceFallback ? !1 : Co, this.nativeDraggable && (this.options.touchStartThreshold = 1), t.supportPointer ? k(s, "pointerdown", this._onTapStart) : (k(s, "mousedown", this._onTapStart), k(s, "touchstart", this._onTapStart)), this.nativeDraggable && (k(s, "dragover", this), k(s, "dragenter", this)), xe.push(this.el), t.store && t.store.get && this.sort(t.store.get(this) || []), at(this, ko());
+  this.nativeDraggable = t.forceFallback ? !1 : Lo, this.nativeDraggable && (this.options.touchStartThreshold = 1), t.supportPointer ? k(s, "pointerdown", this._onTapStart) : (k(s, "mousedown", this._onTapStart), k(s, "touchstart", this._onTapStart)), this.nativeDraggable && (k(s, "dragover", this), k(s, "dragenter", this)), xe.push(this.el), t.store && t.store.get && this.sort(t.store.get(this) || []), at(this, ko());
 }
 S.prototype = /** @lends Sortable.prototype */
 {
@@ -1571,7 +1571,7 @@ S.prototype = /** @lends Sortable.prototype */
     var n = this, o = n.el, a = n.options, r = o.ownerDocument, c;
     if (i && !v && i.parentNode === o) {
       var l = N(i);
-      if (L = o, v = i, M = v.parentNode, yt = v.nextSibling, ge = i, ae = a.group, S.dragged = v, _t = {
+      if (C = o, v = i, M = v.parentNode, yt = v.nextSibling, ge = i, ae = a.group, S.dragged = v, _t = {
         target: v,
         clientX: (e || t).clientX,
         clientY: (e || t).clientY
@@ -1613,7 +1613,7 @@ S.prototype = /** @lends Sortable.prototype */
     $(t, "mouseup", this._disableDelayedDrag), $(t, "touchend", this._disableDelayedDrag), $(t, "touchcancel", this._disableDelayedDrag), $(t, "pointerup", this._disableDelayedDrag), $(t, "pointercancel", this._disableDelayedDrag), $(t, "mousemove", this._delayedDragTouchMoveHandler), $(t, "touchmove", this._delayedDragTouchMoveHandler), $(t, "pointermove", this._delayedDragTouchMoveHandler);
   },
   _triggerDragStart: function(t, e) {
-    e = e || t.pointerType == "touch" && t, !this.nativeDraggable || e ? this.options.supportPointer ? k(document, "pointermove", this._onTouchMove) : e ? k(document, "touchmove", this._onTouchMove) : k(document, "mousemove", this._onTouchMove) : (k(v, "dragend", this), k(L, "dragstart", this._onDragStart));
+    e = e || t.pointerType == "touch" && t, !this.nativeDraggable || e ? this.options.supportPointer ? k(document, "pointermove", this._onTouchMove) : e ? k(document, "touchmove", this._onTouchMove) : k(document, "mousemove", this._onTouchMove) : (k(v, "dragend", this), k(C, "dragstart", this._onDragStart));
     try {
       document.selection ? _e(function() {
         document.selection.empty();
@@ -1622,7 +1622,7 @@ S.prototype = /** @lends Sortable.prototype */
     }
   },
   _dragStarted: function(t, e) {
-    if (Et = !1, L && v) {
+    if (Et = !1, C && v) {
       V("dragStarted", this, {
         evt: e
       }), this.nativeDraggable && k(document, "dragover", Oo);
@@ -1682,7 +1682,7 @@ S.prototype = /** @lends Sortable.prototype */
   },
   _appendGhost: function() {
     if (!A) {
-      var t = this.options.fallbackOnBody ? document.body : L, e = N(v, !0, se, !0, t), i = this.options;
+      var t = this.options.fallbackOnBody ? document.body : C, e = N(v, !0, se, !0, t), i = this.options;
       if (se) {
         for (U = t; w(U, "position") === "static" && w(U, "transform") === "none" && U !== document; )
           U = U.parentNode;
@@ -1700,7 +1700,7 @@ S.prototype = /** @lends Sortable.prototype */
       return;
     }
     V("setupClone", this), S.eventCanceled || (I = xn(v), I.removeAttribute("id"), I.draggable = !1, I.style["will-change"] = "", this._hideClone(), K(I, this.options.chosenClass, !1), S.clone = I), i.cloneId = _e(function() {
-      V("clone", i), !S.eventCanceled && (i.options.removeCloneOnHide || L.insertBefore(I, v), i._hideClone(), H({
+      V("clone", i), !S.eventCanceled && (i.options.removeCloneOnHide || C.insertBefore(I, v), i._hideClone(), H({
         sortable: i,
         name: "clone"
       }));
@@ -1723,7 +1723,7 @@ S.prototype = /** @lends Sortable.prototype */
         target: i,
         completed: x,
         onMove: function(Si, Pn) {
-          return ce(L, e, v, n, Si, N(Si), t, Pn);
+          return ce(C, e, v, n, Si, N(Si), t, Pn);
         },
         changed: b
       }, Mn));
@@ -1751,25 +1751,25 @@ S.prototype = /** @lends Sortable.prototype */
     if (t.preventDefault !== void 0 && t.cancelable && t.preventDefault(), i = J(i, r.draggable, e, !0), m("dragOver"), S.eventCanceled) return _;
     if (v.contains(t.target) || i.animated && i.animatingX && i.animatingY || h._ignoreWhileAnimating === i)
       return x(!1);
-    if (be = !1, l && !r.disabled && (d ? u || (a = M !== L) : j === this || (this.lastPutMode = ae.checkPull(this, l, v, t)) && c.checkPut(this, l, v, t))) {
+    if (be = !1, l && !r.disabled && (d ? u || (a = M !== C) : j === this || (this.lastPutMode = ae.checkPull(this, l, v, t)) && c.checkPut(this, l, v, t))) {
       if (f = this._getDirection(t, i) === "vertical", n = N(v), m("dragOverValid"), S.eventCanceled) return _;
       if (a)
-        return M = L, y(), this._hideClone(), m("revert"), S.eventCanceled || (yt ? L.insertBefore(v, yt) : L.appendChild(v)), x(!0);
+        return M = C, y(), this._hideClone(), m("revert"), S.eventCanceled || (yt ? C.insertBefore(v, yt) : C.appendChild(v)), x(!0);
       var E = yi(e, r.draggable);
       if (!E || No(t, f, this) && !E.animated) {
         if (E === v)
           return x(!1);
-        if (E && e === t.target && (i = E), i && (o = N(i)), ce(L, e, v, n, i, o, t, !!i) !== !1)
+        if (E && e === t.target && (i = E), i && (o = N(i)), ce(C, e, v, n, i, o, t, !!i) !== !1)
           return y(), E && E.nextSibling ? e.insertBefore(v, E.nextSibling) : e.appendChild(v), M = e, b(), x(!0);
       } else if (E && zo(t, f, this)) {
-        var P = Lt(e, 0, r, !0);
+        var P = Ct(e, 0, r, !0);
         if (P === v)
           return x(!1);
-        if (i = P, o = N(i), ce(L, e, v, n, i, o, t, !1) !== !1)
+        if (i = P, o = N(i), ce(C, e, v, n, i, o, t, !1) !== !1)
           return y(), e.insertBefore(v, P), M = e, b(), x(!0);
       } else if (i.parentNode === e) {
         o = N(i);
-        var R = 0, B, D = v.parentNode !== e, T = !Lo(v.animated && v.toRect || n, i.animated && i.toRect || o, f), O = f ? "top" : "left", W = Fi(i, "top", "top") || Fi(v, "top", "top"), At = W ? W.scrollTop : void 0;
+        var R = 0, B, D = v.parentNode !== e, T = !Co(v.animated && v.toRect || n, i.animated && i.toRect || o, f), O = f ? "top" : "left", W = Fi(i, "top", "top") || Fi(v, "top", "top"), At = W ? W.scrollTop : void 0;
         kt !== i && (B = o[O], Yt = !1, re = !T && r.invertSwap || D), R = Fo(t, i, o, f, T ? 1 : r.swapThreshold, r.invertedSwapThreshold == null ? r.swapThreshold : r.invertedSwapThreshold, re, kt === i);
         var q;
         if (R !== 0) {
@@ -1783,7 +1783,7 @@ S.prototype = /** @lends Sortable.prototype */
         kt = i, Kt = R;
         var st = i.nextElementSibling, X = !1;
         X = R === 1;
-        var oe = ce(L, e, v, n, i, o, t, X);
+        var oe = ce(C, e, v, n, i, o, t, X);
         if (oe !== !1)
           return (oe === 1 || oe === -1) && (X = oe === 1), ti = !0, setTimeout(Po, 30), y(), X && !st ? e.appendChild(v) : i.parentNode.insertBefore(v, X ? st : i), W && bn(W, 0, At - W.scrollTop), M = v.parentNode, B !== void 0 && !re && (fe = Math.abs(B - N(i)[O])), b(), x(!0);
       }
@@ -1808,18 +1808,18 @@ S.prototype = /** @lends Sortable.prototype */
       this._nulling();
       return;
     }
-    Et = !1, re = !1, Yt = !1, clearInterval(this._loopId), clearTimeout(this._dragStartTimer), ei(this.cloneId), ei(this._dragStartId), this.nativeDraggable && ($(document, "drop", this), $(e, "dragstart", this._onDragStart)), this._offMoveEvents(), this._offUpEvents(), Vt && w(document.body, "user-select", ""), w(v, "transform", ""), t && (Ft && (t.cancelable && t.preventDefault(), !i.dropBubble && t.stopPropagation()), A && A.parentNode && A.parentNode.removeChild(A), (L === M || j && j.lastPutMode !== "clone") && I && I.parentNode && I.parentNode.removeChild(I), v && (this.nativeDraggable && $(v, "dragend", this), We(v), v.style["will-change"] = "", Ft && !Et && K(v, j ? j.options.ghostClass : this.options.ghostClass, !1), K(v, this.options.chosenClass, !1), H({
+    Et = !1, re = !1, Yt = !1, clearInterval(this._loopId), clearTimeout(this._dragStartTimer), ei(this.cloneId), ei(this._dragStartId), this.nativeDraggable && ($(document, "drop", this), $(e, "dragstart", this._onDragStart)), this._offMoveEvents(), this._offUpEvents(), Vt && w(document.body, "user-select", ""), w(v, "transform", ""), t && (Ft && (t.cancelable && t.preventDefault(), !i.dropBubble && t.stopPropagation()), A && A.parentNode && A.parentNode.removeChild(A), (C === M || j && j.lastPutMode !== "clone") && I && I.parentNode && I.parentNode.removeChild(I), v && (this.nativeDraggable && $(v, "dragend", this), We(v), v.style["will-change"] = "", Ft && !Et && K(v, j ? j.options.ghostClass : this.options.ghostClass, !1), K(v, this.options.chosenClass, !1), H({
       sortable: this,
       name: "unchoose",
       toEl: M,
       newIndex: null,
       newDraggableIndex: null,
       originalEvent: t
-    }), L !== M ? (Y >= 0 && (H({
+    }), C !== M ? (Y >= 0 && (H({
       rootEl: M,
       name: "add",
       toEl: M,
-      fromEl: L,
+      fromEl: C,
       originalEvent: t
     }), H({
       sortable: this,
@@ -1830,7 +1830,7 @@ S.prototype = /** @lends Sortable.prototype */
       rootEl: M,
       name: "sort",
       toEl: M,
-      fromEl: L,
+      fromEl: C,
       originalEvent: t
     }), H({
       sortable: this,
@@ -1855,7 +1855,7 @@ S.prototype = /** @lends Sortable.prototype */
     }), this.save()))), this._nulling();
   },
   _nulling: function() {
-    V("nulling", this), L = v = M = A = yt = I = ge = dt = _t = Z = Ft = Y = ct = Rt = qt = kt = Kt = j = ae = S.dragged = S.ghost = S.clone = S.active = null, we.forEach(function(t) {
+    V("nulling", this), C = v = M = A = yt = I = ge = dt = _t = Z = Ft = Y = ct = Rt = qt = kt = Kt = j = ae = S.dragged = S.ghost = S.clone = S.active = null, we.forEach(function(t) {
       t.checked = !0;
     }), we.length = Be = je = 0;
   },
@@ -1948,7 +1948,7 @@ S.prototype = /** @lends Sortable.prototype */
     }
     if (dt) {
       if (V("showClone", this), S.eventCanceled) return;
-      v.parentNode == L && !this.options.group.revertClone ? L.insertBefore(I, v) : yt ? L.insertBefore(I, yt) : L.appendChild(I), this.options.group.revertClone && this.animate(v, I), w(I, "display", ""), dt = !1;
+      v.parentNode == C && !this.options.group.revertClone ? C.insertBefore(I, v) : yt ? C.insertBefore(I, yt) : C.appendChild(I), this.options.group.revertClone && this.animate(v, I), w(I, "display", ""), dt = !1;
     }
   }
 };
@@ -1969,7 +1969,7 @@ function Po() {
   ti = !1;
 }
 function zo(s, t, e) {
-  var i = N(Lt(e.el, 0, e.options, !0)), n = wn(e.el, e.options, A), o = 10;
+  var i = N(Ct(e.el, 0, e.options, !0)), n = wn(e.el, e.options, A), o = 10;
   return t ? s.clientX < n.left - o || s.clientY < i.top && s.clientX < i.right : s.clientY < n.top - o || s.clientY < i.bottom && s.clientX < i.left;
 }
 function No(s, t, e) {
@@ -2010,7 +2010,7 @@ function _e(s) {
 function ei(s) {
   return clearTimeout(s);
 }
-Le && k(document, "touchmove", function(s) {
+Ce && k(document, "touchmove", function(s) {
   (S.active || Et) && s.cancelable && s.preventDefault();
 });
 S.utils = {
@@ -2030,7 +2030,7 @@ S.utils = {
   nextTick: _e,
   cancelNextTick: ei,
   detectDirection: An,
-  getChild: Lt,
+  getChild: Ct,
   expando: G
 };
 S.get = function(s) {
@@ -2155,7 +2155,7 @@ vi.prototype = {
   onSpill: function(t) {
     var e = t.dragEl, i = t.putSortable;
     this.sortable.captureAnimationState(), i && i.captureAnimationState();
-    var n = Lt(this.sortable.el, this.startIndex, this.options);
+    var n = Ct(this.sortable.el, this.startIndex, this.options);
     n ? this.sortable.el.insertBefore(e, n) : this.sortable.el.appendChild(e), this.sortable.animateAll(), i && i.animateAll();
   },
   drop: En
@@ -2505,7 +2505,7 @@ const qi = "application/x-topomation-entity-id", Ae = class Ae extends nt {
     `;
   }
   _renderItem(t, e, i) {
-    const { location: n, depth: o, hasChildren: a, isExpanded: r } = t, c = this.selectedId === n.id, l = this._editingId === n.id, d = o * 24, u = C(n), p = n.is_explicit_root ? "root" : u, f = n.is_explicit_root ? "home root" : u, h = i.isLocked ? "mdi:lock" : "mdi:lock-open-variant-outline", _ = i.isLocked ? i.lockedBy.length ? `Locked (${i.lockedBy.map((b) => _i(b)).join(", ")})` : "Locked" : "Unlocked", m = this._isEffectivelyOccupied(n), y = "mdi:home-switch-outline", x = m ? "Set vacant" : "Set occupied";
+    const { location: n, depth: o, hasChildren: a, isExpanded: r } = t, c = this.selectedId === n.id, l = this._editingId === n.id, d = o * 24, u = L(n), p = n.is_explicit_root ? "root" : u, f = n.is_explicit_root ? "home root" : u, h = i.isLocked ? "mdi:lock" : "mdi:lock-open-variant-outline", _ = i.isLocked ? i.lockedBy.length ? `Locked (${i.lockedBy.map((b) => _i(b)).join(", ")})` : "Locked" : "Unlocked", m = this._isEffectivelyOccupied(n), y = "mdi:home-switch-outline", x = m ? "Set vacant" : "Set occupied";
     return g`
       <div
         class="tree-item ${c ? "selected" : ""} ${u === "floor" ? "floor-item" : ""} ${this._entityDropTargetId === n.id ? "entity-drop-target" : ""}"
@@ -2608,7 +2608,7 @@ const qi = "application/x-topomation-entity-id", Ae = class Ae extends nt {
     );
   }
   _isManagedShadowLocation(t, e) {
-    return Ce(t, e);
+    return Le(t, e);
   }
   _getIcon(t) {
     var e, i, n;
@@ -3138,13 +3138,13 @@ function ta(s) {
 function ea(s) {
   return s === "motion";
 }
-function Cn(s) {
+function Ln(s) {
   return s === "media_player";
 }
-function Ln(s) {
+function Cn(s) {
   var i;
   const t = Dn(s == null ? void 0 : s.entity_id), e = (i = s == null ? void 0 : s.attributes) == null ? void 0 : i.device_class;
-  if (Cn(t))
+  if (Ln(t))
     return {
       entity_id: (s == null ? void 0 : s.entity_id) || "",
       mode: "any_change",
@@ -3210,8 +3210,8 @@ function Ln(s) {
   };
 }
 function qe(s, t, e) {
-  const i = Dn(e == null ? void 0 : e.entity_id), n = Ln(e);
-  if (Cn(i)) {
+  const i = Dn(e == null ? void 0 : e.entity_id), n = Cn(e);
+  if (Ln(i)) {
     const a = s.on_timeout && s.on_timeout > 0 ? s.on_timeout : ut;
     return {
       ...s,
@@ -3682,7 +3682,7 @@ const $e = class $e extends nt {
     return this._isOccupancyGroupHostLocation() ? "Occupancy Groups" : "Occupancy";
   }
   _locationType() {
-    return this.location ? C(this.location) : null;
+    return this.location ? L(this.location) : null;
   }
   _isAreaLikeLocation() {
     const t = this._locationType();
@@ -3692,7 +3692,7 @@ const $e = class $e extends nt {
     return t === "property" || t === "building" || t === "grounds" || t === "floor";
   }
   _isOccupancyGroupHostLocation(t = this.location) {
-    return !!t && this._isOccupancyGroupHostType(C(t));
+    return !!t && this._isOccupancyGroupHostType(L(t));
   }
   _isStructuralSummaryLocation() {
     const t = this._locationType();
@@ -4484,34 +4484,6 @@ const $e = class $e extends nt {
         </div>
         <div class="occupancy-explainability-grid" style="margin-top: 12px;">
           ${this._renderStructureSummaryPanel()}
-          ${this._renderStructuralCurrentStatePanel()}
-        </div>
-      </div>
-    `;
-  }
-  _renderStructuralCurrentStatePanel() {
-    const t = this._recentExplainabilityCurrentState(), e = this._recentExplainabilityChanges();
-    if (!t && e.length === 0)
-      return g`
-        <div class="occupancy-explainability-panel">
-          <div class="occupancy-explainability-panel-title">Occupancy</div>
-          <div class="occupancy-empty-state">No occupancy state is available yet.</div>
-        </div>
-      `;
-    const i = this._occupancyAtAGlancePrimary(t, e), n = [];
-    return t != null && t.nextChange && n.push(t.nextChange), t != null && t.lockedSummary && n.push(t.lockedSummary), g`
-      <div class="occupancy-explainability-panel">
-        <div class="occupancy-explainability-panel-title">Occupancy</div>
-        <div class="occupancy-at-a-glance">
-          ${t ? g`
-                <div
-                  class="occupancy-status-chip ${t.occupied ? "is-occupied" : "is-vacant"}"
-                >
-                  ${t.occupied ? "Occupied" : "Vacant"}
-                </div>
-              ` : ""}
-          <div class="occupancy-primary-detail">${i}</div>
-          ${n.length ? g`<div class="occupancy-meta-lines">${n.map((o) => g`<div>${o}</div>`)}</div>` : ""}
         </div>
       </div>
     `;
@@ -4736,7 +4708,7 @@ const $e = class $e extends nt {
   }
   _isManagedShadowHost() {
     if (!this.location) return !1;
-    const t = C(this.location);
+    const t = L(this.location);
     return t === "floor" || t === "building" || t === "grounds" || t === "property";
   }
   _currentManagedShadowAreaId() {
@@ -4784,7 +4756,7 @@ const $e = class $e extends nt {
           Managed System Area
         </div>
         <div class="policy-note">
-          Topomation owns this mapping. Assignments to this ${C(this.location)} are
+          Topomation owns this mapping. Assignments to this ${L(this.location)} are
           remapped to a managed shadow HA area for native area_id interoperability.
         </div>
         <div class="subsection-help">
@@ -4822,25 +4794,25 @@ const $e = class $e extends nt {
     `;
   }
   _linkedLocationFloorParentId() {
-    if (!this.location || C(this.location) !== "area") return null;
+    if (!this.location || L(this.location) !== "area") return null;
     const t = this.location.parent_id ?? null;
     if (!t) return null;
     const e = (this.allLocations || []).find((i) => i.id === t);
-    return !e || C(e) !== "floor" ? null : t;
+    return !e || L(e) !== "floor" ? null : t;
   }
   _linkedLocationCandidates() {
     if (!this.location) return [];
     const t = this._linkedLocationFloorParentId();
     if (!t) return [];
     const e = this._managedShadowLocationIds();
-    return (this.allLocations || []).filter((i) => i.id !== this.location.id).filter((i) => (i.parent_id ?? null) === t).filter((i) => C(i) === "area").filter((i) => !this._isManagedShadowLocation(i, e)).sort((i, n) => i.name.localeCompare(n.name));
+    return (this.allLocations || []).filter((i) => i.id !== this.location.id).filter((i) => (i.parent_id ?? null) === t).filter((i) => L(i) === "area").filter((i) => !this._isManagedShadowLocation(i, e)).sort((i, n) => i.name.localeCompare(n.name));
   }
   _locationById(t) {
     if (t)
       return (this.allLocations || []).find((e) => e.id === t);
   }
   _isManagedShadowLocation(t, e) {
-    return Ce(t, e);
+    return Le(t, e);
   }
   _managedShadowLocationIds() {
     return De(this.allLocations || []);
@@ -4874,7 +4846,7 @@ const $e = class $e extends nt {
     return typeof e == "string" && e.trim().length > 0 ? e.trim() : null;
   }
   _occupancyGroupHostForLocation(t) {
-    const e = C(t);
+    const e = L(t);
     if (this._isOccupancyGroupHostType(e))
       return t;
     if (e !== "area")
@@ -4885,7 +4857,7 @@ const $e = class $e extends nt {
   }
   _occupancyGroupCandidatesForLocation(t) {
     const e = this._managedShadowLocationIds(), i = this._occupancyGroupHostForLocation(t);
-    return i ? (this.allLocations || []).filter((n) => n.parent_id === i.id).filter((n) => C(n) === "area").filter((n) => !this._isManagedShadowLocation(n, e)).sort((n, o) => n.name.localeCompare(o.name)) : [];
+    return i ? (this.allLocations || []).filter((n) => n.parent_id === i.id).filter((n) => L(n) === "area").filter((n) => !this._isManagedShadowLocation(n, e)).sort((n, o) => n.name.localeCompare(o.name)) : [];
   }
   _occupancyGroupMemberIds(t) {
     var o;
@@ -4936,35 +4908,18 @@ const $e = class $e extends nt {
     });
   }
   _renderAreaOccupancyGroupSection(t) {
-    if (!this.location) return "";
-    const e = this._occupancyGroupHostForLocation(this.location);
-    if (!e)
-      return g`
-        <div class="card-section">
-          <div class="section-title">
-            <ha-icon .icon=${"mdi:link-lock"}></ha-icon>
-            Occupancy Group
-          </div>
-          <div class="subsection-help">
-            Occupancy groups are managed from the parent host.
-          </div>
-        </div>
-      `;
-    const i = this._occupancyGroupMemberIds(this.location.id), n = i.filter((a) => a !== this.location.id), o = this._locationName(e.id);
-    return g`
+    if (!this.location || !this._occupancyGroupHostForLocation(this.location))
+      return "";
+    const i = this._occupancyGroupMemberIds(this.location.id);
+    return i.filter((o) => o !== this.location.id).length === 0 ? "" : g`
       <div class="card-section" data-testid="occupancy-group-summary-section">
         <div class="section-title">
           <ha-icon .icon=${"mdi:link-lock"}></ha-icon>
           Occupancy Group
         </div>
-        <div class="subsection-help">Managed from ${o}.</div>
-        ${n.length === 0 ? g`
-              <div class="adjacency-empty">No occupancy group assigned.</div>
-            ` : g`
-              <div class="linked-location-meta">
-                Members: ${i.map((a) => this._locationName(a)).join(", ")}
-              </div>
-            `}
+        <div class="linked-location-meta">
+          Members: ${i.map((o) => this._locationName(o)).join(", ")}
+        </div>
       </div>
     `;
   }
@@ -5251,12 +5206,12 @@ const $e = class $e extends nt {
   }
   _adjacencyCandidates() {
     if (!this.location) return [];
-    const t = C(this.location);
+    const t = L(this.location);
     if (t !== "area" && t !== "subarea")
       return [];
     const e = this.location.parent_id ?? null, i = this._managedShadowLocationIds();
     return (this.allLocations || []).filter((n) => n.id !== this.location.id).filter((n) => (n.parent_id ?? null) === e).filter((n) => !this._isManagedShadowLocation(n, i)).filter((n) => {
-      const o = C(n);
+      const o = L(n);
       return o === "area" || o === "subarea";
     }).sort((n, o) => n.name.localeCompare(o.name));
   }
@@ -8556,7 +8511,7 @@ const $e = class $e extends nt {
     const a = this.hass.states[t];
     if (!a)
       return this._showToast(`Entity not found: ${t}`, "error"), !1;
-    let c = Ln(a);
+    let c = Cn(a);
     (i == null ? void 0 : i.signalKey) === "playback" || (i == null ? void 0 : i.signalKey) === "volume" || (i == null ? void 0 : i.signalKey) === "mute" ? c = this._mediaSignalDefaults(t, i.signalKey) : ((i == null ? void 0 : i.signalKey) === "power" || (i == null ? void 0 : i.signalKey) === "level" || (i == null ? void 0 : i.signalKey) === "color") && (c = this._lightSignalDefaults(t, i.signalKey));
     const l = this._normalizeSource(t, c);
     return this._setWorkingSources(e, [...n, l]), i != null && i.resetExternalPicker && (this._resetExternalSourceSelection(), this.requestUpdate()), !0;
@@ -8614,20 +8569,20 @@ const $e = class $e extends nt {
     })).sort((r, c) => r.name.localeCompare(c.name));
   }
   _isSiblingAreaSourceScope() {
-    if (!this.location || C(this.location) !== "area" || !this.location.ha_area_id) return !1;
+    if (!this.location || L(this.location) !== "area" || !this.location.ha_area_id) return !1;
     const t = this.allLocations || [];
     if (t.length === 0) return !1;
     const e = this.location.parent_id ?? null;
     if (!e) return !1;
     const i = t.find((n) => n.id === e);
-    return !!i && C(i) === "floor";
+    return !!i && L(i) === "floor";
   }
   _siblingSourceAreas() {
     if (!this.location || !this._isSiblingAreaSourceScope()) return [];
     const t = this.location.parent_id ?? null;
     if (!t) return [];
     const e = this.location.id, i = /* @__PURE__ */ new Set(), n = this._managedShadowLocationIds();
-    return (this.allLocations || []).filter((o) => o.id !== e).filter((o) => (o.parent_id ?? null) === t).filter((o) => C(o) === "area").filter((o) => !this._isManagedShadowLocation(o, n)).filter((o) => !!o.ha_area_id).filter((o) => {
+    return (this.allLocations || []).filter((o) => o.id !== e).filter((o) => (o.parent_id ?? null) === t).filter((o) => L(o) === "area").filter((o) => !this._isManagedShadowLocation(o, n)).filter((o) => !!o.ha_area_id).filter((o) => {
       const a = o.ha_area_id;
       return i.has(a) ? !1 : (i.add(a), !0);
     }).map((o) => ({
@@ -8837,7 +8792,7 @@ const $e = class $e extends nt {
       var a;
       return o.parent_id === ((a = this.location) == null ? void 0 : a.id);
     }).length, i = t.filter((o) => {
-      const a = C(o);
+      const a = L(o);
       return a === "area" || a === "subarea";
     }).length, n = t.filter((o) => {
       const a = this._getOccupancyStateForLocation(o.id);
@@ -9115,7 +9070,7 @@ const $e = class $e extends nt {
     if (!e) return;
     const i = (this.allLocations || []).find((a) => a.id === e);
     if (!i) return;
-    const n = C(i);
+    const n = L(i);
     return `${n === "building" ? "Building" : n === "grounds" ? "Grounds" : n === "property" ? "Property" : n === "floor" ? "Floor" : "Location"}: ${i.name}`;
   }
   _parseDateValue(t) {
@@ -9410,7 +9365,7 @@ const $e = class $e extends nt {
     this._setOccupancyDraft({ ...r, default_timeout: o });
   }
   _isFloorLocation() {
-    return !!this.location && C(this.location) === "floor";
+    return !!this.location && L(this.location) === "floor";
   }
 };
 $e.properties = {
@@ -11979,7 +11934,7 @@ const ke = class ke extends nt {
     }), n.length === 0) return [];
     const o = this._managedShadowLocationIds(), a = this.locations.filter((r) => {
       if (r.is_explicit_root || this._isManagedShadowLocation(r, o)) return !1;
-      const c = C(r);
+      const c = L(r);
       return n.includes(c);
     }).map((r) => ({
       value: r.id,
@@ -11988,7 +11943,7 @@ const ke = class ke extends nt {
     return console.log("[LocationDialog] Valid parents:", a.length, a.map((r) => r.label)), a;
   }
   _isManagedShadowLocation(t, e) {
-    return Ce(t, e);
+    return Le(t, e);
   }
   _managedShadowLocationIds() {
     return De(this.locations);
@@ -12557,7 +12512,7 @@ const Te = class Te extends nt {
     if (!e) return;
     const i = (this.locations || []).find((a) => a.id === e);
     if (!i) return;
-    const n = C(i);
+    const n = L(i);
     return `${n === "building" ? "Building" : n === "grounds" ? "Grounds" : n === "floor" ? "Floor" : "Location"}: ${i.name}`;
   }
   _locationName(t) {
@@ -13233,7 +13188,7 @@ const Ee = class Ee extends nt {
     return !((e == null ? void 0 : e.device_class) === "occupancy" && (e != null && e.location_id));
   }
   _groupTypeForLocation(t) {
-    const e = C(t);
+    const e = L(t);
     return e === "area" ? "area" : e === "subarea" ? "subarea" : e === "floor" ? "floor" : e === "building" ? "building" : e === "grounds" ? "grounds" : "other";
   }
   _buildDeviceGroups() {
@@ -14041,7 +13996,7 @@ ${e}`);
     );
   }
   _isManagedShadowLocation(t) {
-    return t ? Ce(t, this._managedShadowLocationIds()) : !1;
+    return t ? Le(t, this._managedShadowLocationIds()) : !1;
   }
   _managedShadowLocationIds() {
     return De(this._locations);

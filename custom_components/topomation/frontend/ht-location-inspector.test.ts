@@ -2074,7 +2074,7 @@ describe("HtLocationInspector occupancy source composer", () => {
     }, "family room occupancy group removal not observed");
   });
 
-  it("shows occupancy group summary in Detection tab for floor-rooted areas", async () => {
+  it("omits occupancy group summary in Detection tab when no shared group", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>) => {
         if (request.type === "config/entity_registry/list") return [] as T;
@@ -2147,12 +2147,7 @@ describe("HtLocationInspector occupancy source composer", () => {
     await element.updateComplete;
 
     const syncSections = element.shadowRoot!.querySelectorAll('[data-testid="occupancy-group-summary-section"]');
-    const syncSection = element.shadowRoot!.querySelector('[data-testid="occupancy-group-summary-section"]');
-    expect(syncSections.length).to.equal(1);
-    expect(syncSection).to.exist;
-    expect(syncSection?.textContent || "").to.include("Occupancy Group");
-    expect(syncSection?.textContent || "").to.include("Managed from Main Floor.");
-    expect(syncSection?.textContent || "").to.include("No occupancy group assigned.");
+    expect(syncSections.length).to.equal(0);
   });
 
   it("renders effective occupancy group membership from shared occupancy_group_id", async () => {
