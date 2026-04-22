@@ -110,31 +110,36 @@ Outcome:
 
 ## 8. Current Release Candidate Record
 
-Commit under test: **`78aff11`** (Topomation **0.2.54**).
+Commit under test: **`877a8db`** (Topomation **0.2.57**).
 Frontend bundle rebuilt from same commit: **yes** (`npm run build` → committed
 `topomation-panel.js`)
 
 Touched workflows:
-- **Inspector**: horizontal scroll for tab strip on narrow viewports
-- **Lighting managed rules**: empty draft triggers; default brightness 100%;
-  occupancy source list ordering
-- **Media / HVAC / Appliances managed rules**: pill-based device + command
-  selection (replaces `<select>`)
-- **Tree**: managed-shadow host occupancy toggle rollup fix
-- **Docs**: `CHANGELOG.md`, `docs/contracts.md`, ADR-HA-082, `docs/current-work.md`
+- **Occupancy Groups authoring**: eligible hosts expanded from `floor` to
+  `property` / `building` / `grounds` / `floor`, limited to immediate child
+  `area` rows with managed-shadow exclusion
+- **Structural host occupancy inspector**: `Occupancy Groups` authoring and
+  derived occupancy summary surfaced together on eligible structural hosts
+- **Live automation browser workflow**: assertions refreshed to match the
+  current lighting-rule and explainability UI contract
+- **Frontend bundle publish**: atomic temp-file rename for `topomation-panel.js`
+- **Docs / contracts / ADR**: occupancy-group authoring policy clarified as HA
+  integration behavior, not `home-topology` runtime behavior
 
 Commands run:
-- `./scripts/check-docs-consistency.sh`
-- `./scripts/test-comprehensive.sh` (ruff, mypy, `pytest tests/`, Vitest, `npm run build` + bundle parity, Web Test Runner, Playwright `npm run test:e2e`)
-- `make test-release-live` — **required** before claiming **Live-validated** for
-  panel UI per `docs/release-validation-runbook.md` §3 when dev HA is available.
+- `python scripts/verify-version-sync.py`
+- `./scripts/test-comprehensive.sh`
+- `TOPOMATION_PREFER_LOCAL_HA=0 make test-release-live`
 
 Outcome:
-- Local comprehensive gate (`./scripts/test-comprehensive.sh`): **PASS** (2026-04-16)
-- `make test-release-live`: not run (record when dev HA available per runbook §3)
+- Version sync (`0.2.57`): **PASS** (2026-04-22)
+- Local comprehensive gate (`./scripts/test-comprehensive.sh`): **PASS** (2026-04-22)
+- Live HA release gate (`TOPOMATION_PREFER_LOCAL_HA=0 make test-release-live`):
+  **PASS** (2026-04-22)
 
 Notes:
-- Release **`0.2.54`** ships panel automation UX iteration + shadow toggle fix +
-  documentation/ADR updates.
-- After push to `main`, confirm CI and **Auto Release** are green for the release
-  commit before considering the release complete.
+- Local localhost HA was unavailable in this environment, so the live gate was
+  run against the configured reachable dev HA target with
+  `TOPOMATION_PREFER_LOCAL_HA=0`.
+- After push to `main`, confirm CI and **Auto Release** are green for the
+  release commit before considering the release complete.
