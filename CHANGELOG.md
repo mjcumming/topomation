@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.58] - 2026-04-22
+
 ### Changed
 
 - **Location inspector (Detection)**: removed the read-only **Occupancy Group**

@@ -110,36 +110,39 @@ Outcome:
 
 ## 8. Current Release Candidate Record
 
-Commit under test: **`877a8db`** (Topomation **0.2.57**).
+Commit under test: **release-candidate worktree for Topomation `0.2.58`**
+(`ff454ea` behavior commit + release metadata updates below).
 Frontend bundle rebuilt from same commit: **yes** (`npm run build` → committed
 `topomation-panel.js`)
 
 Touched workflows:
-- **Occupancy Groups authoring**: eligible hosts expanded from `floor` to
-  `property` / `building` / `grounds` / `floor`, limited to immediate child
-  `area` rows with managed-shadow exclusion
-- **Structural host occupancy inspector**: `Occupancy Groups` authoring and
-  derived occupancy summary surfaced together on eligible structural hosts
-- **Live automation browser workflow**: assertions refreshed to match the
-  current lighting-rule and explainability UI contract
-- **Frontend bundle publish**: atomic temp-file rename for `topomation-panel.js`
-- **Docs / contracts / ADR**: occupancy-group authoring policy clarified as HA
-  integration behavior, not `home-topology` runtime behavior
+- **Startup room-anchor repair**: legacy or drifted room-like topology rows
+  (`area` / `subarea`) missing a valid HA area are relinked or created during
+  startup/import and normalized onto canonical `area_<ha_area_id>` wrappers
+- **HA delete symmetry for room rows**: linked HA room deletes still prune the
+  matching topology wrapper and reparent direct children instead of silently
+  recreating the deleted room
+- **Detection inspector occupancy-group copy**: removed read-only helper copy in
+  the Detection inspector while keeping the members summary behavior
+- **Frontend bundle/runtime parity**: rebuilt committed `topomation-panel.js`
+  from the same branch state shipped for release
+- **Docs / contracts / ADR**: C-022 and ADR-HA-086 now document startup heal vs
+  explicit HA delete semantics for room-like rows
 
 Commands run:
-- `python scripts/verify-version-sync.py`
+- `pytest -q`
 - `./scripts/test-comprehensive.sh`
 - `TOPOMATION_PREFER_LOCAL_HA=0 make test-release-live`
 
 Outcome:
-- Version sync (`0.2.57`): **PASS** (2026-04-22)
+- Version sync (`0.2.58`): **PASS** (2026-04-22)
 - Local comprehensive gate (`./scripts/test-comprehensive.sh`): **PASS** (2026-04-22)
 - Live HA release gate (`TOPOMATION_PREFER_LOCAL_HA=0 make test-release-live`):
   **PASS** (2026-04-22)
 
 Notes:
-- Local localhost HA was unavailable in this environment, so the live gate was
-  run against the configured reachable dev HA target with
-  `TOPOMATION_PREFER_LOCAL_HA=0`.
+- The default localhost override was unavailable in this dev container, so the
+  documented override path was used to validate against the configured reachable
+  dev HA target.
 - After push to `main`, confirm CI and **Auto Release** are green for the
   release commit before considering the release complete.
