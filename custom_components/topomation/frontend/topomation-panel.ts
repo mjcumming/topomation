@@ -22,7 +22,6 @@ import { humanReadableLockSource } from "./lock-source-utils";
 import "./ht-location-tree";
 import "./ht-location-inspector";
 import "./ht-location-dialog";
-import "./ht-room-explainability";
 
 type ManagerView =
   | "location"
@@ -473,11 +472,6 @@ export class TopomationPanel extends LitElement {
         min-height: 0;
       }
 
-      ht-room-explainability {
-        flex: 0 0 auto;
-        min-height: 0;
-      }
-
       ht-location-inspector {
         flex: 1 1 auto;
         min-height: 0;
@@ -858,6 +852,7 @@ export class TopomationPanel extends LitElement {
             .version=${this._locationsVersion}
             .selectedId=${this._selectedId}
             .occupancyStates=${this._occupancyStateByLocation}
+            .occupancyTransitions=${this._occupancyTransitionByLocation}
             .readOnly=${false}
             .allowMove=${true}
             .allowRename=${true}
@@ -871,17 +866,6 @@ export class TopomationPanel extends LitElement {
             @location-delete=${this._handleLocationDelete}
             @entity-dropped=${this._handleEntityDropped}
           ></ht-location-tree>
-          ${selectedLocation
-            ? html`
-                <ht-room-explainability
-                  .hass=${this.hass}
-                  .location=${selectedLocation}
-                  .locations=${this._locations}
-                  .occupancyStates=${this._occupancyStateByLocation}
-                  .occupancyTransitions=${this._occupancyTransitionByLocation}
-                ></ht-room-explainability>
-              `
-            : ""}
         </div>
 
         <div
@@ -1502,10 +1486,15 @@ export class TopomationPanel extends LitElement {
         void this._ensureEntityAreaIndex();
       }
     } catch (err: any) {
+      // Ignore failures from stale calls; a newer load has superseded this one.
+      // Otherwise a timed-out earlier call would clobber a newer success and render the error screen.
+      if (seq !== this._loadSeq) return;
       console.error("Failed to load locations:", err);
       this._error = err.message || "Failed to load locations";
     } finally {
-      this._loading = false;
+      if (seq === this._loadSeq) {
+        this._loading = false;
+      }
     }
   }
 

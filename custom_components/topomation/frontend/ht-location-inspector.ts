@@ -3372,25 +3372,6 @@ export class HtLocationInspector extends LitElement {
   }
 
   /**
-   * HA area ids for action rules (lighting, media, HVAC, appliances): core plus
-   * every descendant topology location's `ha_area_id` for managed-shadow hosts.
-   */
-  private _deviceEnumerationHaAreaIds(): string[] {
-    const ids = new Set(this._deviceEnumerationHaAreaIdsCore());
-    if (!this.location || !this._isManagedShadowHost()) {
-      return [...ids];
-    }
-    const hostId = this.location.id;
-    for (const loc of this.allLocations || []) {
-      if (!loc?.id || loc.id === hostId) continue;
-      if (!this._isTopologyDescendantOf(hostId, loc.id)) continue;
-      const ha = typeof loc.ha_area_id === "string" ? loc.ha_area_id.trim() : "";
-      if (ha) ids.add(ha);
-    }
-    return [...ids];
-  }
-
-  /**
    * HA area ids for the Ambient lux picker only: core areas plus any HA area whose
    * registry name equals this location's display name (case-insensitive). Matches
    * site illuminance in HA "Queen" to topology property "Queen" without listing
@@ -3404,25 +3385,6 @@ export class HtLocationInspector extends LitElement {
       hostDisplayName: this.location.name || "",
       hassAreas: this.hass?.areas,
     });
-  }
-
-  /** True when `nodeId` is a strict descendant of `ancestorId` in `allLocations`. */
-  private _isTopologyDescendantOf(ancestorId: string, nodeId: string): boolean {
-    if (!ancestorId || !nodeId || nodeId === ancestorId) return false;
-    const byId = new Map<string, Location>();
-    for (const loc of this.allLocations || []) {
-      if (loc?.id) byId.set(loc.id, loc);
-    }
-    let cur: string | undefined = nodeId;
-    for (let guard = 0; guard < 256 && cur; guard++) {
-      const parentRaw = byId.get(cur)?.parent_id;
-      const parent =
-        parentRaw === null || parentRaw === undefined ? "" : String(parentRaw).trim();
-      if (!parent) return false;
-      if (parent === ancestorId) return true;
-      cur = parent;
-    }
-    return false;
   }
 
   /** Entity ids attached to this host's managed shadow wrapper (if any). */
@@ -3942,30 +3904,10 @@ export class HtLocationInspector extends LitElement {
     const isDerived = this._isDerivedOccupancyLocation();
     const hasHaAreaLink = !!this.location.ha_area_id;
     const siblingAreaSourceScope = this._isSiblingAreaSourceScope();
-    const hostSourceCount = (config.occupancy_sources || []).length;
     const lockState = this._getLockState();
     if (isGroupHost) {
-      const hostTypeLabel = this._locationType() || "location";
       return html`
         <div>
-          <div class="card-section">
-            <div class="section-title">
-              <ha-icon .icon=${"mdi:view-grid-plus"}></ha-icon>
-              Occupancy Groups
-            </div>
-            <div class="policy-note">
-              Group this ${hostTypeLabel}'s direct child areas when they should behave like one occupied space.
-              Group membership is authored here and persisted onto the member areas.
-            </div>
-            ${hostSourceCount > 0
-              ? html`
-                  <div class="policy-warning">
-                    This ${hostTypeLabel} still has ${hostSourceCount} unsupported source${hostSourceCount === 1 ? "" : "s"} in
-                    config. Structural-host sources are unsupported and should be moved to areas.
-                  </div>
-                `
-              : ""}
-          </div>
           ${this._renderFloorOccupancyGroupsSection()}
           ${this._renderStructuralOverviewSection()}
         </div>
@@ -4996,16 +4938,27 @@ export class HtLocationInspector extends LitElement {
     const ungroupedIds = this._ungroupedFloorAreaIds();
     const createSelection = new Set(this._floorGroupCreateSelection.filter((locationId) => ungroupedIds.includes(locationId)));
     const hostLabel = this.location.name || "this location";
+    const hostTypeLabel = this._locationType() || "location";
+    const hostSourceCount = (this._getOccupancyConfig().occupancy_sources || []).length;
 
     return html`
       <div class="card-section" data-testid="occupancy-groups-section">
         <div class="section-title">
-          <ha-icon .icon=${"mdi:link-lock"}></ha-icon>
+          <ha-icon .icon=${"mdi:view-grid-plus"}></ha-icon>
           Occupancy Groups
         </div>
-        <div class="subsection-help">
-          Create local shared-occupancy groups for ${hostLabel}. Each area can belong to at most one group.
+        <div class="policy-note">
+          Group ${hostLabel}'s direct child areas when they should behave like one occupied space.
+          Each area can belong to at most one group.
         </div>
+        ${hostSourceCount > 0
+          ? html`
+              <div class="policy-warning">
+                This ${hostTypeLabel} still has ${hostSourceCount} unsupported source${hostSourceCount === 1 ? "" : "s"} in
+                config. Structural-host sources are unsupported and should be moved to areas.
+              </div>
+            `
+          : ""}
         ${candidates.length === 0
           ? html`<div class="adjacency-empty">No eligible direct child areas found on ${hostLabel}.</div>`
           : html`
@@ -7959,7 +7912,11 @@ export class HtLocationInspector extends LitElement {
         ids.add(entityId);
       }
     }
-    for (const areaId of this._deviceEnumerationHaAreaIds()) {
+    // Scope to this location's own HA area plus its managed shadow area only
+    // (no descendant walk). A device belongs to exactly one topology row — the
+    // one whose HA area or shadow area contains it — so its rules live there.
+    // Cross-area control is intentionally not offered; see ADR-HA-087.
+    for (const areaId of this._deviceEnumerationHaAreaIdsCore()) {
       for (const entityId of this._entitiesForArea(areaId)) {
         if (!this._isCandidateEntity(entityId)) continue;
         if (this._isActionRuleEntity(entityId, tab)) {
@@ -10429,7 +10386,7 @@ export class HtLocationInspector extends LitElement {
     return result;
   }
 
-  /** Descendant topology ids (same shape as ht-room-explainability for rollup). */
+  /** Descendant topology ids used for rollup. */
   private _descendantLocationIds(locationId: string): string[] {
     const childrenByParent = new Map<string, string[]>();
     for (const loc of this.allLocations || []) {

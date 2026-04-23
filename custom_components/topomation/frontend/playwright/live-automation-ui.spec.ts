@@ -147,7 +147,11 @@ async function listLocations(): Promise<any[]> {
 }
 
 async function expandTreeAncestors(page: any, locationId: string): Promise<void> {
-  if (!isRealPanel()) return;
+  // The DOM shape (topomation-panel → shadowRoot → ht-location-tree → _expandedIds)
+  // is the same whether the page is the real HA panel or the mock harness, so the
+  // expansion manipulation applies in both modes. The harness's selectLocation
+  // call does not expand ancestors on its own; without this step, deeply nested
+  // tree items remain unrendered when the test asserts against them.
   const locations = await listLocations();
   const byId = new Map(locations.map((location) => [String(location.id), location]));
   const ancestorIds: string[] = [];
@@ -560,16 +564,21 @@ test("live automation lighting workflow matches contracted lifecycle controls", 
   }
 });
 
-test("live detection explainability reflects trigger activation and contributor removal", async ({ page }) => {
+test("live tree-dot reason reflects trigger activation and contributor removal", async ({ page }) => {
   await openLiveHarness(page);
   const location = await selectLightingLocation(page);
 
   const inspector = page.locator("ht-location-inspector");
-  const explainability = page.locator("ht-room-explainability").getByTestId("room-explainability-panel");
+  const tree = page.locator("ht-location-tree");
+  // Ensure the selected location's ancestors stay expanded after Detection-tab
+  // navigation, so the tree-item (and its occupancy dot) remain in the DOM.
+  // selectLightingLocation walks rows by index and does not persist expansion;
+  // deeply nested areas collapse back once the inspector re-renders.
+  await expandTreeAncestors(page, location.id);
+  const dot = tree.locator(`.tree-item[data-id="${location.id}"] .occupancy-dot`);
   await openDetectionTab(page);
 
-  await expect(explainability).toBeVisible();
-  await expect(explainability).toContainText("Occupancy");
+  await expect(dot).toBeVisible();
   await expect(inspector.getByTestId("adjacency-advanced-toggle")).toHaveCount(0);
   await expect(inspector.getByText("Advanced Occupancy Relationships")).toHaveCount(0);
 
@@ -584,15 +593,14 @@ test("live detection explainability reflects trigger activation and contributor 
     source_id: sourceId,
     include_locked: true,
   });
-  await expect(explainability).toContainText("Vacant", { timeout: 10000 });
+  await expect(dot).toHaveAttribute("title", /Vacant/i, { timeout: 10000 });
 
   await callTopomationService("trigger", {
     location_id: location.id,
     source_id: sourceId,
     timeout: 300,
   });
-  await expect(explainability).toContainText("Occupied", { timeout: 20000 });
-  await expect(explainability).toContainText("Occupied by trigger", { timeout: 20000 });
+  await expect(dot).toHaveAttribute("title", /Occupied/i, { timeout: 20000 });
 
   await callTopomationService("clear", {
     location_id: location.id,
@@ -604,7 +612,7 @@ test("live detection explainability reflects trigger activation and contributor 
     source_id: sourceId,
     include_locked: true,
   });
-  await expect(explainability).toContainText("Vacant", { timeout: 10000 });
+  await expect(dot).toHaveAttribute("title", /Vacant/i, { timeout: 10000 });
 });
 
 test("live floor occupancy groups save shared occupancy_group_id membership", async ({ page }) => {

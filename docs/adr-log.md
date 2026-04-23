@@ -4441,6 +4441,177 @@ turning it into arbitrary cross-tree grouping.
 
 ---
 
+### ADR-HA-087: Action rules author only devices in the row's own HA area (2026-04-23)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+
+The room inspector's device-automation tabs (Lighting, Appliances, Media,
+HVAC — fans split between HVAC and Appliances by climate linkage) populate
+their target-device pickers by enumerating entities in Home Assistant areas
+associated with the inspected topology row.
+
+Until now, when the inspected row was a **managed shadow host** (`property`,
+`building`, `grounds`, `floor`), the picker walked **every descendant
+topology location's `ha_area_id`** and listed their entities as well. At the
+property level this meant every `media_player`, `light`, `switch`, and
+`fan` in the entire install showed up as a selectable target, regardless of
+which room the device actually belonged to.
+
+This produced three problems:
+
+1. **Blurred mental model**: the same physical device was authorable from
+   its room's tab *and* from every structural ancestor's tab. "Where does
+   this rule live?" had no single answer.
+2. **Overlapping triggers**: if the same device was targeted from multiple
+   rows, occupancy transitions on different rows could fire conflicting
+   actions with no obvious precedence, making "why did my music stop"
+   miserable to debug.
+3. **Noise**: the dropdown was unusable at the property/floor level — dozens
+   of irrelevant devices drowned out the few that were actually in scope.
+
+**Decision**:
+
+1. Action-rule target enumeration (lighting, media, HVAC, appliances)
+   scopes to **only the inspected row's own HA area plus its managed shadow
+   area**. No descendant walk.
+2. This is enforced in one code path — `_actionRuleTargetEntities` — so the
+   rule is uniform across every device-automation tab, now and later.
+3. Rooms (non-shadow-hosts) are unaffected: their scope was already just
+   their own HA area, and remains so.
+4. Structural hosts (`property`, `building`, `grounds`, `floor`) now show
+   only devices directly assigned to the host's own HA area or to its
+   dedicated shadow area (e.g. whole-property "front yard floodlight"
+   assigned to the property's shadow area remains authorable from the
+   property). Everything else is authored at the room that owns it.
+5. Manually-listed `location.entity_ids` and `_deviceEnumerationExtraEntityIds`
+   (shadow-wrapper entities) remain in scope — these are explicit assignments
+   to the row itself and consistent with "own area or shadow area."
+6. No cross-area or "show all devices" escape hatch. If whole-house control
+   is needed later, it belongs on a dedicated property-wide rules surface,
+   not bled into room tabs.
+
+**Rationale**:
+
+1. **One device, one place to author its rules.** Removes ambiguity about
+   which row owns a rule and eliminates the overlapping-trigger class of
+   bugs.
+2. **Consistency with lighting/HVAC/appliances mental model.** Users already
+   expect per-area scoping for these; media was the outlier that revealed
+   the descendant walk.
+3. **Explicit shadow-area opt-in.** Whole-host devices (exterior lighting,
+   property-wide media) can still be authored at the host — the user just
+   has to put the entity in the host's HA area or shadow area. This is a
+   one-time placement decision, not a per-rule one.
+4. **Simpler to reason about.** Scope is a single sentence: "devices in this
+   row's area or its shadow area."
+
+**Consequences**:
+
+- ✅ Property/floor tabs no longer list every device in the house.
+- ✅ Uniform scope across lighting, media, HVAC, appliances — implemented
+  once in `_actionRuleTargetEntities`.
+- ✅ Removes dead enumeration helpers (`_deviceEnumerationHaAreaIds`,
+  `_isTopologyDescendantOf`) that existed only to support the descendant
+  walk.
+- ⚠️ **Behavioral break for existing rules**: any pre-existing rule on a
+  structural host that targeted a descendant room's device will still
+  function (rule is already saved), but its target device no longer appears
+  in that host's picker. Editing or recreating such a rule requires moving
+  it to the room that owns the device, or moving the entity into the host's
+  HA area / shadow area. No automatic migration is provided — the scope is
+  small and the fix is obvious on inspection.
+- ⚠️ Whole-house or cross-area use cases (if any emerge) must be addressed
+  with a dedicated property-wide rules UI, not by loosening this scope.
+
+**Alternatives Considered**:
+
+- **Keep the descendant walk but hide noise with a toggle.** Rejected —
+  still leaves devices authorable from multiple rows, so the overlapping-
+  triggers and ambiguous-ownership problems persist.
+- **Keep the descendant walk for media only.** Rejected — inconsistent
+  mental model across tabs ("why does HVAC not show every fan when Media
+  shows every speaker?") and doesn't solve the real problem.
+- **Introduce a dedicated "property-wide rules" surface now.** Deferred —
+  no concrete user request yet; current installs work around cross-area
+  needs through other HA automations. Revisit if demand appears.
+
+---
+
+### ADR-HA-088: Vehicles Stay as Areas; No Dedicated Vehicle Structure Type (2026-04-23)
+
+**Status**: ❌ REJECTED
+
+**Context**:
+
+The topology currently supports `property`, `building`, `grounds`, `floor`,
+`area`, and `subarea`. Users with vehicles (e.g. a car kept in a garage or
+on the driveway) model them today as `area` rows — nothing about the data
+model knows it's a vehicle.
+
+The question came up (not for the first time — an earlier conversation
+visited this and the rationale wasn't recorded) whether to add a dedicated
+structure type to represent vehicles. Two shapes were considered:
+
+1. A new **structure type** slotted into the hierarchy alongside `area`,
+   with its own icon and possibly distinct semantics.
+2. A new **root-level container** ("Vehicles") that sits as a peer to
+   `property`, acting purely as an organizational bucket for vehicle
+   entries.
+
+**Decision**:
+
+Do not add a Vehicle structure type or a Vehicles root container. Vehicles
+continue to be modeled as `area` rows under whatever property/grounds row
+makes physical sense (typically the garage or grounds).
+
+**Rationale**:
+
+1. **No concrete automation use case forces the distinction.** Nothing in
+   lighting, media, HVAC, appliances, occupancy groups, or detection
+   currently asks "is this row a vehicle?" in a way that an `area` can't
+   already express. Without a use case that an Area can't serve, a new
+   type is window dressing.
+2. **A Vehicles root peer conflates two different concepts.** `property`
+   means "physical place that contains things." A Vehicles root would
+   mean "category of thing." Mixing containment with categorization in
+   the same tree level muddies the model for negligible payoff.
+3. **The interesting semantics (mobility, dynamic parent, presence
+   transitions) aren't wired anywhere.** A Vehicle type only pays off if
+   the runtime treats "car arrived home" or "car left the property" as
+   first-class events distinct from area occupancy. None of that machinery
+   exists, and building it speculatively fails the "add the abstraction
+   when a real use case forces it" bar set by recent scoping ADRs.
+4. **Precedent from recent ADRs.** ADR-HA-060 narrowed automation scope
+   to concrete domains with real user demand. ADR-HA-087 refused a
+   cross-area escape hatch without a concrete need. Adding a Vehicle type
+   on speculation would contradict that posture.
+
+**Consequences**:
+
+- ✅ Data model stays small — no new type to thread through topology
+  validation, sync, shadow-area rules, inspector copy, or tree rendering.
+- ✅ Users can still organize vehicles under grounds/building the same way
+  they do today.
+- ⚠️ If a future automation domain genuinely needs vehicle-specific
+  semantics (EV charge state, in-vehicle occupancy, dynamic parent as the
+  car moves between garage/driveway/away), this ADR is the thing to
+  supersede — don't retrofit vehicle behavior onto `area` silently.
+
+**Alternatives Considered**:
+
+- **Vehicle as a new structure type in the hierarchy.** Rejected — no
+  current behavior differentiates it from `area`; would be icon-only.
+- **"Vehicles" as a root-level organizational container.** Rejected —
+  conflates category with containment at the top of the tree; a tag or
+  filter view would serve the organizational goal without bending the
+  tree's meaning, and neither is needed yet.
+- **Revisit when EV or vehicle-presence automations are on the roadmap.**
+  Accepted as the trigger condition for reopening this decision.
+
+---
+
 ## How to Use This Log
 
 ### When to Create an ADR

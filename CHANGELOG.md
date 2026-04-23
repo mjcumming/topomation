@@ -9,6 +9,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.59] - 2026-04-23
+
+### Fixed
+
+- **Linked-room occupancy propagation**: the linked-sibling trigger now mirrors
+  the source area's remaining effective timeout instead of passing `None`.
+  Previously, `occupancy_module.trigger(target, "linked:<source>", None)`
+  created contributions with no `expires_at`. When an occupancy group was
+  present, `home_topology` mirrored each member's sources across all other
+  members as `__group_member__:*` — inheriting the same indefinite
+  `expires_at`. The result was an unresolvable circular hold across the mesh:
+  real sensor timeouts fired correctly but the synthetic cross-member
+  contributions never expired, leaving leaf areas stuck Occupied with
+  `vacant_at: null`, which in turn pinned any `__follow_parent__:*` ancestors
+  (e.g. structural `home`/`building_main`) indefinitely. The fix reads the
+  source area's `get_effective_timeout` and passes the remaining seconds, so
+  linked contributions expire alongside the origin and the mesh dissolves
+  naturally when the last real source clears.
+
+### Changed
+
+- **ADR-HA-087 — Action-rule target scope**: device-automation rule target
+  pickers (Lighting, Media, HVAC, Appliances) on structural hosts
+  (`property`, `building`, `grounds`, `floor`) no longer enumerate every
+  descendant topology location's HA area. Scope is now the host's **own** HA
+  area plus its managed shadow area. Room rows are unchanged. This ends the
+  "same device authorable from its room *and* every structural ancestor"
+  ambiguity and removes the unusable property-wide target dropdown. Existing
+  rules on structural hosts that targeted descendant-room devices continue
+  to function — only editing/recreating them requires authoring at the
+  owning room (or moving the device into the host's own / shadow HA area).
+  Dead enumeration helpers (`_deviceEnumerationHaAreaIds`,
+  `_isTopologyDescendantOf`) removed.
+- **Occupancy reason surface consolidation**: the standalone
+  `ht-room-explainability` panel (1027 lines) is removed. The occupancy
+  reason line it rendered now lives inline on the left-tree occupancy dot
+  (`title` tooltip) and flows through a lighter, function-based
+  `occupancy-reason.ts` module shared by tree and inspector. This collapses
+  two places that computed the same reason copy into one.
+- **Inspector occupancy-group copy** (Detection tab, structural hosts):
+  "Create local shared-occupancy groups for …" → "Group …'s direct child
+  areas when they should behave like one occupied space." The new copy
+  states the user decision (grouping) instead of the implementation detail
+  (shared-occupancy).
+
+### Documentation
+
+- **ADR-HA-087** (APPROVED, 2026-04-23): Action rules author only devices
+  in the row's own HA area; structural hosts do not descend into rooms.
+- **ADR-HA-088** (REJECTED, 2026-04-23): Vehicles stay as `area` rows; no
+  dedicated Vehicle structure type or "Vehicles" root container until a
+  concrete automation use case forces the distinction.
+
+### Tests
+
+- **Backend**: updated `test_setup_entry_propagates_linked_location_trigger`
+  to assert the propagated timeout is an integer derived from the source's
+  effective timeout (≈ 1700-1800s in the stubbed case), not `None`.
+- **Backend**: stubbed `get_effective_timeout` in
+  `test_setup_entry_linked_propagation_drains_reentrant_events_without_recursion`
+  so the reentrant-drain simulation exercises the new code path.
+- **Frontend**: added `occupancy-reason.test.ts` covering the extracted
+  reason-line module; expanded `ht-location-inspector.test.ts` with
+  ADR-HA-087 cases asserting structural-host pickers exclude descendant-room
+  devices across all four action-rule tabs; pruned explainability-panel
+  tests from `topomation-panel.test.ts`.
+- **Live Playwright**: `live-automation-ui.spec.ts`'s detection-reason
+  workflow now asserts against the tree-dot tooltip instead of the removed
+  explainability panel, keeping the live browser path in place for the
+  reason surface. The shared `expandTreeAncestors` helper no longer
+  short-circuits outside the real-panel path — the DOM manipulation is
+  valid in both real and mock-harness modes and is needed to render deeply
+  nested tree items before assertions.
+
 ## [0.2.58] - 2026-04-22
 
 ### Changed

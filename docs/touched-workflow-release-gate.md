@@ -110,39 +110,65 @@ Outcome:
 
 ## 8. Current Release Candidate Record
 
-Commit under test: **release-candidate worktree for Topomation `0.2.58`**
-(`ff454ea` behavior commit + release metadata updates below).
-Frontend bundle rebuilt from same commit: **yes** (`npm run build` → committed
-`topomation-panel.js`)
+Commit under test: **release-candidate worktree for Topomation `0.2.59`**
+(linked-room occupancy propagation fix + ADR-HA-087 action-rule scoping +
+occupancy-reason surface consolidation + release metadata).
+Frontend bundle rebuilt from same commit: **yes** (`npm run build` →
+committed `topomation-panel.js`; parity verified by
+`./scripts/test-comprehensive.sh`).
 
 Touched workflows:
-- **Startup room-anchor repair**: legacy or drifted room-like topology rows
-  (`area` / `subarea`) missing a valid HA area are relinked or created during
-  startup/import and normalized onto canonical `area_<ha_area_id>` wrappers
-- **HA delete symmetry for room rows**: linked HA room deletes still prune the
-  matching topology wrapper and reparent direct children instead of silently
-  recreating the deleted room
-- **Detection inspector occupancy-group copy**: removed read-only helper copy in
-  the Detection inspector while keeping the members summary behavior
-- **Frontend bundle/runtime parity**: rebuilt committed `topomation-panel.js`
-  from the same branch state shipped for release
-- **Docs / contracts / ADR**: C-022 and ADR-HA-086 now document startup heal vs
-  explicit HA delete semantics for room-like rows
+- **Linked-room occupancy propagation across mesh members** (backend):
+  `_apply_linked_location_contributors` now mirrors the source area's
+  remaining effective timeout instead of passing `None`. Prevents the
+  indefinite-contribution circular hold produced when the occupancy-group
+  mesh mirrors `linked:*` sources across members as `__group_member__:*`.
+- **Action-rule target device picker scoping** (frontend, ADR-HA-087):
+  Lighting / Media / HVAC / Appliances rule editors on structural hosts
+  (`property`, `building`, `grounds`, `floor`) now enumerate only the
+  host's own HA area + managed shadow area — never descendant rooms.
+- **Occupancy reason/explainability display** (frontend): standalone
+  `ht-room-explainability` panel removed; reason line now renders inline on
+  the left-tree occupancy dot tooltip via the new `occupancy-reason.ts`
+  module. Same computed copy, different surface.
+- **Inspector occupancy-group copy** (frontend, Detection tab, structural
+  hosts): replaced "Create local shared-occupancy groups for …" with
+  "Group …'s direct child areas when they should behave like one occupied
+  space."
 
 Commands run:
-- `pytest -q`
-- `./scripts/test-comprehensive.sh`
-- `TOPOMATION_PREFER_LOCAL_HA=0 make test-release-live`
+- `./scripts/test-comprehensive.sh` (backend Ruff/Mypy/Pytest, frontend unit
+  tests, build, runtime-bundle parity, Playwright mock + production-smoke)
+- `make test-release-live` (local gate: comprehensive + live HA automation
+  contract + `live-automation-ui.spec.ts`)
 
 Outcome:
-- Version sync (`0.2.58`): **PASS** (2026-04-22)
-- Local comprehensive gate (`./scripts/test-comprehensive.sh`): **PASS** (2026-04-22)
-- Live HA release gate (`TOPOMATION_PREFER_LOCAL_HA=0 make test-release-live`):
-  **PASS** (2026-04-22)
+- Version sync (`0.2.59`): **PASS** (2026-04-23)
+- Local comprehensive gate (`./scripts/test-comprehensive.sh`): **PASS**
+  (2026-04-23) — all 34 Playwright + backend + frontend unit tests green,
+  `topomation-panel.js` parity clean.
+- Live HA release gate
+  (`TOPOMATION_PREFER_LOCAL_HA=0 make test-release-live`): **PASS**
+  (2026-04-23) — 2 managed-action contract tests + 6 live-browser tests
+  green against the configured dev HA target.
 
 Notes:
-- The default localhost override was unavailable in this dev container, so the
-  documented override path was used to validate against the configured reachable
-  dev HA target.
+- `live-automation-ui.spec.ts`'s detection-reason test was updated in the
+  same change to assert against the tree-dot tooltip rather than the removed
+  explainability panel — the live browser path for that workflow remains
+  covered.
+- While running the live gate, the `expandTreeAncestors` helper was found to
+  short-circuit outside the real-panel path, leaving deeply nested tree
+  items unrendered when a test asserted against them. The gate was removed
+  (the DOM manipulation is valid in both real and mock-harness modes), and
+  the tree-dot test now expands ancestors before the visibility check. The
+  harness-only tests that did not depend on this helper are unaffected.
+- The default localhost override was unavailable in this dev container, so
+  `TOPOMATION_PREFER_LOCAL_HA=0` was used to validate against the configured
+  reachable dev HA target — same pattern recorded for 0.2.58.
 - After push to `main`, confirm CI and **Auto Release** are green for the
   release commit before considering the release complete.
+- Post-release monitoring for the occupancy fix: install, trigger a leaf
+  area (e.g. Front Entry) with a 30-min hold, wait past the hold, and
+  confirm the area actually vacates and the mesh dissolves down through
+  any `__follow_parent__:*` ancestors.

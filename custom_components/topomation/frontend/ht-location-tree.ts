@@ -15,6 +15,10 @@ import {
 } from "./shadow-location-utils";
 import { humanReadableLockSource } from "./lock-source-utils";
 import {
+  buildOccupancyReasonLine,
+  type OccupancyTransitionState,
+} from "./occupancy-reason";
+import {
   buildFlatTree,
   zoneFromPointerInRow,
   resolveDropTargetFromZone,
@@ -50,6 +54,7 @@ export class HtLocationTree extends LitElement {
   @property({ type: Number }) public version = 0;
   @property() public selectedId?: string;
   @property({ attribute: false }) public occupancyStates: Record<string, boolean> = {};
+  @property({ attribute: false }) public occupancyTransitions: Record<string, OccupancyTransitionState> = {};
   @property({ type: Boolean }) public readOnly = false;
   @property({ type: Boolean }) public allowMove = false;
   @property({ type: Boolean }) public allowRename = false;
@@ -61,6 +66,7 @@ export class HtLocationTree extends LitElement {
     version: { type: Number },
     selectedId: {},
     occupancyStates: { attribute: false },
+    occupancyTransitions: { attribute: false },
     readOnly: { type: Boolean },
     allowMove: { type: Boolean },
     allowRename: { type: Boolean },
@@ -802,6 +808,14 @@ export class HtLocationTree extends LitElement {
     const isDirectlyOccupied = this._isEffectivelyOccupied(location);
     const occupancyIcon = "mdi:home-switch-outline";
     const occupancyTitle = isDirectlyOccupied ? "Set vacant" : "Set occupied";
+    const occupancyDotTitle = buildOccupancyReasonLine({
+      location,
+      locations: this.locations,
+      hass: this.hass,
+      occupancyStates: this.occupancyStates,
+      occupancyTransitions: this.occupancyTransitions,
+      status: occupancyStatus,
+    });
 
     return html`
       <div
@@ -832,7 +846,7 @@ export class HtLocationTree extends LitElement {
         </div>
         <div
           class="occupancy-dot ${occupancyStatus}"
-          title=${this._getOccupancyStatusLabel(occupancyStatus)}
+          title=${occupancyDotTitle}
         ></div>
 
         ${isEditing
@@ -869,12 +883,6 @@ export class HtLocationTree extends LitElement {
             `}
       </div>
     `;
-  }
-
-  private _getOccupancyStatusLabel(status: OccupancyStatus): string {
-    if (status === "occupied") return "Occupied";
-    if (status === "vacant") return "Vacant";
-    return "Unknown occupancy";
   }
 
   private _computeOccupancyStatusByLocation(): Record<string, OccupancyStatus> {

@@ -2708,7 +2708,7 @@ describe("HtLocationInspector occupancy source composer", () => {
       element.shadowRoot!.querySelector('[data-testid="occupancy-group-create-location-area_loft"]')
     ).to.equal(null);
     expect(element.shadowRoot?.textContent || "").to.include(
-      "Create local shared-occupancy groups for Main Building."
+      "Group Main Building's direct child areas when they should behave like one occupied space."
     );
   });
 
@@ -7016,6 +7016,152 @@ describe("HtLocationInspector structure host managed-shadow enumeration", () => 
       },
       "floor lighting action rows did not union host + shadow area lights"
     );
+  });
+
+  // ADR-HA-087: structural hosts list only devices in their own HA area or
+  // shadow area — never devices in descendant room areas.
+  it("property host excludes descendant room media_players from media rule targets", async () => {
+    const hostId = "prop_scope_test";
+    const shadowId = "shadow_prop_scope_test";
+    const roomId = "room_prop_scope_test";
+    const hostArea = "ha_prop_scope_host";
+    const shadowArea = "ha_prop_scope_shadow";
+    const roomArea = "ha_prop_scope_room";
+
+    const registry = [
+      {
+        entity_id: "media_player.property_shadow_receiver",
+        area_id: shadowArea,
+        device_id: null,
+      },
+      {
+        entity_id: "media_player.room_descendant_speaker",
+        area_id: roomArea,
+        device_id: null,
+      },
+    ];
+
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>): Promise<T> => {
+        if (request.type === "topomation/actions/rules/list") return { rules: [] } as T;
+        if (request.type === "config/entity_registry/list") return registry as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        return {} as T;
+      },
+      connection: {},
+      states: {
+        "media_player.property_shadow_receiver": {
+          entity_id: "media_player.property_shadow_receiver",
+          state: "idle",
+          attributes: { friendly_name: "Property receiver", area_id: shadowArea },
+        },
+        "media_player.room_descendant_speaker": {
+          entity_id: "media_player.room_descendant_speaker",
+          state: "idle",
+          attributes: { friendly_name: "Room speaker", area_id: roomArea },
+        },
+      },
+      areas: {
+        [hostArea]: { area_id: hostArea, name: "Property host" },
+        [shadowArea]: { area_id: shadowArea, name: "Property shadow" },
+        [roomArea]: { area_id: roomArea, name: "Child room" },
+      },
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const host: Location = {
+      ...structuredClone(baseLocation),
+      id: hostId,
+      name: "Queen",
+      parent_id: null,
+      ha_area_id: hostArea,
+      entity_ids: [],
+      modules: {
+        _meta: { type: "property", shadow_area_id: shadowId },
+        occupancy: {
+          enabled: true,
+          default_timeout: 300,
+          default_trailing_timeout: 120,
+          occupancy_sources: [],
+        },
+      },
+    };
+
+    const shadow: Location = {
+      ...structuredClone(baseLocation),
+      id: shadowId,
+      name: "Property system",
+      parent_id: hostId,
+      ha_area_id: shadowArea,
+      entity_ids: [],
+      modules: {
+        _meta: {
+          type: "area",
+          role: "managed_shadow",
+          shadow_for_location_id: hostId,
+        },
+      },
+    };
+
+    const room: Location = {
+      ...structuredClone(baseLocation),
+      id: roomId,
+      name: "Kitchen",
+      parent_id: hostId,
+      ha_area_id: roomArea,
+      entity_ids: [],
+      modules: {
+        _meta: { type: "area" },
+      },
+    };
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${host}
+        .allLocations=${[host, shadow, room] as Location[]}
+        .forcedTab=${"media"}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    await waitUntil(
+      () => {
+        const section = element.shadowRoot?.querySelector('[data-testid="actions-rules-section"]');
+        const text = section?.textContent || "";
+        return !text.includes("No compatible media devices found in this location.");
+      },
+      "media entity pool stayed empty for property scope test"
+    );
+
+    const addRuleButton = element.shadowRoot?.querySelector(
+      '[data-testid="action-rule-add"]'
+    ) as HTMLButtonElement | null;
+    expect(addRuleButton).to.exist;
+    addRuleButton!.click();
+    await element.updateComplete;
+
+    await waitUntil(
+      () => {
+        const row = element.shadowRoot!.querySelector(".dusk-block-row") as HTMLElement | null;
+        return Boolean(
+          row?.querySelector(
+            `input[type="radio"][name^="media-target-"][value="media_player.property_shadow_receiver"]`
+          )
+        );
+      },
+      "property media targets did not include the shadow-area receiver"
+    );
+
+    const row = element.shadowRoot!.querySelector(".dusk-block-row") as HTMLElement | null;
+    const descendantRadio = row?.querySelector(
+      `input[type="radio"][name^="media-target-"][value="media_player.room_descendant_speaker"]`
+    );
+    expect(
+      descendantRadio,
+      "property media targets should NOT list descendant room media_players (ADR-HA-087)"
+    ).to.equal(null);
   });
 });
 

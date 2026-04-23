@@ -399,8 +399,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                             continue
                         if source_link_id in target_contributions:
                             continue
+                        # Mirror the source's remaining hold so the linked contribution on
+                        # siblings expires alongside the origin. Passing ``None`` would
+                        # create an indefinite contribution that cannot clear once the
+                        # occupancy-group mesh mirrors it across members.
+                        now = datetime.now(UTC)
+                        source_timeout_at = occupancy_module.get_effective_timeout(
+                            source_location_id, now
+                        )
+                        if source_timeout_at is None:
+                            propagated_timeout: int | None = None
+                        else:
+                            propagated_timeout = max(
+                                0, int((source_timeout_at - now).total_seconds())
+                            )
                         try:
-                            occupancy_module.trigger(target_location_id, source_link_id, None)
+                            occupancy_module.trigger(
+                                target_location_id, source_link_id, propagated_timeout
+                            )
                         except Exception as err:  # noqa: BLE001
                             _LOGGER.error(
                                 "Failed linked-room trigger %s -> %s: %s",

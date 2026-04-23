@@ -461,6 +461,11 @@ async def test_setup_entry_propagates_linked_location_trigger(
     mock_occupancy_module.get_location_state.side_effect = lambda location_id: {
         "contributions": [],
     }
+    mock_occupancy_module.get_effective_timeout.side_effect = (
+        lambda location_id, now: (now + timedelta(seconds=1800))
+        if location_id == "area_family_room"
+        else None
+    )
 
     with (
         patch("custom_components.topomation.async_register_panel"),
@@ -488,11 +493,14 @@ async def test_setup_entry_propagates_linked_location_trigger(
         if getattr(event_filter, "event_type", None) == "occupancy.changed":
             callback(event)
 
-    mock_occupancy_module.trigger.assert_called_once_with(
-        "area_kitchen",
-        "linked:area_family_room",
-        None,
-    )
+    assert mock_occupancy_module.trigger.call_count == 1
+    trigger_args = mock_occupancy_module.trigger.call_args.args
+    assert trigger_args[0] == "area_kitchen"
+    assert trigger_args[1] == "linked:area_family_room"
+    # Mirrors the source's remaining hold (~1800s) so the linked contribution
+    # can expire alongside the origin rather than becoming indefinite.
+    assert isinstance(trigger_args[2], int)
+    assert 1700 <= trigger_args[2] <= 1800
 
 
 async def test_setup_entry_propagates_linked_location_clear(
@@ -682,6 +690,9 @@ async def test_setup_entry_linked_propagation_drains_reentrant_events_without_re
     mock_occupancy_module.get_location_state.side_effect = lambda location_id: {
         "contributions": [],
     }
+    mock_occupancy_module.get_effective_timeout.side_effect = (
+        lambda location_id, now: now + timedelta(seconds=1800)
+    )
 
     with (
         patch("custom_components.topomation.async_register_panel"),
