@@ -127,7 +127,7 @@ export class HtLocationInspector extends LitElement {
     occupancyTransitions: { attribute: false },
     handoffTraces: { attribute: false },
     _climateDeviceLinkRevision: { state: true },
-    _testingLightingRuleId: { state: true },
+    _runningActionRuleId: { state: true },
   };
 
   @state() private _activeTab: InspectorTab = "detection";
@@ -145,7 +145,7 @@ export class HtLocationInspector extends LitElement {
   @state() private _actionRulesDraft?: TopomationActionRule[];
   @state() private _actionRulesDraftDirty = false;
   @state() private _savingActionRules = false;
-  @state() private _testingLightingRuleId?: string;
+  @state() private _runningActionRuleId?: string;
   @state() private _loadingActionRules = false;
   @state() private _actionRulesError?: string;
   @state() private _actionRulesSaveError?: string;
@@ -8768,12 +8768,12 @@ export class HtLocationInspector extends LitElement {
     return payload;
   }
 
-  private async _testLightingActionRule(ruleId: string): Promise<void> {
-    if (!this.hass || this._testingLightingRuleId || this._savingActionRules) {
+  private async _runActionRule(ruleId: string): Promise<void> {
+    if (!this.hass || this._runningActionRuleId || this._savingActionRules) {
       return;
     }
     if (typeof this.hass.callService !== "function") {
-      this._showToast("Testing rules is not available in this environment.", "error");
+      this._showToast("Running rules is not available in this environment.", "error");
       return;
     }
     const rules = this._workingActionRules();
@@ -8784,11 +8784,11 @@ export class HtLocationInspector extends LitElement {
     const rule = this._normalizeActionRule(rules[ruleIndex], ruleIndex);
     const targets = this._actionTargetsForRule(rule);
     if (targets.length === 0) {
-      this._showToast("Select at least one light before testing.", "error");
+      this._showToast("Select at least one target before running.", "error");
       return;
     }
 
-    this._testingLightingRuleId = ruleId;
+    this._runningActionRuleId = ruleId;
     this.requestUpdate();
     try {
       for (const target of targets) {
@@ -8805,9 +8805,9 @@ export class HtLocationInspector extends LitElement {
       }
       this._showToast("Rule actions ran", "success");
     } catch (err: any) {
-      this._showToast(err?.message || "Failed to test rule", "error");
+      this._showToast(err?.message || "Failed to run rule", "error");
     } finally {
-      this._testingLightingRuleId = undefined;
+      this._runningActionRuleId = undefined;
       this.requestUpdate();
     }
   }
@@ -9786,20 +9786,17 @@ export class HtLocationInspector extends LitElement {
     `;
   }
 
-  private _renderLightingTestRuleButton(tab: DeviceAutomationTab, ruleId: string, busy: boolean) {
-    if (tab !== "lighting") {
-      return html``;
-    }
-    const testingThis = this._testingLightingRuleId === ruleId;
+  private _renderRunRuleButton(ruleId: string, busy: boolean) {
+    const runningThis = this._runningActionRuleId === ruleId;
     return html`
       <button
         class="button button-secondary"
         type="button"
-        data-testid=${`action-rule-${ruleId}-test`}
-        ?disabled=${busy || testingThis}
-        @click=${() => void this._testLightingActionRule(ruleId)}
+        data-testid=${`action-rule-${ruleId}-run`}
+        ?disabled=${busy || runningThis}
+        @click=${() => void this._runActionRule(ruleId)}
       >
-        Test rule
+        Run rule
       </button>
     `;
   }
@@ -9907,7 +9904,7 @@ export class HtLocationInspector extends LitElement {
                             >
                               Duplicate rule
                             </button>
-                            ${this._renderLightingTestRuleButton(tab, ruleId, busy)}
+                            ${this._renderRunRuleButton(ruleId, busy)}
                           `
                         : hasRuleEdits
                           ? html`
@@ -9947,7 +9944,7 @@ export class HtLocationInspector extends LitElement {
                               >
                                 Duplicate rule
                               </button>
-                              ${this._renderLightingTestRuleButton(tab, ruleId, busy)}
+                              ${this._renderRunRuleButton(ruleId, busy)}
                             `
                           : html`
                               <button
@@ -9968,7 +9965,7 @@ export class HtLocationInspector extends LitElement {
                               >
                                 Duplicate rule
                               </button>
-                              ${this._renderLightingTestRuleButton(tab, ruleId, busy)}
+                              ${this._renderRunRuleButton(ruleId, busy)}
                             `}
                     </div>
                     <div class="config-help dusk-rule-footer-help">

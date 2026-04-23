@@ -1322,7 +1322,15 @@ def _occupancy_state_for_location(
 
 
 def _contribution_source_ids(payload: Mapping[str, Any]) -> set[str]:
-    """Extract normalized contribution source IDs from an occupancy payload."""
+    """Extract normalized contribution source IDs from an occupancy payload.
+
+    Also surfaces ``origin_source_id``: when a location is in an occupancy group,
+    home_topology's group mesh wraps every contribution as
+    ``__group_member__:<origin>::<origin_source_id>``, so the raw form (e.g.
+    ``linked:area_kitchen``) is only reachable via ``origin_source_id``. Without
+    this, the linked-room feedback guard never matches in grouped rooms and
+    propagation recurses until the 4096-event circuit breaker trips.
+    """
     contributions = payload.get("contributions")
     if not isinstance(contributions, list):
         return set()
@@ -1331,13 +1339,14 @@ def _contribution_source_ids(payload: Mapping[str, Any]) -> set[str]:
     for contribution in contributions:
         if not isinstance(contribution, Mapping):
             continue
-        source_id = contribution.get("source_id")
-        if not isinstance(source_id, str):
-            continue
-        normalized = source_id.strip()
-        if not normalized:
-            continue
-        source_ids.add(normalized)
+        for key in ("source_id", "origin_source_id"):
+            value = contribution.get(key)
+            if not isinstance(value, str):
+                continue
+            normalized = value.strip()
+            if not normalized:
+                continue
+            source_ids.add(normalized)
     return source_ids
 
 

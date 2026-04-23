@@ -9,6 +9,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.62] - 2026-04-23
+
+### Fixed
+
+- **Linked-room propagation storm in grouped rooms (HA reboot loop)**:
+  when linked rooms share an occupancy group, home_topology's group mesh
+  wraps every contribution as `__group_member__:<origin>::<origin_source_id>`.
+  The feedback guard in `_apply_linked_location_contributors` compared
+  the raw `linked:<id>` form against the wrapped `source_id` and never
+  matched, so `kitchen → family_room` propagation triggered
+  `family_room → kitchen`, which re-triggered the group mesh, and so on.
+  Combined with 0.2.59's timeout-refresh change (every re-trigger now
+  produces a state delta), this recursed until the 4096-event circuit
+  breaker tripped, HA's websocket queue saturated (`Reached 4096 pending
+  messages. The system's load is too high or an integration is
+  misbehaving`), and the supervisor SIGKILL'd and restarted the core —
+  endlessly. Fix: `_contribution_source_ids` now also surfaces
+  `origin_source_id`, so the feedback guard matches contributions in
+  both raw and group-mirrored form. Regression test
+  `test_setup_entry_skips_linked_feedback_loops_via_group_member_mesh`
+  seeds the real-world payload shape and asserts no propagation.
+
+### Added
+
+- **"Run rule" button on saved action rules (Lighting, Media, HVAC,
+  Appliances)**: a per-rule button that executes the rule's configured
+  action service calls directly against each target entity — without
+  checking trigger conditions (occupancy/ambient/time). Useful for
+  confirming device wiring and service payloads without having to stage
+  the trigger state. The rendering had existed on lighting only; the
+  underlying handler already iterated generic `{entity_id, service, data}`
+  targets so the extension was a matter of lifting the tab gate and
+  renaming the lighting-specific state/handler/testid to their
+  tab-agnostic forms (`_runningActionRuleId`, `_runActionRule`,
+  `action-rule-${ruleId}-run`). Button label updated from "Test rule"
+  to "Run rule" per the user's naming — "test" suggests simulation,
+  but this literally runs the action.
+
 ## [0.2.61] - 2026-04-23
 
 ### Changed

@@ -21,7 +21,7 @@
 
 export interface HomeAssistant {
   callWS<T>(request: Record<string, any>): Promise<T>;
-  /** Home Assistant frontend: invoke a service (used for “Test rule” on lighting actions). */
+  /** Home Assistant frontend: invoke a service (used for “Run rule” on action rules). */
   callService?(
     domain: string,
     service: string,

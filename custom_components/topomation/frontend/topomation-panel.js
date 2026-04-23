@@ -7626,11 +7626,11 @@ const ke = class ke extends pt {
     const e = String(t.service || "").trim() || "turn_on", n = { ...this._normalizeActionDataForRule(t.data, t.entity_id, e) || {}, entity_id: t.entity_id };
     return this._actionSupportsOnlyIfOff(t.entity_id, e) && typeof t.only_if_off == "boolean" && (n.only_if_off = t.only_if_off), n;
   }
-  async _testLightingActionRule(t) {
-    if (!this.hass || this._testingLightingRuleId || this._savingActionRules)
+  async _runActionRule(t) {
+    if (!this.hass || this._runningActionRuleId || this._savingActionRules)
       return;
     if (typeof this.hass.callService != "function") {
-      this._showToast("Testing rules is not available in this environment.", "error");
+      this._showToast("Running rules is not available in this environment.", "error");
       return;
     }
     const e = this._workingActionRules(), i = e.findIndex((a) => String(a.id || "") === t);
@@ -7638,10 +7638,10 @@ const ke = class ke extends pt {
       return;
     const n = this._normalizeActionRule(e[i], i), o = this._actionTargetsForRule(n);
     if (o.length === 0) {
-      this._showToast("Select at least one light before testing.", "error");
+      this._showToast("Select at least one target before running.", "error");
       return;
     }
-    this._testingLightingRuleId = t, this.requestUpdate();
+    this._runningActionRuleId = t, this.requestUpdate();
     try {
       for (const a of o) {
         const r = String(a.entity_id || "").split(".", 1)[0], c = String(a.service || "").trim();
@@ -7653,9 +7653,9 @@ const ke = class ke extends pt {
       }
       this._showToast("Rule actions ran", "success");
     } catch (a) {
-      this._showToast((a == null ? void 0 : a.message) || "Failed to test rule", "error");
+      this._showToast((a == null ? void 0 : a.message) || "Failed to run rule", "error");
     } finally {
-      this._testingLightingRuleId = void 0, this.requestUpdate();
+      this._runningActionRuleId = void 0, this.requestUpdate();
     }
   }
   async _deleteActionRule(t) {
@@ -8407,19 +8407,17 @@ const ke = class ke extends pt {
       ${this._renderOccupancyOnlyActionsBlock(t, e, i, n, o)}
     `;
   }
-  _renderLightingTestRuleButton(t, e, i) {
-    if (t !== "lighting")
-      return g``;
-    const n = this._testingLightingRuleId === e;
+  _renderRunRuleButton(t, e) {
+    const i = this._runningActionRuleId === t;
     return g`
       <button
         class="button button-secondary"
         type="button"
-        data-testid=${`action-rule-${e}-test`}
-        ?disabled=${i || n}
-        @click=${() => void this._testLightingActionRule(e)}
+        data-testid=${`action-rule-${t}-run`}
+        ?disabled=${e || i}
+        @click=${() => void this._runActionRule(t)}
       >
-        Test rule
+        Run rule
       </button>
     `;
   }
@@ -8507,7 +8505,7 @@ const ke = class ke extends pt {
                               >
                                 Duplicate rule
                               </button>
-                              ${this._renderLightingTestRuleButton(t, u, e)}
+                              ${this._renderRunRuleButton(u, e)}
                             ` : g`
                               <button
                                 class="button button-secondary dusk-delete-rule-button"
@@ -8527,7 +8525,7 @@ const ke = class ke extends pt {
                               >
                                 Duplicate rule
                               </button>
-                              ${this._renderLightingTestRuleButton(t, u, e)}
+                              ${this._renderRunRuleButton(u, e)}
                             ` : g`
                             <button
                               class="button button-primary"
@@ -8556,7 +8554,7 @@ const ke = class ke extends pt {
                             >
                               Duplicate rule
                             </button>
-                            ${this._renderLightingTestRuleButton(t, u, e)}
+                            ${this._renderRunRuleButton(u, e)}
                           `}
                     </div>
                     <div class="config-help dusk-rule-footer-help">
@@ -9503,7 +9501,7 @@ ke.properties = {
   occupancyTransitions: { attribute: !1 },
   handoffTraces: { attribute: !1 },
   _climateDeviceLinkRevision: { state: !0 },
-  _testingLightingRuleId: { state: !0 }
+  _runningActionRuleId: { state: !0 }
 }, ke.styles = [
   De,
   Jt`

@@ -852,6 +852,129 @@ async def test_setup_entry_skips_linked_feedback_loops(
     mock_occupancy_module.trigger.assert_not_called()
 
 
+async def test_setup_entry_skips_linked_feedback_loops_via_group_member_mesh(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    mock_location_manager: Mock,
+    mock_event_bus: Mock,
+    mock_occupancy_module: Mock,
+) -> None:
+    """Feedback guard must match contributions wrapped by the occupancy-group mesh.
+
+    When both rooms belong to the same occupancy group, home_topology wraps every
+    contribution as ``__group_member__:<origin>::<origin_source_id>``. The raw
+    ``linked:<other>`` form only appears via ``origin_source_id``. Prior to the
+    fix, the guard compared plain ``linked:<other>`` against the wrapped
+    ``source_id`` and never matched, so propagation recursed until the 4096
+    circuit breaker tripped and HA got SIGKILL'd by the supervisor.
+    """
+    config_entry.add_to_hass(hass)
+
+    family_room = Mock()
+    family_room.id = "area_family_room"
+    family_room.name = "Family Room"
+    family_room.parent_id = "floor_main"
+    family_room.is_explicit_root = False
+    family_room.entity_ids = []
+    family_room.order = 0
+    family_room.aliases = []
+    family_room.ha_area_id = None
+    family_room.ha_floor_id = None
+    family_room.modules = {"_meta": {"type": "area"}}
+    kitchen = Mock()
+    kitchen.id = "area_kitchen"
+    kitchen.name = "Kitchen"
+    kitchen.parent_id = "floor_main"
+    kitchen.is_explicit_root = False
+    kitchen.entity_ids = []
+    kitchen.order = 1
+    kitchen.aliases = []
+    kitchen.ha_area_id = None
+    kitchen.ha_floor_id = None
+    kitchen.modules = {"_meta": {"type": "area"}}
+    floor = Mock()
+    floor.id = "floor_main"
+    floor.name = "Main Floor"
+    floor.parent_id = None
+    floor.is_explicit_root = False
+    floor.entity_ids = []
+    floor.order = 0
+    floor.aliases = []
+    floor.ha_area_id = None
+    floor.ha_floor_id = None
+    floor.modules = {"_meta": {"type": "floor"}}
+    mock_location_manager.all_locations.return_value = [floor, family_room, kitchen]
+    locations_by_id = {location.id: location for location in [floor, family_room, kitchen]}
+    mock_location_manager.get_location.side_effect = lambda location_id: locations_by_id.get(location_id)
+
+    def _module_config(location_id: str, module_id: str):
+        if module_id == "occupancy":
+            if location_id == "area_kitchen":
+                return {
+                    "enabled": True,
+                    "occupancy_sources": [],
+                    "linked_locations": ["area_family_room"],
+                }
+            return {
+                "enabled": True,
+                "occupancy_sources": [],
+                "linked_locations": [],
+            }
+        if module_id == "automation":
+            return {"enabled": False}
+        if module_id == "ambient":
+            return {"enabled": False}
+        return None
+
+    mock_location_manager.get_module_config.side_effect = _module_config
+    mock_occupancy_module.get_location_state.side_effect = lambda location_id: {
+        "contributions": [],
+    }
+    # Return a real datetime so that, if the guard incorrectly misses and we
+    # fall through to the trigger path, arithmetic succeeds and the test fails
+    # via assert_not_called() rather than a misleading TypeError on Mock math.
+    mock_occupancy_module.get_effective_timeout.side_effect = (
+        lambda location_id, now: now + timedelta(seconds=1800)
+    )
+
+    with (
+        patch("custom_components.topomation.async_register_panel"),
+        patch("custom_components.topomation.async_register_websocket_api"),
+        patch("custom_components.topomation.async_register_services"),
+        patch.object(hass.config_entries, "async_forward_entry_setups", return_value=True),
+    ):
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    event = Mock()
+    event.location_id = "area_family_room"
+    event.payload = {
+        "occupied": True,
+        "previous_occupied": False,
+        "reason": "event:trigger",
+        # Real-world payload shape from home_topology's occupancy-group mesh.
+        "contributions": [
+            {
+                "source_id": "__group_member__:area_family_room::linked:area_kitchen",
+                "origin_location_id": "area_family_room",
+                "origin_source_id": "linked:area_kitchen",
+                "via_occupancy_group": "floor_main_group_abc",
+                "expires_at": None,
+            },
+        ],
+    }
+
+    for call in mock_event_bus.subscribe.call_args_list:
+        if len(call.args) < 2:
+            continue
+        callback = call.args[0]
+        event_filter = call.args[1]
+        if getattr(event_filter, "event_type", None) == "occupancy.changed":
+            callback(event)
+
+    mock_occupancy_module.trigger.assert_not_called()
+
+
 async def test_setup_entry_ignores_linked_locations_when_target_not_area_under_floor(
     hass: HomeAssistant,
     config_entry: MockConfigEntry,

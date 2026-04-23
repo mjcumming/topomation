@@ -6228,7 +6228,7 @@ describe("HtLocationInspector WIAB configuration", () => {
     expect(row0Dirty?.textContent || "").to.include("light.kitchen_ceiling");
   });
 
-  it("calls hass.callService for each configured action when Test rule is clicked", async () => {
+  it("calls hass.callService for each configured action when Run rule is clicked", async () => {
     const serviceCalls: Array<{ domain: string; service: string; data?: Record<string, unknown> }> = [];
     const persistedRules = [
       {
@@ -6312,11 +6312,11 @@ describe("HtLocationInspector WIAB configuration", () => {
       "expected persisted lighting rule row to render"
     );
 
-    const testBtn = element.shadowRoot?.querySelector(
-      '[data-testid="action-rule-rule_existing-test"]'
+    const runBtn = element.shadowRoot?.querySelector(
+      '[data-testid="action-rule-rule_existing-run"]'
     ) as HTMLButtonElement | null;
-    expect(testBtn).to.exist;
-    testBtn!.click();
+    expect(runBtn).to.exist;
+    runBtn!.click();
 
     await waitUntil(() => serviceCalls.length === 2, "expected two callService invocations");
     expect(serviceCalls[0]?.domain).to.equal("light");
@@ -6326,6 +6326,72 @@ describe("HtLocationInspector WIAB configuration", () => {
     expect(serviceCalls[1]?.service).to.equal("turn_on");
     expect(serviceCalls[1]?.data?.entity_id).to.equal("light.kitchen_island");
     expect(serviceCalls[1]?.data?.brightness_pct).to.equal(42);
+  });
+
+  it("renders the Run rule button on saved media rules", async () => {
+    const persistedRules = [
+      {
+        id: "rule_media",
+        entity_id: "automation.rule_media",
+        name: "Quiet",
+        trigger_type: "on_vacant",
+        trigger_types: ["on_vacant"],
+        rule_uuid: "rule_media_uuid",
+        actions: [{ entity_id: "media_player.kitchen_speaker", service: "media_pause" }],
+        action_entity_id: "media_player.kitchen_speaker",
+        action_service: "media_pause",
+        ambient_condition: "any",
+        must_be_occupied: false,
+        time_condition_enabled: false,
+        start_time: "00:00",
+        end_time: "23:59",
+        enabled: true,
+      },
+    ];
+
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>): Promise<T> => {
+        if (request.type === "topomation/actions/rules/list") {
+          return { rules: persistedRules } as T;
+        }
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        return {} as T;
+      },
+      callService: async () => undefined,
+      connection: {},
+      states: {
+        "media_player.kitchen_speaker": {
+          entity_id: "media_player.kitchen_speaker",
+          state: "idle",
+          attributes: { friendly_name: "Kitchen Speaker" },
+        },
+      },
+      areas: { kitchen: { area_id: "kitchen", name: "Kitchen" } },
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_kitchen";
+    location.name = "Kitchen";
+    location.ha_area_id = "kitchen";
+    location.entity_ids = ["media_player.kitchen_speaker"];
+    location.modules._meta = { type: "area" };
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${location}
+        .forcedTab=${"media"}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    await waitUntil(
+      () => Boolean(element.shadowRoot?.querySelector('[data-testid="action-rule-rule_media-run"]')),
+      "expected Run rule button to render on media tab"
+    );
   });
 
   it("shows situation requirement choices for occupancy-based lighting rules", async () => {
