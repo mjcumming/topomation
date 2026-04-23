@@ -4230,7 +4230,7 @@ const ke = class ke extends pt {
   }
   _renderHeader() {
     if (!this.location) return "";
-    const t = this.location.ha_area_id, e = t ? "HA Area ID" : "Location ID", i = t || this.location.id, n = this._getLockState(), o = this._getOccupancyState(), a = this._treeAlignedOccupiedState(o), r = a === !0, c = a === !0 ? "Occupied" : a === !1 ? "Vacant" : "Unknown", l = this._resolveVacancyReason(o, a), u = this._resolveOccupiedReason(o, a), d = r ? u : l, h = o ? this._resolveVacantAt(o.attributes || {}, r) : void 0, f = r ? this._formatVacantAtLabel(h) : void 0, _ = this._ambientSourceMethod(this._ambientReading) === "inherited_sensor" ? " (inherited)" : "", m = this._loadingAmbientReading ? "Ambient: loading..." : this._ambientReadingError ? "Ambient: unavailable" : `Ambient: ${this._formatAmbientLux(this._ambientReading)}${_}`;
+    const t = this.location.ha_area_id, e = t ? "HA Area ID" : "Location ID", i = t || this.location.id, n = this._getLockState(), o = this._getOccupancyState(), a = this._treeAlignedOccupiedState(o), r = a === !0, c = a === !0 ? "Occupied" : a === !1 ? "Vacant" : "Unknown", l = this._resolveVacancyReason(o, a), u = this._resolveOccupiedReason(o, a), d = r ? u : l, h = o ? this._resolveVacantAt(o.attributes || {}, r) : void 0, f = h instanceof Date, p = r ? this._formatVacantAtLabel(h, this._isStructuralSummaryLocation()) : void 0, m = this._ambientSourceMethod(this._ambientReading) === "inherited_sensor" ? " (inherited)" : "", y = this._loadingAmbientReading ? "Ambient: loading..." : this._ambientReadingError ? "Ambient: unavailable" : `Ambient: ${this._formatAmbientLux(this._ambientReading)}${m}`;
     return g`
       <div class="header">
         <div class="header-main">
@@ -4253,11 +4253,11 @@ const ke = class ke extends pt {
                     <span class="header-lock-state" data-testid="header-lock-status">Unlocked</span>
                   `}
               <span class="header-ambient" data-testid="header-ambient-lux">
-                ${m}
+                ${y}
               </span>
               ${r ? g`
                     <span class="header-vacant-at" data-testid="header-vacant-at">
-                      ${h === null ? f : g`Vacant at ${f}`}
+                      ${f ? g`Vacant at ${p}` : p}
                     </span>
                   ` : ""}
             </div>
@@ -5623,7 +5623,7 @@ const ke = class ke extends pt {
           </div>
         </div>
       `;
-    const n = (e == null ? void 0 : e.attributes) || {}, o = i === !0, a = this._resolveVacantAt(n, o), r = i === !0 ? "Occupied" : i === !1 ? "Vacant" : "Unknown", c = o ? this._formatVacantAtLabel(a) : "-";
+    const n = (e == null ? void 0 : e.attributes) || {}, o = i === !0, a = this._resolveVacantAt(n, o), r = i === !0 ? "Occupied" : i === !1 ? "Vacant" : "Unknown", c = o ? this._formatVacantAtLabel(a, this._isStructuralSummaryLocation()) : "-";
     return g`
       <div class="runtime-summary">
         <div class="runtime-summary-head">
@@ -8985,8 +8985,8 @@ const ke = class ke extends pt {
     }
     return o ? null : a;
   }
-  _formatVacantAtLabel(t) {
-    return t instanceof Date ? this._formatDateTime(t) : t === null ? "Held by presence" : "No timeout scheduled";
+  _formatVacantAtLabel(t, e = !1) {
+    return t instanceof Date ? this._formatDateTime(t) : e ? "Held by occupied rooms" : t === null ? "Held by presence" : "No timeout scheduled";
   }
   _resolveVacancyReason(t, e) {
     var a, r, c, l, u;
@@ -9048,7 +9048,7 @@ const ke = class ke extends pt {
       return d.length ? d : this._aggregateDescendantContributionsForStructural();
     })() : this._occupancyContributions(this._getOccupancyConfig(), !0), a = this._resolveVacantAt(n, i), r = this._getLockState(), c = i ? e ? this._resolveOccupiedReason(t, !0) || (o.length ? `Occupied via ${o[0].sourceLabel}` : "Active source events detected") : this._resolveOccupiedReason(t, !0) || "Active source events detected" : this._resolveVacancyReason(t, !1) || "No active contributors remain";
     let l;
-    i && (a === null ? l = "Held by presence" : a instanceof Date && (l = `Vacates ${this._formatDateTime(a)}`));
+    i && (a instanceof Date ? l = `Vacates ${this._formatDateTime(a)}` : e ? l = "Held by occupied rooms" : a === null && (l = "Held by presence"));
     let u;
     return r.isLocked && (u = r.lockedBy.length ? `Held by ${r.lockedBy.map((d) => this._lockSourceLabel(d)).join(", ")}` : "Occupancy is held by a lock"), {
       occupied: i,

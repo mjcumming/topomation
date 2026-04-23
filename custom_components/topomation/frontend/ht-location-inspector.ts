@@ -3510,7 +3510,10 @@ export class HtLocationInspector extends LitElement {
     const occupiedReason = this._resolveOccupiedReason(occupancyState, occupiedState);
     const occupancyStatusDetail = occupied ? occupiedReason : vacancyReason;
     const vacantAt = occupancyState ? this._resolveVacantAt(occupancyState.attributes || {}, occupied) : undefined;
-    const vacantAtLabel = occupied ? this._formatVacantAtLabel(vacantAt) : undefined;
+    const vacantAtIsDate = vacantAt instanceof Date;
+    const vacantAtLabel = occupied
+      ? this._formatVacantAtLabel(vacantAt, this._isStructuralSummaryLocation())
+      : undefined;
     const ambientSourceMethod = this._ambientSourceMethod(this._ambientReading);
     const ambientSourceHint = ambientSourceMethod === "inherited_sensor" ? " (inherited)" : "";
     const ambientLuxHeader = this._loadingAmbientReading
@@ -3548,7 +3551,7 @@ export class HtLocationInspector extends LitElement {
               ${occupied
                 ? html`
                     <span class="header-vacant-at" data-testid="header-vacant-at">
-                      ${vacantAt === null ? vacantAtLabel : html`Vacant at ${vacantAtLabel}`}
+                      ${vacantAtIsDate ? html`Vacant at ${vacantAtLabel}` : vacantAtLabel}
                     </span>
                   `
                 : ""}
@@ -5526,7 +5529,9 @@ export class HtLocationInspector extends LitElement {
     const vacantAt = this._resolveVacantAt(attrs, occupied);
     const occupancyLabel =
       occupiedState === true ? "Occupied" : occupiedState === false ? "Vacant" : "Unknown";
-    const vacantAtLabel = occupied ? this._formatVacantAtLabel(vacantAt) : "-";
+    const vacantAtLabel = occupied
+      ? this._formatVacantAtLabel(vacantAt, this._isStructuralSummaryLocation())
+      : "-";
 
     return html`
       <div class="runtime-summary">
@@ -10663,9 +10668,17 @@ export class HtLocationInspector extends LitElement {
     return latestExpiry;
   }
 
-  private _formatVacantAtLabel(vacantAt: Date | null | undefined): string {
+  private _formatVacantAtLabel(
+    vacantAt: Date | null | undefined,
+    structural: boolean = false
+  ): string {
     if (vacantAt instanceof Date) {
       return this._formatDateTime(vacantAt);
+    }
+    // Structural summary nodes (property/building/floor/grounds) don't run
+    // their own timers — they mirror descendant occupancy.
+    if (structural) {
+      return "Held by occupied rooms";
     }
     // Indefinite contribution: a state-held sensor (presence/occupancy) is
     // keeping the room occupied, so no vacancy timer is scheduled.
@@ -10784,10 +10797,12 @@ export class HtLocationInspector extends LitElement {
 
     let nextChange: string | undefined;
     if (occupied) {
-      if (vacantAt === null) {
-        nextChange = "Held by presence";
-      } else if (vacantAt instanceof Date) {
+      if (vacantAt instanceof Date) {
         nextChange = `Vacates ${this._formatDateTime(vacantAt)}`;
+      } else if (structural) {
+        nextChange = "Held by occupied rooms";
+      } else if (vacantAt === null) {
+        nextChange = "Held by presence";
       }
     }
 

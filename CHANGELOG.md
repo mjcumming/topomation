@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.61] - 2026-04-23
+
+### Changed
+
+- **Inspector header copy — structural summary nodes**: extend the 0.2.60
+  "Held by presence" fix to cover structural summary locations
+  (property/building/floor/grounds). Structural nodes derive occupancy
+  from their descendants and don't run their own vacancy timers, so their
+  occupancy attrs typically carry no `contributions` array. That hit the
+  `undefined` branch of `_resolveVacantAt` and rendered "Vacant at No
+  timeout scheduled" even when a child room was clearly holding the
+  parent occupied (e.g. Home shows Occupied because a third-floor Office
+  presence sensor is active, but the Home header still claimed no
+  timeout). The header + runtime summary now render "Held by occupied
+  rooms" for any structural node held occupied via descendants; Date-
+  typed `vacant_at` values still render as before. The diagnostic
+  `nextChange` field mirrors the new copy.
+
 ## [0.2.60] - 2026-04-23
 
 ### Changed
