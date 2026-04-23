@@ -3548,7 +3548,7 @@ export class HtLocationInspector extends LitElement {
               ${occupied
                 ? html`
                     <span class="header-vacant-at" data-testid="header-vacant-at">
-                      Vacant at ${vacantAtLabel}
+                      ${vacantAt === null ? vacantAtLabel : html`Vacant at ${vacantAtLabel}`}
                     </span>
                   `
                 : ""}
@@ -10667,6 +10667,11 @@ export class HtLocationInspector extends LitElement {
     if (vacantAt instanceof Date) {
       return this._formatDateTime(vacantAt);
     }
+    // Indefinite contribution: a state-held sensor (presence/occupancy) is
+    // keeping the room occupied, so no vacancy timer is scheduled.
+    if (vacantAt === null) {
+      return "Held by presence";
+    }
     // Treat missing/unparseable timeout metadata as unscheduled, never "Unknown".
     return "No timeout scheduled";
   }
@@ -10780,7 +10785,7 @@ export class HtLocationInspector extends LitElement {
     let nextChange: string | undefined;
     if (occupied) {
       if (vacantAt === null) {
-        nextChange = "No timeout scheduled";
+        nextChange = "Held by presence";
       } else if (vacantAt instanceof Date) {
         nextChange = `Vacates ${this._formatDateTime(vacantAt)}`;
       }

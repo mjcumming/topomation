@@ -4257,7 +4257,7 @@ const ke = class ke extends pt {
               </span>
               ${r ? g`
                     <span class="header-vacant-at" data-testid="header-vacant-at">
-                      Vacant at ${f}
+                      ${h === null ? f : g`Vacant at ${f}`}
                     </span>
                   ` : ""}
             </div>
@@ -8986,7 +8986,7 @@ const ke = class ke extends pt {
     return o ? null : a;
   }
   _formatVacantAtLabel(t) {
-    return t instanceof Date ? this._formatDateTime(t) : "No timeout scheduled";
+    return t instanceof Date ? this._formatDateTime(t) : t === null ? "Held by presence" : "No timeout scheduled";
   }
   _resolveVacancyReason(t, e) {
     var a, r, c, l, u;
@@ -9048,7 +9048,7 @@ const ke = class ke extends pt {
       return d.length ? d : this._aggregateDescendantContributionsForStructural();
     })() : this._occupancyContributions(this._getOccupancyConfig(), !0), a = this._resolveVacantAt(n, i), r = this._getLockState(), c = i ? e ? this._resolveOccupiedReason(t, !0) || (o.length ? `Occupied via ${o[0].sourceLabel}` : "Active source events detected") : this._resolveOccupiedReason(t, !0) || "Active source events detected" : this._resolveVacancyReason(t, !1) || "No active contributors remain";
     let l;
-    i && (a === null ? l = "No timeout scheduled" : a instanceof Date && (l = `Vacates ${this._formatDateTime(a)}`));
+    i && (a === null ? l = "Held by presence" : a instanceof Date && (l = `Vacates ${this._formatDateTime(a)}`));
     let u;
     return r.isLocked && (u = r.lockedBy.length ? `Held by ${r.lockedBy.map((d) => this._lockSourceLabel(d)).join(", ")}` : "Occupancy is held by a lock"), {
       occupied: i,

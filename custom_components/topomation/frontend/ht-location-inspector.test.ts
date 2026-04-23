@@ -1395,7 +1395,7 @@ describe("HtLocationInspector occupancy source composer", () => {
       element.shadowRoot!.querySelector(".lock-directive")?.textContent || ""
     ).trim();
 
-    expect(vacantAtText).to.equal("Vacant at No timeout scheduled");
+    expect(vacantAtText).to.equal("Held by presence");
     expect(lockStatusText).to.equal("Locked");
     expect(lockModesText).to.include("Block vacant");
     expect(lockDirectiveText).to.include("Subtree");

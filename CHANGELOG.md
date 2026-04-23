@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.60] - 2026-04-23
+
+### Changed
+
+- **Inspector header copy — held-by-presence**: when a state-held presence
+  or occupancy sensor keeps a room occupied (contribution with no
+  `expires_at`), the inspector header now reads "Held by presence" instead
+  of "Vacant at No timeout scheduled". The old copy conflated two different
+  states into one bland string — a scheduled vacancy time (motion sensor
+  with a hold timer still running) and an indefinite hold (presence sensor
+  reporting someone is there). The model already distinguished them in
+  `_resolveVacantAt` (`null` vs `undefined`); only the render was flat.
+  The runtime diagnostic `nextChange` field mirrors the new copy.
+
 ## [0.2.59] - 2026-04-23
 
 ### Fixed
