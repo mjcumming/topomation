@@ -424,6 +424,9 @@ Additional save points:
   - managed shadow nodes are explicit/tagged (`System Area`)
   - tree-level hiding/filtering is optional presentation behavior only; it must
     not change assignment semantics.
+  - frontend state must preserve the full location graph, including managed
+    shadow rows, for semantic lookups; visible tree filtering must not remove
+    shadow rows from inspector/action-rule enumeration context.
 
 ## C-015 Ambient Read + Assignment Contract
 

@@ -110,65 +110,55 @@ Outcome:
 
 ## 8. Current Release Candidate Record
 
-Commit under test: **release-candidate worktree for Topomation `0.2.59`**
-(linked-room occupancy propagation fix + ADR-HA-087 action-rule scoping +
-occupancy-reason surface consolidation + release metadata).
+Commit under test: **release-candidate worktree for Topomation `0.2.66`**
+(managed-shadow frontend graph preservation + release metadata).
 Frontend bundle rebuilt from same commit: **yes** (`npm run build` →
 committed `topomation-panel.js`; parity verified by
-`./scripts/test-comprehensive.sh`).
+`diff -u dist/topomation-panel.js topomation-panel.js`,
+`./scripts/test-comprehensive.sh`, and `make test-release-live`).
 
 Touched workflows:
-- **Linked-room occupancy propagation across mesh members** (backend):
-  `_apply_linked_location_contributors` now mirrors the source area's
-  remaining effective timeout instead of passing `None`. Prevents the
-  indefinite-contribution circular hold produced when the occupancy-group
-  mesh mirrors `linked:*` sources across members as `__group_member__:*`.
-- **Action-rule target device picker scoping** (frontend, ADR-HA-087):
-  Lighting / Media / HVAC / Appliances rule editors on structural hosts
-  (`property`, `building`, `grounds`, `floor`) now enumerate only the
-  host's own HA area + managed shadow area — never descendant rooms.
-- **Occupancy reason/explainability display** (frontend): standalone
-  `ht-room-explainability` panel removed; reason line now renders inline on
-  the left-tree occupancy dot tooltip via the new `occupancy-reason.ts`
-  module. Same computed copy, different surface.
-- **Inspector occupancy-group copy** (frontend, Detection tab, structural
-  hosts): replaced "Create local shared-occupancy groups for …" with
-  "Group …'s direct child areas when they should behave like one occupied
-  space."
+- **Structural-host action-rule target enumeration** (frontend):
+  `property`, `building`, `grounds`, and `floor` rows keep managed shadow
+  rows hidden from the tree while preserving the full backend location graph
+  for inspector lookups. Lighting / Media / HVAC / Appliances can resolve
+  `_meta.shadow_area_id -> shadow.ha_area_id` and enumerate devices from
+  the host's managed shadow HA area.
+- **Managed shadow frontend state boundary** (frontend/docs): panel state now
+  separates the canonical full location graph from the visible tree/selection
+  list so tree hiding cannot remove system rows from semantic lookup context.
 
 Commands run:
-- `./scripts/test-comprehensive.sh` (backend Ruff/Mypy/Pytest, frontend unit
-  tests, build, runtime-bundle parity, Playwright mock + production-smoke)
-- `make test-release-live` (local gate: comprehensive + live HA automation
-  contract + `live-automation-ui.spec.ts`)
+- `npm run test -- topomation-panel.test.ts`
+- `npm run test:unit`
+- `npm run test`
+- `npm run build`
+- `diff -u dist/topomation-panel.js topomation-panel.js`
+- `bash scripts/check-docs-consistency.sh`
+- `./scripts/test-comprehensive.sh`
+- `source tests/ha-config.env && HA_URL_DEV="${HA_URL_LOCAL:-http://localhost:8123}" HA_TOKEN_DEV="${HA_TOKEN_LOCAL:-$HA_TOKEN_DEV}" make test-release-live`
 
 Outcome:
-- Version sync (`0.2.59`): **PASS** (2026-04-23)
+- Version sync (`0.2.66`): **PASS** (2026-04-24)
+- Focused panel regression (`npm run test -- topomation-panel.test.ts`):
+  **PASS** (2026-04-24) — 34 panel tests green, including hidden managed
+  shadow rows feeding structural-host Lighting target enumeration.
+- Frontend unit suite (`npm run test:unit`): **PASS** (2026-04-24) —
+  249 tests green.
+- Frontend browser suite (`npm run test`): **PASS** (2026-04-24) —
+  189 browser tests green.
+- Docs consistency (`bash scripts/check-docs-consistency.sh`): **PASS**
+  (2026-04-24).
 - Local comprehensive gate (`./scripts/test-comprehensive.sh`): **PASS**
-  (2026-04-23) — all 34 Playwright + backend + frontend unit tests green,
-  `topomation-panel.js` parity clean.
-- Live HA release gate
-  (`TOPOMATION_PREFER_LOCAL_HA=0 make test-release-live`): **PASS**
-  (2026-04-23) — 2 managed-action contract tests + 6 live-browser tests
-  green against the configured dev HA target.
+  (2026-04-24) — backend checks, frontend unit/build/parity, WTR, and
+  Playwright mock/production-smoke suites green.
+- Live HA release gate (`make test-release-live` pinned to local HA):
+  **PASS** (2026-04-24) — comprehensive gate, 2 managed-action contract
+  tests, and 6 live-browser tests green.
 
 Notes:
-- `live-automation-ui.spec.ts`'s detection-reason test was updated in the
-  same change to assert against the tree-dot tooltip rather than the removed
-  explainability panel — the live browser path for that workflow remains
-  covered.
-- While running the live gate, the `expandTreeAncestors` helper was found to
-  short-circuit outside the real-panel path, leaving deeply nested tree
-  items unrendered when a test asserted against them. The gate was removed
-  (the DOM manipulation is valid in both real and mock-harness modes), and
-  the tree-dot test now expands ancestors before the visibility check. The
-  harness-only tests that did not depend on this helper are unaffected.
-- The default localhost override was unavailable in this dev container, so
-  `TOPOMATION_PREFER_LOCAL_HA=0` was used to validate against the configured
-  reachable dev HA target — same pattern recorded for 0.2.58.
+- The first live-gate attempt failed because the local HA runtime was not
+  running at `http://localhost:8123`; after starting `hass -c
+  /workspaces/core/config --debug`, the same gate passed.
 - After push to `main`, confirm CI and **Auto Release** are green for the
   release commit before considering the release complete.
-- Post-release monitoring for the occupancy fix: install, trigger a leaf
-  area (e.g. Front Entry) with a 30-min hold, wait past the hold, and
-  confirm the area actually vacates and the mesh dissolves down through
-  any `__follow_parent__:*` ancestors.

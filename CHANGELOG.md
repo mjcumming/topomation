@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.66] - 2026-04-24
+
+### Fixed
+
+- **Structural hosts could not see devices assigned to their managed shadow
+  areas**: the panel filtered managed shadow rows out of its only location
+  list before handing context to the inspector. That kept system rows hidden
+  from the tree, but it also meant structural hosts like `property`,
+  `building`, `grounds`, and `floor` could not dereference
+  `_meta.shadow_area_id -> shadow.ha_area_id` when enumerating local devices.
+  The panel now preserves the full backend location graph for semantic
+  lookups while deriving a separate visible tree list. Lighting/Media/HVAC
+  action-rule target pickers can again enumerate devices from the host's
+  managed shadow HA area without exposing the shadow row as a selectable
+  tree item.
+
 ## [0.2.65] - 2026-04-24
 
 ### Fixed

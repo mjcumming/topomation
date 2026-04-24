@@ -1,6 +1,6 @@
 # Current work
 
-**Last updated**: 2026-04-16
+**Last updated**: 2026-04-24
 **Purpose**: short live context for parallel work, handoff, and branch safety.
 
 Status markers:
@@ -30,6 +30,7 @@ Status markers:
 | --- | --- | --- | --- | --- |
 | Repo workflow reset + authority-chain hardening | active | Done | Implemented | ADR-HA-063, `docs/working-agreement.md`, and `docs/touched-workflow-release-gate.md` landed to stop ambiguity drift, legacy carryover, and status inflation. |
 | Managed shadow areas + assignment remap | active | In progress | Target | ADR-HA-049 approved; ISSUE-057 tracks backend/UI/test checklist. |
+| Managed shadow frontend graph preservation | active | Done | Implemented | Panel keeps the full backend location graph for inspector/action-rule semantics while filtering system shadow rows only from visible tree/selection lists. |
 | Automation UX + contracts reset | active | Done | Live-validated | Detection `Shared Space`, docked explainability refinements, and panel shell reload fixes reran through `make test-release-live` on the exact 2026-03-17 branch state. |
 | Automation UX implementation checklist (ISSUE-058) | active | Done | Live-validated | Detection/Ambient draft flow, HA-canonical/card-local Lighting workflow, dev-mode no-legacy cleanup, and Media/HVAC card simplification are in repo and reran against local live HA on 2026-03-17. |
 | Ambient light v1 design + implementation sequencing | active | In progress | Target | Design guide added; next step is phase-A inspector read path and config UX. |

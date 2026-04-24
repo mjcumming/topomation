@@ -82,6 +82,7 @@ export class TopomationPanel extends LitElement {
     panel: { attribute: false },
     route: { attribute: false },
     // Internal state
+    _allLocations: { state: true },
     _locations: { state: true },
     _locationsVersion: { state: true },
     _selectedId: { state: true },
@@ -110,6 +111,7 @@ export class TopomationPanel extends LitElement {
     _pendingDeleteSelectedId: { state: true },
   };
 
+  @state() private _allLocations: Location[] = [];
   @state() private _locations: Location[] = [];
   @state() private _locationsVersion = 0; // bump to force tree rerender when data changes
   @state() private _selectedId?: string;
@@ -890,7 +892,7 @@ export class TopomationPanel extends LitElement {
           <ht-location-inspector
             .hass=${this.hass}
             .location=${selectedLocation}
-            .allLocations=${this._locations}
+            .allLocations=${this._allLocations}
             .adjacencyEdges=${this._adjacencyEdges}
             .entryId=${this._activeEntryId()}
             .entityRegistryRevision=${this._haRegistryRevision}
@@ -1464,9 +1466,11 @@ export class TopomationPanel extends LitElement {
       const byId = new Map<string, Location>();
       for (const loc of response.locations) byId.set(loc.id, loc);
       const uniqueLocations = Array.from(byId.values());
+      const managedShadowIds = managedShadowLocationIdSet(uniqueLocations);
       const visibleLocations = uniqueLocations.filter(
-        (loc) => !loc.is_explicit_root && !this._isManagedShadowLocation(loc)
+        (loc) => !loc.is_explicit_root && !isSystemShadowLocation(loc, managedShadowIds)
       );
+      this._allLocations = [...uniqueLocations];
       this._locations = [...visibleLocations];
       this._adjacencyEdges = Array.isArray(response.adjacency_edges)
         ? [...response.adjacency_edges]
@@ -1792,7 +1796,7 @@ export class TopomationPanel extends LitElement {
 
   private _getLocationLockState(locationId: string): { isLocked: boolean; lockedBy: string[] } {
     const location = this._locations.find((item) => item.id === locationId);
-    const effectiveId = effectiveOccupancyTopologyId(location, this._locations);
+    const effectiveId = effectiveOccupancyTopologyId(location, this._allLocations);
     const states = this.hass?.states || {};
     for (const state of Object.values(states) as any[]) {
       const attrs = state?.attributes || {};
@@ -1812,7 +1816,7 @@ export class TopomationPanel extends LitElement {
 
   private _getLocationOccupiedState(locationId: string): boolean | undefined {
     const location = this._locations.find((item) => item.id === locationId);
-    const effectiveId = effectiveOccupancyTopologyId(location, this._locations);
+    const effectiveId = effectiveOccupancyTopologyId(location, this._allLocations);
     const states = this.hass?.states || {};
     for (const state of Object.values(states) as any[]) {
       const attrs = state?.attributes || {};
@@ -1832,11 +1836,11 @@ export class TopomationPanel extends LitElement {
   private _getLocationOccupiedForToggle(locationId: string): boolean | undefined {
     const location = this._locations.find((loc) => loc.id === locationId);
     const fromHa = this._getLocationOccupiedState(locationId);
-    if (!location || !isManagedShadowOccupancyHost(location, this._locations)) {
+    if (!location || !isManagedShadowOccupancyHost(location, this._allLocations)) {
       return fromHa;
     }
     const rollupMap = rollupOccupancyStatusByLocation(
-      this._locations,
+      this._allLocations,
       this._occupancyStateByLocation
     );
     if (rollupMap[locationId] === "occupied" || fromHa === true) {
@@ -2726,7 +2730,7 @@ export class TopomationPanel extends LitElement {
   }
 
   private _managedShadowLocationIds(): Set<string> {
-    return managedShadowLocationIdSet(this._locations);
+    return managedShadowLocationIdSet(this._allLocations);
   }
 
   private _parentSelectableLocations(): Location[] {

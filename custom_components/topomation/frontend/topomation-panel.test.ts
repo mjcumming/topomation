@@ -305,7 +305,7 @@ describe('TopomationPanel integration (fake hass)', () => {
         is_explicit_root: false,
         ha_area_id: "main_floor",
         entity_ids: [],
-        modules: { _meta: { type: "floor" } },
+        modules: { _meta: { type: "floor", shadow_area_id: "main-floor-shadow" } },
       },
       {
         id: "area_kitchen",
@@ -352,7 +352,12 @@ describe('TopomationPanel integration (fake hass)', () => {
 
     expect((element as any)._selectedId).to.equal("main_floor");
     const loadedLocations = ((element as any)._locations || []) as Location[];
+    const allLocations = ((element as any)._allLocations || []) as Location[];
     expect(loadedLocations.map((loc) => loc.id)).to.not.include("main-floor-shadow");
+    expect(allLocations.map((loc) => loc.id)).to.include("main-floor-shadow");
+
+    const inspector = element.shadowRoot!.querySelector("ht-location-inspector") as any;
+    expect((inspector.allLocations || []).map((loc: Location) => loc.id)).to.include("main-floor-shadow");
 
     (element as any)._locationDialogOpen = true;
     element.requestUpdate();
@@ -364,6 +369,121 @@ describe('TopomationPanel integration (fake hass)', () => {
     expect(dialogLocationIds).to.include("main_floor");
     expect(dialogLocationIds).to.include("area_kitchen");
     expect(dialogLocationIds).to.not.include("main-floor-shadow");
+  });
+
+  it("keeps hidden managed shadow rows available for structural lighting enumeration", async () => {
+    const host: Location = {
+      id: "grounds",
+      name: "Grounds",
+      parent_id: null,
+      is_explicit_root: false,
+      ha_area_id: null,
+      entity_ids: [],
+      modules: { _meta: { type: "grounds", shadow_area_id: "grounds-shadow" } },
+    };
+    const shadow: Location = {
+      id: "grounds-shadow",
+      name: "Grounds System Area",
+      parent_id: "grounds",
+      is_explicit_root: false,
+      ha_area_id: "ha_grounds_shadow",
+      entity_ids: [],
+      modules: {
+        _meta: {
+          type: "area",
+          role: "managed_shadow",
+          shadow_for_location_id: "grounds",
+        },
+      },
+    };
+
+    const hass: HomeAssistant = {
+      callWS: async <T>(req: Record<string, any>): Promise<T> => {
+        if (req.type === "topomation/locations/list") {
+          return { locations: [host, shadow] } as T;
+        }
+        if (req.type === "topomation/actions/rules/list") {
+          return { rules: [] } as T;
+        }
+        if (req.type === "config/entity_registry/list") {
+          return [
+            {
+              entity_id: "light.patio_andlandscape_lights_switch_1",
+              area_id: "ha_grounds_shadow",
+              device_id: null,
+            },
+          ] as T;
+        }
+        if (req.type === "config/device_registry/list") return [] as T;
+        throw new Error(`Unexpected WS call: ${req.type}`);
+      },
+      connection: {},
+      states: {
+        "light.patio_andlandscape_lights_switch_1": {
+          entity_id: "light.patio_andlandscape_lights_switch_1",
+          state: "off",
+          attributes: {
+            friendly_name: "Landscape Lights",
+            area_id: "ha_grounds_shadow",
+            supported_color_modes: ["onoff"],
+          },
+        },
+      },
+      areas: {
+        ha_grounds_shadow: { area_id: "ha_grounds_shadow", name: "Grounds System Area" },
+      },
+      floors: {},
+      config: {
+        location_name: "Test Property",
+        latitude: 37.7749,
+        longitude: -122.4194,
+        time_zone: "America/Los_Angeles",
+        country: "US",
+      },
+      localize: (key: string) => key,
+    };
+
+    const element = await fixture<HTMLDivElement>(html`
+      <topomation-panel
+        .hass=${hass}
+        .panel=${{ config: { topomation_view: "lighting", entry_id: "entry_123" } }}
+      ></topomation-panel>
+    `);
+
+    await waitUntil(() => (element as any)._loading === false, "panel did not finish loading");
+    expect(((element as any)._locations || []).map((loc: Location) => loc.id)).to.not.include("grounds-shadow");
+
+    const inspector = element.shadowRoot!.querySelector("ht-location-inspector") as any;
+    await waitUntil(() => inspector?.shadowRoot, "inspector did not render");
+    const lightingTab = Array.from(inspector.shadowRoot!.querySelectorAll("button")).find((button) =>
+      ((button as HTMLButtonElement).textContent || "").trim() === "Lighting"
+    ) as HTMLButtonElement | undefined;
+    expect(lightingTab).to.exist;
+    lightingTab!.click();
+    await inspector.updateComplete;
+
+    await waitUntil(
+      () => {
+        const text = inspector?.shadowRoot?.textContent || "";
+        return text.includes("No lighting rules configured yet.") && !text.includes("No compatible light devices found in this location.");
+      },
+      "lighting target pool stayed empty while shadow row was hidden from tree"
+    );
+
+    const addRuleButton = inspector.shadowRoot!.querySelector(
+      '[data-testid="action-rule-add"]'
+    ) as HTMLButtonElement | null;
+    expect(addRuleButton).to.exist;
+    addRuleButton!.click();
+    await inspector.updateComplete;
+
+    await waitUntil(
+      () => {
+        const text = inspector.shadowRoot?.textContent || "";
+        return text.includes("Landscape Lights") && text.includes("light.patio_andlandscape_lights_switch_1");
+      },
+      "managed shadow light did not appear in new lighting rule rows"
+    );
   });
 
   it("reuses last known entry_id when panel config is temporarily unavailable", async () => {
