@@ -1475,8 +1475,7 @@ export class TopomationPanel extends LitElement {
       this._adjacencyEdges = Array.isArray(response.adjacency_edges)
         ? [...response.adjacency_edges]
         : [];
-      this._occupancyStateByLocation = this._buildOccupancyStateMapFromStates();
-      this._occupancyTransitionByLocation = this._buildOccupancyTransitionsFromStates();
+      this._mergeOccupancySnapshotFromStates(new Set(uniqueLocations.map((loc) => loc.id)));
       this._locationsVersion += 1;
       // Keep selection valid against the visible/non-root subset.
       if (
@@ -2438,6 +2437,48 @@ export class TopomationPanel extends LitElement {
       }
       this._scheduleReload(true);
     }, 200);
+  }
+
+  private _mergeOccupancySnapshotFromStates(validLocationIds: Set<string>): void {
+    const snapshotStates = this._buildOccupancyStateMapFromStates();
+    const snapshotTransitions = this._buildOccupancyTransitionsFromStates();
+    const nextStates: Record<string, boolean> = {};
+    const nextTransitions: Record<string, OccupancyTransitionState> = {};
+
+    for (const locationId of validLocationIds) {
+      const snapshotTransition = snapshotTransitions[locationId];
+      const currentTransition = this._occupancyTransitionByLocation[locationId];
+      // HA snapshots can lag behind service-triggered live events; keep the freshest source.
+      const useCurrent =
+        currentTransition !== undefined &&
+        typeof this._occupancyStateByLocation[locationId] === "boolean" &&
+        (snapshotTransition === undefined ||
+          this._transitionTimestampMs(currentTransition) > this._transitionTimestampMs(snapshotTransition));
+
+      if (useCurrent) {
+        if (typeof this._occupancyStateByLocation[locationId] === "boolean") {
+          nextStates[locationId] = this._occupancyStateByLocation[locationId];
+        }
+        nextTransitions[locationId] = currentTransition;
+        continue;
+      }
+
+      if (typeof snapshotStates[locationId] === "boolean") {
+        nextStates[locationId] = snapshotStates[locationId];
+      }
+      if (snapshotTransition !== undefined) {
+        nextTransitions[locationId] = snapshotTransition;
+      }
+    }
+
+    this._occupancyStateByLocation = nextStates;
+    this._occupancyTransitionByLocation = nextTransitions;
+  }
+
+  private _transitionTimestampMs(transition?: OccupancyTransitionState): number {
+    if (!transition?.changedAt) return 0;
+    const parsed = Date.parse(transition.changedAt);
+    return Number.isFinite(parsed) ? parsed : 0;
   }
 
   private _setOccupancyState(

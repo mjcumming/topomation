@@ -1752,6 +1752,81 @@ describe('TopomationPanel integration (fake hass)', () => {
     expect(updatedStatus).to.equal("Occupied");
   });
 
+  it("does not let stale HA snapshots overwrite newer live occupancy events", async () => {
+    const eventCallbacks = new Map<string, (event: any) => void>();
+    const connection = {
+      subscribeEvents: async (callback: (event: any) => void, eventType: string) => {
+        eventCallbacks.set(eventType, callback);
+        return () => {
+          if (eventCallbacks.get(eventType) === callback) {
+            eventCallbacks.delete(eventType);
+          }
+        };
+      },
+    } as any;
+
+    const hass: HomeAssistant = {
+      callWS: async <T>(req: Record<string, any>): Promise<T> => {
+        if (req.type === "topomation/locations/list") {
+          return { locations } as T;
+        }
+        if (req.type === "config/entity_registry/list") {
+          return [] as T;
+        }
+        if (req.type === "config/device_registry/list") {
+          return [] as T;
+        }
+        return {} as T;
+      },
+      connection,
+      states: {
+        "binary_sensor.occupancy_kitchen": {
+          entity_id: "binary_sensor.occupancy_kitchen",
+          state: "off",
+          last_changed: "2000-01-01T00:00:00+00:00",
+          attributes: {
+            device_class: "occupancy",
+            location_id: "kitchen",
+          },
+        },
+      },
+      areas: {},
+      floors: {},
+      config: {
+        location_name: "Test Property",
+      },
+      localize: (key: string) => key,
+    };
+
+    const element = await fixture<HTMLDivElement>(html`
+      <topomation-panel .hass=${hass}></topomation-panel>
+    `);
+
+    await waitUntil(() => (element as any)._loading === false, "panel did not finish loading");
+    await waitUntil(
+      () => eventCallbacks.has("topomation_occupancy_changed"),
+      "panel did not establish occupancy event subscription"
+    );
+
+    eventCallbacks.get("topomation_occupancy_changed")?.({
+      data: {
+        location_id: "kitchen",
+        occupied: true,
+        previous_occupied: false,
+        reason: "event:trigger",
+      },
+    });
+    await (element as any).updateComplete;
+
+    expect((element as any)._occupancyStateByLocation.kitchen).to.equal(true);
+
+    await (element as any)._loadLocations(true);
+    await (element as any).updateComplete;
+
+    expect((element as any)._occupancyStateByLocation.kitchen).to.equal(true);
+    expect((element as any)._occupancyTransitionByLocation.kitchen.reason).to.equal("event:trigger");
+  });
+
   it("does not render separate right-panel workspace mode tabs", async () => {
     const locationsWithEntities: Location[] = locations.map((loc) =>
       loc.id === "kitchen"

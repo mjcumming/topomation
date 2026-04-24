@@ -12808,7 +12808,7 @@ const De = class De extends pt {
       const r = Array.from(a.values()), c = Jt(r), l = r.filter(
         (u) => !u.is_explicit_root && !te(u, c)
       );
-      this._allLocations = [...r], this._locations = [...l], this._adjacencyEdges = Array.isArray(o.adjacency_edges) ? [...o.adjacency_edges] : [], this._occupancyStateByLocation = this._buildOccupancyStateMapFromStates(), this._occupancyTransitionByLocation = this._buildOccupancyTransitionsFromStates(), this._locationsVersion += 1, (!this._selectedId || !this._locations.some((u) => u.id === this._selectedId) || this._isManagedShadowLocation(this._locations.find((u) => u.id === this._selectedId))) && (this._selectedId = this._preferredSelectedLocationId()), this._rightPanelMode === "assign" && this._ensureEntityAreaIndex();
+      this._allLocations = [...r], this._locations = [...l], this._adjacencyEdges = Array.isArray(o.adjacency_edges) ? [...o.adjacency_edges] : [], this._mergeOccupancySnapshotFromStates(new Set(r.map((u) => u.id))), this._locationsVersion += 1, (!this._selectedId || !this._locations.some((u) => u.id === this._selectedId) || this._isManagedShadowLocation(this._locations.find((u) => u.id === this._selectedId))) && (this._selectedId = this._preferredSelectedLocationId()), this._rightPanelMode === "assign" && this._ensureEntityAreaIndex();
     } catch (n) {
       if (e !== this._loadSeq) return;
       console.error("Failed to load locations:", n), this._error = n.message || "Failed to load locations";
@@ -13323,6 +13323,23 @@ const De = class De extends pt {
     this._registryRefreshTimer && (window.clearTimeout(this._registryRefreshTimer), this._registryRefreshTimer = void 0), this._registryRefreshTimer = window.setTimeout(() => {
       this._registryRefreshTimer = void 0, this._haRegistryRevision += 1, this._entityAreaIndexLoaded = !1, this._entityAreaRevision += 1, this._rightPanelMode === "assign" && this._ensureEntityAreaIndex(!0), this._scheduleReload(!0);
     }, 200);
+  }
+  _mergeOccupancySnapshotFromStates(t) {
+    const e = this._buildOccupancyStateMapFromStates(), i = this._buildOccupancyTransitionsFromStates(), n = {}, o = {};
+    for (const a of t) {
+      const r = i[a], c = this._occupancyTransitionByLocation[a];
+      if (c !== void 0 && typeof this._occupancyStateByLocation[a] == "boolean" && (r === void 0 || this._transitionTimestampMs(c) > this._transitionTimestampMs(r))) {
+        typeof this._occupancyStateByLocation[a] == "boolean" && (n[a] = this._occupancyStateByLocation[a]), o[a] = c;
+        continue;
+      }
+      typeof e[a] == "boolean" && (n[a] = e[a]), r !== void 0 && (o[a] = r);
+    }
+    this._occupancyStateByLocation = n, this._occupancyTransitionByLocation = o;
+  }
+  _transitionTimestampMs(t) {
+    if (!(t != null && t.changedAt)) return 0;
+    const e = Date.parse(t.changedAt);
+    return Number.isFinite(e) ? e : 0;
   }
   _setOccupancyState(t, e, i) {
     const n = typeof (i == null ? void 0 : i.reason) == "string" && i.reason.trim().length ? i.reason.trim() : void 0, o = typeof (i == null ? void 0 : i.changedAt) == "string" && i.changedAt.trim().length ? i.changedAt : (/* @__PURE__ */ new Date()).toISOString();

@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.67] - 2026-04-24
+
+### Fixed
+
+- **Occupancy group toggles could appear to revert after a click**: the panel
+  applied live occupancy events immediately, but a follow-up location reload
+  rebuilt occupancy state from an older `hass.states` snapshot and could
+  overwrite the newer live event. The panel now merges HA snapshots with the
+  freshest known occupancy transition, so grouped areas no longer flash
+  occupied and then incorrectly return to vacant while HA catches up.
+
 ## [0.2.66] - 2026-04-24
 
 ### Fixed

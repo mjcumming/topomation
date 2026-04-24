@@ -110,28 +110,24 @@ Outcome:
 
 ## 8. Current Release Candidate Record
 
-Commit under test: **release-candidate worktree for Topomation `0.2.66`**
-(managed-shadow frontend graph preservation + release metadata).
+Commit under test: **release-candidate worktree for Topomation `0.2.67`**
+(occupancy live-event/snapshot race fix + release metadata).
 Frontend bundle rebuilt from same commit: **yes** (`npm run build` →
 committed `topomation-panel.js`; parity verified by
 `diff -u dist/topomation-panel.js topomation-panel.js`,
 `./scripts/test-comprehensive.sh`, and `make test-release-live`).
 
 Touched workflows:
-- **Structural-host action-rule target enumeration** (frontend):
-  `property`, `building`, `grounds`, and `floor` rows keep managed shadow
-  rows hidden from the tree while preserving the full backend location graph
-  for inspector lookups. Lighting / Media / HVAC / Appliances can resolve
-  `_meta.shadow_area_id -> shadow.ha_area_id` and enumerate devices from
-  the host's managed shadow HA area.
-- **Managed shadow frontend state boundary** (frontend/docs): panel state now
-  separates the canonical full location graph from the visible tree/selection
-  list so tree hiding cannot remove system rows from semantic lookup context.
+- **Tree occupancy toggle live-state refresh** (frontend): manual occupied /
+  vacant toggles, including grouped-area propagation, apply live
+  `topomation_occupancy_changed` events without being overwritten by older
+  HA `hass.states` snapshots during the follow-up location reload.
+- **Occupancy group visual sync** (frontend): grouped areas keep the freshest
+  known occupied/vacant transition while HA state propagation catches up.
 
 Commands run:
-- `npm run test -- topomation-panel.test.ts`
-- `npm run test:unit`
-- `npm run test`
+- `npm run test:unit -- topomation-panel.test.ts` — **PASS** (pre-release
+  focused regression, 2026-04-24)
 - `npm run build`
 - `diff -u dist/topomation-panel.js topomation-panel.js`
 - `bash scripts/check-docs-consistency.sh`
@@ -139,26 +135,19 @@ Commands run:
 - `source tests/ha-config.env && HA_URL_DEV="${HA_URL_LOCAL:-http://localhost:8123}" HA_TOKEN_DEV="${HA_TOKEN_LOCAL:-$HA_TOKEN_DEV}" make test-release-live`
 
 Outcome:
-- Version sync (`0.2.66`): **PASS** (2026-04-24)
-- Focused panel regression (`npm run test -- topomation-panel.test.ts`):
-  **PASS** (2026-04-24) — 34 panel tests green, including hidden managed
-  shadow rows feeding structural-host Lighting target enumeration.
-- Frontend unit suite (`npm run test:unit`): **PASS** (2026-04-24) —
-  249 tests green.
-- Frontend browser suite (`npm run test`): **PASS** (2026-04-24) —
-  189 browser tests green.
-- Docs consistency (`bash scripts/check-docs-consistency.sh`): **PASS**
-  (2026-04-24).
+- Version sync (`0.2.67`): **PASS** (2026-04-24)
+- Focused panel regression (`npm run test:unit -- topomation-panel.test.ts`):
+  **PASS** (2026-04-24) — includes stale HA snapshot vs newer live
+  occupancy event regression.
+- Frontend bundle parity: **PASS** (2026-04-24)
+- Docs consistency: **PASS** (2026-04-24)
 - Local comprehensive gate (`./scripts/test-comprehensive.sh`): **PASS**
   (2026-04-24) — backend checks, frontend unit/build/parity, WTR, and
   Playwright mock/production-smoke suites green.
 - Live HA release gate (`make test-release-live` pinned to local HA):
-  **PASS** (2026-04-24) — comprehensive gate, 2 managed-action contract
-  tests, and 6 live-browser tests green.
+  **PASS** (2026-04-24) — comprehensive gate, managed-action contract
+  tests, and live-browser tests green.
 
 Notes:
-- The first live-gate attempt failed because the local HA runtime was not
-  running at `http://localhost:8123`; after starting `hass -c
-  /workspaces/core/config --debug`, the same gate passed.
 - After push to `main`, confirm CI and **Auto Release** are green for the
   release commit before considering the release complete.
