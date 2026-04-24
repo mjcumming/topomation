@@ -77,6 +77,7 @@ class _TopomationMetadata:
     end_time: str
     run_on_startup: bool | None
     rule_uuid: str
+    user_named: bool
 
 
 @dataclass(slots=True)
@@ -95,6 +96,7 @@ class _RecentRuleSnapshot:
     end_time: str
     run_on_startup: bool | None
     rule_uuid: str
+    user_named: bool
     actions: list[dict[str, Any]]
     action_entity_id: str | None
     action_service: str | None
@@ -258,6 +260,7 @@ class TopomationManagedActions:
                         "end_time": recent_snapshot.end_time,
                         "run_on_startup": recent_snapshot.run_on_startup,
                         "rule_uuid": recent_snapshot.rule_uuid,
+                        "user_named": recent_snapshot.user_named,
                         # Legacy compatibility for older frontends.
                         "require_dark": recent_snapshot.ambient_condition == "dark",
                         "enabled": enabled,
@@ -339,6 +342,7 @@ class TopomationManagedActions:
                     "end_time": metadata.end_time,
                     "run_on_startup": metadata.run_on_startup,
                     "rule_uuid": metadata.rule_uuid or self._rule_uuid_from_automation_id(automation_id or entity_id),
+                    "user_named": metadata.user_named,
                     # Legacy compatibility for older frontends.
                     "require_dark": metadata.ambient_condition == "dark",
                     "enabled": enabled,
@@ -347,6 +351,80 @@ class TopomationManagedActions:
 
         rules.sort(key=lambda r: str(r.get("name", "")))
         return rules
+
+    async def async_migrate_rule_names(self, location_manager: Any) -> int:
+        """One-off: regenerate auto-name for every managed rule, overwriting its alias.
+
+        Intentionally ignores the ``user_named`` flag — this migration is the baseline
+        that establishes consistent naming across all pre-existing rules on first load
+        of the renaming feature. Remove this method and its caller in __init__.py once
+        the rollout is complete.
+        """
+        renamed = 0
+        try:
+            locations = list(location_manager.all_locations())
+        except Exception:  # pragma: no cover - defensive
+            _LOGGER.warning(
+                "[migration] unable to enumerate locations for rule-name migration",
+                exc_info=True,
+            )
+            return 0
+
+        for location in locations:
+            location_id = str(getattr(location, "id", "")).strip()
+            if not location_id:
+                continue
+            try:
+                rules = await self.async_list_rules(location_id)
+            except Exception:  # pragma: no cover - defensive
+                _LOGGER.warning(
+                    "[migration] failed to list rules for location %s",
+                    location_id,
+                    exc_info=True,
+                )
+                continue
+
+            for rule in rules:
+                automation_id = str(rule.get("id") or "").strip()
+                if not automation_id:
+                    continue
+                new_name = self._auto_rule_name(rule)
+                current_name = str(rule.get("name") or "").strip()
+                if not new_name or new_name == current_name:
+                    continue
+                try:
+                    fetch_payload = await self._call_automation_config_api(
+                        "GET", automation_id
+                    )
+                    if isinstance(fetch_payload, Mapping):
+                        fetched_config = fetch_payload.get("config")
+                        if isinstance(fetched_config, Mapping):
+                            raw_config: Mapping[str, Any] = fetched_config
+                        elif "triggers" in fetch_payload or "actions" in fetch_payload:
+                            raw_config = fetch_payload
+                        else:
+                            continue
+                    else:
+                        continue
+                    updated = dict(raw_config)
+                    updated["alias"] = new_name
+                    await self._call_automation_config_api(
+                        "POST", automation_id, updated
+                    )
+                    renamed += 1
+                    _LOGGER.info(
+                        "[migration] renamed rule %s: %r -> %r",
+                        automation_id,
+                        current_name,
+                        new_name,
+                    )
+                except Exception:  # pragma: no cover - defensive
+                    _LOGGER.warning(
+                        "[migration] failed to rename rule %s",
+                        automation_id,
+                        exc_info=True,
+                    )
+        return renamed
 
     async def async_create_rule(
         self,
@@ -368,6 +446,7 @@ class TopomationManagedActions:
         run_on_startup: bool | None = None,
         automation_id: str | None = None,
         rule_uuid: str | None = None,
+        user_named: bool = False,
     ) -> dict[str, Any]:
         """Create or replace one managed action automation (HA config/automation.py pattern)."""
         location_id = str(getattr(location, "id", "")).strip()
@@ -471,6 +550,7 @@ class TopomationManagedActions:
                 else {}
             ),
             "rule_uuid": normalized_rule_uuid,
+            "user_named": bool(user_named),
         }
         description = "Managed by Topomation.\n" + self._metadata_line(metadata_payload)
         config_actions: list[dict[str, Any]] = []
@@ -556,6 +636,7 @@ class TopomationManagedActions:
             action_entity_id=primary_action_entity_id,
             action_service=primary_action_service,
             action_data=primary_action_data,
+            user_named=bool(user_named),
         )
 
         entity_id = await self._resolve_created_entity_id(
@@ -822,6 +903,7 @@ class TopomationManagedActions:
         action_entity_id: str | None,
         action_service: str | None,
         action_data: Mapping[str, Any] | None,
+        user_named: bool,
     ) -> None:
         """Persist short-lived rule state after POST for immediate list consistency."""
         if not automation_id:
@@ -855,6 +937,7 @@ class TopomationManagedActions:
             end_time=end_time,
             run_on_startup=run_on_startup if isinstance(run_on_startup, bool) else None,
             rule_uuid=rule_uuid,
+            user_named=bool(user_named),
             actions=normalized_actions,
             action_entity_id=action_entity_id,
             action_service=action_service,
@@ -1216,6 +1299,9 @@ class TopomationManagedActions:
                     str(parsed.get("automation_id", "")).strip()
                 )
 
+            raw_user_named = (
+                parsed.get("user_named") if isinstance(parsed, Mapping) else None
+            )
             return _TopomationMetadata(
                 location_id=location_id,
                 trigger_type=trigger_type,
@@ -1227,6 +1313,7 @@ class TopomationManagedActions:
                 end_time=end_time,
                 run_on_startup=run_on_startup if isinstance(run_on_startup, bool) else None,
                 rule_uuid=rule_uuid,
+                user_named=bool(raw_user_named) if isinstance(raw_user_named, bool) else False,
             )
         return None
 
@@ -1259,6 +1346,65 @@ class TopomationManagedActions:
             if isinstance(friendly_name, str) and friendly_name.strip():
                 return friendly_name.strip()
         return entity_id
+
+    @staticmethod
+    def _trigger_word(trigger_type: str) -> str:
+        return {
+            "on_occupied": "Occupied",
+            "on_vacant": "Vacant",
+            "on_dark": "Dark",
+            "on_bright": "Bright",
+        }.get(trigger_type, "Dark")
+
+    def _friendly_entity_name(self, entity_id: str) -> str:
+        state = self.hass.states.get(entity_id)
+        if state is not None:
+            friendly_name = state.attributes.get("friendly_name")
+            if isinstance(friendly_name, str) and friendly_name.strip():
+                return friendly_name.strip()
+        return entity_id
+
+    def _auto_rule_name(self, rule: Mapping[str, Any]) -> str:
+        """Python mirror of frontend _autoActionRuleName — keep the two in sync."""
+        trigger_types_raw = rule.get("trigger_types")
+        if isinstance(trigger_types_raw, (list, tuple)):
+            trigger_types_in = [str(t) for t in trigger_types_raw]
+        else:
+            single = rule.get("trigger_type")
+            trigger_types_in = [str(single)] if single else []
+        ordered = ("on_occupied", "on_vacant", "on_dark", "on_bright")
+        trigger_words = [self._trigger_word(t) for t in ordered if t in trigger_types_in]
+        prefix = " + ".join(trigger_words)
+
+        must_be_occupied = rule.get("must_be_occupied")
+        if must_be_occupied is True:
+            prefix = f"{prefix} if occupied" if prefix else "If occupied"
+        elif must_be_occupied is False:
+            prefix = f"{prefix} if vacant" if prefix else "If vacant"
+
+        if bool(rule.get("time_condition_enabled")):
+            begin = self._normalize_time_hhmm(rule.get("start_time"), "18:00")
+            end = self._normalize_time_hhmm(rule.get("end_time"), "23:59")
+            time_part = f"{begin}-{end}"
+            prefix = f"{prefix} {time_part}" if prefix else time_part
+
+        actions = rule.get("actions") or []
+        primary_entity = ""
+        if isinstance(actions, list) and actions:
+            first = actions[0]
+            if isinstance(first, Mapping):
+                primary_entity = str(first.get("entity_id") or "").strip()
+        if not primary_entity:
+            primary_entity = str(rule.get("action_entity_id") or "").strip()
+
+        if not primary_entity:
+            return prefix or "New rule"
+
+        suffix = self._friendly_entity_name(primary_entity)
+        extras = len(actions) - 1 if isinstance(actions, list) else 0
+        if extras > 0:
+            suffix = f"{suffix} +{extras}"
+        return f"{prefix}: {suffix}" if prefix else suffix
 
     def _extract_actions(
         self,

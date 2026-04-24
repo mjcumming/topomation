@@ -168,6 +168,7 @@ export interface TopomationActionRule {
   start_time?: string;
   end_time?: string;
   run_on_startup?: boolean;
+  user_named?: boolean;
   // Legacy compatibility (older backend/frontend payloads)
   require_dark?: boolean;
   enabled: boolean;

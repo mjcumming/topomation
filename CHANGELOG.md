@@ -9,6 +9,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.63] - 2026-04-24
+
+### Changed
+
+- **Action rule auto-naming**: rule names are now generated from the rule's
+  own triggers + conditions and update live as the user edits the rule.
+  Format: `"Occupied + Dark if occupied 18:00-23:59: Front Porch Light +2"`
+  — triggers joined with `+`, optional `if occupied`/`if vacant` suffix for
+  the only-if condition, optional time window, then the primary target
+  entity with `+N` for additional targets. Action verbs and brightness are
+  deliberately excluded; the name describes when the rule fires, not what
+  it does.
+- **User-edited names are preserved**: a new `user_named` flag on each
+  rule (persisted in the automation description metadata) tracks whether
+  the user has typed a custom name. Structural edits stop rewriting the
+  name once the flag is set; clearing the name field flips the flag back
+  off and restores live auto-naming. Replaces the prior fuzzy
+  "is current name equal to the current auto-name" heuristic, which
+  silently stopped working whenever the auto-name generator evolved.
+- **Duplicate rule** no longer appends ` copy` and no longer opens the
+  rename dialog — the duplicate starts with `user_named=false` and shares
+  an auto-name with its source until the user tweaks a trigger or target,
+  at which point the names diverge naturally.
+
+### Migration
+
+- One-off rule-name migration runs on every integration load: every
+  managed rule's alias is overwritten with the freshly generated
+  auto-name, regardless of the `user_named` flag. This establishes the
+  naming baseline across pre-existing rules. The migration code is
+  marked with a `TODO` and will be removed in a later release once the
+  rollout is complete — delete `async_migrate_rule_names` in
+  `managed_actions.py` and its caller in `__init__.py`.
+
 ## [0.2.62] - 2026-04-23
 
 ### Fixed

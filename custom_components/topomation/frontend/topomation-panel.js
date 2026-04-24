@@ -3548,6 +3548,7 @@ async function ue(s, t, e) {
           start_time: typeof n.start_time == "string" && n.start_time.length > 0 ? n.start_time : void 0,
           end_time: typeof n.end_time == "string" && n.end_time.length > 0 ? n.end_time : void 0,
           run_on_startup: typeof n.run_on_startup == "boolean" ? n.run_on_startup : void 0,
+          user_named: typeof n.user_named == "boolean" ? n.user_named : !1,
           require_dark: c || l === "dark",
           action_entity_id: d == null ? void 0 : d.entity_id,
           action_service: d == null ? void 0 : d.service,
@@ -3592,6 +3593,7 @@ async function Qi(s, t, e) {
       require_dark: !!t.require_dark,
       ...t.automation_id ? { automation_id: t.automation_id } : {},
       ...t.rule_uuid ? { rule_uuid: t.rule_uuid } : {},
+      ...typeof t.user_named == "boolean" ? { user_named: t.user_named } : {},
       ...e ? { entry_id: e } : {}
     });
     if (c != null && c.rule) {
@@ -3618,6 +3620,7 @@ async function Qi(s, t, e) {
         start_time: typeof c.rule.start_time == "string" && c.rule.start_time.length > 0 ? c.rule.start_time : void 0,
         end_time: typeof c.rule.end_time == "string" && c.rule.end_time.length > 0 ? c.rule.end_time : void 0,
         run_on_startup: typeof c.rule.run_on_startup == "boolean" ? c.rule.run_on_startup : r,
+        user_named: typeof c.rule.user_named == "boolean" ? c.rule.user_named : !!t.user_named,
         require_dark: d || h === "dark"
       };
     }
@@ -6830,55 +6833,35 @@ const ke = class ke extends pt {
     const e = String(t || "").trim();
     return e ? e.replace(/[_.]+/g, " ") : "";
   }
+  _autoRuleTriggerWord(t) {
+    return t === "on_occupied" ? "Occupied" : t === "on_vacant" ? "Vacant" : t === "on_bright" ? "Bright" : "Dark";
+  }
   _autoActionRuleName(t, e) {
-    const i = this._normalizeActionTriggerTypes(t.trigger_types, t.trigger_type), n = this._primaryActionTriggerType(i);
-    let o = this._actionTriggerLabel(n);
-    const a = this._actionTargetsForRule(t), r = a[0], c = String((r == null ? void 0 : r.entity_id) || t.action_entity_id || "").trim();
-    c && (o = `${o}: ${this._entityName(c)}`, a.length > 1 && (o = `${o} +${a.length - 1}`));
-    const l = this._serviceLabel((r == null ? void 0 : r.service) || t.action_service);
-    if (l && (o = `${o} (${l})`), t.time_condition_enabled) {
+    const n = this._normalizeActionTriggerTypes(t.trigger_types, t.trigger_type).map((u) => this._autoRuleTriggerWord(u));
+    let o = n.length > 0 ? n.join(" + ") : "";
+    if (t.must_be_occupied === !0 ? o = o ? `${o} if occupied` : "If occupied" : t.must_be_occupied === !1 && (o = o ? `${o} if vacant` : "If vacant"), t.time_condition_enabled) {
       const u = this._normalizeActionTime(t.start_time, "18:00"), d = this._normalizeActionTime(t.end_time, "23:59");
-      o = `${o} ${u}-${d}`;
+      o = o ? `${o} ${u}-${d}` : `${u}-${d}`;
     }
-    return o === this._actionTriggerLabel(n) ? `${o} (${e + 1})` : o;
-  }
-  _isPlaceholderRuleName(t) {
-    const e = String(t || "").trim();
-    return e ? /^Rule \d+$/i.test(e) || /^New rule$/i.test(e) : !0;
-  }
-  /**
-   * When the stored name is exactly the auto title, or that title plus one or more
-   * " copy" segments (from Duplicate rule), keep it aligned with trigger/target/time edits.
-   * Returns the suffix after the auto title ("" or " copy", " copy copy", …), or undefined if
-   * the name should not be auto-adjusted.
-   */
-  _actionRuleAutoNameDuplicateSuffix(t, e) {
-    const i = String(t || "").trim(), n = String(e || "").trim();
-    if (!n)
-      return;
-    if (i === n)
-      return "";
-    if (!i.startsWith(n))
-      return;
-    const o = i.slice(n.length);
-    if (o === "" || /^( copy)+$/.test(o))
-      return o;
+    const a = this._actionTargetsForRule(t), r = a[0], c = String((r == null ? void 0 : r.entity_id) || t.action_entity_id || "").trim();
+    if (!c)
+      return o ? `${o} (${e + 1})` : `New rule ${e + 1}`;
+    let l = this._entityName(c);
+    return a.length > 1 && (l = `${l} +${a.length - 1}`), o ? `${o}: ${l}` : l;
   }
   _maybeSyncActionRuleNameFromStructure(t, e, i, n) {
-    if (Object.prototype.hasOwnProperty.call(n, "name"))
+    if (Object.prototype.hasOwnProperty.call(n, "name") || e.user_named === !0)
       return;
-    const o = this._autoActionRuleName(t, i), a = this._actionRuleAutoNameDuplicateSuffix(
-      String(t.name || "").trim(),
-      o
-    );
-    if (a === void 0)
-      return;
-    const r = this._normalizeActionRule({ ...e, name: "New rule" }, i), c = this._autoActionRuleName(r, i);
-    e.name = `${c}${a}`;
+    const o = this._normalizeActionRule({ ...e, name: "" }, i);
+    e.name = this._autoActionRuleName(o, i);
   }
   _resolveActionRuleName(t, e) {
-    const i = String(t.name || "").trim();
-    return this._isPlaceholderRuleName(i) ? this._autoActionRuleName(t, e) : i;
+    if (t.user_named === !0) {
+      const i = String(t.name || "").trim();
+      if (i)
+        return i;
+    }
+    return this._autoActionRuleName(t, e);
   }
   _normalizeActionAmbientCondition(t, e) {
     const i = String(t || "").trim().toLowerCase();
@@ -7150,6 +7133,7 @@ const ke = class ke extends pt {
       start_time: this._normalizeActionTime(t.start_time, "18:00"),
       end_time: this._normalizeActionTime(t.end_time, "23:59"),
       run_on_startup: !1,
+      user_named: typeof t.user_named == "boolean" ? t.user_named : !1,
       enabled: t.enabled !== !1,
       require_dark: this._normalizeActionAmbientCondition(t.ambient_condition, i) === "dark"
     };
@@ -7296,7 +7280,7 @@ const ke = class ke extends pt {
       const l = {
         id: c,
         entity_id: "",
-        name: "New rule",
+        name: "",
         rule_uuid: this._generateRuleUuid(),
         trigger_type: r,
         trigger_types: a,
@@ -7314,9 +7298,10 @@ const ke = class ke extends pt {
         start_time: "18:00",
         end_time: "23:59",
         run_on_startup: !1,
+        user_named: !1,
         enabled: !0
       };
-      this._setActionRulesDraft([...e, l]), this._showToast(`Draft ${t} rule added`, "success");
+      l.name = this._autoActionRuleName(l, e.length), this._setActionRulesDraft([...e, l]), this._showToast(`Draft ${t} rule added`, "success");
     } catch (e) {
       console.error("[topomation] failed to add action rule", e), this._showToast((e == null ? void 0 : e.message) || "Failed to add draft rule", "error");
     }
@@ -7448,29 +7433,32 @@ const ke = class ke extends pt {
     this._setActionRulesDraft(e);
   }
   _duplicateActionRule(t) {
-    const e = this._workingActionRules(), i = e.findIndex((d) => String(d.id || "") === t);
+    const e = this._workingActionRules(), i = e.findIndex((u) => String(u.id || "") === t);
     if (i < 0) return;
-    const n = this._normalizeActionRule(e[i], i), o = `action_rule_${Date.now()}_${Math.floor(Math.random() * 1e3)}`, a = this._actionTargetsForRule(n).map((d) => ({
-      entity_id: d.entity_id,
-      service: d.service,
-      ...d.data ? { data: { ...d.data } } : {},
-      ...typeof d.only_if_off == "boolean" ? { only_if_off: d.only_if_off } : {}
-    })), r = `${this._resolveActionRuleName(n, i)} copy`, c = this._normalizeActionRule(
+    const n = this._normalizeActionRule(e[i], i), o = `action_rule_${Date.now()}_${Math.floor(Math.random() * 1e3)}`, a = this._actionTargetsForRule(n).map((u) => ({
+      entity_id: u.entity_id,
+      service: u.service,
+      ...u.data ? { data: { ...u.data } } : {},
+      ...typeof u.only_if_off == "boolean" ? { only_if_off: u.only_if_off } : {}
+    })), r = this._normalizeActionRule(
       {
         ...n,
         id: o,
         entity_id: "",
-        name: r,
+        name: "",
+        user_named: !1,
         rule_uuid: this._generateRuleUuid(),
         actions: a
       },
       e.length
-    ), l = [
+    );
+    r.name = this._autoActionRuleName(r, e.length);
+    const c = [
       ...e.slice(0, i + 1),
-      c,
+      r,
       ...e.slice(i + 1)
-    ], u = this._ruleTabForEditing(n);
-    u && (this._actionRuleTabById[o] = u), this._setActionRulesDraft(l), this._startActionRuleNameEdit(o, r);
+    ], l = this._ruleTabForEditing(n);
+    l && (this._actionRuleTabById[o] = l), this._setActionRulesDraft(c);
   }
   _startActionRuleNameEdit(t, e) {
     this._editingActionRuleNameId = t, this._editingActionRuleNameValue = e, this._editingActionRuleNameFallback = e, this.requestUpdate();
@@ -7479,8 +7467,13 @@ const ke = class ke extends pt {
     this._editingActionRuleNameId = void 0, this._editingActionRuleNameValue = "", this._editingActionRuleNameFallback = "";
   }
   _commitActionRuleNameEdit(t) {
-    const e = String(this._editingActionRuleNameFallback || "").trim() || "New rule", i = this._editingActionRuleNameValue.trim() || e;
-    this._cancelActionRuleNameEdit(), this._updateActionRule(t, { name: i });
+    const e = this._editingActionRuleNameValue.trim();
+    this._cancelActionRuleNameEdit();
+    const i = this._workingActionRules(), n = i.findIndex((r) => String(r.id || "") === t);
+    if (n < 0)
+      return;
+    const o = i[n], a = this._autoActionRuleName(o, n);
+    !e || e === a ? this._updateActionRule(t, { name: a, user_named: !1 }) : this._updateActionRule(t, { name: e, user_named: !0 });
   }
   _actionRuleValidationErrors(t) {
     const e = [], i = /^([01]\d|2[0-3]):([0-5]\d)$/;
@@ -7537,6 +7530,7 @@ const ke = class ke extends pt {
             time_condition_enabled: !!d.time_condition_enabled,
             start_time: d.start_time,
             end_time: d.end_time,
+            user_named: !!d.user_named,
             require_dark: m === "dark"
           },
           this.entryId
@@ -7611,6 +7605,7 @@ const ke = class ke extends pt {
           start_time: n.start_time,
           end_time: n.end_time,
           run_on_startup: !1,
+          user_named: !!n.user_named,
           require_dark: u === "dark"
         },
         this.entryId

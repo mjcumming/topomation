@@ -7341,72 +7341,48 @@ export class HtLocationInspector extends LitElement {
     return raw.replace(/[_.]+/g, " ");
   }
 
+  private _autoRuleTriggerWord(
+    triggerType: TopomationActionRule["trigger_type"]
+  ): string {
+    if (triggerType === "on_occupied") return "Occupied";
+    if (triggerType === "on_vacant") return "Vacant";
+    if (triggerType === "on_bright") return "Bright";
+    return "Dark";
+  }
+
   private _autoActionRuleName(rule: TopomationActionRule, index: number): string {
     const triggerTypes = this._normalizeActionTriggerTypes(rule.trigger_types, rule.trigger_type);
-    const triggerType = this._primaryActionTriggerType(triggerTypes);
-    let name = this._actionTriggerLabel(triggerType);
-    const targets = this._actionTargetsForRule(rule);
-    const primaryAction = targets[0];
-    const entityId = String(primaryAction?.entity_id || rule.action_entity_id || "").trim();
-    if (entityId) {
-      name = `${name}: ${this._entityName(entityId)}`;
-      if (targets.length > 1) {
-        name = `${name} +${targets.length - 1}`;
-      }
+    const triggerWords = triggerTypes.map((triggerType) => this._autoRuleTriggerWord(triggerType));
+    let prefix = triggerWords.length > 0 ? triggerWords.join(" + ") : "";
+
+    if (rule.must_be_occupied === true) {
+      prefix = prefix ? `${prefix} if occupied` : "If occupied";
+    } else if (rule.must_be_occupied === false) {
+      prefix = prefix ? `${prefix} if vacant` : "If vacant";
     }
-    const service = this._serviceLabel(primaryAction?.service || rule.action_service);
-    if (service) {
-      name = `${name} (${service})`;
-    }
+
     if (rule.time_condition_enabled) {
       const begin = this._normalizeActionTime(rule.start_time, "18:00");
       const end = this._normalizeActionTime(rule.end_time, "23:59");
-      name = `${name} ${begin}-${end}`;
+      prefix = prefix ? `${prefix} ${begin}-${end}` : `${begin}-${end}`;
     }
-    if (name === this._actionTriggerLabel(triggerType)) {
-      return `${name} (${index + 1})`;
-    }
-    return name;
-  }
 
-  private _isPlaceholderRuleName(name: string): boolean {
-    const trimmed = String(name || "").trim();
-    if (!trimmed) {
-      return true;
+    const targets = this._actionTargetsForRule(rule);
+    const primaryAction = targets[0];
+    const entityId = String(primaryAction?.entity_id || rule.action_entity_id || "").trim();
+    if (!entityId) {
+      return prefix ? `${prefix} (${index + 1})` : `New rule ${index + 1}`;
     }
-    return /^Rule \d+$/i.test(trimmed) || /^New rule$/i.test(trimmed);
-  }
 
-  /**
-   * When the stored name is exactly the auto title, or that title plus one or more
-   * " copy" segments (from Duplicate rule), keep it aligned with trigger/target/time edits.
-   * Returns the suffix after the auto title ("" or " copy", " copy copy", …), or undefined if
-   * the name should not be auto-adjusted.
-   */
-  private _actionRuleAutoNameDuplicateSuffix(
-    explicitName: string,
-    autoName: string
-  ): string | undefined {
-    const name = String(explicitName || "").trim();
-    const auto = String(autoName || "").trim();
-    if (!auto) {
-      return undefined;
+    let suffix = this._entityName(entityId);
+    if (targets.length > 1) {
+      suffix = `${suffix} +${targets.length - 1}`;
     }
-    if (name === auto) {
-      return "";
-    }
-    if (!name.startsWith(auto)) {
-      return undefined;
-    }
-    const suffix = name.slice(auto.length);
-    if (suffix === "" || /^( copy)+$/.test(suffix)) {
-      return suffix;
-    }
-    return undefined;
+    return prefix ? `${prefix}: ${suffix}` : suffix;
   }
 
   private _maybeSyncActionRuleNameFromStructure(
-    previousRule: TopomationActionRule,
+    _previousRule: TopomationActionRule,
     merged: TopomationActionRule,
     index: number,
     patch: Partial<TopomationActionRule>
@@ -7414,22 +7390,20 @@ export class HtLocationInspector extends LitElement {
     if (Object.prototype.hasOwnProperty.call(patch, "name")) {
       return;
     }
-    const prevAuto = this._autoActionRuleName(previousRule, index);
-    const suffix = this._actionRuleAutoNameDuplicateSuffix(
-      String(previousRule.name || "").trim(),
-      prevAuto
-    );
-    if (suffix === undefined) {
+    if (merged.user_named === true) {
       return;
     }
-    const normalizedNext = this._normalizeActionRule({ ...merged, name: "New rule" }, index);
-    const nextAuto = this._autoActionRuleName(normalizedNext, index);
-    merged.name = `${nextAuto}${suffix}`;
+    const normalizedNext = this._normalizeActionRule({ ...merged, name: "" }, index);
+    merged.name = this._autoActionRuleName(normalizedNext, index);
   }
 
   private _resolveActionRuleName(rule: TopomationActionRule, index: number): string {
-    const explicitName = String(rule.name || "").trim();
-    if (!this._isPlaceholderRuleName(explicitName)) return explicitName;
+    if (rule.user_named === true) {
+      const explicit = String(rule.name || "").trim();
+      if (explicit) {
+        return explicit;
+      }
+    }
     return this._autoActionRuleName(rule, index);
   }
 
@@ -7984,6 +7958,7 @@ export class HtLocationInspector extends LitElement {
       start_time: this._normalizeActionTime(rule.start_time, "18:00"),
       end_time: this._normalizeActionTime(rule.end_time, "23:59"),
       run_on_startup: false,
+      user_named: typeof rule.user_named === "boolean" ? rule.user_named : false,
       enabled: rule.enabled !== false,
       require_dark: this._normalizeActionAmbientCondition(rule.ambient_condition, triggerTypes) === "dark",
     };
@@ -8268,7 +8243,7 @@ export class HtLocationInspector extends LitElement {
       const nextRule: TopomationActionRule = {
         id: nextRuleId,
         entity_id: "",
-        name: "New rule",
+        name: "",
         rule_uuid: this._generateRuleUuid(),
         trigger_type: triggerType,
         trigger_types: triggerTypes,
@@ -8291,8 +8266,10 @@ export class HtLocationInspector extends LitElement {
         start_time: "18:00",
         end_time: "23:59",
         run_on_startup: false,
+        user_named: false,
         enabled: true,
       };
+      nextRule.name = this._autoActionRuleName(nextRule, rules.length);
       this._setActionRulesDraft([...rules, nextRule]);
       this._showToast(`Draft ${tab} rule added`, "success");
     } catch (err: any) {
@@ -8493,18 +8470,19 @@ export class HtLocationInspector extends LitElement {
       ...(target.data ? { data: { ...target.data } } : {}),
       ...(typeof target.only_if_off === "boolean" ? { only_if_off: target.only_if_off } : {}),
     }));
-    const duplicateName = `${this._resolveActionRuleName(sourceRule, ruleIndex)} copy`;
     const duplicateRule = this._normalizeActionRule(
       {
         ...sourceRule,
         id: duplicateId,
         entity_id: "",
-        name: duplicateName,
+        name: "",
+        user_named: false,
         rule_uuid: this._generateRuleUuid(),
         actions: duplicateTargets,
       },
       rules.length
     );
+    duplicateRule.name = this._autoActionRuleName(duplicateRule, rules.length);
     const nextRules = [
       ...rules.slice(0, ruleIndex + 1),
       duplicateRule,
@@ -8515,7 +8493,6 @@ export class HtLocationInspector extends LitElement {
       this._actionRuleTabById[duplicateId] = sourceTab;
     }
     this._setActionRulesDraft(nextRules);
-    this._startActionRuleNameEdit(duplicateId, duplicateName);
   }
 
   private _startActionRuleNameEdit(ruleId: string, currentName: string): void {
@@ -8532,11 +8509,21 @@ export class HtLocationInspector extends LitElement {
   }
 
   private _commitActionRuleNameEdit(ruleId: string): void {
-    const fallback =
-      String(this._editingActionRuleNameFallback || "").trim() || "New rule";
-    const value = this._editingActionRuleNameValue.trim() || fallback;
+    const rawValue = this._editingActionRuleNameValue.trim();
     this._cancelActionRuleNameEdit();
-    this._updateActionRule(ruleId, { name: value });
+    const rules = this._workingActionRules();
+    const ruleIndex = rules.findIndex((rule) => String(rule.id || "") === ruleId);
+    if (ruleIndex < 0) {
+      return;
+    }
+    const rule = rules[ruleIndex];
+    const autoName = this._autoActionRuleName(rule, ruleIndex);
+    // Empty or equal-to-auto input reverts to auto-named; anything else is a manual override.
+    if (!rawValue || rawValue === autoName) {
+      this._updateActionRule(ruleId, { name: autoName, user_named: false });
+    } else {
+      this._updateActionRule(ruleId, { name: rawValue, user_named: true });
+    }
   }
 
   private _actionRuleValidationErrors(rules: TopomationActionRule[]): string[] {
@@ -8635,6 +8622,7 @@ export class HtLocationInspector extends LitElement {
             time_condition_enabled: Boolean(normalizedRule.time_condition_enabled),
             start_time: normalizedRule.start_time,
             end_time: normalizedRule.end_time,
+            user_named: Boolean(normalizedRule.user_named),
             require_dark: ambientCondition === "dark",
           },
           this.entryId
@@ -8739,6 +8727,7 @@ export class HtLocationInspector extends LitElement {
           start_time: rule.start_time,
           end_time: rule.end_time,
           run_on_startup: false,
+          user_named: Boolean(rule.user_named),
           require_dark: ambientCondition === "dark",
         },
         this.entryId

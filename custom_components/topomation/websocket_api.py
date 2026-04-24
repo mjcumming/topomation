@@ -1985,6 +1985,7 @@ async def handle_action_rules_list(
         vol.Optional("require_dark", default=False): bool,
         vol.Optional("automation_id"): str,
         vol.Optional("rule_uuid"): str,
+        vol.Optional("user_named"): bool,
         vol.Optional("entry_id"): str,
     }
 )
@@ -2163,6 +2164,7 @@ async def handle_action_rules_create(
             action_data=action_data,
             automation_id=str(msg.get("automation_id", "")).strip() or None,
             rule_uuid=str(msg.get("rule_uuid", "")).strip() or None,
+            user_named=bool(msg.get("user_named", False)),
         )
     except ValueError as err:
         _LOGGER.warning(

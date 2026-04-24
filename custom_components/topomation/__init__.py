@@ -645,6 +645,27 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, save_state_on_shutdown)
     )
 
+    # TODO(mjcumming): one-off rule-name migration — remove once run successfully on all installs.
+    # Runs every integration load until deleted; stomps every rule's alias with the generated
+    # auto-name, ignoring user_named. Intentional: establishes the naming baseline.
+    async def _run_rule_name_migration(_event: Any = None) -> None:
+        try:
+            renamed = await managed_action_rules.async_migrate_rule_names(loc_mgr)
+            if renamed:
+                _LOGGER.info(
+                    "[migration] regenerated names for %d Topomation rule(s)",
+                    renamed,
+                )
+        except Exception:  # pragma: no cover - defensive
+            _LOGGER.exception("[migration] rule-name migration failed")
+
+    from homeassistant.const import EVENT_HOMEASSISTANT_STARTED  # local import — migration code
+
+    if hass.is_running:
+        hass.async_create_task(_run_rule_name_migration())
+    else:
+        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _run_rule_name_migration)
+
     _LOGGER.info("Topomation integration setup complete")
     return True
 
