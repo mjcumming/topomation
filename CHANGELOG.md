@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.65] - 2026-04-24
+
+### Fixed
+
+- **Rule title didn't live-update when target entities changed**: the rule
+  card's title bar was reading `rule.name` directly instead of going
+  through the name resolver, so it only updated if
+  `_maybeSyncActionRuleNameFromStructure` had successfully written the
+  new name into the draft state. Any path that bypassed the sync (or a
+  render that beat it) left the title frozen at a stale value — e.g.
+  toggling the target light from `Camera Floodlight` to `Ceiling Light`
+  would swap the checkbox state but the title kept reading
+  `"Dark: Front Porch Camera Floodlight"`. The title now calls
+  `_resolveActionRuleName(rule, index)` on every render, which returns
+  the stored name when `user_named=true` and recomputes the auto-name
+  live otherwise. No more stale titles.
+
 ## [0.2.64] - 2026-04-24
 
 ### Fixed

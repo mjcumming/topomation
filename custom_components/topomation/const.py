@@ -2,7 +2,7 @@
 
 DOMAIN = "topomation"
 NAME = "Topomation"
-VERSION = "0.2.64"
+VERSION = "0.2.65"
 
 # Location `_meta` keys (integration-owned semantics)
 META_TOPOLOGY_ANCHOR_KEY = "topology_anchor"

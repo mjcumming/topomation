@@ -8439,8 +8439,7 @@ const ke = class ke extends pt {
                   ${o.length === 0 ? g`No compatible ${a} devices found in this location.` : ""}
                 </div>
               ` : n.map((c, l) => {
-      var m;
-      const u = String(c.id || ""), d = ((m = c.name) == null ? void 0 : m.trim()) || `Rule ${l + 1}`, h = this._persistedActionRuleForDraft(c), f = !!h, p = this._isActionRuleDirty(c, l, h), _ = f && !p;
+      const u = String(c.id || ""), d = this._resolveActionRuleName(c, l), h = this._persistedActionRuleForDraft(c), f = !!h, p = this._isActionRuleDirty(c, l, h), _ = f && !p;
       return g`
                   <div class="dusk-block-row" data-testid=${`action-rule-${u}`}>
                     <div class="dusk-block-head">

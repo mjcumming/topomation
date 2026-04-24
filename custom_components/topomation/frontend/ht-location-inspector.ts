@@ -9841,7 +9841,7 @@ export class HtLocationInspector extends LitElement {
               `
             : rules.map((rule, index) => {
                 const ruleId = String(rule.id || "");
-                const label = rule.name?.trim() || `Rule ${index + 1}`;
+                const label = this._resolveActionRuleName(rule, index);
                 const persistedRule = this._persistedActionRuleForDraft(rule);
                 const isPersisted = Boolean(persistedRule);
                 const hasRuleEdits = this._isActionRuleDirty(rule, index, persistedRule);
