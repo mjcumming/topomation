@@ -26,6 +26,7 @@ describe("ha-automation-rules websocket path", () => {
         start_time: undefined,
         end_time: undefined,
         run_on_startup: undefined,
+        user_named: false,
         require_dark: false,
         enabled: true,
       },
@@ -131,6 +132,7 @@ describe("ha-automation-rules websocket path", () => {
       start_time: undefined,
       end_time: undefined,
       run_on_startup: undefined,
+      user_named: false,
       require_dark: true,
       enabled: true,
     };

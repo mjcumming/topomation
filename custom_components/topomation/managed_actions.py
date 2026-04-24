@@ -1388,6 +1388,9 @@ class TopomationManagedActions:
             time_part = f"{begin}-{end}"
             prefix = f"{prefix} {time_part}" if prefix else time_part
 
+        if not prefix:
+            return "New rule"
+
         actions = rule.get("actions") or []
         primary_entity = ""
         if isinstance(actions, list) and actions:
@@ -1398,13 +1401,13 @@ class TopomationManagedActions:
             primary_entity = str(rule.get("action_entity_id") or "").strip()
 
         if not primary_entity:
-            return prefix or "New rule"
+            return prefix
 
         suffix = self._friendly_entity_name(primary_entity)
         extras = len(actions) - 1 if isinstance(actions, list) else 0
         if extras > 0:
             suffix = f"{suffix} +{extras}"
-        return f"{prefix}: {suffix}" if prefix else suffix
+        return f"{prefix}: {suffix}"
 
     def _extract_actions(
         self,

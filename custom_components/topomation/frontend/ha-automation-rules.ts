@@ -33,7 +33,6 @@ export interface TopomationActionRule {
   start_time?: string;
   end_time?: string;
   run_on_startup?: boolean;
-  user_named?: boolean;
   // Compatibility field retained for payload normalization.
   require_dark?: boolean;
   enabled: boolean;
@@ -273,8 +272,6 @@ export async function listTopomationActionRules(
                 : undefined,
             run_on_startup:
               typeof rule.run_on_startup === "boolean" ? rule.run_on_startup : undefined,
-            user_named:
-              typeof rule.user_named === "boolean" ? rule.user_named : false,
             require_dark: requireDark || ambientCondition === "dark",
             action_entity_id: primaryAction?.entity_id,
             action_service: primaryAction?.service,
@@ -314,7 +311,6 @@ export async function createTopomationActionRule(
     require_dark?: boolean;
     automation_id?: string;
     rule_uuid?: string;
-    user_named?: boolean;
   },
   entryId?: string
 ): Promise<TopomationActionRule> {
@@ -358,7 +354,6 @@ export async function createTopomationActionRule(
       require_dark: Boolean(args.require_dark),
       ...(args.automation_id ? { automation_id: args.automation_id } : {}),
       ...(args.rule_uuid ? { rule_uuid: args.rule_uuid } : {}),
-      ...(typeof args.user_named === "boolean" ? { user_named: args.user_named } : {}),
       ...(entryId ? { entry_id: entryId } : {}),
     });
 
@@ -403,10 +398,6 @@ export async function createTopomationActionRule(
           typeof response.rule.run_on_startup === "boolean"
             ? response.rule.run_on_startup
             : runOnStartup,
-        user_named:
-          typeof response.rule.user_named === "boolean"
-            ? response.rule.user_named
-            : Boolean(args.user_named),
         require_dark: requireDark || ambientCondition === "dark",
       };
     }

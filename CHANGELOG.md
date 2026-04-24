@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.64] - 2026-04-24
+
+### Fixed
+
+- **CI test fallout from 0.2.63**: four `assert_awaited_once_with` calls
+  in `tests/test_websocket_contract.py` and the `createTopomationActionRule`
+  fixtures in `vitest/ha-automation-rules.test.ts` didn't know about the
+  new `user_named` field. Updated to include `user_named=False` / `false`.
+- **Draft rule title regression**: a freshly added rule is shown as
+  `"New rule"` again until the user configures at least one trigger
+  (or condition / time window). Previously 0.2.63 would generate a name
+  from the first available target entity — e.g. `"Kitchen Ceiling"` —
+  the moment the rule was created, which both broke a UI test and read
+  as misleading since the rule was not yet configured to fire. The
+  generator now returns `"New rule"` whenever the trigger / condition /
+  time prefix is empty, regardless of target selection. Applied to both
+  the frontend generator and the Python migration mirror.
+
 ## [0.2.63] - 2026-04-24
 
 ### Changed

@@ -3548,7 +3548,6 @@ async function ue(s, t, e) {
           start_time: typeof n.start_time == "string" && n.start_time.length > 0 ? n.start_time : void 0,
           end_time: typeof n.end_time == "string" && n.end_time.length > 0 ? n.end_time : void 0,
           run_on_startup: typeof n.run_on_startup == "boolean" ? n.run_on_startup : void 0,
-          user_named: typeof n.user_named == "boolean" ? n.user_named : !1,
           require_dark: c || l === "dark",
           action_entity_id: d == null ? void 0 : d.entity_id,
           action_service: d == null ? void 0 : d.service,
@@ -3593,7 +3592,6 @@ async function Qi(s, t, e) {
       require_dark: !!t.require_dark,
       ...t.automation_id ? { automation_id: t.automation_id } : {},
       ...t.rule_uuid ? { rule_uuid: t.rule_uuid } : {},
-      ...typeof t.user_named == "boolean" ? { user_named: t.user_named } : {},
       ...e ? { entry_id: e } : {}
     });
     if (c != null && c.rule) {
@@ -3620,7 +3618,6 @@ async function Qi(s, t, e) {
         start_time: typeof c.rule.start_time == "string" && c.rule.start_time.length > 0 ? c.rule.start_time : void 0,
         end_time: typeof c.rule.end_time == "string" && c.rule.end_time.length > 0 ? c.rule.end_time : void 0,
         run_on_startup: typeof c.rule.run_on_startup == "boolean" ? c.rule.run_on_startup : r,
-        user_named: typeof c.rule.user_named == "boolean" ? c.rule.user_named : !!t.user_named,
         require_dark: d || h === "dark"
       };
     }
@@ -6843,11 +6840,13 @@ const ke = class ke extends pt {
       const u = this._normalizeActionTime(t.start_time, "18:00"), d = this._normalizeActionTime(t.end_time, "23:59");
       o = o ? `${o} ${u}-${d}` : `${u}-${d}`;
     }
+    if (!o)
+      return "New rule";
     const a = this._actionTargetsForRule(t), r = a[0], c = String((r == null ? void 0 : r.entity_id) || t.action_entity_id || "").trim();
     if (!c)
-      return o ? `${o} (${e + 1})` : `New rule ${e + 1}`;
+      return `${o} (${e + 1})`;
     let l = this._entityName(c);
-    return a.length > 1 && (l = `${l} +${a.length - 1}`), o ? `${o}: ${l}` : l;
+    return a.length > 1 && (l = `${l} +${a.length - 1}`), `${o}: ${l}`;
   }
   _maybeSyncActionRuleNameFromStructure(t, e, i, n) {
     if (Object.prototype.hasOwnProperty.call(n, "name") || e.user_named === !0)

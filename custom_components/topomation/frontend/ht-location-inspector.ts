@@ -7367,18 +7367,23 @@ export class HtLocationInspector extends LitElement {
       prefix = prefix ? `${prefix} ${begin}-${end}` : `${begin}-${end}`;
     }
 
+    // No triggers / no conditions = rule isn't configured yet; don't claim a name from the target.
+    if (!prefix) {
+      return "New rule";
+    }
+
     const targets = this._actionTargetsForRule(rule);
     const primaryAction = targets[0];
     const entityId = String(primaryAction?.entity_id || rule.action_entity_id || "").trim();
     if (!entityId) {
-      return prefix ? `${prefix} (${index + 1})` : `New rule ${index + 1}`;
+      return `${prefix} (${index + 1})`;
     }
 
     let suffix = this._entityName(entityId);
     if (targets.length > 1) {
       suffix = `${suffix} +${targets.length - 1}`;
     }
-    return prefix ? `${prefix}: ${suffix}` : suffix;
+    return `${prefix}: ${suffix}`;
   }
 
   private _maybeSyncActionRuleNameFromStructure(
