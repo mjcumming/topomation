@@ -4724,6 +4724,172 @@ makes physical sense (typically the garage or grounds).
 
 ---
 
+### ADR-HA-091: Vacuum Action Tab v1 — Occupancy-Driven Start/Pause/Dock with Daily-Run Gating (2026-04-25)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+
+`vacuum.*` entities are common in Home Assistant installs and are a natural fit
+for occupancy-driven scheduling: the most reliable signal for "safe to clean"
+is "the room/floor is currently vacant." Today, users author this in raw HA
+YAML — workable, but it bypasses the floor-level occupancy rollup,
+managed-shadow scoping, and rule-card UX TopoMation already provides for
+Lighting, Appliances, Media, and HVAC.
+
+The minimal viable behavior is small:
+
+1. Start the vacuum on an occupancy edge inside an optional time window
+2. Interrupt it (Pause or Return to dock) when occupancy returns
+3. Don't fire on every vacancy edge — once per day is the practical cadence
+
+The remaining design space (deadline-fallback scheduling, daily/alternate-day
+weekday subsets, segment-targeted cleans, multi-vacuum sequencing, battery /
+dock-state preconditions) is rich and deeply user-specific. Trying to bake any
+of it into v1 risks overfitting one workflow. Each is its own future ADR if
+demand emerges.
+
+One specific design tension is worth surfacing here: **daily-run gating
+interacts with the natural two-rule pause/resume composition.** A user
+typically expresses "pause when occupied, resume when vacant" as two rules:
+`Rule A: vacant → Start` and `Rule B: occupied → Pause`. Because `vacuum.start`
+is "start-or-resume" on virtually every HA vacuum integration, this composes
+for free — *unless* daily gating on Rule A blocks the second `Start` after a
+mid-clean pause, leaving the vacuum paused indefinitely. v1 must either
+preserve this composition or document its loss explicitly.
+
+**Decision**:
+
+1. Add a new **`Vacuum`** action tab, mirroring the Appliances pattern
+   (ADR-HA-089).
+2. The tab is available on every device-hosting location type — `area`,
+   `subarea`, `floor`, `property`, `building`, `grounds` — per the action-tab
+   scoping policy in **ADR-HA-087**. Target-device enumeration is the row's
+   own HA area plus its managed shadow area; no descendant walk.
+3. Trigger family is `Occupancy change` only:
+   - `Room becomes occupied`
+   - `Room becomes vacant`
+   No ambient-light triggers or ambient condition rows.
+4. Optional **time window** uses the standard pill pattern (`Any time` /
+   `Limit to a time range`). Default: `Any time`.
+5. Action verbs are exactly three: **`Start`**, **`Pause`**, **`Return to dock`**.
+   Default on a fresh draft: `Start`.
+   - `vacuum.stop` is intentionally **not** exposed — it leaves the vacuum
+     mid-room with no clean resume path.
+6. **One vacuum target per rule.** Multi-target authoring is deferred (vacuums
+   are serial physical robots; multi-target raises sequencing questions
+   without an obvious right answer).
+7. Optional per-rule toggle: **"Run at most once per day."** Default off.
+   When on:
+   - The rule maintains a "last fired" date in managed-rule metadata, keyed by
+     `rule_uuid`, evaluated in the host's local time.
+   - The rule fires on a matching trigger if **`(not-fired-today) OR
+     (target vacuum is currently in the `paused` state)`**. The second clause
+     is the *Path Y carve-out* and exists specifically to preserve the
+     two-rule pause/resume composition described in Context.
+   - "Fired today" is set on successful service-call dispatch, not on cleaning
+     completion.
+   - State resets at local midnight.
+8. Daily gating is offered on every Vacuum rule regardless of action verb.
+   Enabling it on a `Pause` or `Return to dock` rule is permitted but rarely
+   meaningful; v1 does not warn or block this. (See Consequences.)
+9. The rule layer treats `vacuum.start` as idempotent-with-resume per HA
+   convention. The rule does **not** branch on vacuum state when dispatching
+   `Start` — it just calls the service. Integrations that diverge from the
+   start-or-resume convention will not auto-resume from pause; this is
+   acknowledged as an integration limitation, not a TopoMation bug.
+10. Composition across multiple Vacuum rules targeting the same vacuum is the
+    author's responsibility. v1 does not detect or warn on overlap.
+
+**Rationale**:
+
+1. Occupancy-driven cleaning is the obvious automation for vacuums in an
+   occupancy-first product, and TopoMation's floor-level rollup is exactly
+   the trigger source needed.
+2. The Start / Pause / Return-to-dock verb set covers the practical workflow
+   space; the omitted `vacuum.stop` is rarely what any user actually wants in
+   an automation context.
+3. Daily-run gating is a hard requirement — without it, every vacancy edge in
+   the time window starts the vacuum, which is unusable for any household
+   that routinely transitions between occupied and vacant during the day.
+4. The Path Y carve-out (re-fire if the target vacuum is currently paused)
+   preserves the natural two-rule pause/resume pattern at the cost of one
+   extra condition on the gate. The alternative — Path X, simple gating with
+   no carve-out — silently breaks a composition that users will reach for
+   first, and the cost of the carve-out is small.
+5. Per-rule (rather than per-vacuum) gating state keeps composition flexible.
+   A user can intentionally author two daily-gated rules on one vacuum (e.g.,
+   morning window + afternoon window) and each tracks its own dispatch.
+6. Mirroring HA-089's Appliances pattern keeps the rule-card UX uniform; no
+   new lifecycle controls or section types are introduced.
+7. Deferring deadline-fallback, segment cleans, weekday subsets, and
+   multi-vacuum sequencing keeps v1 finite and shippable. Each can become its
+   own ADR after real usage clarifies the shape; the YAML escape hatch
+   remains available for advanced users in the meantime.
+
+**Consequences**:
+
+- ✅ Vacuum scheduling lands inside TopoMation; users get floor-occupancy-aware
+  vacuum rules without writing YAML.
+- ✅ Tab follows the established Lighting / Appliances / Media / HVAC pattern;
+  no new rule-card concepts, lifecycle controls, or section types.
+- ✅ The Path Y carve-out preserves the natural two-rule "Pause on occupied +
+  Start on vacant" auto-resume composition.
+- ✅ HA-087 scoping applies unchanged — vacuums attach where their HA area
+  places them; floor-scoped vacuums (the common case) author at the floor host.
+- ⚠️ **First stateful trigger gate in TopoMation's rule model.** All other rule
+  families are stateless edge triggers. This divergence is bounded — one
+  optional toggle on Vacuum only — but sets a precedent worth tracking if
+  similar gating shows up elsewhere (laundry nudges, dehumidifier, etc.).
+- ⚠️ **Cleaning completion is not tracked.** "Fired today" is set on dispatch,
+  not on clean-complete. If a vacuum errors mid-clean, the daily flag remains
+  set; the rule will not retry until tomorrow. User must intervene manually
+  or wait.
+- ⚠️ **Auto-resume depends on `vacuum.start` being "start-or-resume."**
+  Mainstream integrations (Roborock, iRobot, generic vacuum) honor this;
+  divergent integrations will not auto-resume cleanly from pause.
+- ⚠️ **Overlapping rules on a single vacuum are not detected.** Two
+  daily-gated `Start` rules pointing at the same vacuum, with overlapping
+  time windows, will each track their own dispatch — possibly causing two
+  clean cycles in a day. Composition is the author's responsibility.
+- ⚠️ **Daily gating is allowed on `Pause` and `Return to dock` rules** even
+  though it rarely makes sense. v1 does not block this; foot-shooting is the
+  user's problem.
+- ℹ️ **Deferred for future ADRs (no commitment):** deadline-fallback
+  scheduling ("if not run by 16:00, run anyway"); daily / alternate-day
+  weekday subsets; segment-targeted cleans (`clean kitchen`); multi-vacuum
+  sequencing; battery / dock / running-state preconditions; whole-house
+  sequencing across floors.
+
+**Alternatives Considered**:
+
+- **Path X — simple daily gating, no carve-out.** Rejected. Silently breaks
+  the natural two-rule pause/resume composition users will reach for first.
+  The one-condition carve-out cost is justified.
+- **Per-vacuum gating instead of per-rule.** Rejected. Constrains
+  composition; users with two intentional rules on one vacuum (different
+  windows, different verbs) cannot express both under a single per-vacuum
+  flag.
+- **Track vacuum-completion state to clear the daily flag.** Deferred. Would
+  give crisper "ran successfully today" semantics, but requires subscribing
+  to vacuum state transitions. The Path Y carve-out covers the resume case at
+  much lower cost; revisit if completion-aware gating is later wanted.
+- **Include `vacuum.stop` as a fourth verb.** Rejected. Leaves the vacuum
+  mid-room with no clean resume path; Pause covers "stop temporarily" and
+  Return-to-dock covers "stop and go home."
+- **Multi-vacuum target per rule.** Deferred. Sensible for parallel devices
+  (lights), unclear for serial physical robots (sequencing semantics, conflict
+  handling). Authors can express the same intent with two rules in v1.
+- **Bake segment cleans (`clean kitchen`) into v1.** Rejected. Segment IDs
+  live on the vendor map and are not portably HA-discoverable; modeling them
+  well requires per-integration work that does not generalize. Existing
+  per-room scripts cover this case via Alexa routines + HA scripts today.
+- **Whole deadline-fallback scheduler in v1.** Deferred. The "vacant-window
+  with hard deadline" pattern is a reusable trigger primitive worth its own
+  ADR after v1 ships and real usage clarifies the shape.
+
+---
+
 ## How to Use This Log
 
 ### When to Create an ADR
