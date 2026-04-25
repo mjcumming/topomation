@@ -1507,6 +1507,10 @@ class TopomationManagedActions:
             return "media_stop" if prefers_off else "media_play"
         if domain in {"switch", "fan", "light"}:
             return "turn_off" if prefers_off else "turn_on"
+        if domain == "vacuum":
+            # ADR-HA-091: vacancy is the safe time to clean; occupancy
+            # interrupts politely with pause. Inverse of the switch/fan default.
+            return "pause" if trigger_type == "on_occupied" else "start"
         return "turn_off" if prefers_off else "turn_on"
 
     def _normalize_rule_actions(
