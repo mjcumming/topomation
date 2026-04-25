@@ -319,11 +319,11 @@ Additional save points:
   - structural occupancy is expected to roll up from descendant locations
 - Structural nodes are informational pages in the active inspector for **occupancy
   rollup** (no direct source authoring on aggregate hosts), but they **do** expose
-  **Lighting**, **Media**, and **HVAC** (not **Appliances**) alongside **Occupancy**
+  **Lighting**, **Appliances**, **Media**, and **HVAC** alongside **Occupancy**
   (summary or groups) and **Ambient**:
   - `property`, `floor`, `building`, and `grounds` use the same managed-shadow
     HA area as the device container for aggregate automation targets (ADR-HA-049,
-    ADR-HA-078)
+    ADR-HA-087)
   - `property`, `floor`, `building`, and `grounds` may manage occupancy groups
     for immediate child `area` locations only
   - `building` and `grounds` still render derived-occupancy summary and not a
@@ -438,7 +438,7 @@ Additional save points:
   - any HA area linked by `location.ha_area_id`
   - when the location is a **managed shadow host** (`property`, `floor`,
     `building`, `grounds`): the host’s managed shadow wrapper’s `ha_area_id` and
-    that shadow location’s `entity_ids` (ADR-HA-078)
+    that shadow location’s `entity_ids` (ADR-HA-087)
 - Ambient module configs must persist with `auto_discover: false` in integration defaults.
 - Ambient source priority:
   1. assigned location lux sensor

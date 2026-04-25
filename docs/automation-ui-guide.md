@@ -2,7 +2,7 @@
 
 **Last reviewed**: 2026-04-13  
 **Status**: Active (design baseline)  
-**Authority**: ADR-HA-055, ADR-HA-056, ADR-HA-060, ADR-HA-066, ADR-HA-068, ADR-HA-069, ADR-HA-078, ADR-HA-080 + `docs/contracts.md`
+**Authority**: ADR-HA-055, ADR-HA-056, ADR-HA-060, ADR-HA-066, ADR-HA-068, ADR-HA-069, ADR-HA-080, ADR-HA-087, ADR-HA-089 + `docs/contracts.md`
 
 This guide defines the intended user interaction model for Topomation's
 automation workspace and inspector tabs.
@@ -30,17 +30,17 @@ automation workspace and inspector tabs.
 
 These locations use **derived** occupancy surfaces (summary or occupancy groups),
 not room-style source lists on structural hosts—see `docs/contracts.md` and
-ADR-HA-073 (intent) as amended by **ADR-HA-078** (current tab policy).
+ADR-HA-073 (initial intent) as superseded by **ADR-HA-087** (current tab policy).
 
-1. **Tabs shown**: `Occupancy Groups`, `Ambient`, `Lighting`, `Media`, `HVAC`.
-2. **Not shown**: `Appliances` on these structural summary rows (appliance-style
-   targets stay on room-like `area` / `subarea` nodes).
-3. **Device and lux enumeration** (Ambient selector, Lighting/Media/HVAC action
-   targets): union of the host’s `entity_ids` and `ha_area_id` with the **managed
+1. **Tabs shown**: `Occupancy Groups`, `Ambient`, `Lighting`, `Appliances`, `Media`, `HVAC`.
+2. **Device and lux enumeration** (Ambient selector, Lighting/Appliances/Media/HVAC
+   action targets): the host’s `entity_ids` and `ha_area_id` plus the **managed
    shadow** wrapper’s `ha_area_id` and `entity_ids` (`_meta.shadow_area_id` on the
-   host). This matches HA assignment remap for aggregate hosts (ADR-HA-049).
-4. **ADR-HA-073** previously removed automation tabs from structural nodes; **ADR-HA-078**
-   supersedes that tab-removal decision while keeping rollup-first occupancy UX.
+   host). **No descendant walk** — devices in child-room HA areas are authored
+   from the room that owns them (ADR-HA-049, ADR-HA-087).
+3. **ADR-HA-073** originally hid automation tabs on structural nodes; **ADR-HA-087**
+   restores them while scoping target-device enumeration to the host's own HA area
+   plus its managed shadow area. Rollup-first occupancy UX is preserved.
 
 ## 2. Header Status Behavior
 
@@ -95,7 +95,7 @@ Top-to-bottom layout order:
    - `Discard changes` restores persisted state.
 4. Ambient assignment uses one selector control:
    - direct sensor options for the location (including HA areas and entities tied to
-     the host’s **managed shadow** when applicable; see ADR-HA-078 / C-015)
+     the host’s **managed shadow** when applicable; see ADR-HA-087 / C-015)
    - `Inherit from parent` as the empty/default option
    - do not render a separate inherit checkbox alongside the selector.
 5. Rule-authoring tabs (`Lighting`, `Appliances`, `Media`, `HVAC`) use

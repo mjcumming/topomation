@@ -44,6 +44,7 @@ Recommended setup:
 
 TopoMation can also create topology-only structure around those imported nodes:
 
+- `property` for the top-level container (one household, even if it spans multiple buildings or includes outdoor grounds)
 - `building` for an indoor root
 - `grounds` for outdoor structure
 - `subarea` for nested zones such as closets, pantries, or reading nooks
@@ -62,6 +63,7 @@ The main workspace is split into:
 - `Occupancy`
 - `Ambient`
 - `Lighting`
+- `Appliances`
 - `Media`
 - `HVAC`
 
@@ -129,9 +131,10 @@ Use the `Ambient` tab to:
 
 Use the rule tabs to create native Home Assistant automations:
 
-- `Lighting` for `light.*` targets
-- `Media` for `media_player.*` targets
-- `HVAC` for `fan.*` and compatible ventilation-style `switch.*` targets
+- `Lighting` for `light.*` targets (occupancy and ambient triggers, optional time window, per-light brightness)
+- `Appliances` for standalone `fan.*` and `switch.*` targets (exhaust fans, plug-in heaters, anything not on a climate device chain)
+- `HVAC` for `fan.*` entities linked to a `climate.*` device on the same device chain
+- `Media` for `media_player.*` targets (power, playback, volume, mute)
 
 Rules created here are stored as Home Assistant automations and appear in:
 
@@ -166,18 +169,19 @@ These map to integration services:
 
 Lock-policy guidance: [docs/occupancy-lock-workflows.md](occupancy-lock-workflows.md)
 
-## Recommended automation-driven lock workflows
+## Locking and lock workflows
 
-TopoMation lock policies are designed to work well with HA helpers and automations:
+The simplest way to lock or unlock a location is the lock icon on its row in the tree. That holds the location's state (and its subtree) until you click the icon again.
 
-- `mode=block_occupied` for away or security workflows
+For UI-driven automations and dashboards, every location also has a `switch.<location>_lock` entity. Turning it on locks the location with `freeze + subtree`; turning it off force-clears every lock source. The state mirrors any active lock, including locks held by the tree icon or by other automations.
+
+For automation-driven workflows that need a specific mode, the `topomation.lock` and `topomation.unlock` services accept a `mode` (`freeze`, `block_occupied`, or `block_vacant`) and a `scope` (`self` or `subtree`). Common patterns:
+
+- `mode=block_occupied` for away or security workflows (alarm armed away)
 - `mode=block_vacant` for party mode or manual hold workflows
-- `mode=freeze` for temporary testing or state freeze scenarios
+- `mode=freeze` for temporary testing or state-freeze scenarios
 
-Starter blueprints are included in:
-
-- `blueprints/automation/topomation/away_mode_vacant_guard.yaml`
-- `blueprints/automation/topomation/party_mode_hold_occupied.yaml`
+See [docs/occupancy-lock-workflows.md](occupancy-lock-workflows.md) for canonical patterns and `source_id` discipline.
 
 ## Troubleshooting
 

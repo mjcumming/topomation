@@ -24,7 +24,7 @@ If a file is not listed as active below, treat it as reference-only.
 | `docs/dependency-release-runbook.md` | Dependency pin + release validation workflow | Active (Operational) |
 | `docs/setup-test-topology.md` | Test topology setup in HA + overlay testing | Active |
 | `docs/live-ha-validation-checklist.md` | Manual validation procedure for live HA release candidates | Active |
-| `docs/installation.md` | Installation guide for v0.1.0 (HACS and manual) | Active |
+| `docs/installation.md` | Installation guide (HACS and manual) | Active |
 | `docs/occupancy-lock-workflows.md` | Automation-first lock policy workflows (`away`, `party`) | Active |
 | `docs/wasp-in-box-whitepaper.md` | Occupancy design white paper (wasp-in-box, magic-area alignment, UX guidance) | Active (Reference) |
 | `docs/integration-guide.md` | Broad integration reference (not policy source) | Active (Reference) |

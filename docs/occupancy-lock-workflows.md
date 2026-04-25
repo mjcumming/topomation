@@ -9,6 +9,12 @@ Topomation occupancy has two separate concerns:
 
 Lock policies are the policy-control layer. They are designed to be driven by Home Assistant automations and helpers, not by direct Python method usage.
 
+## Lock switch entity
+
+Every non-shadow-host location exposes a `switch.<location>_lock` entity (per ADR-HA-090). Toggling it on calls `topomation.lock` with `mode=freeze`, `scope=subtree`, `source_id=switch_entity`. Toggling it off calls `topomation.unlock_all`, which force-clears every lock source on the location, including locks held by other automations or the tree icon. State mirrors `is_locked` from the location's occupancy binary sensor.
+
+Use the switch when you want a Lovelace toggle, a voice command, or a UI-built automation. Use the services below when you need a specific mode (`block_occupied` / `block_vacant`) or source-scoped unlock semantics.
+
 ## Service contract
 
 Use `topomation.lock` with `source_id`, `mode`, and `scope`:
@@ -41,15 +47,6 @@ Goal: keep selected area occupied so vacancy automations do not clear lights/sce
 
 - Action on party on: `topomation.lock(mode=block_vacant, scope=subtree)` at `main_floor`
 - Action on party off: `topomation.unlock` with the same `source_id`
-
-## Blueprints
-
-This repository includes starter blueprints under:
-
-- `blueprints/automation/topomation/away_mode_vacant_guard.yaml`
-- `blueprints/automation/topomation/party_mode_hold_occupied.yaml`
-
-They provide default automation wiring for the two canonical workflows.
 
 ## UI note
 

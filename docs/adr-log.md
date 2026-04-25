@@ -2717,9 +2717,16 @@ occupancy-driven presets/setbacks/modes.
 
 ---
 
-### ADR-HA-069: Appliances Tab, HVAC-Linked Fans, and Occupancy-Only Editors (2026-04-10)
+### ADR-HA-089: Appliances Tab, HVAC-Linked Fans, and Occupancy-Only Editors (2026-04-10)
 
 **Status**: ✅ APPROVED
+
+**Note (2026-04-25)**: Originally authored as a duplicate `ADR-HA-069` on
+2026-04-10, colliding with the existing ADR-HA-069 (Floor Inspectors Manage
+Occupancy Groups). Renumbered to **HA-089** on 2026-04-25 to resolve the
+collision. Existing references to "ADR-HA-069 Appliances Tab" should be read as
+HA-089. Position in this log is preserved (immediately after HA-060) because
+this ADR is a direct amendment to HA-060.
 
 **Context**:
 
@@ -3691,6 +3698,29 @@ but they do not need a dedicated Topomation authoring surface.
   rejected for now because standard Home Assistant automations already cover
   that use case cleanly.
 
+**Amendment (2026-04-25)**:
+
+This ADR's "no automation tabs on structural nodes" decision was reversed in
+practice once the Appliances tab landed (ADR-HA-089) and was formalized by
+**ADR-HA-087** (2026-04-23), which restored Lighting, Appliances, Media, and
+HVAC tabs on structural hosts (`property`, `building`, `grounds`, `floor`)
+while scoping their target-device pickers to **the host's own HA area plus its
+managed shadow area** (no descendant walk).
+
+The original concerns this ADR raised — duplicate/conflicting control paths
+across rooms and structural ancestors, and an inspector that looked like an
+authoring surface when its real value was understanding occupancy — are now
+addressed by HA-087's per-row scoping rule rather than by hiding the tabs.
+Structural hosts remain rollup-first for occupancy; they additionally allow
+authoring rules against devices the user has explicitly placed in the host's
+own (or shadow) HA area.
+
+For current behavior, see **ADR-HA-087** and `automation-ui-guide.md` §1.1.
+
+(Note: prior versions of `automation-ui-guide.md` and `contracts.md` cited a
+non-existent **ADR-HA-078** as the supersession; that was a phantom reference.
+HA-087 is the live authority. The HA-078 number remains vacant.)
+
 ### ADR-HA-074: Lighting Rules Use Explicit Trigger Families, Not Generic Situations (2026-04-08)
 
 **Status**: ✅ APPROVED
@@ -4140,7 +4170,7 @@ promising, but naming and combinatorial expectation risk is high:
 
 **Context**:
 
-- Today’s **HVAC** automation tab (ADR-HA-060, ADR-HA-069) targets **climate-linked
+- Today’s **HVAC** automation tab (ADR-HA-060, ADR-HA-089) targets **climate-linked
   `fan.*` entities** only: circulation / air-handler style actions (`turn_on`,
   `turn_off`, `set_percentage`) with optional **time windows** for setback-style
   schedules (e.g. lower fan speed overnight).
@@ -4609,6 +4639,88 @@ makes physical sense (typically the garage or grounds).
   tree's meaning, and neither is needed yet.
 - **Revisit when EV or vehicle-presence automations are on the roadmap.**
   Accepted as the trigger condition for reopening this decision.
+
+---
+
+### ADR-HA-090: Per-location lock switch entity (2026-04-25)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+
+- Locking has been a UI-first feature so far. The tree row's lock icon
+  (`source_id=manual_ui`) calls `topomation.lock(mode=freeze, scope=subtree)`
+  and the unlock button calls `topomation.unlock_all`. From automation YAML, the
+  only path was a direct service call with `location_id`, `source_id`, `mode`,
+  and `scope` — there was no HA entity to drop into a UI automation, voice
+  routine, dashboard toggle, or scene.
+- Lock state was already exposed as attributes on each occupancy
+  `binary_sensor` (`is_locked`, `locked_by`, `lock_modes`, `direct_locks`), so
+  reading the state was straightforward; only writing was awkward.
+
+**Decision**:
+
+1. Register a new `switch` platform exposing one `LocationLockSwitch` per
+   non-shadow-host location, with `unique_id="lock_<location_id>"` and
+   friendly name `"<Location Name> Lock"`.
+2. The platform mirrors the `binary_sensor.py` lifecycle: skip
+   `_is_shadow_host(location)` rows, subscribe to `location.created` and
+   `location.deleted`, hydrate state from `OccupancyModule.get_location_state`,
+   and refresh from `occupancy.changed` / `occupancy.signal` events. Shadow
+   hosts (`floor`, `building`, `grounds`, `property`) get their lock entity
+   via the managed shadow area, same as their occupancy entity (ADR-HA-077).
+3. `async_turn_on` calls `topomation.lock` with `mode=freeze`, `scope=subtree`,
+   and a stable `source_id="switch_entity"`, mirroring the tree's lock-icon
+   behavior.
+4. `async_turn_off` calls `topomation.unlock_all`, mirroring the tree's
+   unlock-icon force-clear behavior. The switch's `is_on` reflects any active
+   lock source, not just its own contribution, so HA's "switch is on iff
+   locked" mental model holds.
+
+**Rationale**:
+
+1. The existing UI button uses `freeze + subtree + source_id=manual_ui` and
+   unlock force-clears all sources; the switch matches that contract so users
+   get one consistent locking story whether they click the tree icon, flip
+   the switch in the entity card, or wire it into an automation.
+2. A boolean entity cannot represent all three `mode` values
+   (`freeze`, `block_occupied`, `block_vacant`) at once. Picking `freeze`
+   matches the tree row and covers the common "hold this state" case;
+   `block_occupied` and `block_vacant` remain available via the service call
+   for power users (and via documented patterns in
+   `docs/occupancy-lock-workflows.md`).
+3. Reusing the `binary_sensor.py` lifecycle (shadow-host filter, subscription
+   set, area assignment) keeps the entity model coherent and avoids inventing
+   a parallel pattern for managed shadow areas.
+
+**Consequences**:
+
+- ✅ Locking is reachable from any HA UI surface that consumes a switch:
+  Lovelace cards, voice assistants, scenes, scripts, blueprints, dashboards.
+- ✅ Existing service calls continue to work; nothing about the runtime
+  contract changes for `topomation.lock` / `unlock` / `unlock_all`.
+- ⚠️ `turn_off` clears every lock source on the location, including locks
+  held by other automations or the tree's manual UI button. Documented in
+  `README.md` (Locking section) and `docs/occupancy-lock-workflows.md`. Power
+  users who need source-scoped release should call `topomation.unlock` with
+  their own `source_id` instead of toggling the switch.
+- ⚠️ Existing installs gain one new switch entity per non-shadow-host
+  location after the version bump. They are HA-area-assigned where the
+  underlying location has an `ha_area_id`.
+- ℹ️ Future work (not part of this ADR): if `block_occupied` or
+  `block_vacant` patterns become first-class user-facing concepts, consider
+  adding mode-specific entities or a `select` for the active mode.
+
+**Alternatives Considered**:
+
+- Use HA's `lock` domain — rejected, because the `lock` domain semantics
+  (`lock` / `unlock` / `open`) are oriented at physical locks (doors, deadbolts)
+  and a `lock.kitchen_topomation` would be misleading in the entity picker.
+- Per-mode switches (`switch.kitchen_lock_freeze`, `_block_vacant`, `_block_occupied`)
+  — rejected, 3× entity count, low marginal value, conflicts with each other.
+- `turn_off` releases only the switch's own `source_id` — rejected, would
+  leave the location locked when the user expects "off" to mean "unlocked"
+  for an HA switch.
 
 ---
 

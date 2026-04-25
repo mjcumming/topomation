@@ -9,6 +9,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.68] - 2026-04-25
+
+### Added
+
+- **Per-location lock switch entity**: every non-shadow-host location now
+  exposes a `switch.<location>_lock` entity that mirrors the lock icon on the
+  tree row. Turning it on applies a `freeze + subtree` lock with
+  `source_id=switch_entity`; turning it off force-clears every lock source on
+  the location (matching the tree icon's unlock behavior). State follows the
+  location's `is_locked` attribute, so locks set from the UI, services, or
+  other automations are reflected here. Drop into Lovelace, scenes, voice
+  routines, or UI-built automations without writing a service call. See
+  ADR-HA-090.
+
+### Documentation
+
+- README rewritten: added a one-person beta notice, a "what's different about
+  a TopoMation-driven house" outcomes section, a Tree row controls paragraph,
+  and a Locking section that leads with the UI and treats services as the
+  power-user path. Removed unverified blueprints and the "no switch entity"
+  limitation now that one exists.
+- `docs/installation.md`: added the missing `Appliances` inspector tab,
+  corrected the rule-category split (Appliances vs HVAC) to match
+  `automation-ui-guide.md` §6.5, added `property` to the topology-only
+  structure list, and replaced the blueprint reference with a UI-first
+  Locking section that mentions the new switch entity.
+- `docs/occupancy-lock-workflows.md`: documented the lock switch entity and
+  removed the deleted-blueprint reference.
+- `docs/index.md`: dropped the stale "v0.1.0" label on the installation guide
+  entry.
+
+### Removed
+
+- Unverified starter blueprints
+  (`away_mode_vacant_guard.yaml`, `party_mode_hold_occupied.yaml`) that
+  shipped without being run by the author.
+
 ## [0.2.67] - 2026-04-24
 
 ### Fixed

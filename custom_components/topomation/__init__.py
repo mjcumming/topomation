@@ -57,6 +57,7 @@ _OCCUPANCY_EXTENSION_EXPLAINABILITY_THROTTLE_SECONDS = 10
 
 PLATFORMS: list[Platform] = [
     Platform.BINARY_SENSOR,  # Occupancy binary sensors
+    Platform.SWITCH,  # Per-location lock switches
 ]
 
 
