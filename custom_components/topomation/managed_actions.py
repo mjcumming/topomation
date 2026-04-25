@@ -78,6 +78,7 @@ class _TopomationMetadata:
     run_on_startup: bool | None
     rule_uuid: str
     user_named: bool
+    daily_gating_enabled: bool = False
 
 
 @dataclass(slots=True)
@@ -101,6 +102,7 @@ class _RecentRuleSnapshot:
     action_entity_id: str | None
     action_service: str | None
     action_data: dict[str, Any] | None
+    daily_gating_enabled: bool = False
 
 
 class TopomationManagedActions:
@@ -261,6 +263,7 @@ class TopomationManagedActions:
                         "run_on_startup": recent_snapshot.run_on_startup,
                         "rule_uuid": recent_snapshot.rule_uuid,
                         "user_named": recent_snapshot.user_named,
+                        "daily_gating_enabled": recent_snapshot.daily_gating_enabled,
                         # Legacy compatibility for older frontends.
                         "require_dark": recent_snapshot.ambient_condition == "dark",
                         "enabled": enabled,
@@ -343,6 +346,7 @@ class TopomationManagedActions:
                     "run_on_startup": metadata.run_on_startup,
                     "rule_uuid": metadata.rule_uuid or self._rule_uuid_from_automation_id(automation_id or entity_id),
                     "user_named": metadata.user_named,
+                    "daily_gating_enabled": metadata.daily_gating_enabled,
                     # Legacy compatibility for older frontends.
                     "require_dark": metadata.ambient_condition == "dark",
                     "enabled": enabled,
@@ -447,6 +451,7 @@ class TopomationManagedActions:
         automation_id: str | None = None,
         rule_uuid: str | None = None,
         user_named: bool = False,
+        daily_gating_enabled: bool = False,
     ) -> dict[str, Any]:
         """Create or replace one managed action automation (HA config/automation.py pattern)."""
         location_id = str(getattr(location, "id", "")).strip()
@@ -551,6 +556,11 @@ class TopomationManagedActions:
             ),
             "rule_uuid": normalized_rule_uuid,
             "user_named": bool(user_named),
+            **(
+                {"daily_gating_enabled": True}
+                if bool(daily_gating_enabled)
+                else {}
+            ),
         }
         description = "Managed by Topomation.\n" + self._metadata_line(metadata_payload)
         config_actions: list[dict[str, Any]] = []
@@ -637,6 +647,7 @@ class TopomationManagedActions:
             action_service=primary_action_service,
             action_data=primary_action_data,
             user_named=bool(user_named),
+            daily_gating_enabled=bool(daily_gating_enabled),
         )
 
         entity_id = await self._resolve_created_entity_id(
@@ -904,6 +915,7 @@ class TopomationManagedActions:
         action_service: str | None,
         action_data: Mapping[str, Any] | None,
         user_named: bool,
+        daily_gating_enabled: bool = False,
     ) -> None:
         """Persist short-lived rule state after POST for immediate list consistency."""
         if not automation_id:
@@ -942,6 +954,7 @@ class TopomationManagedActions:
             action_entity_id=action_entity_id,
             action_service=action_service,
             action_data=(dict(action_data) if isinstance(action_data, Mapping) else None),
+            daily_gating_enabled=bool(daily_gating_enabled),
         )
         self._recent_rule_snapshots[automation_id] = snapshot
 
@@ -1302,6 +1315,9 @@ class TopomationManagedActions:
             raw_user_named = (
                 parsed.get("user_named") if isinstance(parsed, Mapping) else None
             )
+            raw_daily_gating_enabled = (
+                parsed.get("daily_gating_enabled") if isinstance(parsed, Mapping) else None
+            )
             return _TopomationMetadata(
                 location_id=location_id,
                 trigger_type=trigger_type,
@@ -1314,6 +1330,11 @@ class TopomationManagedActions:
                 run_on_startup=run_on_startup if isinstance(run_on_startup, bool) else None,
                 rule_uuid=rule_uuid,
                 user_named=bool(raw_user_named) if isinstance(raw_user_named, bool) else False,
+                daily_gating_enabled=(
+                    bool(raw_daily_gating_enabled)
+                    if isinstance(raw_daily_gating_enabled, bool)
+                    else False
+                ),
             )
         return None
 

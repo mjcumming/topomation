@@ -40,6 +40,7 @@ class _TopomationAutomation:
     location_id: str
     trigger_type: ManagedActionTriggerType
     run_on_startup: bool | None
+    daily_gating_enabled: bool = False
 
 
 @dataclass(slots=True)
@@ -49,6 +50,7 @@ class _TopomationMetadata:
     location_id: str
     trigger_type: ManagedActionTriggerType
     run_on_startup: bool | None
+    daily_gating_enabled: bool = False
 
 
 class TopomationActionsRuntime:
@@ -374,6 +376,7 @@ class TopomationActionsRuntime:
                     location_id=metadata.location_id,
                     trigger_type=metadata.trigger_type,
                     run_on_startup=metadata.run_on_startup,
+                    daily_gating_enabled=metadata.daily_gating_enabled,
                 )
             )
         return parsed
@@ -428,10 +431,16 @@ class TopomationActionsRuntime:
             ):
                 continue
             run_on_startup = parsed.get("run_on_startup")
+            daily_gating_enabled = parsed.get("daily_gating_enabled")
             return _TopomationMetadata(
                 location_id=location_id,
                 trigger_type=cast(ManagedActionTriggerType, normalized_trigger_type),
                 run_on_startup=run_on_startup if isinstance(run_on_startup, bool) else None,
+                daily_gating_enabled=(
+                    bool(daily_gating_enabled)
+                    if isinstance(daily_gating_enabled, bool)
+                    else False
+                ),
             )
 
         return None

@@ -301,6 +301,56 @@ def test_private_helpers_parse_and_mutate_config() -> None:
     assert parsed.run_on_startup is True
     assert manager._parse_metadata("Managed by Topomation") is None  # noqa: SLF001
     assert parsed.rule_uuid == ""
+    # Older metadata without the field defaults to False (ADR-HA-091).
+    assert parsed.daily_gating_enabled is False
+
+
+def test_metadata_round_trip_preserves_daily_gating_enabled() -> None:
+    """daily_gating_enabled survives serialize -> parse when set (ADR-HA-091)."""
+    manager = TopomationManagedActions(cast(HomeAssistant, SimpleNamespace()))
+
+    line = manager._metadata_line(  # noqa: SLF001
+        {
+            "version": 4,
+            "location_id": "main_floor",
+            "trigger_type": "on_vacant",
+            "ambient_condition": "any",
+            "time_condition_enabled": False,
+            "start_time": "10:00",
+            "end_time": "16:00",
+            "rule_uuid": "rule-vacuum-001",
+            "user_named": True,
+            "daily_gating_enabled": True,
+        }
+    )
+    parsed = manager._parse_metadata(f"Managed by Topomation.\n{line}")  # noqa: SLF001
+    assert parsed is not None
+    assert parsed.daily_gating_enabled is True
+
+
+def test_metadata_round_trip_rejects_non_bool_daily_gating_enabled() -> None:
+    """Non-bool daily_gating_enabled is coerced to False (tolerant parse)."""
+    manager = TopomationManagedActions(cast(HomeAssistant, SimpleNamespace()))
+
+    for bad_value in ("true", 1, None, ["yes"]):
+        line = manager._metadata_line(  # noqa: SLF001
+            {
+                "version": 4,
+                "location_id": "main_floor",
+                "trigger_type": "on_vacant",
+                "ambient_condition": "any",
+                "time_condition_enabled": False,
+                "start_time": "10:00",
+                "end_time": "16:00",
+                "rule_uuid": "rule-vacuum-002",
+                "daily_gating_enabled": bad_value,
+            }
+        )
+        parsed = manager._parse_metadata(f"Managed by Topomation.\n{line}")  # noqa: SLF001
+        assert parsed is not None
+        assert parsed.daily_gating_enabled is False, (
+            f"non-bool {bad_value!r} should coerce to False"
+        )
 
     generated_id = manager._build_stable_automation_id(  # noqa: SLF001
         "kitchen",
