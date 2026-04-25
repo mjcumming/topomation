@@ -525,6 +525,16 @@ class TopomationManagedActions:
         if not triggers:
             raise ValueError("Unable to build automation triggers for this rule")
 
+        # ADR-HA-091: only emit the Path Y carve-out when the action target
+        # is a vacuum, since "paused" semantics only make sense for vacuum.*.
+        gating_carveout_entity_id = (
+            primary_action_entity_id
+            if (
+                bool(daily_gating_enabled)
+                and primary_action_entity_id.split(".", 1)[0] == "vacuum"
+            )
+            else None
+        )
         conditions = self._build_condition_definitions(
             ambient_condition=normalized_ambient_condition,
             must_be_occupied=must_be_occupied,
@@ -533,6 +543,9 @@ class TopomationManagedActions:
             start_time=normalized_start_time,
             end_time=normalized_end_time,
             ambient_config=ambient_config,
+            daily_gating_enabled=bool(daily_gating_enabled),
+            automation_id=automation_id,
+            gating_carveout_paused_entity_id=gating_carveout_entity_id,
         )
 
         metadata_payload = {
@@ -1131,6 +1144,9 @@ class TopomationManagedActions:
         start_time: str,
         end_time: str,
         ambient_config: Mapping[str, Any],
+        daily_gating_enabled: bool = False,
+        automation_id: str | None = None,
+        gating_carveout_paused_entity_id: str | None = None,
     ) -> list[dict[str, Any]]:
         """Build Home Assistant condition list for one managed action rule."""
         conditions: list[dict[str, Any]] = []
@@ -1162,7 +1178,53 @@ class TopomationManagedActions:
                 }
             )
 
+        if daily_gating_enabled and automation_id:
+            conditions.append(
+                self._build_daily_gating_condition(
+                    automation_id=automation_id,
+                    paused_carveout_entity_id=gating_carveout_paused_entity_id,
+                )
+            )
+
         return conditions
+
+    @staticmethod
+    def _build_daily_gating_condition(
+        *,
+        automation_id: str,
+        paused_carveout_entity_id: str | None,
+    ) -> dict[str, Any]:
+        """Build the daily-gating template condition (ADR-HA-091, Path Y).
+
+        Reads the automation's own ``last_triggered`` attribute and allows
+        firing when the rule has not yet fired today, OR when the optional
+        carve-out target entity is currently paused (so the natural two-rule
+        pause/resume composition keeps working for vacuum targets).
+        """
+        automation_entity_id = f"automation.{automation_id}"
+        if paused_carveout_entity_id:
+            value_template = (
+                "{%- set last = state_attr('"
+                + automation_entity_id
+                + "', 'last_triggered') -%}\n"
+                "{{ last is none\n"
+                "   or as_local(last).date() != as_local(now()).date()\n"
+                "   or is_state('"
+                + paused_carveout_entity_id
+                + "', 'paused') }}"
+            )
+        else:
+            value_template = (
+                "{%- set last = state_attr('"
+                + automation_entity_id
+                + "', 'last_triggered') -%}\n"
+                "{{ last is none\n"
+                "   or as_local(last).date() != as_local(now()).date() }}"
+            )
+        return {
+            "condition": "template",
+            "value_template": value_template,
+        }
 
     def _build_stable_automation_id(
         self,

@@ -751,3 +751,104 @@ def test_apply_topomation_grouping_skips_registry_write_when_metadata_is_unchang
     )
 
     assert update_calls == []
+
+
+def test_daily_gating_condition_omitted_when_disabled() -> None:
+    """No template condition is emitted when daily_gating_enabled is False (ADR-HA-091)."""
+    manager = TopomationManagedActions(cast(HomeAssistant, SimpleNamespace()))
+    conditions = manager._build_condition_definitions(  # noqa: SLF001
+        ambient_condition="any",
+        must_be_occupied=None,
+        occupancy_entity_id=None,
+        time_condition_enabled=False,
+        start_time="00:00",
+        end_time="23:59",
+        ambient_config={},
+        daily_gating_enabled=False,
+        automation_id="topomation_main_floor_vacant_vacuum_x",
+    )
+    assert all(c.get("condition") != "template" for c in conditions)
+
+
+def test_daily_gating_condition_emitted_for_vacuum_target_with_paused_carveout() -> None:
+    """Vacuum target gets the Path Y carve-out clause (ADR-HA-091 §7)."""
+    manager = TopomationManagedActions(cast(HomeAssistant, SimpleNamespace()))
+    conditions = manager._build_condition_definitions(  # noqa: SLF001
+        ambient_condition="any",
+        must_be_occupied=None,
+        occupancy_entity_id=None,
+        time_condition_enabled=False,
+        start_time="00:00",
+        end_time="23:59",
+        ambient_config={},
+        daily_gating_enabled=True,
+        automation_id="topomation_main_floor_vacant_vacuum_main",
+        gating_carveout_paused_entity_id="vacuum.main_floor",
+    )
+    template_clauses = [c for c in conditions if c.get("condition") == "template"]
+    assert len(template_clauses) == 1
+    body = template_clauses[0]["value_template"]
+    assert "automation.topomation_main_floor_vacant_vacuum_main" in body
+    assert "last_triggered" in body
+    assert "as_local(now()).date()" in body
+    assert "is_state('vacuum.main_floor', 'paused')" in body
+
+
+def test_daily_gating_condition_emitted_without_carveout_when_no_target() -> None:
+    """Non-vacuum daily-gated rules get the date check but no paused clause."""
+    manager = TopomationManagedActions(cast(HomeAssistant, SimpleNamespace()))
+    conditions = manager._build_condition_definitions(  # noqa: SLF001
+        ambient_condition="any",
+        must_be_occupied=None,
+        occupancy_entity_id=None,
+        time_condition_enabled=False,
+        start_time="00:00",
+        end_time="23:59",
+        ambient_config={},
+        daily_gating_enabled=True,
+        automation_id="topomation_kitchen_vacant_switch_x",
+        gating_carveout_paused_entity_id=None,
+    )
+    template_clauses = [c for c in conditions if c.get("condition") == "template"]
+    assert len(template_clauses) == 1
+    body = template_clauses[0]["value_template"]
+    assert "as_local(now()).date()" in body
+    assert "paused" not in body
+    assert "is_state(" not in body
+
+
+def test_daily_gating_condition_omitted_when_automation_id_missing() -> None:
+    """Without automation_id we cannot build the template — silently skip."""
+    manager = TopomationManagedActions(cast(HomeAssistant, SimpleNamespace()))
+    conditions = manager._build_condition_definitions(  # noqa: SLF001
+        ambient_condition="any",
+        must_be_occupied=None,
+        occupancy_entity_id=None,
+        time_condition_enabled=False,
+        start_time="00:00",
+        end_time="23:59",
+        ambient_config={},
+        daily_gating_enabled=True,
+        automation_id=None,
+    )
+    assert all(c.get("condition") != "template" for c in conditions)
+
+
+def test_daily_gating_condition_appears_after_time_condition() -> None:
+    """Daily-gating clause is appended after time-window clause for stable order."""
+    manager = TopomationManagedActions(cast(HomeAssistant, SimpleNamespace()))
+    conditions = manager._build_condition_definitions(  # noqa: SLF001
+        ambient_condition="any",
+        must_be_occupied=None,
+        occupancy_entity_id=None,
+        time_condition_enabled=True,
+        start_time="10:00",
+        end_time="16:00",
+        ambient_config={},
+        daily_gating_enabled=True,
+        automation_id="topomation_main_floor_vacant_vacuum_main",
+        gating_carveout_paused_entity_id="vacuum.main_floor",
+    )
+    kinds = [c.get("condition") for c in conditions]
+    assert kinds == ["time", "template"]
+
