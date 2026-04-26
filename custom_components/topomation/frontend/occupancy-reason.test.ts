@@ -1,6 +1,6 @@
 /// <reference types="mocha" />
 import { expect } from "@open-wc/testing";
-import { buildOccupancyReasonLine } from "./occupancy-reason";
+import { buildOccupancyExplanation, buildOccupancyReasonLine } from "./occupancy-reason";
 import type { HomeAssistant, Location } from "./types";
 
 function makeLocation(overrides: Partial<Location> & { id: string }): Location {
@@ -26,6 +26,25 @@ function makeHass(overrides: Partial<HomeAssistant> = {}): HomeAssistant {
     localize: (k: string) => k,
     ...overrides,
   } as HomeAssistant;
+}
+
+function runtimeState(
+  locationId: string,
+  state: "on" | "off",
+  lastChanged: string,
+  attributes: Record<string, any> = {}
+): Record<string, any> {
+  return {
+    entity_id: `binary_sensor.topomation_occupancy_projection_${locationId}`,
+    state,
+    last_changed: lastChanged,
+    last_updated: lastChanged,
+    attributes: {
+      device_class: "occupancy",
+      location_id: locationId,
+      ...attributes,
+    },
+  };
 }
 
 describe("buildOccupancyReasonLine", () => {
@@ -61,23 +80,6 @@ describe("buildOccupancyReasonLine", () => {
     });
     const hass = makeHass({
       states: {
-        "binary_sensor.kitchen_occupancy": {
-          entity_id: "binary_sensor.kitchen_occupancy",
-          state: "on",
-          last_changed: tMinus(120),
-          attributes: {
-            device_class: "occupancy",
-            location_id: "kitchen",
-            reason: "event:trigger",
-            contributions: [
-              {
-                source_id: "binary_sensor.kitchen_motion",
-                state: "active",
-                updated_at: tMinus(120),
-              },
-            ],
-          },
-        },
         "binary_sensor.kitchen_motion": {
           entity_id: "binary_sensor.kitchen_motion",
           state: "on",
@@ -92,6 +94,18 @@ describe("buildOccupancyReasonLine", () => {
       hass,
       occupancyStates: { kitchen: true },
       occupancyTransitions: {},
+      occupancyRuntimeStates: {
+        kitchen: runtimeState("kitchen", "on", tMinus(120), {
+          reason: "event:trigger",
+          contributions: [
+            {
+              source_id: "binary_sensor.kitchen_motion",
+              state: "active",
+              updated_at: tMinus(120),
+            },
+          ],
+        }),
+      },
       status: "occupied",
       nowMs: NOW,
     });
@@ -111,33 +125,23 @@ describe("buildOccupancyReasonLine", () => {
     });
     const dining = makeLocation({ id: "dining_room", name: "Dining Room" });
 
-    const hass = makeHass({
-      states: {
-        "binary_sensor.kitchen_occupancy": {
-          entity_id: "binary_sensor.kitchen_occupancy",
-          state: "on",
-          last_changed: tMinus(480),
-          attributes: {
-            device_class: "occupancy",
-            location_id: "kitchen",
-            contributions: [
-              {
-                source_id: "linked:dining_room",
-                state: "active",
-                updated_at: tMinus(480),
-              },
-            ],
-          },
-        },
-      } as any,
-    });
-
     const line = buildOccupancyReasonLine({
       location: kitchen,
       locations: [kitchen, dining],
-      hass,
+      hass: makeHass(),
       occupancyStates: { kitchen: true, dining_room: true },
       occupancyTransitions: {},
+      occupancyRuntimeStates: {
+        kitchen: runtimeState("kitchen", "on", tMinus(480), {
+          contributions: [
+            {
+              source_id: "linked:dining_room",
+              state: "active",
+              updated_at: tMinus(480),
+            },
+          ],
+        }),
+      },
       status: "occupied",
       nowMs: NOW,
     });
@@ -148,28 +152,18 @@ describe("buildOccupancyReasonLine", () => {
 
   it("describes vacancy timeouts", () => {
     const location = makeLocation({ id: "kitchen" });
-    const hass = makeHass({
-      states: {
-        "binary_sensor.kitchen_occupancy": {
-          entity_id: "binary_sensor.kitchen_occupancy",
-          state: "off",
-          last_changed: tMinus(600),
-          attributes: {
-            device_class: "occupancy",
-            location_id: "kitchen",
-            reason: "timeout",
-            contributions: [],
-          },
-        },
-      } as any,
-    });
-
     const line = buildOccupancyReasonLine({
       location,
       locations: [location],
-      hass,
+      hass: makeHass(),
       occupancyStates: { kitchen: false },
       occupancyTransitions: {},
+      occupancyRuntimeStates: {
+        kitchen: runtimeState("kitchen", "off", tMinus(600), {
+          reason: "timeout",
+          contributions: [],
+        }),
+      },
       status: "vacant",
       nowMs: NOW,
     });
@@ -179,28 +173,18 @@ describe("buildOccupancyReasonLine", () => {
 
   it("describes parent propagation vacancy", () => {
     const location = makeLocation({ id: "kitchen" });
-    const hass = makeHass({
-      states: {
-        "binary_sensor.kitchen_occupancy": {
-          entity_id: "binary_sensor.kitchen_occupancy",
-          state: "off",
-          last_changed: tMinus(30),
-          attributes: {
-            device_class: "occupancy",
-            location_id: "kitchen",
-            reason: "propagation:parent",
-            contributions: [],
-          },
-        },
-      } as any,
-    });
-
     const line = buildOccupancyReasonLine({
       location,
       locations: [location],
-      hass,
+      hass: makeHass(),
       occupancyStates: { kitchen: false },
       occupancyTransitions: {},
+      occupancyRuntimeStates: {
+        kitchen: runtimeState("kitchen", "off", tMinus(30), {
+          reason: "propagation:parent",
+          contributions: [],
+        }),
+      },
       status: "vacant",
       nowMs: NOW,
     });
@@ -208,7 +192,7 @@ describe("buildOccupancyReasonLine", () => {
     expect(line).to.include("parent location cleared");
   });
 
-  it("rolls up to an occupied descendant when the location has no direct state", () => {
+  it("uses the backend structural projection for occupied descendants", () => {
     const mainFloor = makeLocation({
       id: "main_floor",
       name: "Main Floor",
@@ -224,8 +208,19 @@ describe("buildOccupancyReasonLine", () => {
       location: mainFloor,
       locations: [mainFloor, kitchen],
       hass: makeHass(),
-      occupancyStates: { kitchen: true },
+      occupancyStates: { main_floor: true, kitchen: true },
       occupancyTransitions: {},
+      occupancyRuntimeStates: {
+        main_floor: runtimeState("main_floor", "on", tMinus(45), {
+          contributions: [
+            {
+              source_id: "__child__:kitchen",
+              state: "active",
+              updated_at: tMinus(45),
+            },
+          ],
+        }),
+      },
       status: "occupied",
       nowMs: NOW,
     });
@@ -246,5 +241,75 @@ describe("buildOccupancyReasonLine", () => {
       nowMs: NOW,
     });
     expect(line).to.equal("Occupied");
+  });
+
+  it("builds a human summary and click-away details for occupied sources", () => {
+    const location = makeLocation({
+      id: "kitchen",
+      modules: {
+        _meta: { type: "area" },
+        occupancy: {
+          enabled: true,
+          default_timeout: 300,
+          occupancy_sources: [],
+        },
+      },
+    });
+    const hass = makeHass({
+      states: {
+        "binary_sensor.kitchen_motion": {
+          entity_id: "binary_sensor.kitchen_motion",
+          state: "on",
+          attributes: { friendly_name: "Kitchen Motion" },
+        },
+      } as any,
+    });
+
+    const explanation = buildOccupancyExplanation({
+      location,
+      locations: [location],
+      hass,
+      occupancyStates: { kitchen: true },
+      occupancyTransitions: {},
+      occupancyRuntimeStates: {
+        kitchen: runtimeState("kitchen", "on", tMinus(60), {
+          vacant_at: new Date(NOW + 240 * 1000).toISOString(),
+          contributions: [
+            {
+              source_id: "binary_sensor.kitchen_motion",
+              state: "active",
+              updated_at: tMinus(60),
+            },
+          ],
+        }),
+      },
+      status: "occupied",
+      nowMs: NOW,
+    });
+
+    expect(explanation.summary).to.equal("Occupied because Kitchen Motion is active.");
+    expect(explanation.details.join(" ")).to.include("Active source: Kitchen Motion");
+    expect(explanation.details.join(" ")).to.include("hold timer expires in 4m");
+  });
+
+  it("builds a human vacancy summary", () => {
+    const location = makeLocation({ id: "kitchen" });
+    const explanation = buildOccupancyExplanation({
+      location,
+      locations: [location],
+      hass: makeHass(),
+      occupancyStates: { kitchen: false },
+      occupancyTransitions: {},
+      occupancyRuntimeStates: {
+        kitchen: runtimeState("kitchen", "off", tMinus(30), {
+          reason: "timeout",
+        }),
+      },
+      status: "vacant",
+      nowMs: NOW,
+    });
+
+    expect(explanation.summary).to.equal("Vacant because the hold timer expired.");
+    expect(explanation.details.join(" ")).to.include("No active occupancy sources");
   });
 });

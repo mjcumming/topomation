@@ -1,6 +1,6 @@
 # Contracts
 
-**Last reviewed**: 2026-04-17
+**Last reviewed**: 2026-04-26
 **Purpose**: canonical behavior contracts for Topomation runtime and panel actions.
 
 Use this file as the quick contract surface. Keep it synchronized with:
@@ -275,10 +275,11 @@ Additional save points:
     host-level Topomation occupancy entity; HA-visible occupancy for that
     aggregate uses the **managed shadow** `area_*` location’s entity only (avoids
     duplicate “same name, two entities” rows)
-  - Panel code that reads occupancy **state** (header, runtime summary,
-    explainability, live `state_changed` refresh) must resolve the topology id via
-    **`effectiveOccupancyTopologyId`** (host → managed shadow child when present),
-    matching `attributes.location_id` on the entity (ADR-HA-079)
+  - Legacy panel code or fallback paths that read occupancy **state** from HA
+    entity snapshots must resolve the topology id via **`effectiveOccupancyTopologyId`**
+    (host → managed shadow child when present), matching `attributes.location_id`
+    on the entity (ADR-HA-079). New primary runtime-state surfaces must follow
+    **C-023** instead of deriving effective occupancy from raw HA snapshots.
   - explainability should explicitly identify the group, using wording
     equivalent to `via occupancy group`
 - Occupancy Groups v1 candidate scope is intentionally narrow:
@@ -726,3 +727,43 @@ Additional save points:
 - This contract is the **policy source** for ADR-HA-083; implementation must converge
   to it without weakening the invariant (legacy stores may require one-time heal
   or migration paths).
+
+## C-023 Backend-owned runtime occupancy projection
+
+- Runtime occupancy presentation state is backend-owned. The panel must not be
+  the primary authority for deriving effective occupied/vacant state from a mix
+  of `hass.states`, `occupancy_group_id`, managed-shadow metadata, descendant
+  rollups, and local event timing.
+- The backend must expose a normalized runtime occupancy projection for topology
+  rows the panel can render. The projection is the canonical read model for:
+  - tree occupancy dots and toggle intent
+  - inspector header state
+  - lock state tied to occupancy runtime
+  - effective vacancy timing
+  - occupancy group member projection
+  - managed-shadow host projection
+  - structural rollup/derived occupancy presentation
+  - compact explainability facts needed by active UI surfaces
+- Snapshot and live updates must use the same schema. Initial panel load and
+  event-driven updates may arrive through separate websocket/event mechanisms,
+  but a row's state object must mean the same thing in both paths.
+- The projection must include enough identity to avoid frontend inference:
+  - `location_id`: the visible topology row being rendered
+  - `effective_location_id`: the runtime/entity topology id that backs the row
+    when different, such as a managed shadow area
+  - `projection`: `direct | occupancy_group_member | managed_shadow_host |
+    structural_rollup | unknown`
+  - occupied/vacant state, previous state, reason, changed timestamp, lock
+    summary, effective timeout/vacancy fields, and concise contributor/recent
+    evidence where available
+- Occupancy Groups remain runtime-authority objects per C-013. A grouped member's
+  projection must already be group-projected when it reaches the panel; the panel
+  must not need to inspect sibling `occupancy_group_id` values to decide whether
+  the member is occupied.
+- HA occupancy binary sensors remain the public Home Assistant entity surface,
+  but they are not the panel's primary runtime-state transport once C-023 is
+  implemented. They remain a compatibility/fallback surface and a user-visible
+  HA API.
+- The existing frontend group-normalization fallback is temporary hardening. It
+  may remain only as defensive compatibility while the backend projection is
+  rolled out, and should be removed or reduced once the panel consumes C-023.

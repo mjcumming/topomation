@@ -21,6 +21,23 @@ const baseLocation: Location = {
   },
 };
 
+const occupancyRuntimeState = (
+  locationId: string,
+  state: "on" | "off",
+  attributes: Record<string, any> = {},
+  lastChanged = "2026-04-26T17:46:00Z"
+): Record<string, any> => ({
+  entity_id: `binary_sensor.topomation_occupancy_projection_${locationId}`,
+  state,
+  last_changed: lastChanged,
+  last_updated: lastChanged,
+  attributes: {
+    device_class: "occupancy",
+    location_id: locationId,
+    ...attributes,
+  },
+});
+
 const switchTopTab = async (
   element: HtLocationInspector,
   label:
@@ -1345,27 +1362,7 @@ describe("HtLocationInspector occupancy source composer", () => {
         return [] as T;
       },
       connection: {},
-      states: {
-        "binary_sensor.occupancy_area_kitchen": {
-          entity_id: "binary_sensor.occupancy_area_kitchen",
-          state: "on",
-          attributes: {
-            device_class: "occupancy",
-            location_id: "area_kitchen",
-            is_locked: true,
-            locked_by: ["party_mode"],
-            lock_modes: ["block_vacant"],
-            direct_locks: [
-              {
-                source_id: "party_mode",
-                mode: "block_vacant",
-                scope: "subtree",
-              },
-            ],
-            contributions: [{ source_id: "__lock_hold__:area_kitchen", expires_at: null }],
-          },
-        },
-      },
+      states: {},
       areas: {},
       floors: {},
       localize: (key: string) => key,
@@ -1380,6 +1377,22 @@ describe("HtLocationInspector occupancy source composer", () => {
       <ht-location-inspector
         .hass=${hass}
         .location=${location}
+        .occupancyStates=${{ area_kitchen: true }}
+        .occupancyRuntimeStates=${{
+          area_kitchen: occupancyRuntimeState("area_kitchen", "on", {
+            is_locked: true,
+            locked_by: ["party_mode"],
+            lock_modes: ["block_vacant"],
+            direct_locks: [
+              {
+                source_id: "party_mode",
+                mode: "block_vacant",
+                scope: "subtree",
+              },
+            ],
+            contributions: [{ source_id: "__lock_hold__:area_kitchen", expires_at: null }],
+          }),
+        }}
       ></ht-location-inspector>
     `);
     await element.updateComplete;
@@ -1440,7 +1453,7 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(["", "auto"]).to.include(bodyOverflowY);
   });
 
-  it("keeps vacancy reason out of the header status row", async () => {
+  it("shows a human vacancy reason in the header with expandable details", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>) => {
         if (request.type === "config/entity_registry/list") return [] as T;
@@ -1448,17 +1461,7 @@ describe("HtLocationInspector occupancy source composer", () => {
         return [] as T;
       },
       connection: {},
-      states: {
-        "binary_sensor.occupancy_area_kitchen": {
-          entity_id: "binary_sensor.occupancy_area_kitchen",
-          state: "off",
-          attributes: {
-            device_class: "occupancy",
-            location_id: "area_kitchen",
-            reason: "timeout",
-          },
-        },
-      },
+      states: {},
       areas: {},
       floors: {},
       localize: (key: string) => key,
@@ -1473,14 +1476,30 @@ describe("HtLocationInspector occupancy source composer", () => {
       <ht-location-inspector
         .hass=${hass}
         .location=${location}
+        .occupancyStates=${{ area_kitchen: false }}
+        .occupancyRuntimeStates=${{
+          area_kitchen: occupancyRuntimeState("area_kitchen", "off", {
+            reason: "timeout",
+          }),
+        }}
       ></ht-location-inspector>
     `);
     await element.updateComplete;
 
-    expect(element.shadowRoot!.querySelector('[data-testid="header-vacancy-reason"]')).to.not.exist;
+    const reason = element.shadowRoot!.querySelector(
+      '[data-testid="header-occupancy-reason"]'
+    ) as HTMLDetailsElement | null;
+    expect(reason).to.exist;
+    expect(
+      element.shadowRoot!.querySelector('[data-testid="header-occupancy-summary"]')
+        ?.textContent || ""
+    ).to.include("Vacant because the hold timer expired");
+    reason!.open = true;
+    await element.updateComplete;
+    expect(reason!.textContent || "").to.include("No active occupancy sources");
   });
 
-  it("shows vacant status while suppressing event-driven reason text in the header", async () => {
+  it("shows vacant status and explains event-driven vacancy in the header", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>) => {
         if (request.type === "config/entity_registry/list") return [] as T;
@@ -1530,10 +1549,13 @@ describe("HtLocationInspector occupancy source composer", () => {
       element.shadowRoot!.querySelector('[data-testid="header-occupancy-status"]')?.textContent || ""
     ).trim();
     expect(occupancyStatusText).to.equal("Vacant");
-    expect(element.shadowRoot!.querySelector('[data-testid="header-vacancy-reason"]')).to.not.exist;
+    expect(
+      element.shadowRoot!.querySelector('[data-testid="header-occupancy-summary"]')
+        ?.textContent || ""
+    ).to.include("Vacant because the active source cleared");
   });
 
-  it("header occupancy matches tree rollup when only a descendant area is occupied", async () => {
+  it("header occupancy follows backend structural projection when only a descendant area is occupied", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>) => {
         if (request.type === "config/entity_registry/list") return [] as T;
@@ -1541,24 +1563,7 @@ describe("HtLocationInspector occupancy source composer", () => {
         return [] as T;
       },
       connection: {},
-      states: {
-        "binary_sensor.occupancy_area_family": {
-          entity_id: "binary_sensor.occupancy_area_family",
-          state: "off",
-          attributes: {
-            device_class: "occupancy",
-            location_id: "area_family",
-          },
-        },
-        "binary_sensor.occupancy_area_nook": {
-          entity_id: "binary_sensor.occupancy_area_nook",
-          state: "on",
-          attributes: {
-            device_class: "occupancy",
-            location_id: "area_nook",
-          },
-        },
-      },
+      states: {},
       areas: {},
       floors: {},
       localize: (key: string) => key,
@@ -1581,7 +1586,14 @@ describe("HtLocationInspector occupancy source composer", () => {
         .hass=${hass}
         .location=${family}
         .allLocations=${[family, nook]}
-        .occupancyStates=${{ area_family: false, area_nook: true }}
+        .occupancyStates=${{ area_family: true, area_nook: true }}
+        .occupancyRuntimeStates=${{
+          area_family: occupancyRuntimeState("area_family", "on", {
+            projection: "structural_rollup",
+            contributions: [{ source_id: "__child__:area_nook", state: "active" }],
+          }),
+          area_nook: occupancyRuntimeState("area_nook", "on"),
+        }}
       ></ht-location-inspector>
     `);
     await element.updateComplete;
@@ -3079,80 +3091,7 @@ describe("HtLocationInspector occupancy source composer", () => {
         return [] as T;
       },
       connection: {},
-      states: {
-        "binary_sensor.occupancy_area_kitchen": {
-          entity_id: "binary_sensor.occupancy_area_kitchen",
-          state: "on",
-          attributes: {
-            device_class: "occupancy",
-            location_id: "area_kitchen",
-            is_locked: false,
-            locked_by: [],
-            lock_modes: [],
-            direct_locks: [],
-            contributions: [{ source_id: "motion.kitchen", expires_at: vacantAt }],
-            effective_timeout_at: vacantAt,
-            vacant_at: vacantAt,
-          },
-        },
-      },
-      areas: {},
-      floors: {},
-      localize: (key: string) => key,
-    };
-
-    const location = structuredClone(baseLocation);
-    location.id = "area_kitchen";
-    location.name = "Kitchen";
-    location.modules._meta = { type: "area" };
-
-    const element = await fixture<HtLocationInspector>(html`
-      <ht-location-inspector
-        .hass=${hass}
-        .location=${location}
-      ></ht-location-inspector>
-    `);
-    await element.updateComplete;
-
-    const vacantAtText = (
-      element.shadowRoot!.querySelector('[data-testid="header-vacant-at"]')?.textContent || ""
-    ).trim();
-
-    expect(vacantAtText).to.equal(`Vacant at ${expectedVacantAtLabel}`);
-  });
-
-  it("updates vacant-at header from live occupancy state_changed events", async () => {
-    let stateChangedHandler: ((event: any) => void) | undefined;
-    const expectedVacantAt = new Date(Date.now() + 90 * 60 * 1000).toISOString();
-    const expectedVacantAtLabel = new Intl.DateTimeFormat(undefined, {
-      dateStyle: "medium",
-      timeStyle: "short",
-    }).format(new Date(expectedVacantAt));
-
-    const hass: HomeAssistant = {
-      callWS: async <T>(request: Record<string, any>) => {
-        if (request.type === "config/entity_registry/list") return [] as T;
-        if (request.type === "config/device_registry/list") return [] as T;
-        return [] as T;
-      },
-      connection: {
-        subscribeEvents: async (handler: (event: any) => void, eventType: string) => {
-          if (eventType === "state_changed") {
-            stateChangedHandler = handler;
-          }
-          return () => {};
-        },
-      },
-      states: {
-        "binary_sensor.occupancy_area_kitchen": {
-          entity_id: "binary_sensor.occupancy_area_kitchen",
-          state: "off",
-          attributes: {
-            device_class: "occupancy",
-            location_id: "area_kitchen",
-          },
-        },
-      },
+      states: {},
       areas: {},
       floors: {},
       localize: (key: string) => key,
@@ -3168,45 +3107,85 @@ describe("HtLocationInspector occupancy source composer", () => {
         .hass=${hass}
         .location=${location}
         .occupancyStates=${{ area_kitchen: true }}
+        .occupancyRuntimeStates=${{
+          area_kitchen: occupancyRuntimeState("area_kitchen", "on", {
+            is_locked: false,
+            locked_by: [],
+            lock_modes: [],
+            direct_locks: [],
+            contributions: [{ source_id: "motion.kitchen", expires_at: vacantAt }],
+            effective_timeout_at: vacantAt,
+            vacant_at: vacantAt,
+          }),
+        }}
       ></ht-location-inspector>
     `);
     await element.updateComplete;
-    expect(stateChangedHandler).to.exist;
+
+    const vacantAtText = (
+      element.shadowRoot!.querySelector('[data-testid="header-vacant-at"]')?.textContent || ""
+    ).trim();
+
+    expect(vacantAtText).to.equal(`Vacant at ${expectedVacantAtLabel}`);
+  });
+
+  it("updates vacant-at header from backend occupancy runtime projection", async () => {
+    const expectedVacantAt = new Date(Date.now() + 90 * 60 * 1000).toISOString();
+    const expectedVacantAtLabel = new Intl.DateTimeFormat(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(new Date(expectedVacantAt));
+
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>) => {
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        return [] as T;
+      },
+      connection: {},
+      states: {},
+      areas: {},
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_kitchen";
+    location.name = "Kitchen";
+    location.modules._meta = { type: "area" };
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${location}
+        .occupancyStates=${{ area_kitchen: true }}
+        .occupancyRuntimeStates=${{
+          area_kitchen: occupancyRuntimeState("area_kitchen", "on"),
+        }}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
 
     const beforeText = (
       element.shadowRoot!.querySelector('[data-testid="header-vacant-at"]')?.textContent || ""
     ).trim();
-    expect(beforeText).to.equal("");
+    expect(beforeText).to.equal("No timeout scheduled");
 
-    stateChangedHandler!({
-      data: {
-        entity_id: "binary_sensor.occupancy_area_kitchen",
-        old_state: {
-          state: "off",
-          attributes: {
-            device_class: "occupancy",
-            location_id: "area_kitchen",
-          },
-        },
-        new_state: {
-          state: "on",
-          attributes: {
-            device_class: "occupancy",
-            location_id: "area_kitchen",
-            effective_timeout_at: expectedVacantAt,
-            vacant_at: expectedVacantAt,
-            contributions: [{ source_id: "light.master_bath_toilet_light", expires_at: expectedVacantAt }],
-          },
-        },
-      },
-    });
+    element.occupancyRuntimeStates = {
+      area_kitchen: occupancyRuntimeState("area_kitchen", "on", {
+        effective_timeout_at: expectedVacantAt,
+        vacant_at: expectedVacantAt,
+        contributions: [{ source_id: "light.master_bath_toilet_light", expires_at: expectedVacantAt }],
+      }),
+    };
+    await element.updateComplete;
 
     await waitUntil(
       () =>
         (
           element.shadowRoot!.querySelector('[data-testid="header-vacant-at"]')?.textContent || ""
         ).includes(expectedVacantAtLabel),
-      "header vacant-at did not update from live occupancy state_changed event"
+      "header vacant-at did not update from backend occupancy runtime projection"
     );
   });
 

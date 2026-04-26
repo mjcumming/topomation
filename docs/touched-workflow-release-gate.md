@@ -110,44 +110,56 @@ Outcome:
 
 ## 8. Current Release Candidate Record
 
-Commit under test: **release-candidate worktree for Topomation `0.2.67`**
-(occupancy live-event/snapshot race fix + release metadata).
+Commit under test: **release-candidate worktree for Topomation `0.2.72`**
+(backend-owned runtime occupancy projection + release metadata).
 Frontend bundle rebuilt from same commit: **yes** (`npm run build` →
 committed `topomation-panel.js`; parity verified by
-`diff -u dist/topomation-panel.js topomation-panel.js`,
-`./scripts/test-comprehensive.sh`, and `make test-release-live`).
+`./scripts/test-comprehensive.sh` and `make test-release-live` on
+2026-04-26).
 
 Touched workflows:
-- **Tree occupancy toggle live-state refresh** (frontend): manual occupied /
-  vacant toggles, including grouped-area propagation, apply live
-  `topomation_occupancy_changed` events without being overwritten by older
-  HA `hass.states` snapshots during the follow-up location reload.
-- **Occupancy group visual sync** (frontend): grouped areas keep the freshest
-  known occupied/vacant transition while HA state propagation catches up.
+- **Backend occupancy projection contract**: `locations/list` and
+  `occupancy/states/list` expose one backend-owned runtime occupancy state per
+  topology row, including grouped peers, structural rollups, managed-shadow
+  hosts, lock metadata, contributors, and transition reasons.
+- **Panel/tree/inspector runtime occupancy rendering**: topology dots, header
+  occupancy, lock/toggle decisions, and occupancy reason text consume the
+  backend projection instead of deriving effective occupancy from raw HA
+  `binary_sensor` snapshots or local rollups.
+- **Occupancy group visual sync**: grouped areas such as Kitchen and Front Entry
+  render the same backend-projected occupied/vacant state even when HA state
+  snapshots arrive stale or out of order.
 
 Commands run:
-- `npm run test:unit -- topomation-panel.test.ts` — **PASS** (pre-release
-  focused regression, 2026-04-24)
-- `npm run build`
-- `diff -u dist/topomation-panel.js topomation-panel.js`
-- `bash scripts/check-docs-consistency.sh`
-- `./scripts/test-comprehensive.sh`
-- `source tests/ha-config.env && HA_URL_DEV="${HA_URL_LOCAL:-http://localhost:8123}" HA_TOKEN_DEV="${HA_TOKEN_LOCAL:-$HA_TOKEN_DEV}" make test-release-live`
+- `make lint` — **PASS** (Ruff, 2026-04-26)
+- `npm test -- --files occupancy-reason.test.ts topomation-panel.test.ts` —
+  **PASS** (focused pre-release regression, 2026-04-26)
+- `npm run test:unit -- ht-location-inspector.test.ts ht-location-tree.test.ts
+  occupancy-reason.test.ts` — **PASS** (141 targeted frontend projection
+  tests, 2026-04-26)
+- `npm run build` — **PASS** (rebuilt `topomation-panel.js`, 2026-04-26)
+- `pytest tests/test_websocket_contract.py --no-cov -q` — **PASS**
+  (focused backend contract pre-release regression, 2026-04-26)
+- `scripts/check-docs-consistency.sh` — **PASS** (pre-release docs gate,
+  2026-04-26)
+- `./scripts/test-comprehensive.sh` — **PASS** (local comprehensive matrix,
+  2026-04-26)
+- `make test-release-live` — **PASS** (local comprehensive matrix plus live HA
+  managed-action contract plus live browser workflows, 2026-04-26)
 
 Outcome:
-- Version sync (`0.2.67`): **PASS** (2026-04-24)
-- Focused panel regression (`npm run test:unit -- topomation-panel.test.ts`):
-  **PASS** (2026-04-24) — includes stale HA snapshot vs newer live
-  occupancy event regression.
-- Frontend bundle parity: **PASS** (2026-04-24)
-- Docs consistency: **PASS** (2026-04-24)
-- Local comprehensive gate (`./scripts/test-comprehensive.sh`): **PASS**
-  (2026-04-24) — backend checks, frontend unit/build/parity, WTR, and
-  Playwright mock/production-smoke suites green.
-- Live HA release gate (`make test-release-live` pinned to local HA):
-  **PASS** (2026-04-24) — comprehensive gate, managed-action contract
-  tests, and live-browser tests green.
+- Version sync (`0.2.72`): **PASS**
+- Backend projection contract: **PASS**
+- Frontend backend-only occupancy rendering: **PASS**
+- Occupancy group visual sync: **PASS**
+- Frontend bundle parity: **PASS**
+- Local comprehensive gate: **PASS**
+- Live HA release gate: **PASS**
 
 Notes:
+- Initial live browser attempt failed because the already-running local HA
+  process had not restarted after this branch added the new
+  `topomation/occupancy/states/list` websocket command. After restarting HA so
+  the updated backend command table was loaded, `make test-release-live` passed.
 - After push to `main`, confirm CI and **Auto Release** are green for the
   release commit before considering the release complete.

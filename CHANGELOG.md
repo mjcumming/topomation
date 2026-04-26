@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.72] - 2026-04-26
+
+### Added
+
+- **ADR-HA-093 / C-023**: documented and implemented backend-owned runtime
+  occupancy projection so the panel gets one normalized occupancy state per
+  topology location from the backend.
+
+### Fixed
+
+- **Occupancy runtime drift**: the panel no longer derives effective occupancy
+  from raw HA `binary_sensor` snapshots, group membership, managed shadows, or
+  local rollups. It now consumes the backend projection snapshot/event stream,
+  keeping grouped peers such as Kitchen and Front Entry in sync even when HA's
+  own state snapshot arrives stale or out of order.
+
 ## [0.2.71] - 2026-04-26
 
 ### Fixed

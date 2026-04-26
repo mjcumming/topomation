@@ -40,6 +40,7 @@ from custom_components.topomation.const import (  # type: ignore[import]
     WS_TYPE_LOCATIONS_DELETE,
     WS_TYPE_LOCATIONS_LIST,
     WS_TYPE_LOCATIONS_ASSIGN_ENTITY,
+    WS_TYPE_OCCUPANCY_STATES_LIST,
     WS_TYPE_LOCATIONS_REORDER,
     WS_TYPE_LOCATIONS_SET_MODULE_CONFIG,
     WS_TYPE_LOCATIONS_UPDATE,
@@ -59,6 +60,7 @@ from custom_components.topomation.websocket_api import (  # type: ignore[import]
     handle_locations_delete,
     handle_locations_list,
     handle_locations_assign_entity,
+    handle_occupancy_states_list,
     handle_locations_reorder,
     handle_locations_set_module_config,
     handle_locations_update,
@@ -2165,6 +2167,82 @@ async def test_set_module_config_occupancy_group_id_uses_shared_runtime_state_fo
     kitchen_sources = kitchen_state.get("contributions") or []
     assert any(item.get("origin_location_id") == "area_family_room" for item in family_sources)
     assert any(item.get("origin_location_id") == "area_family_room" for item in kitchen_sources)
+
+
+@pytest.mark.asyncio
+async def test_occupancy_states_list_projects_group_members_from_backend(
+    hass: HomeAssistant,
+) -> None:
+    """C-023 projection should give grouped peers the same backend-owned runtime state."""
+    entry = MockConfigEntry(domain=DOMAIN, data={}, entry_id="test_entry")
+    entry.add_to_hass(hass)
+
+    with patch("custom_components.topomation.async_register_panel", AsyncMock()):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    kernel = hass.data[DOMAIN][entry.entry_id]
+    loc_mgr = kernel["location_manager"]
+    occupancy_module = kernel["modules"]["occupancy"]
+
+    if loc_mgr.get_location("building_main") is None:
+        loc_mgr.create_location(id="building_main", name="Home", parent_id=None)
+    loc_mgr.set_module_config("building_main", "_meta", {"type": "building"})
+    loc_mgr.create_location(id="floor_main", name="Main Floor", parent_id="building_main")
+    loc_mgr.set_module_config("floor_main", "_meta", {"type": "floor"})
+    loc_mgr.create_location(id="area_kitchen", name="Kitchen", parent_id="floor_main")
+    loc_mgr.set_module_config("area_kitchen", "_meta", {"type": "area"})
+    loc_mgr.create_location(id="area_front_entry", name="Front Entry", parent_id="floor_main")
+    loc_mgr.set_module_config("area_front_entry", "_meta", {"type": "area"})
+
+    connection = _fake_connection()
+    for request_id, location_id in ((4223, "area_kitchen"), (4224, "area_front_entry")):
+        handle_locations_set_module_config(
+            hass,
+            connection,
+            {
+                "id": request_id,
+                "type": WS_TYPE_LOCATIONS_SET_MODULE_CONFIG,
+                "location_id": location_id,
+                "module_id": "occupancy",
+                "config": {
+                    "enabled": True,
+                    "occupancy_sources": [],
+                    "occupancy_group_id": "main_open_area",
+                },
+                "entry_id": entry.entry_id,
+            },
+        )
+    await hass.async_block_till_done()
+
+    occupancy_module.trigger("area_front_entry", "sensor.front_entry_motion", 300)
+    await hass.async_block_till_done()
+
+    projection_conn = _fake_connection()
+    handle_occupancy_states_list(
+        hass,
+        projection_conn,
+        {
+            "id": 4225,
+            "type": WS_TYPE_OCCUPANCY_STATES_LIST,
+            "entry_id": entry.entry_id,
+        },
+    )
+
+    payload = projection_conn.send_result.call_args[0][1]
+    states_by_id = {item["location_id"]: item for item in payload["states"]}
+
+    assert states_by_id["area_front_entry"]["occupied"] is True
+    assert states_by_id["area_kitchen"]["occupied"] is True
+    assert states_by_id["area_front_entry"]["projection"] == "occupancy_group_member"
+    assert states_by_id["area_kitchen"]["projection"] == "occupancy_group_member"
+    assert states_by_id["area_front_entry"]["occupancy_group_id"] == "main_open_area"
+    assert states_by_id["area_kitchen"]["occupancy_group_id"] == "main_open_area"
+    assert states_by_id["floor_main"]["occupied"] is True
+    assert states_by_id["floor_main"]["projection"] in {
+        "managed_shadow_host",
+        "structural_rollup",
+    }
 
 
 @pytest.mark.asyncio

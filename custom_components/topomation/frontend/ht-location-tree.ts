@@ -8,10 +8,8 @@ import Sortable from "sortablejs";
 import { getLocationType, isDescendant, canMoveLocation } from "./hierarchy-rules";
 import { getLocationIcon } from "./icon-utils";
 import {
-  effectiveOccupancyTopologyId,
   isSystemShadowLocation,
   managedShadowLocationIdSet,
-  rollupOccupancyStatusByLocation,
 } from "./shadow-location-utils";
 import { humanReadableLockSource } from "./lock-source-utils";
 import {
@@ -55,6 +53,7 @@ export class HtLocationTree extends LitElement {
   @property() public selectedId?: string;
   @property({ attribute: false }) public occupancyStates: Record<string, boolean> = {};
   @property({ attribute: false }) public occupancyTransitions: Record<string, OccupancyTransitionState> = {};
+  @property({ attribute: false }) public occupancyRuntimeStates: Record<string, Record<string, any>> = {};
   @property({ type: Boolean }) public readOnly = false;
   @property({ type: Boolean }) public allowMove = false;
   @property({ type: Boolean }) public allowRename = false;
@@ -67,6 +66,7 @@ export class HtLocationTree extends LitElement {
     selectedId: {},
     occupancyStates: { attribute: false },
     occupancyTransitions: { attribute: false },
+    occupancyRuntimeStates: { attribute: false },
     readOnly: { type: Boolean },
     allowMove: { type: Boolean },
     allowRename: { type: Boolean },
@@ -886,22 +886,22 @@ export class HtLocationTree extends LitElement {
   }
 
   private _computeOccupancyStatusByLocation(): Record<string, OccupancyStatus> {
-    return rollupOccupancyStatusByLocation(
-      this.locations,
-      this.occupancyStates || {}
-    ) as Record<string, OccupancyStatus>;
+    const result: Record<string, OccupancyStatus> = {};
+    for (const location of this.locations || []) {
+      const occupied = this.occupancyStates?.[location.id];
+      result[location.id] =
+        occupied === true ? "occupied" : occupied === false ? "vacant" : "unknown";
+    }
+    return result;
   }
 
   private _computeLockStateByLocation(): Record<string, LockState> {
-    const states = this.hass?.states || {};
     const lockByLocation: Record<string, LockState> = {};
-    for (const state of Object.values(states) as any[]) {
+    for (const [locationId, state] of Object.entries(this.occupancyRuntimeStates || {})) {
       const attrs = state?.attributes || {};
-      if (attrs.device_class !== "occupancy") continue;
-      const locationId = attrs.location_id;
       if (!locationId) continue;
       const lockedByRaw = attrs.locked_by;
-      lockByLocation[String(locationId)] = {
+      lockByLocation[locationId] = {
         isLocked: Boolean(attrs.is_locked),
         lockedBy: Array.isArray(lockedByRaw) ? lockedByRaw.map((item: any) => String(item)) : [],
       };
@@ -913,15 +913,10 @@ export class HtLocationTree extends LitElement {
     location: Location,
     lockStateByLocation: Record<string, LockState>
   ): LockState {
-    const effectiveId = effectiveOccupancyTopologyId(location, this.locations);
-    return lockStateByLocation[effectiveId] || { isLocked: false, lockedBy: [] };
+    return lockStateByLocation[location.id] || { isLocked: false, lockedBy: [] };
   }
 
   private _isEffectivelyOccupied(location: Location): boolean {
-    const effectiveId = effectiveOccupancyTopologyId(location, this.locations);
-    if (typeof this.occupancyStates?.[effectiveId] === "boolean") {
-      return this.occupancyStates[effectiveId] === true;
-    }
     return this.occupancyStates?.[location.id] === true;
   }
 

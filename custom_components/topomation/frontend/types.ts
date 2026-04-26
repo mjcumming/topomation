@@ -82,6 +82,36 @@ export interface HandoffTrace {
   timestamp: string;
 }
 
+export type OccupancyProjectionKind =
+  | "direct"
+  | "occupancy_group_member"
+  | "managed_shadow_host"
+  | "structural_rollup"
+  | "unknown";
+
+export interface OccupancyRuntimeState {
+  location_id: string;
+  effective_location_id?: string;
+  projection?: OccupancyProjectionKind;
+  occupied?: boolean | null;
+  previous_occupied?: boolean | null;
+  reason?: string | null;
+  changed_at?: string | null;
+  is_locked?: boolean;
+  locked_by?: string[];
+  lock_modes?: string[];
+  direct_locks?: unknown[];
+  vacant_at?: string | null;
+  effective_timeout_at?: string | null;
+  seconds_until_vacant?: number | null;
+  occupancy_group_id?: string | null;
+  summary?: string;
+  contributors?: unknown[];
+  contributions?: unknown[];
+  recent_changes?: unknown[];
+  state?: Record<string, any>;
+}
+
 export interface ModuleConfig {
   // Version/enabled are optional in mock data; real modules should set them.
   version?: number;

@@ -2,7 +2,7 @@
 
 DOMAIN = "topomation"
 NAME = "Topomation"
-VERSION = "0.2.71"
+VERSION = "0.2.72"
 
 # Location `_meta` keys (integration-owned semantics)
 META_TOPOLOGY_ANCHOR_KEY = "topology_anchor"
@@ -66,6 +66,7 @@ WS_TYPE_ADJACENCY_LIST = f"{DOMAIN}/adjacency/list"
 WS_TYPE_ADJACENCY_CREATE = f"{DOMAIN}/adjacency/create"
 WS_TYPE_ADJACENCY_UPDATE = f"{DOMAIN}/adjacency/update"
 WS_TYPE_ADJACENCY_DELETE = f"{DOMAIN}/adjacency/delete"
+WS_TYPE_OCCUPANCY_STATES_LIST = f"{DOMAIN}/occupancy/states/list"
 
 # Ambient Light WebSocket API types
 WS_TYPE_AMBIENT_GET_READING = f"{DOMAIN}/ambient/get_reading"
@@ -88,4 +89,5 @@ TOPOMATION_AUTOMATION_METADATA_PREFIX = "[topomation]"
 AUTOMATION_STARTUP_BUFFER_SECONDS = 20
 EVENT_TOPOMATION_ACTIONS_SUMMARY = f"{DOMAIN}_actions_summary"
 EVENT_TOPOMATION_OCCUPANCY_CHANGED = f"{DOMAIN}_occupancy_changed"
+EVENT_TOPOMATION_OCCUPANCY_STATE_CHANGED = f"{DOMAIN}_occupancy_state_changed"
 EVENT_TOPOMATION_HANDOFF_TRACE = f"{DOMAIN}_handoff_trace"

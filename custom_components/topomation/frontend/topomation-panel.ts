@@ -7,15 +7,13 @@ import type {
   HomeAssistant,
   Location,
   LocationType,
+  OccupancyRuntimeState,
 } from "./types";
 import { sharedStyles } from "./styles";
 import { getLocationType } from "./hierarchy-rules";
 import {
-  effectiveOccupancyTopologyId,
-  isManagedShadowOccupancyHost,
   isSystemShadowLocation,
   managedShadowLocationIdSet,
-  rollupOccupancyStatusByLocation,
 } from "./shadow-location-utils";
 import { humanReadableLockSource } from "./lock-source-utils";
 
@@ -97,6 +95,7 @@ export class TopomationPanel extends LitElement {
     _newLocationDefaults: { state: true },
     _occupancyStateByLocation: { state: true },
     _occupancyTransitionByLocation: { state: true },
+    _occupancyRuntimeStateByLocation: { state: true },
     _adjacencyEdges: { state: true },
     _handoffTraceByLocation: { state: true },
     _treePanelSplit: { state: true },
@@ -133,6 +132,7 @@ export class TopomationPanel extends LitElement {
   };
   @state() private _occupancyStateByLocation: Record<string, boolean> = {};
   @state() private _occupancyTransitionByLocation: Record<string, OccupancyTransitionState> = {};
+  @state() private _occupancyRuntimeStateByLocation: Record<string, Record<string, any>> = {};
   @state() private _adjacencyEdges: AdjacencyEdge[] = [];
   @state() private _handoffTraceByLocation: Record<string, HandoffTrace[]> = {};
   @state() private _treePanelSplit = TREE_PANEL_SPLIT_DEFAULT;
@@ -149,7 +149,6 @@ export class TopomationPanel extends LitElement {
   private _hasLoaded = false;
   private _pendingLoadTimer?: number;
   private _unsubUpdates?: () => void;
-  private _unsubStateChanged?: () => void;
   private _unsubOccupancyChanged?: () => void;
   private _unsubHandoffTrace?: () => void;
   private _unsubEntityRegistryUpdated?: () => void;
@@ -855,6 +854,7 @@ export class TopomationPanel extends LitElement {
             .selectedId=${this._selectedId}
             .occupancyStates=${this._occupancyStateByLocation}
             .occupancyTransitions=${this._occupancyTransitionByLocation}
+            .occupancyRuntimeStates=${this._occupancyRuntimeStateByLocation}
             .readOnly=${false}
             .allowMove=${true}
             .allowRename=${true}
@@ -899,6 +899,7 @@ export class TopomationPanel extends LitElement {
             .forcedTab=${forcedInspectorTab}
             .occupancyStates=${this._occupancyStateByLocation}
             .occupancyTransitions=${this._occupancyTransitionByLocation}
+            .occupancyRuntimeStates=${this._occupancyRuntimeStateByLocation}
             .handoffTraces=${selectedLocation
               ? this._handoffTraceByLocation[selectedLocation.id] || []
               : []}
@@ -1442,7 +1443,11 @@ export class TopomationPanel extends LitElement {
       }
 
       const result = await Promise.race([
-        this.hass.callWS<{ locations: Location[]; adjacency_edges?: AdjacencyEdge[] }>(
+        this.hass.callWS<{
+          locations: Location[];
+          adjacency_edges?: AdjacencyEdge[];
+          occupancy_states?: OccupancyRuntimeState[];
+        }>(
           this._withEntryId({
             type: "topomation/locations/list",
           })
@@ -1452,7 +1457,11 @@ export class TopomationPanel extends LitElement {
         ),
       ]);
 
-      const response = result as { locations?: Location[]; adjacency_edges?: AdjacencyEdge[] };
+      const response = result as {
+        locations?: Location[];
+        adjacency_edges?: AdjacencyEdge[];
+        occupancy_states?: OccupancyRuntimeState[];
+      };
       if (!response || !response.locations) {
         throw new Error("Invalid response format: missing locations array");
       }
@@ -1475,7 +1484,13 @@ export class TopomationPanel extends LitElement {
       this._adjacencyEdges = Array.isArray(response.adjacency_edges)
         ? [...response.adjacency_edges]
         : [];
-      this._mergeOccupancySnapshotFromStates(new Set(uniqueLocations.map((loc) => loc.id)));
+      const occupancyStates = Array.isArray(response.occupancy_states)
+        ? response.occupancy_states
+        : await this._loadOccupancyRuntimeStates();
+      this._replaceOccupancyRuntimeStates(
+        occupancyStates,
+        new Set(uniqueLocations.map((loc) => loc.id))
+      );
       this._locationsVersion += 1;
       // Keep selection valid against the visible/non-root subset.
       if (
@@ -1794,64 +1809,22 @@ export class TopomationPanel extends LitElement {
   }
 
   private _getLocationLockState(locationId: string): { isLocked: boolean; lockedBy: string[] } {
-    const location = this._locations.find((item) => item.id === locationId);
-    const effectiveId = effectiveOccupancyTopologyId(location, this._allLocations);
-    const states = this.hass?.states || {};
-    for (const state of Object.values(states) as any[]) {
-      const attrs = state?.attributes || {};
-      if (attrs?.device_class !== "occupancy") continue;
-      if (String(attrs?.location_id) !== String(effectiveId || locationId)) continue;
-      const lockedBy = Array.isArray(attrs?.locked_by)
-        ? attrs.locked_by.map((item: unknown) => String(item))
-        : [];
-      return {
-        isLocked: Boolean(attrs?.is_locked),
-        lockedBy,
-      };
-    }
-
-    return { isLocked: false, lockedBy: [] };
+    const attrs = this._occupancyRuntimeStateByLocation[locationId]?.attributes || {};
+    const lockedBy = Array.isArray(attrs?.locked_by)
+      ? attrs.locked_by.map((item: unknown) => String(item))
+      : [];
+    return {
+      isLocked: Boolean(attrs?.is_locked),
+      lockedBy,
+    };
   }
 
   private _getLocationOccupiedState(locationId: string): boolean | undefined {
-    const location = this._locations.find((item) => item.id === locationId);
-    const effectiveId = effectiveOccupancyTopologyId(location, this._allLocations);
-    const states = this.hass?.states || {};
-    for (const state of Object.values(states) as any[]) {
-      const attrs = state?.attributes || {};
-      if (attrs?.device_class !== "occupancy") continue;
-      if (String(attrs?.location_id) !== String(effectiveId || locationId)) continue;
-      return state?.state === "on";
-    }
-    return undefined;
+    return this._occupancyStateByLocation[locationId];
   }
 
-  /**
-   * Occupancy used for tree manual toggle: for managed-shadow hosts, treat the row as
-   * occupied when either the effective HA entity is on or the tree rollup (descendants)
-   * is occupied — matching the green dot and avoiding repeated ``trigger`` when the
-   * shadow sensor lags behind child-driven occupancy.
-   */
   private _getLocationOccupiedForToggle(locationId: string): boolean | undefined {
-    const location = this._locations.find((loc) => loc.id === locationId);
-    const fromHa = this._getLocationOccupiedState(locationId);
-    if (!location || !isManagedShadowOccupancyHost(location, this._allLocations)) {
-      return fromHa;
-    }
-    const rollupMap = rollupOccupancyStatusByLocation(
-      this._allLocations,
-      this._occupancyStateByLocation
-    );
-    if (rollupMap[locationId] === "occupied" || fromHa === true) {
-      return true;
-    }
-    if (rollupMap[locationId] === "vacant" && fromHa !== true) {
-      return false;
-    }
-    if (fromHa === false && rollupMap[locationId] !== "occupied") {
-      return false;
-    }
-    return fromHa;
+    return this._getLocationOccupiedState(locationId);
   }
 
   private async _handleLocationOccupancyToggle(e: CustomEvent): Promise<void> {
@@ -1881,7 +1854,7 @@ export class TopomationPanel extends LitElement {
           return;
         }
 
-        // Resolve occupancy intent from current effective HA state at click-time.
+        // Resolve occupancy intent from the backend projection at click-time.
         // This avoids stale UI-derived toggle payloads selecting the wrong action.
         const currentOccupied = this._getLocationOccupiedForToggle(locationId);
         const occupied =
@@ -2245,10 +2218,6 @@ export class TopomationPanel extends LitElement {
       this._unsubUpdates();
       this._unsubUpdates = undefined;
     }
-    if (this._unsubStateChanged) {
-      this._unsubStateChanged();
-      this._unsubStateChanged = undefined;
-    }
     if (this._unsubOccupancyChanged) {
       this._unsubOccupancyChanged();
       this._unsubOccupancyChanged = undefined;
@@ -2282,7 +2251,6 @@ export class TopomationPanel extends LitElement {
     if (
       this._updatesSubscriptionConnection === connection &&
       this._unsubUpdates &&
-      this._unsubStateChanged &&
       this._unsubOccupancyChanged &&
       this._unsubHandoffTrace &&
       this._unsubEntityRegistryUpdated &&
@@ -2309,23 +2277,17 @@ export class TopomationPanel extends LitElement {
     try {
       this._unsubOccupancyChanged = await connection.subscribeEvents(
         (event: any) => {
-          const locationId = event?.data?.location_id;
-          const occupied = event?.data?.occupied;
-          if (!locationId || typeof occupied !== "boolean") return;
-          const previousOccupied = event?.data?.previous_occupied;
-          const reason =
-            typeof event?.data?.reason === "string" && event.data.reason.trim().length
-              ? event.data.reason.trim()
-              : undefined;
-          this._setOccupancyState(locationId, occupied, {
-            previousOccupied: typeof previousOccupied === "boolean" ? previousOccupied : undefined,
-            reason,
-          });
+          const states = Array.isArray(event?.data?.states)
+            ? event.data.states
+            : event?.data?.state
+              ? [event.data.state]
+              : [];
+          this._applyOccupancyRuntimeStates(states);
         },
-        "topomation_occupancy_changed"
+        "topomation_occupancy_state_changed"
       );
     } catch (err) {
-      console.warn("Failed to subscribe to topomation_occupancy_changed events", err);
+      console.warn("Failed to subscribe to topomation_occupancy_state_changed events", err);
     }
 
     try {
@@ -2418,8 +2380,6 @@ export class TopomationPanel extends LitElement {
     } catch (err) {
       console.warn("Failed to subscribe to area_registry_updated events", err);
     }
-
-    await this._syncStateChangedSubscription(connection);
   }
 
   private _scheduleRegistryRefresh(eventType: string, data: Record<string, unknown>): void {
@@ -2439,166 +2399,122 @@ export class TopomationPanel extends LitElement {
     }, 200);
   }
 
-  private _mergeOccupancySnapshotFromStates(validLocationIds: Set<string>): void {
-    const snapshotStates = this._buildOccupancyStateMapFromStates();
-    const snapshotTransitions = this._buildOccupancyTransitionsFromStates();
-    const nextStates: Record<string, boolean> = {};
-    const nextTransitions: Record<string, OccupancyTransitionState> = {};
+  private async _loadOccupancyRuntimeStates(): Promise<OccupancyRuntimeState[]> {
+    if (!this.hass?.callWS) return [];
+    try {
+      const response = await this.hass.callWS<{ states?: OccupancyRuntimeState[] }>(
+        this._withEntryId({
+          type: "topomation/occupancy/states/list",
+        })
+      );
+      return Array.isArray(response?.states) ? response.states : [];
+    } catch (err) {
+      console.warn("Failed to load backend occupancy projection", err);
+      return [];
+    }
+  }
 
-    for (const locationId of validLocationIds) {
-      const snapshotTransition = snapshotTransitions[locationId];
-      const currentTransition = this._occupancyTransitionByLocation[locationId];
-      // HA snapshots can lag behind service-triggered live events; keep the freshest source.
-      const useCurrent =
-        currentTransition !== undefined &&
-        typeof this._occupancyStateByLocation[locationId] === "boolean" &&
-        (snapshotTransition === undefined ||
-          this._transitionTimestampMs(currentTransition) > this._transitionTimestampMs(snapshotTransition));
+  private _replaceOccupancyRuntimeStates(
+    runtimeStates: OccupancyRuntimeState[],
+    validLocationIds?: Set<string>
+  ): void {
+    const filtered = runtimeStates.filter((state) => {
+      const locationId = typeof state?.location_id === "string" ? state.location_id : "";
+      return locationId && (!validLocationIds || validLocationIds.has(locationId));
+    });
+    this._applyOccupancyRuntimeStates(filtered, true);
+  }
 
-      if (useCurrent) {
-        if (typeof this._occupancyStateByLocation[locationId] === "boolean") {
-          nextStates[locationId] = this._occupancyStateByLocation[locationId];
-        }
-        nextTransitions[locationId] = currentTransition;
-        continue;
-      }
+  private _applyOccupancyRuntimeStates(
+    runtimeStates: OccupancyRuntimeState[],
+    replace = false
+  ): void {
+    if (!Array.isArray(runtimeStates)) return;
 
-      if (typeof snapshotStates[locationId] === "boolean") {
-        nextStates[locationId] = snapshotStates[locationId];
-      }
-      if (snapshotTransition !== undefined) {
-        nextTransitions[locationId] = snapshotTransition;
+    const nextRuntimeStates: Record<string, Record<string, any>> = replace
+      ? {}
+      : { ...this._occupancyRuntimeStateByLocation };
+    const nextStates: Record<string, boolean> = replace ? {} : { ...this._occupancyStateByLocation };
+    const nextTransitions: Record<string, OccupancyTransitionState> = replace
+      ? {}
+      : { ...this._occupancyTransitionByLocation };
+
+    for (const runtimeState of runtimeStates) {
+      const locationId =
+        typeof runtimeState?.location_id === "string" ? runtimeState.location_id : "";
+      if (!locationId) continue;
+
+      const occupied =
+        typeof runtimeState.occupied === "boolean" ? runtimeState.occupied : undefined;
+      const stateLike =
+        runtimeState.state && typeof runtimeState.state === "object"
+          ? runtimeState.state
+          : this._runtimeStateToStateLike(runtimeState);
+
+      nextRuntimeStates[locationId] = stateLike;
+      if (typeof occupied === "boolean") {
+        nextStates[locationId] = occupied;
+        nextTransitions[locationId] = {
+          occupied,
+          previousOccupied:
+            typeof runtimeState.previous_occupied === "boolean"
+              ? runtimeState.previous_occupied
+              : undefined,
+          reason:
+            typeof runtimeState.reason === "string" && runtimeState.reason.trim().length
+              ? runtimeState.reason.trim()
+              : undefined,
+          changedAt:
+            typeof runtimeState.changed_at === "string" && runtimeState.changed_at.trim().length
+              ? runtimeState.changed_at
+              : undefined,
+        };
       }
     }
 
+    this._occupancyRuntimeStateByLocation = nextRuntimeStates;
     this._occupancyStateByLocation = nextStates;
     this._occupancyTransitionByLocation = nextTransitions;
   }
 
-  private _transitionTimestampMs(transition?: OccupancyTransitionState): number {
-    if (!transition?.changedAt) return 0;
-    const parsed = Date.parse(transition.changedAt);
-    return Number.isFinite(parsed) ? parsed : 0;
-  }
-
-  private _setOccupancyState(
-    locationId: string,
-    occupied: boolean,
-    details?: {
-      previousOccupied?: boolean;
-      reason?: string;
-      changedAt?: string;
-    }
-  ): void {
-    const reason =
-      typeof details?.reason === "string" && details.reason.trim().length
-        ? details.reason.trim()
-        : undefined;
+  private _runtimeStateToStateLike(runtimeState: OccupancyRuntimeState): Record<string, any> {
+    const locationId = runtimeState.location_id;
+    const occupied =
+      typeof runtimeState.occupied === "boolean" ? runtimeState.occupied : undefined;
     const changedAt =
-      typeof details?.changedAt === "string" && details.changedAt.trim().length
-        ? details.changedAt
-        : new Date().toISOString();
-
-    this._occupancyStateByLocation = {
-      ...this._occupancyStateByLocation,
-      [locationId]: occupied,
-    };
-    this._occupancyTransitionByLocation = {
-      ...this._occupancyTransitionByLocation,
-      [locationId]: {
-        occupied,
-        previousOccupied:
-          typeof details?.previousOccupied === "boolean"
-            ? details.previousOccupied
-            : undefined,
-        reason,
-        changedAt,
+      typeof runtimeState.changed_at === "string" && runtimeState.changed_at.trim().length
+        ? runtimeState.changed_at
+        : undefined;
+    return {
+      entity_id: `binary_sensor.topomation_occupancy_projection_${locationId}`,
+      state: occupied === true ? "on" : occupied === false ? "off" : "unknown",
+      last_changed: changedAt,
+      last_updated: changedAt,
+      attributes: {
+        device_class: "occupancy",
+        location_id: locationId,
+        effective_location_id: runtimeState.effective_location_id,
+        projection: runtimeState.projection,
+        locked_by: Array.isArray(runtimeState.locked_by) ? runtimeState.locked_by : [],
+        is_locked: Boolean(runtimeState.is_locked),
+        lock_modes: Array.isArray(runtimeState.lock_modes) ? runtimeState.lock_modes : [],
+        direct_locks: Array.isArray(runtimeState.direct_locks) ? runtimeState.direct_locks : [],
+        contributions: Array.isArray(runtimeState.contributions)
+          ? runtimeState.contributions
+          : Array.isArray(runtimeState.contributors)
+            ? runtimeState.contributors
+            : [],
+        effective_timeout_at: runtimeState.effective_timeout_at || runtimeState.vacant_at,
+        vacant_at: runtimeState.vacant_at || runtimeState.effective_timeout_at,
+        seconds_until_vacant: runtimeState.seconds_until_vacant,
+        previous_occupied: runtimeState.previous_occupied,
+        reason: runtimeState.reason,
+        recent_changes: Array.isArray(runtimeState.recent_changes)
+          ? runtimeState.recent_changes
+          : [],
+        occupancy_group_id: runtimeState.occupancy_group_id,
       },
     };
-  }
-
-  private _buildOccupancyStateMapFromStates(): Record<string, boolean> {
-    const map: Record<string, boolean> = {};
-    const states = this.hass?.states || {};
-    for (const state of Object.values(states) as any[]) {
-      const attrs = state?.attributes || {};
-      if (attrs?.device_class !== "occupancy") continue;
-      const locationId = attrs.location_id;
-      if (!locationId) continue;
-      map[locationId] = state?.state === "on";
-    }
-    return map;
-  }
-
-  private _buildOccupancyTransitionsFromStates(): Record<string, OccupancyTransitionState> {
-    const map: Record<string, OccupancyTransitionState> = {};
-    const states = this.hass?.states || {};
-    for (const state of Object.values(states) as any[]) {
-      const attrs = state?.attributes || {};
-      if (attrs?.device_class !== "occupancy") continue;
-      const locationId = attrs.location_id;
-      if (!locationId) continue;
-      const previousOccupied = attrs.previous_occupied;
-      const reason =
-        typeof attrs.reason === "string" && attrs.reason.trim().length
-          ? attrs.reason.trim()
-          : undefined;
-      const changedAt =
-        typeof state?.last_changed === "string" && state.last_changed.trim().length
-          ? state.last_changed
-          : undefined;
-      map[locationId] = {
-        occupied: state?.state === "on",
-        previousOccupied: typeof previousOccupied === "boolean" ? previousOccupied : undefined,
-        reason,
-        changedAt,
-      };
-    }
-    return map;
-  }
-
-  private async _syncStateChangedSubscription(connection = this.hass?.connection): Promise<void> {
-    if (!connection) return;
-    if (typeof connection.subscribeEvents !== "function") return;
-
-    if (this._unsubStateChanged) return;
-
-    try {
-      this._unsubStateChanged = await connection.subscribeEvents(
-        (event: any) => {
-          const entityId = event?.data?.entity_id;
-          if (!entityId) return;
-
-          const newStateObj = event?.data?.new_state;
-          const attrs = newStateObj?.attributes || {};
-          if (
-            entityId.startsWith("binary_sensor.") &&
-            attrs.device_class === "occupancy" &&
-            attrs.location_id
-          ) {
-            this._setOccupancyState(attrs.location_id, newStateObj?.state === "on", {
-              previousOccupied:
-                typeof attrs.previous_occupied === "boolean"
-                  ? attrs.previous_occupied
-                  : undefined,
-              reason:
-                typeof attrs.reason === "string" && attrs.reason.trim().length
-                  ? attrs.reason.trim()
-                  : undefined,
-              changedAt:
-                typeof newStateObj?.last_changed === "string" &&
-                newStateObj.last_changed.trim().length
-                  ? newStateObj.last_changed
-                  : undefined,
-            });
-          }
-
-        },
-        "state_changed"
-      );
-    } catch (err) {
-      console.warn("Failed to subscribe to state_changed events", err);
-    }
   }
 
   private _showKeyboardShortcutsHelp(): void {

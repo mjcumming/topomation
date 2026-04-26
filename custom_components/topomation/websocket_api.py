@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import UTC, datetime
 from typing import Any
 from weakref import WeakKeyDictionary
 
@@ -39,6 +40,7 @@ from .const import (
     WS_TYPE_LOCATIONS_REORDER,
     WS_TYPE_LOCATIONS_SET_MODULE_CONFIG,
     WS_TYPE_LOCATIONS_UPDATE,
+    WS_TYPE_OCCUPANCY_STATES_LIST,
     WS_TYPE_SYNC_ENABLE,
     WS_TYPE_SYNC_IMPORT,
     WS_TYPE_SYNC_STATUS,
@@ -429,6 +431,245 @@ def _is_managed_shadow_area(location: object) -> bool:
         return False
     meta = _location_meta(location)
     return str(meta.get(_META_ROLE_KEY, "")).strip().lower() == _MANAGED_SHADOW_ROLE
+
+
+def _managed_shadow_area_id(location_manager: object, location: object) -> str | None:
+    """Return the managed-shadow child id for a structural host, if valid enough to read."""
+    if not _is_shadow_host_location(location):
+        return None
+    meta = _location_meta(location)
+    raw_shadow_id = meta.get(_META_SHADOW_AREA_ID_KEY)
+    shadow_id = str(raw_shadow_id).strip() if isinstance(raw_shadow_id, str) else ""
+    if not shadow_id:
+        return None
+    get_location = getattr(location_manager, "get_location", None)
+    if not callable(get_location):
+        return None
+    try:
+        shadow = get_location(shadow_id)
+    except Exception:  # pragma: no cover - defensive lookup
+        return None
+    if shadow is None:
+        return None
+    return shadow_id
+
+
+def _occupancy_config(location: object) -> dict[str, Any]:
+    """Return occupancy config for a location-like object."""
+    modules = getattr(location, "modules", {}) or {}
+    if not isinstance(modules, dict):
+        return {}
+    config = modules.get("occupancy", {})
+    return config if isinstance(config, dict) else {}
+
+
+def _occupancy_group_id(location: object) -> str | None:
+    """Return normalized occupancy group id for a location-like object."""
+    raw = _occupancy_config(location).get(_OCCUPANCY_GROUP_ID_KEY)
+    if not isinstance(raw, str):
+        return None
+    normalized = raw.strip()
+    return normalized or None
+
+
+def _state_timestamp_iso(state_obj: object | None) -> str | None:
+    """Return HA state timestamp as ISO string when available."""
+    if state_obj is None:
+        return None
+    for attr in ("last_changed", "last_updated"):
+        value = getattr(state_obj, attr, None)
+        if isinstance(value, datetime):
+            return value.astimezone(UTC).isoformat()
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _ha_occupancy_state_for_location(hass: HomeAssistant, location_id: str) -> object | None:
+    """Find the HA occupancy entity state backing a runtime topology id."""
+    for state_obj in hass.states.async_all("binary_sensor"):
+        attrs = getattr(state_obj, "attributes", {}) or {}
+        if attrs.get("device_class") != "occupancy":
+            continue
+        if str(attrs.get("location_id", "")) == location_id:
+            return state_obj
+    return None
+
+
+def _serialize_projection_state_like(
+    *,
+    location_id: str,
+    location_name: str,
+    occupied: bool | None,
+    payload: dict[str, Any],
+    changed_at: str | None,
+    recent_changes: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Build a HA-state-like object for frontend explainability compatibility."""
+    state = "on" if occupied is True else "off" if occupied is False else "unknown"
+    return {
+        "entity_id": f"binary_sensor.topomation_occupancy_projection_{location_id}",
+        "state": state,
+        "last_changed": changed_at,
+        "last_updated": changed_at,
+        "attributes": {
+            "device_class": "occupancy",
+            "location_id": location_id,
+            "location_name": location_name,
+            "locked_by": payload.get("locked_by", []),
+            "is_locked": payload.get("is_locked", False),
+            "lock_modes": payload.get("lock_modes", []),
+            "direct_locks": payload.get("direct_locks", []),
+            "contributions": payload.get("contributions", []),
+            "suspended_contributions": payload.get("suspended_contributions", []),
+            "effective_timeout_at": payload.get("effective_timeout_at"),
+            "vacant_at": payload.get("vacant_at") or payload.get("effective_timeout_at"),
+            "seconds_until_vacant": payload.get("seconds_until_vacant"),
+            "previous_occupied": payload.get("previous_occupied", False),
+            "reason": payload.get("reason"),
+            "recent_changes": recent_changes,
+            "occupancy_group_id": payload.get("occupancy_group_id"),
+        },
+    }
+
+
+def build_occupancy_projection_states(
+    hass: HomeAssistant,
+    kernel: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Build C-023 backend-owned runtime occupancy projections for panel rows."""
+    loc_mgr = kernel["location_manager"]
+    occupancy_module = kernel.get("modules", {}).get("occupancy")
+    recent_by_location = kernel.get("occupancy_recent_changes", {})
+
+    locations = list(_ordered_locations_for_list(loc_mgr))
+    by_parent: dict[str, list[object]] = {}
+    for loc in locations:
+        parent_id = getattr(loc, "parent_id", None)
+        if isinstance(parent_id, str) and parent_id:
+            by_parent.setdefault(parent_id, []).append(loc)
+
+    raw_states: dict[str, dict[str, Any] | None] = {}
+    for loc in locations:
+        location_id = _location_id(loc)
+        if not location_id:
+            continue
+        try:
+            raw = occupancy_module.get_location_state(location_id) if occupancy_module else None
+        except Exception:  # pragma: no cover - defensive against runtime errors
+            _LOGGER.debug("Failed to read occupancy runtime state for %s", location_id, exc_info=True)
+            raw = None
+        raw_states[location_id] = raw if isinstance(raw, dict) else None
+
+    def descendant_ids(location_id: str) -> list[str]:
+        result: list[str] = []
+        stack = list(by_parent.get(location_id, []))
+        while stack:
+            child = stack.pop(0)
+            child_id = _location_id(child)
+            if child_id:
+                result.append(child_id)
+            stack[0:0] = by_parent.get(child_id, [])
+        return result
+
+    def effective_payload(location: object, effective_id: str) -> dict[str, Any]:
+        payload = raw_states.get(effective_id)
+        if isinstance(payload, dict):
+            return dict(payload)
+        own_payload = raw_states.get(_location_id(location))
+        return dict(own_payload) if isinstance(own_payload, dict) else {}
+
+    def projected_occupied(location: object, effective_id: str, payload: dict[str, Any]) -> bool | None:
+        own = payload.get("occupied")
+        if own is True:
+            return True
+        if own is not False and own is not True:
+            own = None
+
+        if _is_shadow_host_location(location) or bool(getattr(location, "is_explicit_root", False)):
+            child_states: list[bool] = []
+            for child_id in descendant_ids(_location_id(location)):
+                child_payload = raw_states.get(child_id)
+                child_occupied = child_payload.get("occupied") if isinstance(child_payload, dict) else None
+                if child_occupied is True:
+                    return True
+                if child_occupied is False:
+                    child_states.append(False)
+            if own is False:
+                return False
+            if child_states and all(state is False for state in child_states):
+                return False
+
+        return own if isinstance(own, bool) else None
+
+    projections: list[dict[str, Any]] = []
+    now = datetime.now(UTC)
+    for location in locations:
+        location_id = _location_id(location)
+        if not location_id:
+            continue
+
+        shadow_id = _managed_shadow_area_id(loc_mgr, location)
+        effective_id = shadow_id or location_id
+        group_id = _occupancy_group_id(location)
+        loc_type = _location_type(location)
+        if shadow_id:
+            projection_kind = "managed_shadow_host"
+        elif bool(getattr(location, "is_explicit_root", False)) or loc_type in _SHADOW_HOST_TYPES:
+            projection_kind = "structural_rollup"
+        elif group_id:
+            projection_kind = "occupancy_group_member"
+        else:
+            projection_kind = "direct"
+
+        payload = effective_payload(location, effective_id)
+        occupied = projected_occupied(location, effective_id, payload)
+        payload["occupied"] = occupied
+
+        ha_state = _ha_occupancy_state_for_location(hass, effective_id)
+        changed_at = _state_timestamp_iso(ha_state) or now.isoformat()
+        previous_occupied = payload.get("previous_occupied")
+        reason = payload.get("reason")
+        timeout_at = payload.get("effective_timeout_at") or payload.get("vacant_at")
+        recent_changes = list(recent_by_location.get(location_id, []))
+
+        state_like = _serialize_projection_state_like(
+            location_id=location_id,
+            location_name=str(getattr(location, "name", location_id) or location_id),
+            occupied=occupied,
+            payload=payload,
+            changed_at=changed_at,
+            recent_changes=recent_changes,
+        )
+
+        projections.append(
+            {
+                "location_id": location_id,
+                "effective_location_id": effective_id,
+                "projection": projection_kind,
+                "occupied": occupied,
+                "previous_occupied": previous_occupied if isinstance(previous_occupied, bool) else None,
+                "reason": reason if isinstance(reason, str) and reason else None,
+                "changed_at": changed_at,
+                "is_locked": bool(payload.get("is_locked", False)),
+                "locked_by": payload.get("locked_by", []),
+                "lock_modes": payload.get("lock_modes", []),
+                "direct_locks": payload.get("direct_locks", []),
+                "vacant_at": timeout_at,
+                "effective_timeout_at": timeout_at,
+                "seconds_until_vacant": payload.get("seconds_until_vacant"),
+                "occupancy_group_id": group_id or payload.get("occupancy_group_id"),
+                "summary": (
+                    "Occupied" if occupied is True else "Vacant" if occupied is False else "Occupancy unknown"
+                ),
+                "contributors": payload.get("contributions", []),
+                "contributions": payload.get("contributions", []),
+                "recent_changes": recent_changes,
+                "state": state_like,
+            }
+        )
+
+    return projections
 
 
 def _validate_managed_shadow_area_candidate(
@@ -906,6 +1147,7 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, handle_adjacency_create)
     websocket_api.async_register_command(hass, handle_adjacency_update)
     websocket_api.async_register_command(hass, handle_adjacency_delete)
+    websocket_api.async_register_command(hass, handle_occupancy_states_list)
 
     # Managed actions
     websocket_api.async_register_command(hass, handle_action_rules_list)
@@ -966,7 +1208,31 @@ def handle_locations_list(
         {
             "locations": locations,
             "adjacency_edges": _list_adjacency_edges(loc_mgr),
+            "occupancy_states": build_occupancy_projection_states(hass, kernel),
         },
+    )
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): WS_TYPE_OCCUPANCY_STATES_LIST,
+        vol.Optional("entry_id"): str,
+    }
+)
+@callback
+def handle_occupancy_states_list(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Handle occupancy/states/list command."""
+    kernel = _get_kernel(hass, connection, msg)
+    if kernel is None:
+        return
+
+    connection.send_result(
+        msg["id"],
+        {"states": build_occupancy_projection_states(hass, kernel)},
     )
 
 

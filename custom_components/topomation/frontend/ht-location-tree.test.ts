@@ -19,6 +19,23 @@ const mockHass: Partial<HomeAssistant> = {
   } as any
 };
 
+const occupancyRuntimeState = (
+  locationId: string,
+  state: 'on' | 'off',
+  attributes: Record<string, any> = {},
+  lastChanged = '2026-04-26T17:46:00Z'
+): Record<string, any> => ({
+  entity_id: `binary_sensor.topomation_occupancy_projection_${locationId}`,
+  state,
+  last_changed: lastChanged,
+  last_updated: lastChanged,
+  attributes: {
+    device_class: 'occupancy',
+    location_id: locationId,
+    ...attributes,
+  },
+});
+
 const mockLocations: Location[] = [
   {
     id: 'kitchen',
@@ -582,22 +599,14 @@ describe('HtLocationTree - shouldUpdate Performance', () => {
   it('renders human-readable lock source labels in lock tooltip', async () => {
     const element = await fixture<HtLocationTree>(html`
       <ht-location-tree
-        .hass=${{
-          ...mockHass,
-          states: {
-            "binary_sensor.occupancy_kitchen": {
-              entity_id: "binary_sensor.occupancy_kitchen",
-              state: "on",
-              attributes: {
-                device_class: "occupancy",
-                location_id: "kitchen",
-                is_locked: true,
-                locked_by: ["manual_ui"],
-              },
-            },
-          },
-        } as HomeAssistant}
+        .hass=${mockHass as HomeAssistant}
         .locations=${mockLocations}
+        .occupancyRuntimeStates=${{
+          kitchen: occupancyRuntimeState('kitchen', 'on', {
+            is_locked: true,
+            locked_by: ['manual_ui'],
+          }),
+        }}
       ></ht-location-tree>
     `);
 
@@ -607,25 +616,17 @@ describe('HtLocationTree - shouldUpdate Performance', () => {
     expect(lockBtn.getAttribute("title")).to.contain("Manual panel");
   });
 
-  it('maps lock state for managed-shadow hosts using effective occupancy id', async () => {
+  it('maps lock state for managed-shadow hosts using backend projection location id', async () => {
     const element = await fixture<HtLocationTree>(html`
       <ht-location-tree
-        .hass=${{
-          ...mockHass,
-          states: {
-            "binary_sensor.occupancy_area_shadow_main_floor": {
-              entity_id: "binary_sensor.occupancy_area_shadow_main_floor",
-              state: "on",
-              attributes: {
-                device_class: "occupancy",
-                location_id: "area_shadow_main_floor",
-                is_locked: true,
-                locked_by: ["manual_ui"],
-              },
-            },
-          },
-        } as HomeAssistant}
+        .hass=${mockHass as HomeAssistant}
         .locations=${floorWithHostMappedShadowWithoutAreaTags}
+        .occupancyRuntimeStates=${{
+          'main-floor': occupancyRuntimeState('main-floor', 'on', {
+            is_locked: true,
+            locked_by: ['manual_ui'],
+          }),
+        }}
       ></ht-location-tree>
     `);
 
@@ -662,12 +663,15 @@ describe('HtLocationTree - shouldUpdate Performance', () => {
     expect(occupancyDetail?.occupied).to.equal(true);
   });
 
-  it('uses effective occupancy state for managed-shadow host toggle intent and title', async () => {
+  it('uses backend projection state for managed-shadow host toggle intent and title', async () => {
     const element = await fixture<HtLocationTree>(html`
       <ht-location-tree
         .hass=${mockHass as HomeAssistant}
         .locations=${floorWithHostMappedShadowWithoutAreaTags}
-        .occupancyStates=${{ area_shadow_main_floor: true }}
+        .occupancyStates=${{ 'main-floor': true }}
+        .occupancyRuntimeStates=${{
+          'main-floor': occupancyRuntimeState('main-floor', 'on'),
+        }}
       ></ht-location-tree>
     `);
 

@@ -116,6 +116,55 @@ const locationsWithExplicitRoot: Location[] = [
 
 const TREE_PANEL_SPLIT_STORAGE_KEY = "topomation:panel-tree-split";
 
+function occupancyProjection(
+  locationId: string,
+  occupied: boolean,
+  overrides: Record<string, any> = {}
+): Record<string, any> {
+  const changedAt = overrides.changed_at || "2026-03-18T04:00:00+00:00";
+  return {
+    location_id: locationId,
+    effective_location_id: overrides.effective_location_id || locationId,
+    projection: overrides.projection || "direct",
+    occupied,
+    previous_occupied: overrides.previous_occupied,
+    reason: overrides.reason,
+    changed_at: changedAt,
+    is_locked: Boolean(overrides.is_locked),
+    locked_by: overrides.locked_by || [],
+    lock_modes: overrides.lock_modes || [],
+    direct_locks: overrides.direct_locks || [],
+    vacant_at: overrides.vacant_at,
+    effective_timeout_at: overrides.effective_timeout_at || overrides.vacant_at,
+    seconds_until_vacant: overrides.seconds_until_vacant,
+    occupancy_group_id: overrides.occupancy_group_id,
+    contributions: overrides.contributions || [],
+    recent_changes: overrides.recent_changes || [],
+    state: {
+      entity_id: `binary_sensor.topomation_occupancy_projection_${locationId}`,
+      state: occupied ? "on" : "off",
+      last_changed: changedAt,
+      last_updated: changedAt,
+      attributes: {
+        device_class: "occupancy",
+        location_id: locationId,
+        previous_occupied: overrides.previous_occupied,
+        reason: overrides.reason,
+        is_locked: Boolean(overrides.is_locked),
+        locked_by: overrides.locked_by || [],
+        lock_modes: overrides.lock_modes || [],
+        direct_locks: overrides.direct_locks || [],
+        vacant_at: overrides.vacant_at,
+        effective_timeout_at: overrides.effective_timeout_at || overrides.vacant_at,
+        seconds_until_vacant: overrides.seconds_until_vacant,
+        occupancy_group_id: overrides.occupancy_group_id,
+        contributions: overrides.contributions || [],
+        recent_changes: overrides.recent_changes || [],
+      },
+    },
+  };
+}
+
 describe('TopomationPanel integration (fake hass)', () => {
   beforeEach(() => {
     window.localStorage?.removeItem(TREE_PANEL_SPLIT_STORAGE_KEY);
@@ -492,7 +541,7 @@ describe('TopomationPanel integration (fake hass)', () => {
       callWS: async <T>(req: Record<string, any>): Promise<T> => {
         callWsCalls.push(req);
         if (req.type === "topomation/locations/list") {
-          return { locations } as T;
+          return { locations, occupancy_states: [] } as T;
         }
         if (req.type === "config/entity_registry/list") {
           return [] as T;
@@ -1005,7 +1054,7 @@ describe('TopomationPanel integration (fake hass)', () => {
       callWS: async <T>(req: Record<string, any>): Promise<T> => {
         callWsCalls.push(req);
         if (req.type === "topomation/locations/list") {
-          return { locations } as T;
+          return { locations, occupancy_states: [] } as T;
         }
         if (req.type === "config/entity_registry/list") {
           return [] as T;
@@ -1193,7 +1242,15 @@ describe('TopomationPanel integration (fake hass)', () => {
       callWS: async <T>(req: Record<string, any>): Promise<T> => {
         callWsCalls.push(req);
         if (req.type === "topomation/locations/list") {
-          return { locations } as T;
+          return {
+            locations,
+            occupancy_states: [
+              occupancyProjection("kitchen", true, {
+                is_locked: true,
+                locked_by: ["manual_ui"],
+              }),
+            ],
+          } as T;
         }
         if (req.type === "config/entity_registry/list") {
           return [] as T;
@@ -1207,18 +1264,7 @@ describe('TopomationPanel integration (fake hass)', () => {
         throw new Error("Unexpected WS call");
       },
       connection: {},
-      states: {
-        "binary_sensor.occupancy_kitchen": {
-          entity_id: "binary_sensor.occupancy_kitchen",
-          state: "on",
-          attributes: {
-            device_class: "occupancy",
-            location_id: "kitchen",
-            is_locked: true,
-            locked_by: ["manual_ui"],
-          },
-        },
-      },
+      states: {},
       areas: {},
       floors: {},
       config: {
@@ -1317,13 +1363,16 @@ describe('TopomationPanel integration (fake hass)', () => {
     );
   });
 
-  it("derives occupancy toggle intent from HA state when payload is stale", async () => {
+  it("derives occupancy toggle intent from backend projection when payload is stale", async () => {
     const callWsCalls: any[] = [];
     const hass: HomeAssistant = {
       callWS: async <T>(req: Record<string, any>): Promise<T> => {
         callWsCalls.push(req);
         if (req.type === "topomation/locations/list") {
-          return { locations } as T;
+          return {
+            locations,
+            occupancy_states: [occupancyProjection("kitchen", true)],
+          } as T;
         }
         if (req.type === "config/entity_registry/list") {
           return [] as T;
@@ -1340,7 +1389,7 @@ describe('TopomationPanel integration (fake hass)', () => {
       states: {
         "binary_sensor.occupancy_kitchen": {
           entity_id: "binary_sensor.occupancy_kitchen",
-          state: "on",
+          state: "off",
           attributes: {
             device_class: "occupancy",
             location_id: "kitchen",
@@ -1422,7 +1471,15 @@ describe('TopomationPanel integration (fake hass)', () => {
       callWS: async <T>(req: Record<string, any>): Promise<T> => {
         callWsCalls.push(req);
         if (req.type === "topomation/locations/list") {
-          return { locations: floorHostLocations } as T;
+          return {
+            locations: floorHostLocations,
+            occupancy_states: [
+              occupancyProjection("floor_basement", true, {
+                projection: "ancestor_rollup",
+                contributions: ["rec_room"],
+              }),
+            ],
+          } as T;
         }
         if (req.type === "config/entity_registry/list") {
           return [] as T;
@@ -1497,7 +1554,7 @@ describe('TopomationPanel integration (fake hass)', () => {
     const hass: HomeAssistant = {
       callWS: async <T>(req: Record<string, any>): Promise<T> => {
         if (req.type === "topomation/locations/list") {
-          return { locations } as T;
+          return { locations, occupancy_states: [occupancyProjection("kitchen", false)] } as T;
         }
         if (req.type === "config/entity_registry/list") {
           return [] as T;
@@ -1546,7 +1603,7 @@ describe('TopomationPanel integration (fake hass)', () => {
     ).trim();
     expect(initialStatus).to.equal("Vacant");
 
-    (element as any)._setOccupancyState("kitchen", true);
+    (element as any)._applyOccupancyRuntimeStates([occupancyProjection("kitchen", true)]);
     await element.updateComplete;
     await inspector.updateComplete;
 
@@ -1557,7 +1614,7 @@ describe('TopomationPanel integration (fake hass)', () => {
     expect(updatedStatus).to.equal("Occupied");
   });
 
-  it("exposes vacancy reason as status detail from topomation_occupancy_changed events", async () => {
+  it("exposes vacancy reason from backend occupancy projection events", async () => {
     let occupancyChangedHandler: ((event: any) => void) | undefined;
 
     const hass: HomeAssistant = {
@@ -1575,7 +1632,7 @@ describe('TopomationPanel integration (fake hass)', () => {
       },
       connection: {
         subscribeEvents: async (handler: (event: any) => void, eventType: string) => {
-          if (eventType === "topomation_occupancy_changed") {
+          if (eventType === "topomation_occupancy_state_changed") {
             occupancyChangedHandler = handler;
           }
           return () => {};
@@ -1607,7 +1664,7 @@ describe('TopomationPanel integration (fake hass)', () => {
     await waitUntil(() => (element as any)._loading === false, "panel did not finish loading");
     await waitUntil(
       () => typeof occupancyChangedHandler === "function",
-      "panel did not subscribe to topomation_occupancy_changed"
+      "panel did not subscribe to topomation_occupancy_state_changed"
     );
 
     (element as any)._rightPanelMode = "inspector";
@@ -1617,19 +1674,21 @@ describe('TopomationPanel integration (fake hass)', () => {
 
     occupancyChangedHandler!({
       data: {
-        location_id: "kitchen",
-        occupied: false,
-        previous_occupied: true,
-        reason: "timeout",
+        states: [
+          occupancyProjection("kitchen", false, {
+            previous_occupied: true,
+            reason: "timeout",
+          }),
+        ],
       },
     });
 
     await waitUntil(() => {
       const inspector = element.shadowRoot!.querySelector("ht-location-inspector") as any;
-      const statusChip = inspector?.shadowRoot?.querySelector(
-        '[data-testid="header-occupancy-status"]'
+      const summary = inspector?.shadowRoot?.querySelector(
+        '[data-testid="header-occupancy-summary"]'
       ) as HTMLElement | null;
-      return (statusChip?.getAttribute("title") || "").trim() === "Vacated by timeout";
+      return (summary?.textContent || "").includes("Vacant because the hold timer expired");
     }, "vacancy reason detail did not update");
 
     const inspector = element.shadowRoot!.querySelector("ht-location-inspector") as any;
@@ -1637,15 +1696,29 @@ describe('TopomationPanel integration (fake hass)', () => {
       '[data-testid="header-occupancy-status"]'
     ) as HTMLElement | null;
     const occupancyStatus = (occupancyStatusChip?.textContent || "").trim();
-    const vacancyReasonDetail = (occupancyStatusChip?.getAttribute("title") || "").trim();
+    const vacancyReasonDetail = (
+      inspector.shadowRoot?.querySelector('[data-testid="header-occupancy-summary"]')?.textContent || ""
+    ).trim();
 
     expect(occupancyStatus).to.equal("Vacant");
-    expect(vacancyReasonDetail).to.equal("Vacated by timeout");
+    expect(vacancyReasonDetail).to.include("Vacant because the hold timer expired");
   });
 
   it("does not resubscribe live event handlers on same-connection hass churn", async () => {
     const subscriptionCounts = new Map<string, number>();
     const eventCallbacks = new Map<string, (event: any) => void>();
+    let projectedOccupancy = [
+      occupancyProjection("front_entry", false, {
+        occupancy_group_id: "main_open_area",
+        projection: "occupancy_group_member",
+        changed_at: "2000-01-01T00:00:00+00:00",
+      }),
+      occupancyProjection("kitchen", false, {
+        occupancy_group_id: "main_open_area",
+        projection: "occupancy_group_member",
+        changed_at: "2000-01-01T00:00:00+00:00",
+      }),
+    ];
     const connection = {
       subscribeEvents: async (cb: (event: any) => void, eventType?: string) => {
         const key = String(eventType || "");
@@ -1700,8 +1773,7 @@ describe('TopomationPanel integration (fake hass)', () => {
     await waitUntil(() => (element as any)._loading === false, "panel did not finish loading");
     await waitUntil(
       () =>
-        (subscriptionCounts.get("topomation_occupancy_changed") || 0) > 0 &&
-        (subscriptionCounts.get("state_changed") || 0) > 0,
+        (subscriptionCounts.get("topomation_occupancy_state_changed") || 0) > 0,
       "panel did not establish occupancy subscriptions"
     );
     const baselineCounts = new Map(subscriptionCounts);
@@ -1723,20 +1795,14 @@ describe('TopomationPanel integration (fake hass)', () => {
     (element as any).requestUpdate();
     await (element as any).updateComplete;
 
-    eventCallbacks.get("state_changed")?.({
+    eventCallbacks.get("topomation_occupancy_state_changed")?.({
       data: {
-        entity_id: "binary_sensor.occupancy_kitchen",
-        new_state: {
-          entity_id: "binary_sensor.occupancy_kitchen",
-          state: "on",
-          last_changed: "2026-03-18T04:00:00+00:00",
-          attributes: {
-            device_class: "occupancy",
-            location_id: "kitchen",
+        states: [
+          occupancyProjection("kitchen", true, {
             previous_occupied: false,
             reason: "event:trigger",
-          },
-        },
+          }),
+        ],
       },
     });
 
@@ -1752,8 +1818,11 @@ describe('TopomationPanel integration (fake hass)', () => {
     expect(updatedStatus).to.equal("Occupied");
   });
 
-  it("does not let stale HA snapshots overwrite newer live occupancy events", async () => {
+  it("uses backend occupancy projections instead of stale HA snapshots", async () => {
     const eventCallbacks = new Map<string, (event: any) => void>();
+    let projectedOccupancy = occupancyProjection("kitchen", false, {
+      changed_at: "2000-01-01T00:00:00+00:00",
+    });
     const connection = {
       subscribeEvents: async (callback: (event: any) => void, eventType: string) => {
         eventCallbacks.set(eventType, callback);
@@ -1768,7 +1837,7 @@ describe('TopomationPanel integration (fake hass)', () => {
     const hass: HomeAssistant = {
       callWS: async <T>(req: Record<string, any>): Promise<T> => {
         if (req.type === "topomation/locations/list") {
-          return { locations } as T;
+          return { locations, occupancy_states: [projectedOccupancy] } as T;
         }
         if (req.type === "config/entity_registry/list") {
           return [] as T;
@@ -1804,16 +1873,18 @@ describe('TopomationPanel integration (fake hass)', () => {
 
     await waitUntil(() => (element as any)._loading === false, "panel did not finish loading");
     await waitUntil(
-      () => eventCallbacks.has("topomation_occupancy_changed"),
+      () => eventCallbacks.has("topomation_occupancy_state_changed"),
       "panel did not establish occupancy event subscription"
     );
 
-    eventCallbacks.get("topomation_occupancy_changed")?.({
+    projectedOccupancy = occupancyProjection("kitchen", true, {
+      previous_occupied: false,
+      reason: "event:trigger",
+      changed_at: "2026-03-18T04:00:00+00:00",
+    });
+    eventCallbacks.get("topomation_occupancy_state_changed")?.({
       data: {
-        location_id: "kitchen",
-        occupied: true,
-        previous_occupied: false,
-        reason: "event:trigger",
+        states: [projectedOccupancy],
       },
     });
     await (element as any).updateComplete;
@@ -1823,6 +1894,236 @@ describe('TopomationPanel integration (fake hass)', () => {
     await (element as any)._loadLocations(true);
     await (element as any).updateComplete;
 
+    expect((element as any)._occupancyStateByLocation.kitchen).to.equal(true);
+    expect((element as any)._occupancyTransitionByLocation.kitchen.reason).to.equal("event:trigger");
+  });
+
+  it("keeps occupancy group peers aligned when only one member receives the fresh live event", async () => {
+    const groupedLocations: Location[] = [
+      ...locations.map((loc) =>
+        loc.id === "kitchen"
+          ? {
+              ...loc,
+              modules: {
+                ...loc.modules,
+                occupancy: { occupancy_group_id: "main_open_area" },
+              },
+            }
+          : loc
+      ),
+      {
+        id: "front_entry",
+        name: "Front Entry",
+        parent_id: "main_floor",
+        is_explicit_root: false,
+        ha_area_id: "front_entry",
+        entity_ids: [],
+        modules: {
+          _meta: { type: "area" },
+          occupancy: { occupancy_group_id: "main_open_area" },
+        },
+      },
+    ];
+    let projectedOccupancy = [
+      occupancyProjection("front_entry", false, {
+        occupancy_group_id: "main_open_area",
+        projection: "occupancy_group_member",
+        changed_at: "2000-01-01T00:00:00+00:00",
+      }),
+      occupancyProjection("kitchen", false, {
+        occupancy_group_id: "main_open_area",
+        projection: "occupancy_group_member",
+        changed_at: "2000-01-01T00:00:00+00:00",
+      }),
+    ];
+    const eventCallbacks = new Map<string, (event: any) => void>();
+    const connection = {
+      subscribeEvents: async (callback: (event: any) => void, eventType: string) => {
+        eventCallbacks.set(eventType, callback);
+        return () => {
+          if (eventCallbacks.get(eventType) === callback) {
+            eventCallbacks.delete(eventType);
+          }
+        };
+      },
+    } as any;
+
+    const hass: HomeAssistant = {
+      callWS: async <T>(req: Record<string, any>): Promise<T> => {
+        if (req.type === "topomation/locations/list") {
+          return { locations: groupedLocations, occupancy_states: projectedOccupancy } as T;
+        }
+        if (req.type === "config/entity_registry/list") {
+          return [] as T;
+        }
+        if (req.type === "config/device_registry/list") {
+          return [] as T;
+        }
+        return {} as T;
+      },
+      connection,
+      states: {
+        "binary_sensor.occupancy_kitchen": {
+          entity_id: "binary_sensor.occupancy_kitchen",
+          state: "off",
+          last_changed: "2000-01-01T00:00:00+00:00",
+          attributes: {
+            device_class: "occupancy",
+            location_id: "kitchen",
+          },
+        },
+        "binary_sensor.occupancy_front_entry": {
+          entity_id: "binary_sensor.occupancy_front_entry",
+          state: "off",
+          last_changed: "2000-01-01T00:00:00+00:00",
+          attributes: {
+            device_class: "occupancy",
+            location_id: "front_entry",
+          },
+        },
+      },
+      areas: {},
+      floors: {},
+      config: {
+        location_name: "Test Property",
+      },
+      localize: (key: string) => key,
+    };
+
+    const element = await fixture<HTMLDivElement>(html`
+      <topomation-panel .hass=${hass}></topomation-panel>
+    `);
+
+    await waitUntil(() => (element as any)._loading === false, "panel did not finish loading");
+    await waitUntil(
+      () => eventCallbacks.has("topomation_occupancy_state_changed"),
+      "panel did not establish occupancy event subscription"
+    );
+
+    projectedOccupancy = [
+      occupancyProjection("front_entry", true, {
+        previous_occupied: false,
+        reason: "event:trigger",
+        occupancy_group_id: "main_open_area",
+        projection: "occupancy_group_member",
+      }),
+      occupancyProjection("kitchen", true, {
+        previous_occupied: false,
+        reason: "event:trigger",
+        occupancy_group_id: "main_open_area",
+        projection: "occupancy_group_member",
+      }),
+    ];
+    eventCallbacks.get("topomation_occupancy_state_changed")?.({
+      data: {
+        states: projectedOccupancy,
+      },
+    });
+    await (element as any).updateComplete;
+
+    expect((element as any)._occupancyStateByLocation.front_entry).to.equal(true);
+    expect((element as any)._occupancyStateByLocation.kitchen).to.equal(true);
+
+    await (element as any)._loadLocations(true);
+    await (element as any).updateComplete;
+
+    expect((element as any)._occupancyStateByLocation.front_entry).to.equal(true);
+    expect((element as any)._occupancyStateByLocation.kitchen).to.equal(true);
+  });
+
+  it("renders occupancy group peers from backend snapshot projection", async () => {
+    const groupedLocations: Location[] = [
+      ...locations.map((loc) =>
+        loc.id === "kitchen"
+          ? {
+              ...loc,
+              modules: {
+                ...loc.modules,
+                occupancy: { occupancy_group_id: "main_open_area" },
+              },
+            }
+          : loc
+      ),
+      {
+        id: "front_entry",
+        name: "Front Entry",
+        parent_id: "main_floor",
+        is_explicit_root: false,
+        ha_area_id: "front_entry",
+        entity_ids: [],
+        modules: {
+          _meta: { type: "area" },
+          occupancy: { occupancy_group_id: "main_open_area" },
+        },
+      },
+    ];
+    const hass: HomeAssistant = {
+      callWS: async <T>(req: Record<string, any>): Promise<T> => {
+        if (req.type === "topomation/locations/list") {
+          return {
+            locations: groupedLocations,
+            occupancy_states: [
+              occupancyProjection("front_entry", true, {
+                previous_occupied: false,
+                reason: "event:trigger",
+                occupancy_group_id: "main_open_area",
+                projection: "occupancy_group_member",
+              }),
+              occupancyProjection("kitchen", true, {
+                previous_occupied: false,
+                reason: "event:trigger",
+                occupancy_group_id: "main_open_area",
+                projection: "occupancy_group_member",
+              }),
+            ],
+          } as T;
+        }
+        if (req.type === "config/entity_registry/list") {
+          return [] as T;
+        }
+        if (req.type === "config/device_registry/list") {
+          return [] as T;
+        }
+        return {} as T;
+      },
+      connection: {},
+      states: {
+        "binary_sensor.occupancy_kitchen": {
+          entity_id: "binary_sensor.occupancy_kitchen",
+          state: "off",
+          last_changed: "2000-01-01T00:00:00+00:00",
+          attributes: {
+            device_class: "occupancy",
+            location_id: "kitchen",
+          },
+        },
+        "binary_sensor.occupancy_front_entry": {
+          entity_id: "binary_sensor.occupancy_front_entry",
+          state: "on",
+          last_changed: "2026-03-18T04:00:00+00:00",
+          attributes: {
+            device_class: "occupancy",
+            location_id: "front_entry",
+            previous_occupied: false,
+            reason: "event:trigger",
+          },
+        },
+      },
+      areas: {},
+      floors: {},
+      config: {
+        location_name: "Test Property",
+      },
+      localize: (key: string) => key,
+    };
+
+    const element = await fixture<HTMLDivElement>(html`
+      <topomation-panel .hass=${hass}></topomation-panel>
+    `);
+
+    await waitUntil(() => (element as any)._loading === false, "panel did not finish loading");
+
+    expect((element as any)._occupancyStateByLocation.front_entry).to.equal(true);
     expect((element as any)._occupancyStateByLocation.kitchen).to.equal(true);
     expect((element as any)._occupancyTransitionByLocation.kitchen.reason).to.equal("event:trigger");
   });

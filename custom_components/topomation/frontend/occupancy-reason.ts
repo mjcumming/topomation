@@ -3,7 +3,6 @@ import type {
   Location,
   OccupancySource,
 } from "./types";
-import { effectiveOccupancyTopologyId } from "./shadow-location-utils";
 
 export type OccupancyStatus = "occupied" | "vacant" | "unknown";
 
@@ -20,15 +19,35 @@ export interface OccupancyReasonContext {
   hass: HomeAssistant | undefined;
   occupancyStates: Readonly<Record<string, boolean | undefined>>;
   occupancyTransitions: Readonly<Record<string, OccupancyTransitionState>>;
+  occupancyRuntimeStates?: Readonly<Record<string, Record<string, any> | undefined>>;
   status: OccupancyStatus;
   nowMs?: number;
 }
 
-export function buildOccupancyReasonLine(ctx: OccupancyReasonContext): string {
-  if (ctx.status === "unknown") return "Occupancy unknown";
+export interface OccupancyExplanation {
+  status: OccupancyStatus;
+  statusLabel: string;
+  summary: string;
+  reasonLine: string;
+  details: string[];
+}
 
-  const topologyId = effectiveOccupancyTopologyId(ctx.location, ctx.locations);
-  const stateObj = findOccupancyStateForId(ctx.hass, topologyId);
+export function buildOccupancyReasonLine(ctx: OccupancyReasonContext): string {
+  return buildOccupancyExplanation(ctx).reasonLine;
+}
+
+export function buildOccupancyExplanation(ctx: OccupancyReasonContext): OccupancyExplanation {
+  if (ctx.status === "unknown") {
+    return {
+      status: "unknown",
+      statusLabel: "Unknown",
+      summary: "Occupancy is unknown.",
+      reasonLine: "Occupancy unknown",
+      details: ["No occupancy state is available for this location yet."],
+    };
+  }
+
+  const stateObj = occupancyRuntimeStateForLocation(ctx, ctx.location.id);
   const attrs: Record<string, any> = stateObj?.attributes || {};
   const transition = ctx.occupancyTransitions?.[ctx.location.id];
   const now = ctx.nowMs ?? Date.now();
@@ -40,13 +59,14 @@ export function buildOccupancyReasonLine(ctx: OccupancyReasonContext): string {
   const header = ctx.status === "occupied" ? "Occupied" : "Vacant";
 
   let detail: string | undefined;
+  const activeContributors = activeContributorRows(attrs, ctx);
+  const details: string[] = [];
 
   if (ctx.status === "occupied") {
     detail =
-      topActiveContributorLabel(attrs, ctx) ||
+      activeContributors[0]?.lineLabel ||
       formatOccupancyReason(transition?.reason, "occupied", ctx) ||
-      formatOccupancyReason(attrs.reason, "occupied", ctx) ||
-      occupiedDescendantLabel(ctx);
+      formatOccupancyReason(attrs.reason, "occupied", ctx);
   } else {
     detail =
       formatOccupancyReason(transition?.reason, "vacancy", ctx) ||
@@ -54,57 +74,107 @@ export function buildOccupancyReasonLine(ctx: OccupancyReasonContext): string {
   }
 
   const line = detail ? `${header} · ${detail}` : header;
-  return timeLabel ? `${line} (${timeLabel})` : line;
-}
+  const reasonLine = timeLabel ? `${line} (${timeLabel})` : line;
 
-function findOccupancyStateForId(
-  hass: HomeAssistant | undefined,
-  topologyId: string,
-): Record<string, any> | undefined {
-  if (!hass?.states || !topologyId) return undefined;
-  for (const stateObj of Object.values(hass.states)) {
-    const attrs = (stateObj as any)?.attributes || {};
-    if (attrs.device_class !== "occupancy") continue;
-    if (attrs.location_id !== topologyId) continue;
-    return stateObj as Record<string, any>;
+  if (activeContributors.length) {
+    const shown = activeContributors.slice(0, 4).map((row) => row.detailLabel);
+    const more =
+      activeContributors.length > shown.length
+        ? `, +${activeContributors.length - shown.length} more`
+        : "";
+    details.push(
+      `Active ${activeContributors.length === 1 ? "source" : "sources"}: ${shown.join(", ")}${more}.`
+    );
+  } else if (ctx.status === "vacant") {
+    details.push("No active occupancy sources are currently holding this location.");
   }
-  return undefined;
+
+  const nextChange = nextChangeDetail(attrs, activeContributors, ctx);
+  if (nextChange) details.push(nextChange);
+
+  const latestChange = latestRecentChange(attrs, ctx);
+  if (latestChange) details.push(latestChange);
+
+  const lockedBy = Array.isArray(attrs.locked_by)
+    ? attrs.locked_by.map((item: unknown) => String(item).trim()).filter(Boolean)
+    : [];
+  if (attrs.is_locked || lockedBy.length) {
+    details.push(
+      lockedBy.length
+        ? `Lock: held by ${lockedBy.map((item) => humanizeTechnicalId(item)).join(", ")}.`
+        : "Lock: occupancy is currently locked."
+    );
+  }
+
+  if (!details.length && ctx.status === "occupied") {
+    details.push("No source-level evidence is available from the occupancy entity yet.");
+  }
+
+  return {
+    status: ctx.status,
+    statusLabel: header,
+    summary:
+      ctx.status === "occupied"
+        ? occupiedSummary(detail, activeContributors)
+        : vacantSummary(detail),
+    reasonLine,
+    details,
+  };
 }
 
-function topActiveContributorLabel(
+type ContributorRow = {
+  sourceId: string;
+  lineLabel: string;
+  detailLabel: string;
+  sentence: string;
+  ts: number;
+  expiresMs?: number;
+  indefinite: boolean;
+};
+
+function activeContributorRows(
   attrs: Record<string, any>,
   ctx: OccupancyReasonContext,
-): string | undefined {
+): ContributorRow[] {
   const contributions = Array.isArray(attrs.contributions) ? attrs.contributions : [];
-  if (!contributions.length) return undefined;
+  if (!contributions.length) return [];
 
   const now = ctx.nowMs ?? Date.now();
   const sources = getOccupancySources(ctx.location);
 
-  type Row = { sourceId: string; label: string; ts: number };
-  const rows: Row[] = [];
+  const rows: ContributorRow[] = [];
   for (const contribution of contributions) {
     if (!isContributionActive(contribution, now)) continue;
     const sourceId = String(
       contribution?.source_id || contribution?.source || "",
     ).trim();
     if (!sourceId) continue;
+    const lineLabel = sourceLabelForSourceId(sourceId, sources, ctx);
     const ts =
       parseDateMs(contribution?.updated_at) ??
       parseDateMs(contribution?.changed_at) ??
       parseDateMs(contribution?.last_changed) ??
       parseDateMs(contribution?.timestamp) ??
       0;
+    const expiresMs = parseDateMs(contribution?.expires_at);
     rows.push({
       sourceId,
-      label: sourceLabelForSourceId(sourceId, sources, ctx),
+      lineLabel,
+      detailLabel: detailContributorLabel(lineLabel, ts, now, expiresMs),
+      sentence: contributorSentence(sourceId, lineLabel, ctx),
       ts,
+      expiresMs,
+      indefinite: contribution?.expires_at === null || contribution?.expires_at === undefined,
     });
   }
 
-  if (!rows.length) return undefined;
+  if (!rows.length) return [];
   rows.sort((a, b) => b.ts - a.ts);
-  return rows[0].label;
+  const deduped = new Map<string, ContributorRow>();
+  for (const row of rows) {
+    if (!deduped.has(row.sourceId)) deduped.set(row.sourceId, row);
+  }
+  return [...deduped.values()];
 }
 
 function isContributionActive(contribution: any, nowMs: number): boolean {
@@ -120,6 +190,51 @@ function isContributionActive(contribution: any, nowMs: number): boolean {
 function getOccupancySources(location: Location): OccupancySource[] {
   const raw = (location?.modules?.occupancy as any) || {};
   return Array.isArray(raw.occupancy_sources) ? raw.occupancy_sources : [];
+}
+
+function detailContributorLabel(
+  label: string,
+  timestampMs: number,
+  nowMs: number,
+  expiresMs: number | undefined,
+): string {
+  const parts: string[] = [];
+  const elapsed = timestampMs ? formatElapsed(timestampMs, nowMs) : undefined;
+  if (elapsed) parts.push(`${elapsed} ago`);
+  if (expiresMs && expiresMs > nowMs) {
+    const remaining = formatRemaining(expiresMs, nowMs);
+    if (remaining) parts.push(`holds ${remaining}`);
+  }
+  return parts.length ? `${label} (${parts.join("; ")})` : label;
+}
+
+function contributorSentence(
+  sourceId: string,
+  label: string,
+  ctx: OccupancyReasonContext,
+): string {
+  const raw = String(sourceId || "").trim();
+  const locationIdAfterMarker = (marker: string): string =>
+    raw.startsWith(marker) ? raw.slice(marker.length).trim() : "";
+
+  const childId =
+    locationIdAfterMarker("__child__:") || locationIdAfterMarker("__child__.");
+  if (childId) return `${displayNameForLocationOrAreaId(childId, ctx)} is occupied`;
+
+  const groupId =
+    locationIdAfterMarker("__group_member__:") ||
+    locationIdAfterMarker("__group_member__.");
+  if (groupId) {
+    return `${displayNameForLocationOrAreaId(groupId, ctx)} is occupied through the group`;
+  }
+
+  const linkedId = locationIdAfterMarker("linked:");
+  if (linkedId) {
+    return `${displayNameForLocationOrAreaId(linkedId, ctx)} is linked as occupied`;
+  }
+
+  if (label.endsWith(" is occupied")) return label;
+  return `${label} is active`;
 }
 
 function sourceLabelForSourceId(
@@ -240,23 +355,91 @@ function formatOccupancyReason(
   return raw;
 }
 
-function occupiedDescendantLabel(ctx: OccupancyReasonContext): string | undefined {
-  const childrenByParent = new Map<string, string[]>();
-  for (const loc of ctx.locations) {
-    if (!loc.parent_id) continue;
-    if (!childrenByParent.has(loc.parent_id)) childrenByParent.set(loc.parent_id, []);
-    childrenByParent.get(loc.parent_id)!.push(loc.id);
+function occupiedSummary(
+  detail: string | undefined,
+  contributors: ContributorRow[],
+): string {
+  if (contributors.length) {
+    const first = contributors[0].sentence;
+    if (contributors.length === 1) return `Occupied because ${first}.`;
+    return `Occupied because ${first} and ${contributors.length - 1} other source${contributors.length === 2 ? "" : "s"} are active.`;
+  }
+  if (!detail) return "Occupied, but no active reason is available yet.";
+  if (detail.endsWith(".")) return `Occupied because ${detail}`;
+  return `Occupied because ${detail}.`;
+}
+
+function vacantSummary(detail: string | undefined): string {
+  if (!detail) return "Vacant because no occupancy sources are active.";
+  if (detail === "timed out") return "Vacant because the hold timer expired.";
+  if (detail === "cleared") return "Vacant because the active source cleared.";
+  if (detail === "vacated") return "Vacant because it was explicitly vacated.";
+  if (detail.endsWith(".")) return `Vacant because ${detail}`;
+  return `Vacant because ${detail}.`;
+}
+
+function nextChangeDetail(
+  attrs: Record<string, any>,
+  contributors: ContributorRow[],
+  ctx: OccupancyReasonContext,
+): string | undefined {
+  if (ctx.status !== "occupied") return undefined;
+  const now = ctx.nowMs ?? Date.now();
+  const explicitVacantAt =
+    parseDateMs(attrs.vacant_at) ?? parseDateMs(attrs.effective_timeout_at);
+  if (explicitVacantAt && explicitVacantAt > now) {
+    const remaining = formatRemaining(explicitVacantAt, now);
+    return remaining
+      ? `Expected to become vacant when the hold timer expires in ${remaining}.`
+      : "Expected to become vacant when the hold timer expires.";
   }
 
-  const stack = [...(childrenByParent.get(ctx.location.id) || [])];
-  while (stack.length) {
-    const id = stack.pop()!;
-    if (ctx.occupancyStates?.[id] === true) {
-      const child = ctx.locations.find((l) => l.id === id);
-      if (child?.name) return `${child.name} is occupied`;
-    }
-    stack.push(...(childrenByParent.get(id) || []));
+  const latestContributionExpiry = contributors
+    .map((row) => row.expiresMs)
+    .filter((value): value is number => typeof value === "number" && value > now)
+    .sort((a, b) => b - a)[0];
+  if (latestContributionExpiry) {
+    const remaining = formatRemaining(latestContributionExpiry, now);
+    return remaining
+      ? `Expected to become vacant after active source holds expire in ${remaining}.`
+      : "Expected to become vacant after active source holds expire.";
   }
+
+  if (contributors.some((row) => row.indefinite)) {
+    return "Stays occupied until the active source clears.";
+  }
+  return undefined;
+}
+
+function latestRecentChange(
+  attrs: Record<string, any>,
+  ctx: OccupancyReasonContext,
+): string | undefined {
+  const changes = Array.isArray(attrs.recent_changes) ? attrs.recent_changes : [];
+  const latest = changes[0];
+  if (!latest || typeof latest !== "object") return undefined;
+  const kind = String(latest.kind || "").toLowerCase();
+  const event = String(latest.event || "").toLowerCase();
+  const sourceId = typeof latest.source_id === "string" ? latest.source_id.trim() : "";
+  const sourceLabel = sourceId
+    ? sourceLabelForSourceId(sourceId, getOccupancySources(ctx.location), ctx)
+    : "";
+  const changedAt = parseDateMs(latest.changed_at);
+  const age = changedAt ? formatElapsed(changedAt, ctx.nowMs ?? Date.now()) : undefined;
+  const suffix = age ? ` ${age} ago` : "";
+  if (kind === "signal" && event === "trigger") {
+    return `Latest event: ${sourceLabel || "a source"} reported activity${suffix}.`;
+  }
+  if (kind === "signal" && event === "clear") {
+    return `Latest event: ${sourceLabel || "a source"} cleared${suffix}.`;
+  }
+  if (kind === "state" && event === "occupied") {
+    return `Latest event: location became occupied${suffix}.`;
+  }
+  if (kind === "state" && event === "vacant") {
+    return `Latest event: location became vacant${suffix}.`;
+  }
+  if (event) return `Latest event: ${event}${suffix}.`;
   return undefined;
 }
 
@@ -273,6 +456,36 @@ function parseDateMs(value: unknown): number | undefined {
   return Number.isNaN(ms) ? undefined : ms;
 }
 
+function occupancyRuntimeStateForLocation(
+  ctx: OccupancyReasonContext,
+  locationId: string,
+): Record<string, any> | undefined {
+  const runtimeState = ctx.occupancyRuntimeStates?.[locationId];
+  if (runtimeState) return runtimeState;
+
+  const occupied = ctx.occupancyStates?.[locationId];
+  if (typeof occupied !== "boolean") return undefined;
+  const transition = ctx.occupancyTransitions?.[locationId];
+  return {
+    entity_id: `binary_sensor.topomation_occupancy_projection_${locationId}`,
+    state: occupied ? "on" : "off",
+    last_changed: transition?.changedAt,
+    last_updated: transition?.changedAt,
+    attributes: {
+      device_class: "occupancy",
+      location_id: locationId,
+      previous_occupied: transition?.previousOccupied,
+      reason: transition?.reason,
+      locked_by: [],
+      is_locked: false,
+      lock_modes: [],
+      direct_locks: [],
+      contributions: [],
+      recent_changes: [],
+    },
+  };
+}
+
 function latestTimestamp(...values: Array<unknown>): number | undefined {
   let latest: number | undefined;
   for (const v of values) {
@@ -287,6 +500,21 @@ function formatElapsed(sinceMs: number | undefined, nowMs: number): string | und
   if (sinceMs === undefined) return undefined;
   const totalSeconds = Math.max(0, Math.floor((nowMs - sinceMs) / 1000));
   if (totalSeconds <= 0) return "just now";
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const parts: string[] = [];
+  if (days > 0) parts.push(`${days}d`);
+  if (hours > 0) parts.push(`${hours}h`);
+  if (minutes > 0 && parts.length < 2) parts.push(`${minutes}m`);
+  if (!parts.length) parts.push(`${seconds}s`);
+  return parts.slice(0, 2).join(" ");
+}
+
+function formatRemaining(targetMs: number, nowMs: number): string | undefined {
+  const totalSeconds = Math.max(0, Math.floor((targetMs - nowMs) / 1000));
+  if (totalSeconds <= 0) return undefined;
   const days = Math.floor(totalSeconds / 86400);
   const hours = Math.floor((totalSeconds % 86400) / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);

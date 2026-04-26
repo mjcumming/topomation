@@ -18,14 +18,13 @@ import { sharedStyles } from "./styles";
 import { getLocationIcon } from "./icon-utils";
 import { getLocationType } from "./hierarchy-rules";
 import {
-  effectiveOccupancyTopologyId,
   isSystemShadowLocation,
   managedShadowAreaIdForHost,
   managedShadowLocationIdSet,
-  rollupOccupancyStatusByLocation,
 } from "./shadow-location-utils";
 import { ambientLuxEnumerationHaAreaIds } from "./ambient-lux-enumeration";
 import { applyModeDefaults, getSourceDefaultsForEntity } from "./source-profile-utils";
+import { buildOccupancyExplanation } from "./occupancy-reason";
 import {
   createTopomationActionRule,
   deleteTopomationActionRule,
@@ -113,6 +112,8 @@ export class HtLocationInspector extends LitElement {
   @property({ attribute: false }) public occupancyStates: Record<string, boolean> = {};
   @property({ attribute: false })
   public occupancyTransitions: Record<string, OccupancyTransitionState> = {};
+  @property({ attribute: false })
+  public occupancyRuntimeStates: Record<string, Record<string, any>> = {};
   @property({ attribute: false }) public handoffTraces: HandoffTrace[] = [];
 
   // Ensure reactivity even if decorator transforms are unavailable in a given toolchain.
@@ -126,6 +127,7 @@ export class HtLocationInspector extends LitElement {
     forcedTab: { type: String },
     occupancyStates: { attribute: false },
     occupancyTransitions: { attribute: false },
+    occupancyRuntimeStates: { attribute: false },
     handoffTraces: { attribute: false },
     _climateDeviceLinkRevision: { state: true },
     _runningActionRuleId: { state: true },
@@ -150,7 +152,6 @@ export class HtLocationInspector extends LitElement {
   @state() private _loadingActionRules = false;
   @state() private _actionRulesError?: string;
   @state() private _actionRulesSaveError?: string;
-  @state() private _liveOccupancyStateByLocation: Record<string, Record<string, any>> = {};
   @state() private _nowEpochMs = Date.now();
   @state() private _editingActionRuleNameId?: string;
   @state() private _editingActionRuleNameValue = "";
@@ -319,6 +320,60 @@ export class HtLocationInspector extends LitElement {
       .header-vacant-at {
         font-size: 12px;
         color: var(--text-secondary-color);
+      }
+
+      .header-occupancy-reason {
+        position: relative;
+        max-width: min(100%, 520px);
+        font-size: 12px;
+        color: var(--text-secondary-color);
+      }
+
+      .header-occupancy-reason summary {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+        cursor: pointer;
+        list-style: none;
+      }
+
+      .header-occupancy-reason summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .header-occupancy-reason summary span:first-child {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .header-reason-more {
+        color: var(--primary-color);
+        font-weight: 600;
+        flex: 0 0 auto;
+      }
+
+      .header-reason-panel {
+        position: absolute;
+        z-index: 3;
+        top: calc(100% + 6px);
+        left: 0;
+        width: min(420px, calc(100vw - 48px));
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        padding: 10px 12px;
+        border: 1px solid var(--divider-color);
+        border-radius: 8px;
+        background: var(--card-background-color);
+        box-shadow: var(--ha-card-box-shadow, 0 2px 8px rgba(0, 0, 0, 0.18));
+        color: var(--primary-text-color);
+        line-height: 1.4;
+      }
+
+      .header-reason-detail {
+        font-size: 12px;
       }
 
       .header-ambient {
@@ -2601,7 +2656,6 @@ export class HtLocationInspector extends LitElement {
       if (previousConnection !== nextConnection) {
         this._entityAreaById = {};
         this._entityAreaLoadPromise = undefined;
-        this._liveOccupancyStateByLocation = {};
         if (!this.hass) {
           if (this._unsubAutomationStateChanged) {
             this._unsubAutomationStateChanged();
@@ -3515,9 +3569,21 @@ export class HtLocationInspector extends LitElement {
     const occupied = occupiedState === true;
     const occupancyLabel =
       occupiedState === true ? "Occupied" : occupiedState === false ? "Vacant" : "Unknown";
-    const vacancyReason = this._resolveVacancyReason(occupancyState, occupiedState);
-    const occupiedReason = this._resolveOccupiedReason(occupancyState, occupiedState);
-    const occupancyStatusDetail = occupied ? occupiedReason : vacancyReason;
+    const occupancyExplanation = buildOccupancyExplanation({
+      location: this.location,
+      locations: this.allLocations,
+      hass: this.hass,
+      occupancyStates: this.occupancyStates,
+      occupancyTransitions: this.occupancyTransitions,
+      occupancyRuntimeStates: this.occupancyRuntimeStates,
+      status:
+        occupiedState === true
+          ? "occupied"
+          : occupiedState === false
+            ? "vacant"
+            : "unknown",
+      nowMs: this._nowEpochMs,
+    });
     const vacantAt = occupancyState ? this._resolveVacantAt(occupancyState.attributes || {}, occupied) : undefined;
     const vacantAtIsDate = vacantAt instanceof Date;
     const vacantAtLabel = occupied
@@ -3543,10 +3609,10 @@ export class HtLocationInspector extends LitElement {
               <span
                 class="status-chip ${occupied ? "occupied" : "vacant"}"
                 data-testid="header-occupancy-status"
-                .title=${occupancyStatusDetail || ""}
               >
                 ${occupancyLabel}
               </span>
+              ${this._renderHeaderOccupancyReason(occupancyExplanation)}
               ${lockState.isLocked
                 ? html`
                     <span class="status-chip locked" data-testid="header-lock-status">Locked</span>
@@ -3574,6 +3640,29 @@ export class HtLocationInspector extends LitElement {
           </div>
         </div>
       </div>
+    `;
+  }
+
+  private _renderHeaderOccupancyReason(explanation: {
+    summary: string;
+    details: string[];
+  }) {
+    if (!explanation.summary) return "";
+    const details = explanation.details || [];
+    return html`
+      <details class="header-occupancy-reason" data-testid="header-occupancy-reason">
+        <summary>
+          <span data-testid="header-occupancy-summary">${explanation.summary}</span>
+          ${details.length ? html`<span class="header-reason-more">Details</span>` : ""}
+        </summary>
+        ${details.length
+          ? html`
+              <div class="header-reason-panel">
+                ${details.map((detail) => html`<div class="header-reason-detail">${detail}</div>`)}
+              </div>
+            `
+          : ""}
+      </details>
     `;
   }
 
@@ -3880,31 +3969,6 @@ export class HtLocationInspector extends LitElement {
           const oldStateObj = event?.data?.old_state;
           const newAttrs = newStateObj?.attributes || {};
           const oldAttrs = oldStateObj?.attributes || {};
-
-          if (typeof entityId === "string" && entityId.startsWith("binary_sensor.")) {
-            const newLocationId =
-              typeof newAttrs.location_id === "string" ? newAttrs.location_id : undefined;
-            const oldLocationId =
-              typeof oldAttrs.location_id === "string" ? oldAttrs.location_id : undefined;
-            const locationId = newLocationId || oldLocationId;
-            const newIsOccupancy = newAttrs.device_class === "occupancy";
-            const oldIsOccupancy = oldAttrs.device_class === "occupancy";
-            if (locationId && (newIsOccupancy || oldIsOccupancy)) {
-              if (newStateObj && newIsOccupancy) {
-                this._liveOccupancyStateByLocation = {
-                  ...this._liveOccupancyStateByLocation,
-                  [locationId]: newStateObj,
-                };
-              } else {
-                const { [locationId]: _omit, ...remaining } = this._liveOccupancyStateByLocation;
-                this._liveOccupancyStateByLocation = remaining;
-              }
-              const watchedOccupancyId = this._effectiveOccupancyTopologyId();
-              if (watchedOccupancyId && locationId === watchedOccupancyId) {
-                this.requestUpdate();
-              }
-            }
-          }
 
           if (
             typeof entityId === "string" &&
@@ -4419,9 +4483,9 @@ export class HtLocationInspector extends LitElement {
     return (this.allLocations || []).find((candidate) => candidate.id === locationId);
   }
 
-  /** See `effectiveOccupancyTopologyId` (shadow host occupancy entity id). */
-  private _effectiveOccupancyTopologyId(): string {
-    return effectiveOccupancyTopologyId(this.location, this.allLocations);
+  /** Runtime projection row id for the selected topology location. */
+  private _runtimeProjectionLocationId(): string {
+    return this.location?.id || "";
   }
 
   private _managedShadowAreaLabel(areaId: string): string {
@@ -10501,23 +10565,38 @@ export class HtLocationInspector extends LitElement {
   }
 
   private _getOccupancyStateForLocation(locationId: string) {
-    const liveState = this._liveOccupancyStateByLocation[locationId];
-    if (liveState) {
-      return liveState;
+    const runtimeState = this.occupancyRuntimeStates?.[locationId];
+    if (runtimeState) {
+      return runtimeState;
     }
-    const states = this.hass?.states || {};
-    for (const stateObj of Object.values(states)) {
-      const attrs = stateObj?.attributes || {};
-      if (attrs.device_class !== "occupancy") continue;
-      if (attrs.location_id !== locationId) continue;
-      return stateObj as Record<string, any>;
+    const occupied = this.occupancyStates?.[locationId];
+    if (typeof occupied === "boolean") {
+      const transition = this.occupancyTransitions?.[locationId] || {};
+      return {
+        entity_id: `binary_sensor.topomation_occupancy_projection_${locationId}`,
+        state: occupied ? "on" : "off",
+        last_changed: transition.changedAt,
+        last_updated: transition.changedAt,
+        attributes: {
+          device_class: "occupancy",
+          location_id: locationId,
+          previous_occupied: transition.previousOccupied,
+          reason: transition.reason,
+          locked_by: [],
+          is_locked: false,
+          lock_modes: [],
+          direct_locks: [],
+          contributions: [],
+          recent_changes: [],
+        },
+      };
     }
     return undefined;
   }
 
   private _getOccupancyState() {
     if (!this.location) return undefined;
-    return this._getOccupancyStateForLocation(this._effectiveOccupancyTopologyId());
+    return this._getOccupancyStateForLocation(this.location.id);
   }
 
   private _descendantLocations(locationId: string): Location[] {
@@ -10561,49 +10640,14 @@ export class HtLocationInspector extends LitElement {
     return result;
   }
 
-  /**
-   * Structural hosts (property/building/floor/grounds): occupied if this row or any descendant
-   * is occupied — matches tree dots and the Occupancy strip under the tree (ADR-HA-078).
-   */
-  /**
-   * Occupancy chip / runtime summary: align with topology tree dots (rollup of this row ∪
-   * descendants). Structural hosts keep the dedicated aggregate path (shadow + descendants).
-   */
   private _treeAlignedOccupiedState(occupancyState?: Record<string, any>): boolean | undefined {
     if (!this.location) return undefined;
-    if (this._isStructuralSummaryLocation()) {
-      return this._aggregateOccupiedStateForStructural();
-    }
-    const locations = this.allLocations || [];
-    if (!locations.length) {
-      return this._resolveOccupiedState(occupancyState);
-    }
-    const rolled = rollupOccupancyStatusByLocation(locations, this.occupancyStates || {})[
-      this.location.id
-    ];
-    if (rolled === "occupied") return true;
-    if (rolled === "vacant") return false;
     return this._resolveOccupiedState(occupancyState);
   }
 
   private _aggregateOccupiedStateForStructural(): boolean | undefined {
     if (!this.location || !this._isStructuralSummaryLocation()) return undefined;
-    const ownState = this._resolveOccupiedState(this._getOccupancyState());
-    if (ownState === true) return true;
-
-    const descendantIds = this._descendantLocationIds(this.location.id);
-    if (!descendantIds.length) return ownState;
-
-    const descendantStates = descendantIds
-      .map((locationId) => this.occupancyStates?.[locationId])
-      .filter((state): state is boolean => typeof state === "boolean");
-
-    if (descendantStates.includes(true)) return true;
-    if (ownState === false) return false;
-    if (descendantStates.length > 0 && descendantStates.every((state) => state === false)) {
-      return false;
-    }
-    return ownState;
+    return this._resolveOccupiedState(this._getOccupancyState(), this.location.id);
   }
 
   /** Active contributors from occupied descendants when this structural row has none on its shadow entity. */
@@ -10709,7 +10753,7 @@ export class HtLocationInspector extends LitElement {
     occupancyState?: Record<string, any>,
     locationId?: string
   ): boolean | undefined {
-    const effectiveLocationId = locationId ?? this._effectiveOccupancyTopologyId();
+    const effectiveLocationId = locationId ?? this.location?.id ?? "";
     const transition = effectiveLocationId
       ? this.occupancyTransitions?.[effectiveLocationId]
       : undefined;
@@ -10846,7 +10890,7 @@ export class HtLocationInspector extends LitElement {
     occupiedState: boolean | undefined
   ): string | undefined {
     if (occupiedState !== false) return undefined;
-    const locationId = this._effectiveOccupancyTopologyId();
+    const locationId = this._runtimeProjectionLocationId();
     if (!locationId) return undefined;
 
     const transitionReason = this.occupancyTransitions?.[locationId]?.reason;
@@ -10864,7 +10908,7 @@ export class HtLocationInspector extends LitElement {
     occupiedState: boolean | undefined
   ): string | undefined {
     if (occupiedState !== true) return undefined;
-    const locationId = this._effectiveOccupancyTopologyId();
+    const locationId = this._runtimeProjectionLocationId();
     if (!locationId) return undefined;
 
     const transitionReason = this.occupancyTransitions?.[locationId]?.reason;
@@ -10878,7 +10922,7 @@ export class HtLocationInspector extends LitElement {
     if (occupancyReason) return occupancyReason;
 
     const contributions = this._occupancyContributions(this._getOccupancyConfig(), true);
-    if (!contributions.length) return "Active source events detected";
+    if (!contributions.length) return "No source-level evidence available";
     const topContributor = contributions[0];
     return `Contributed by ${topContributor.sourceLabel}`;
   }
@@ -10929,23 +10973,26 @@ export class HtLocationInspector extends LitElement {
     const structural = this._isStructuralSummaryLocation();
     const occupied = this._treeAlignedOccupiedState(occupancyState) === true;
     const attrs = occupancyState.attributes || {};
-    const contributors = structural
-      ? (() => {
-          const direct = this._occupancyContributions(this._getOccupancyConfig(), true);
-          if (direct.length) return direct;
-          return this._aggregateDescendantContributionsForStructural();
-        })()
-      : this._occupancyContributions(this._getOccupancyConfig(), true);
+    const contributors = this._occupancyContributions(this._getOccupancyConfig(), true);
     const vacantAt = this._resolveVacantAt(attrs, occupied);
     const lockState = this._getLockState();
+    const explanation = this.location
+      ? buildOccupancyExplanation({
+          location: this.location,
+          locations: this.allLocations,
+          hass: this.hass,
+          occupancyStates: this.occupancyStates,
+          occupancyTransitions: this.occupancyTransitions,
+          occupancyRuntimeStates: this.occupancyRuntimeStates,
+          status: occupied ? "occupied" : "vacant",
+          nowMs: this._nowEpochMs,
+        })
+      : undefined;
     const why = occupied
-      ? structural
-        ? this._resolveOccupiedReason(occupancyState, true) ||
-          (contributors.length
-            ? `Occupied via ${contributors[0].sourceLabel}`
-            : "Active source events detected")
-        : this._resolveOccupiedReason(occupancyState, true) || "Active source events detected"
-      : this._resolveVacancyReason(occupancyState, false) || "No active contributors remain";
+      ? explanation?.summary || this._resolveOccupiedReason(occupancyState, true) || "Occupied."
+      : explanation?.summary ||
+        this._resolveVacancyReason(occupancyState, false) ||
+        "No active contributors remain";
 
     let nextChange: string | undefined;
     if (occupied) {

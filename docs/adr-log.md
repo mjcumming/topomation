@@ -4890,6 +4890,221 @@ preserve this composition or document its loss explicitly.
 
 ---
 
+### ADR-HA-092: Human Occupancy Reasons with Expandable Evidence (2026-04-26)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+
+- Occupancy/vacancy state is central to TopoMation, but the visible reason could
+  still collapse to implementation-flavored copy such as **"Active source events
+  detected."**
+- Prior ADRs moved explainability toward compact at-a-glance surfaces
+  (especially ADR-HA-080), but the selected-location header still relied on
+  tooltip-only context. Tooltips are easy to miss, hard to inspect on touch
+  devices, and do not answer the operator's practical questions: **why is this
+  location occupied/vacant, and what would change it?**
+- The integration already exposes structured evidence through occupancy entity
+  attributes: `contributions`, `vacant_at`, `reason`, `recent_changes`, and lock
+  metadata.
+
+**Decision**:
+
+1. Keep a compact occupancy reason near the current state, but make it a
+   human sentence instead of a hidden tooltip or raw engine phrase.
+2. Add a click-away detail surface beside the header occupancy chip. It shows
+   the evidence behind the sentence: active contributors, vacancy timing,
+   latest event, and lock context when available.
+3. Generate the sentence and detail rows from one shared frontend explanation
+   helper so tree/inspector copy does not drift.
+4. Preserve the existing compact reason-line helper for surfaces that still
+   need a short string.
+5. Avoid a full audit log in the header. The header answers "why now?";
+   deeper history remains in entity attributes, Home Assistant History/Logbook,
+   and future richer inspector views.
+
+**Rationale**:
+
+1. Users need operator language: "Occupied because Kitchen Motion is active,"
+   not a kernel-adjacent status code.
+2. Putting details one click away keeps the header scannable while making the
+   evidence inspectable on desktop and touch devices.
+3. A structured explanation object makes future improvements additive: source
+   ranking, "what would change this?", and richer timelines can attach to the
+   same facts.
+
+**Consequences**:
+
+- ✅ Header occupancy state now carries an always-visible human reason.
+- ✅ The old tooltip-only path is no longer the primary explanation surface.
+- ✅ Detail rows are derived from existing entity attributes; no backend schema
+  change is required for v1.
+- ⚠️ Explanation quality is bounded by the evidence currently present on the
+  occupancy entity. If a source does not publish useful contribution metadata,
+  the UI can only report that no source-level evidence is available yet.
+- ℹ️ ADR-HA-080 still governs the left tree strip: compact at-a-glance, not a
+  complete logbook.
+
+**Alternatives Considered**:
+
+- Keep the tooltip and only rewrite the string — rejected; discoverability and
+  touch-device behavior remain poor.
+- Add a full timeline under the header — rejected for v1; it would turn the
+  header into a log viewer and duplicate HA History/Logbook.
+- Backend-only reason string — rejected; the frontend can already compose a
+  better explanation from structured attributes without reducing future backend
+  options.
+
+---
+
+### ADR-HA-093: Backend-Owned Runtime Occupancy Projection for Panel State (2026-04-26)
+
+**Status**: ✅ APPROVED (target design; implementation pending)
+
+**Context**:
+
+Occupancy Groups, managed shadow hosts, structural rollups, lock state, and
+explainability all affect what the panel should show as "occupied" or "vacant."
+The backend/runtime already owns those semantics, but the panel still builds its
+own occupancy cache from multiple partial sources:
+
+- HA `binary_sensor.*` snapshots in `hass.states`
+- live `topomation_occupancy_changed` and `state_changed` events
+- topology config such as `occupancy_group_id`
+- managed-shadow mapping via `effectiveOccupancyTopologyId`
+- tree descendant rollup helpers
+- local timestamp comparisons to defend against stale HA snapshots
+
+This produced a real class of race: one member of an occupancy group could
+receive the fresh occupied event while another member still had an older HA
+snapshot, causing the tree to show one room occupied and its grouped peer vacant
+even though the runtime contract says the group has one canonical state.
+
+The local frontend group-normalization fix is useful hardening, but it is still
+the panel reimplementing runtime occupancy semantics. If that pattern continues,
+each future occupancy abstraction will require another frontend inference rule
+and another chance for drift.
+
+**Decision**:
+
+1. Introduce a backend-owned **runtime occupancy projection** read model for the
+   panel. The backend, not the browser, owns effective occupied/vacant state for
+   each topology row the panel renders.
+2. Define the projection in `docs/contracts.md` as **C-023**. The read model
+   must cover tree dots, inspector header state, lock summary, effective vacancy
+   timing, occupancy group member projection, managed-shadow host projection,
+   structural rollup/derived occupancy, and compact explainability facts needed
+   by active UI surfaces.
+3. Snapshot and live update paths must use the same schema. Initial panel load
+   and subsequent event updates may travel through separate websocket/event
+   mechanisms, but a row state object must mean the same thing in both paths.
+4. The projection must identify both:
+   - `location_id`: the visible topology row being rendered
+   - `effective_location_id`: the runtime/entity topology id backing it when
+     different, such as a managed shadow area
+5. The projection must include a `projection` classification:
+   `direct | occupancy_group_member | managed_shadow_host | structural_rollup |
+   unknown`.
+6. The panel may continue to use `hass.states` occupancy entities as a
+   compatibility/fallback source during migration, but primary runtime-state
+   rendering must move to the backend projection.
+7. The temporary frontend group-normalization fallback may remain while C-023 is
+   implemented, but it is not the target architecture and should be removed or
+   reduced once the panel consumes the backend projection.
+
+**Recommended API Shape**:
+
+1. Add a dedicated websocket command:
+   `topomation/occupancy/states/list`.
+2. Return:
+
+   ```json
+   {
+     "states": [
+       {
+         "location_id": "area_kitchen",
+         "effective_location_id": "area_kitchen",
+         "projection": "occupancy_group_member",
+         "occupied": true,
+         "previous_occupied": false,
+         "reason": "event:trigger",
+         "changed_at": "2026-04-26T18:30:00+00:00",
+         "is_locked": false,
+         "locked_by": [],
+         "lock_modes": [],
+         "vacant_at": "2026-04-26T18:35:00+00:00",
+         "seconds_until_vacant": 300,
+         "occupancy_group_id": "main_open_area",
+         "summary": "Occupied via occupancy group",
+         "contributors": [],
+         "recent_changes": []
+       }
+     ]
+   }
+   ```
+
+3. Add a live event with the same row-state object shape, for example
+   `topomation_occupancy_state_changed`. The event may send one `state` or a
+   small `states` array when one runtime transition affects multiple visible
+   rows, such as every member of an occupancy group or structural ancestors.
+4. Keep existing HA `binary_sensor` occupancy entities and
+   `topomation_occupancy_changed` events as public/compatibility surfaces; the
+   new projection is the panel's canonical read path.
+
+**Rationale**:
+
+1. Runtime occupancy has one real authority: the occupancy engine plus the HA
+   adapter logic that maps topology rows to public surfaces. The browser should
+   render that authority, not reconstruct it.
+2. Occupancy Groups already have a first-class runtime contract
+   (ADR-HA-070/071, C-013). The panel should receive grouped members already
+   projected; it should not inspect sibling group ids to decide runtime state.
+3. Managed shadows are HA interoperability plumbing. Requiring every panel
+   surface to rediscover shadow ids repeats adapter knowledge in UI code.
+4. Snapshot/event schema parity removes a broad race class: stale HA snapshots
+   cannot overwrite newer backend events if both are not competing as separate
+   truth surfaces.
+5. A dedicated occupancy-state endpoint keeps `locations/list` focused on
+   topology/config while allowing runtime state to refresh independently and
+   more frequently.
+
+**Consequences**:
+
+- ✅ The panel gets one canonical runtime state object per row, eliminating the
+  need for group, shadow, rollup, and lock inference in ordinary rendering.
+- ✅ Occupancy Groups become visually drift-resistant by design: grouped members
+  receive the same group-projected state from the backend.
+- ✅ Future occupancy primitives can extend the backend projection once instead
+  of adding parallel frontend rules.
+- ✅ Debuggability improves because the state object can explicitly say whether
+  a row is direct, group-projected, shadow-projected, or structurally derived.
+- ⚠️ Requires new websocket/backend implementation and panel migration.
+- ⚠️ During migration, fallback logic must be carefully bounded so two runtime
+  truth surfaces do not continue indefinitely.
+- ⚠️ Tests must cover snapshot/event parity, grouped member projection, managed
+  shadow host projection, and stale-event ordering.
+- ℹ️ This ADR does not remove HA occupancy binary sensors; they remain the public
+  Home Assistant entity API and are still useful for automations, history, and
+  compatibility.
+
+**Alternatives Considered**:
+
+- Continue frontend normalization on top of `hass.states`: rejected. It fixes
+  the immediate race but preserves the duplicate occupancy model and will drift
+  again as semantics grow.
+- Add more attributes to each HA occupancy binary sensor and keep the panel on
+  `hass.states`: rejected as the primary design. HA entities remain important,
+  but `hass.states` snapshot timing is not a clean panel-state transport and
+  does not naturally represent structural rows that have no direct entity.
+- Embed runtime state directly in `topomation/locations/list`: acceptable as a
+  transitional step, but not preferred as the long-term API because topology
+  config and runtime occupancy have different refresh rates and lifecycles.
+- Create a visible HA entity for each occupancy group: rejected for v1. C-013
+  keeps member room occupancy entities as the public surface; a group entity may
+  be reconsidered only if a separate user-facing workflow requires it.
+
+---
+
 ## How to Use This Log
 
 ### When to Create an ADR

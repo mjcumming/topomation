@@ -28,6 +28,7 @@ from .const import (
     DOMAIN,
     EVENT_TOPOMATION_HANDOFF_TRACE,
     EVENT_TOPOMATION_OCCUPANCY_CHANGED,
+    EVENT_TOPOMATION_OCCUPANCY_STATE_CHANGED,
     META_TOPOLOGY_ANCHOR_KEY,
     STORAGE_KEY_CONFIG,
     STORAGE_KEY_STATE,
@@ -39,7 +40,7 @@ from .managed_actions import TopomationManagedActions
 from .panel import async_register_panel
 from .services import async_register_services, async_unregister_services
 from .sync_manager import SyncManager, managed_shadow_entity_ids_for_ambient
-from .websocket_api import async_register_websocket_api
+from .websocket_api import async_register_websocket_api, build_occupancy_projection_states
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
@@ -304,6 +305,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         ha_payload["recent_changes"] = list(recent_changes)
 
         hass.bus.async_fire(EVENT_TOPOMATION_OCCUPANCY_CHANGED, ha_payload)
+        kernel = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+        if isinstance(kernel, dict):
+            try:
+                projected_states = build_occupancy_projection_states(hass, kernel)
+            except Exception:  # pragma: no cover - defensive event bridge
+                _LOGGER.debug(
+                    "Failed to build occupancy projection for live event",
+                    exc_info=True,
+                )
+            else:
+                hass.bus.async_fire(
+                    EVENT_TOPOMATION_OCCUPANCY_STATE_CHANGED,
+                    {
+                        "entry_id": entry.entry_id,
+                        "states": projected_states,
+                    },
+                )
 
     bus.subscribe(_forward_occupancy_changed, EventFilter(event_type="occupancy.changed"))
 
