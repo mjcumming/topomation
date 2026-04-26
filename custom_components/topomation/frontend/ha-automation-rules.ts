@@ -311,6 +311,8 @@ export async function createTopomationActionRule(
     require_dark?: boolean;
     automation_id?: string;
     rule_uuid?: string;
+    user_named?: boolean;
+    daily_gating_enabled?: boolean;
   },
   entryId?: string
 ): Promise<TopomationActionRule> {
@@ -351,6 +353,8 @@ export async function createTopomationActionRule(
       start_time: args.start_time,
       end_time: args.end_time,
       ...(typeof runOnStartup === "boolean" ? { run_on_startup: runOnStartup } : {}),
+      ...(typeof args.user_named === "boolean" ? { user_named: args.user_named } : {}),
+      ...(args.daily_gating_enabled ? { daily_gating_enabled: true } : {}),
       require_dark: Boolean(args.require_dark),
       ...(args.automation_id ? { automation_id: args.automation_id } : {}),
       ...(args.rule_uuid ? { rule_uuid: args.rule_uuid } : {}),

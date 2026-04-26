@@ -42,9 +42,10 @@ type InspectorTab =
   | "lighting"
   | "appliances"
   | "media"
-  | "hvac";
+  | "hvac"
+  | "vacuum";
 type InspectorTabRequest = InspectorTab | "occupancy";
-type DeviceAutomationTab = "lighting" | "appliances" | "media" | "hvac";
+type DeviceAutomationTab = "lighting" | "appliances" | "media" | "hvac" | "vacuum";
 type OccupancyLockDirective = {
   sourceId: string;
   mode: string;
@@ -2926,9 +2927,17 @@ export class HtLocationInspector extends LitElement {
     return type === "floor" || type === "building" || type === "grounds" || type === "property";
   }
 
-  /** Tabs allowed on structural summary locations (no Appliances aggregate tab). */
+  /** Tabs allowed on structural summary locations (per ADR-HA-087: all action tabs). */
   private _structuralInspectorTabSet(): ReadonlySet<InspectorTab> {
-    return new Set<InspectorTab>(["detection", "ambient", "lighting", "media", "hvac"]);
+    return new Set<InspectorTab>([
+      "detection",
+      "ambient",
+      "lighting",
+      "appliances",
+      "media",
+      "hvac",
+      "vacuum",
+    ]);
   }
 
   /** Integration-owned managed shadow HA area (device container); occupancy is derived from the tree. */
@@ -3600,6 +3609,12 @@ export class HtLocationInspector extends LitElement {
           Lighting
         </button>
         <button
+          class="tab ${this._activeTab === "appliances" ? "active" : ""}"
+          @click=${() => this._handleTabChange("appliances")}
+        >
+          Appliances
+        </button>
+        <button
           class="tab ${this._activeTab === "media" ? "active" : ""}"
           @click=${() => this._handleTabChange("media")}
         >
@@ -3610,6 +3625,12 @@ export class HtLocationInspector extends LitElement {
           @click=${() => this._handleTabChange("hvac")}
         >
           HVAC
+        </button>
+        <button
+          class="tab ${this._activeTab === "vacuum" ? "active" : ""}"
+          @click=${() => this._handleTabChange("vacuum")}
+        >
+          Vacuum
         </button>
       </div>
     `;
@@ -3663,6 +3684,12 @@ export class HtLocationInspector extends LitElement {
         >
           HVAC
         </button>
+        <button
+          class="tab ${this._activeTab === "vacuum" ? "active" : ""}"
+          @click=${() => this._handleTabChange("vacuum")}
+        >
+          Vacuum
+        </button>
       </div>
     `;
   }
@@ -3701,6 +3728,8 @@ export class HtLocationInspector extends LitElement {
               ? this._renderDeviceAutomationTab("media")
             : activeTab === "hvac"
               ? this._renderDeviceAutomationTab("hvac")
+            : activeTab === "vacuum"
+              ? this._renderDeviceAutomationTab("vacuum")
             : ""}
       </div>
     `;
@@ -7570,6 +7599,11 @@ export class HtLocationInspector extends LitElement {
     if (domain === "light") {
       return prefersOff ? "turn_off" : "turn_on";
     }
+    if (domain === "vacuum") {
+      // ADR-HA-091: vacancy is the safe time to clean; occupancy interrupts
+      // politely with pause. Inverse of switch/fan/light "prefers_off on vacancy".
+      return triggerType === "on_occupied" ? "pause" : "start";
+    }
     if (prefersOff) {
       return "turn_off";
     }
@@ -7785,6 +7819,20 @@ export class HtLocationInspector extends LitElement {
         { value: "toggle", label: "Toggle", service: "toggle" },
       ];
     }
+    if (domain === "vacuum") {
+      // ADR-HA-091 §5: three verbs only. vacuum.stop is intentionally omitted.
+      const options = [
+        { value: "start", label: "Start", service: "start" },
+        { value: "pause", label: "Pause", service: "pause" },
+        { value: "return_to_base", label: "Return to dock", service: "return_to_base" },
+      ];
+      const defaultService = this._defaultActionServiceForTrigger(normalizedEntityId, triggerType);
+      return options.sort((a, b) => {
+        if (a.service === defaultService) return -1;
+        if (b.service === defaultService) return 1;
+        return 0;
+      });
+    }
     const defaultService = this._defaultActionServiceForTrigger(normalizedEntityId, triggerType);
     return [
       { value: "turn_on", label: "Turn on", service: "turn_on" },
@@ -7846,6 +7894,7 @@ export class HtLocationInspector extends LitElement {
     if (tab === "lighting") return ["light"];
     if (tab === "media") return ["media_player"];
     if (tab === "appliances") return ["fan", "switch"];
+    if (tab === "vacuum") return ["vacuum"];
     return ["fan"];
   }
 
@@ -7854,6 +7903,7 @@ export class HtLocationInspector extends LitElement {
     if (domain === "light") return "lighting";
     if (domain === "media_player") return "media";
     if (domain === "switch") return "appliances";
+    if (domain === "vacuum") return "vacuum";
     if (domain === "fan") {
       void this._climateDeviceLinkRevision;
       return this._fanEntityLinkedToClimate(entityId) ? "hvac" : "appliances";
@@ -7866,7 +7916,13 @@ export class HtLocationInspector extends LitElement {
     if (!stateObj) return false;
     const domain = entityId.split(".", 1)[0];
     if (!tab) {
-      return domain === "light" || domain === "switch" || domain === "media_player" || domain === "fan";
+      return (
+        domain === "light"
+        || domain === "switch"
+        || domain === "media_player"
+        || domain === "fan"
+        || domain === "vacuum"
+      );
     }
     if (tab === "hvac") {
       if (domain !== "fan") return false;
@@ -7964,6 +8020,8 @@ export class HtLocationInspector extends LitElement {
       end_time: this._normalizeActionTime(rule.end_time, "23:59"),
       run_on_startup: false,
       user_named: typeof rule.user_named === "boolean" ? rule.user_named : false,
+      daily_gating_enabled:
+        typeof rule.daily_gating_enabled === "boolean" ? rule.daily_gating_enabled : false,
       enabled: rule.enabled !== false,
       require_dark: this._normalizeActionAmbientCondition(rule.ambient_condition, triggerTypes) === "dark",
     };
@@ -8272,6 +8330,7 @@ export class HtLocationInspector extends LitElement {
         end_time: "23:59",
         run_on_startup: false,
         user_named: false,
+        daily_gating_enabled: false,
         enabled: true,
       };
       nextRule.name = this._autoActionRuleName(nextRule, rules.length);
@@ -8733,6 +8792,7 @@ export class HtLocationInspector extends LitElement {
           end_time: rule.end_time,
           run_on_startup: false,
           user_named: Boolean(rule.user_named),
+          daily_gating_enabled: Boolean(rule.daily_gating_enabled),
           require_dark: ambientCondition === "dark",
         },
         this.entryId
@@ -9776,7 +9836,44 @@ export class HtLocationInspector extends LitElement {
             `
           : ""}
       </div>
+      ${tab === "vacuum"
+        ? this._renderDailyGatingPills(ruleId, rule, busy)
+        : ""}
       ${this._renderOccupancyOnlyActionsBlock(tab, ruleId, rule, busy, entityOptions)}
+    `;
+  }
+
+  /** ADR-HA-091: opt-in "Run at most once per day" toggle on Vacuum rules. */
+  private _renderDailyGatingPills(
+    ruleId: string,
+    rule: TopomationActionRule,
+    busy: boolean
+  ) {
+    const enabled = Boolean(rule.daily_gating_enabled);
+    return html`
+      <div class="dusk-inline-heading-row">
+        <div class="dusk-rule-section-title">Daily run gating</div>
+        <div class="choice-pill-group">
+          ${this._renderTogglePill(
+            "Run every time",
+            !enabled,
+            busy,
+            () =>
+              this._updateActionRule(ruleId, {
+                daily_gating_enabled: false,
+              })
+          )}
+          ${this._renderTogglePill(
+            "Run at most once per day",
+            enabled,
+            busy,
+            () =>
+              this._updateActionRule(ruleId, {
+                daily_gating_enabled: !enabled,
+              })
+          )}
+        </div>
+      </div>
     `;
   }
 

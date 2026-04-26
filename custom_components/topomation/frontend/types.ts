@@ -169,6 +169,8 @@ export interface TopomationActionRule {
   end_time?: string;
   run_on_startup?: boolean;
   user_named?: boolean;
+  /** ADR-HA-091: opt-in "Run at most once per day" toggle on Vacuum rules. */
+  daily_gating_enabled?: boolean;
   // Legacy compatibility (older backend/frontend payloads)
   require_dark?: boolean;
   enabled: boolean;
