@@ -3796,6 +3796,7 @@ export class HtLocationInspector extends LitElement {
     if (requested === "appliances") return "appliances";
     if (requested === "media") return "media";
     if (requested === "hvac") return "hvac";
+    if (requested === "vacuum") return "vacuum";
     if (requested === "occupancy") return "detection";
     return undefined;
   }
@@ -7631,7 +7632,7 @@ export class HtLocationInspector extends LitElement {
   }
 
   private _occupancyOnlyAutomationTab(tab: DeviceAutomationTab | undefined): boolean {
-    return tab === "media" || tab === "hvac" || tab === "appliances";
+    return tab === "media" || tab === "hvac" || tab === "appliances" || tab === "vacuum";
   }
 
   /** Strip ambient triggers for Media/HVAC/Appliances before persisting to HA. */
@@ -9966,7 +9967,9 @@ export class HtLocationInspector extends LitElement {
           ? "fan or switch"
           : tab === "media"
             ? "media"
-            : "HVAC-linked fan";
+            : tab === "vacuum"
+              ? "vacuum"
+              : "HVAC-linked fan";
     const hasRuleInEditState = rules.some((rule, index) => {
       const persistedRule = this._persistedActionRuleForDraft(rule);
       return !persistedRule || this._isActionRuleDirty(rule, index, persistedRule);
@@ -10425,7 +10428,7 @@ export class HtLocationInspector extends LitElement {
     const attrs = stateObj.attributes || {};
     if (this._isTopomationOccupancyOutput(attrs)) return false;
     const domain = entityId.split(".", 1)[0];
-    if (["person", "device_tracker", "light", "switch", "fan", "media_player"].includes(domain)) {
+    if (["person", "device_tracker", "light", "switch", "fan", "media_player", "vacuum"].includes(domain)) {
       return true;
     }
     if (domain === "binary_sensor") {

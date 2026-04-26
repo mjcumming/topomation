@@ -4445,6 +4445,7 @@ const Re = class Re extends pt {
     if (t === "appliances") return "appliances";
     if (t === "media") return "media";
     if (t === "hvac") return "hvac";
+    if (t === "vacuum") return "vacuum";
     if (t === "occupancy") return "detection";
   }
   connectedCallback() {
@@ -6991,7 +6992,7 @@ const Re = class Re extends pt {
       return this._actionRuleTabById[i];
   }
   _occupancyOnlyAutomationTab(t) {
-    return t === "media" || t === "hvac" || t === "appliances";
+    return t === "media" || t === "hvac" || t === "appliances" || t === "vacuum";
   }
   /** Strip ambient triggers for Media/HVAC/Appliances before persisting to HA. */
   _sanitizedTriggersForManagedSave(t, e) {
@@ -8516,7 +8517,7 @@ const Re = class Re extends pt {
   }
   _renderDeviceAutomationTab(t) {
     if (!this.location) return "";
-    const e = this._savingActionRules, i = this._deviceAutomationTabMeta(t), n = this._rulesForDeviceAutomationTab(t), o = this._actionRuleTargetEntities(t), a = t === "lighting" ? "light" : t === "appliances" ? "fan or switch" : t === "media" ? "media" : "HVAC-linked fan", r = n.some((c, l) => {
+    const e = this._savingActionRules, i = this._deviceAutomationTabMeta(t), n = this._rulesForDeviceAutomationTab(t), o = this._actionRuleTargetEntities(t), a = t === "lighting" ? "light" : t === "appliances" ? "fan or switch" : t === "media" ? "media" : t === "vacuum" ? "vacuum" : "HVAC-linked fan", r = n.some((c, l) => {
       const u = this._persistedActionRuleForDraft(c);
       return !u || this._isActionRuleDirty(c, l, u);
     });
@@ -8828,7 +8829,7 @@ const Re = class Re extends pt {
     const n = e.attributes || {};
     if (this._isTopomationOccupancyOutput(n)) return !1;
     const o = t.split(".", 1)[0];
-    if (["person", "device_tracker", "light", "switch", "fan", "media_player"].includes(o))
+    if (["person", "device_tracker", "light", "switch", "fan", "media_player", "vacuum"].includes(o))
       return !0;
     if (o === "binary_sensor") {
       const c = String(n.device_class || "");

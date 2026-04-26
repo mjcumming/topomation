@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.70] - 2026-04-26
+
+### Fixed
+
+- **Vacuum target enumeration** (regression in 0.2.69): vacuums never
+  appeared in any location's Vacuum tab picker, even when the entity
+  was assigned to the row's HA area. `_isCandidateEntity` had a domain
+  allowlist that omitted `"vacuum"`, so vacuums were silently filtered
+  out at the earliest enumeration gate before any tab-specific logic
+  ran. Demo vacuums in the dev container masked the bug because they
+  have no entity-registry entry.
+- **`forcedTab="vacuum"` route**: `_mapRequestedTab` did not handle
+  the new tab, so deep links / fixtures targeting the Vacuum tab fell
+  back to the default tab.
+- **Vacuum tab editor + label polish**: `_occupancyOnlyAutomationTab`
+  now includes vacuum so its rules use the correct ambient-trigger-free
+  editor; `compatibleDeviceLabel` for the Vacuum tab now reads
+  "vacuum" instead of falling through to "HVAC-linked fan".
+
+Adds a regression test in `ht-location-inspector.test.ts` that
+fixtures a `vacuum.*` entity in a location and asserts it appears
+in the Vacuum tab target picker.
+
 ## [0.2.69] - 2026-04-26
 
 ### Added

@@ -3641,6 +3641,73 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect((activeTab?.textContent || "").trim()).to.equal("Appliances");
   });
 
+  it("enumerates vacuum entities as Vacuum tab targets (ADR-HA-091)", async () => {
+    // Regression: _isCandidateEntity originally lacked "vacuum" in its
+    // domain allowlist, so vacuums were silently filtered out before
+    // _isActionRuleEntity could see them. Picker showed "No vacuums in
+    // this location." even when a vacuum.* was assigned to the area.
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>) => {
+        if (request.type === "topomation/actions/rules/list") {
+          return { rules: [] } as T;
+        }
+        if (request.type === "config/entity_registry/list") {
+          return [
+            { entity_id: "vacuum.main_floor_vacuum_2", device_id: "dev_vac" },
+          ] as T;
+        }
+        if (request.type === "config/device_registry/list") {
+          return [{ id: "dev_vac", via_device_id: null }] as T;
+        }
+        return [] as T;
+      },
+      connection: {},
+      states: {
+        "vacuum.main_floor_vacuum_2": {
+          entity_id: "vacuum.main_floor_vacuum_2",
+          state: "docked",
+          attributes: {
+            friendly_name: "Main Floor Vacuum",
+            area_id: "main_floor",
+          },
+        },
+      },
+      areas: {},
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_main_floor";
+    location.ha_area_id = "main_floor";
+    location.modules._meta = { type: "area" };
+    location.entity_ids = ["vacuum.main_floor_vacuum_2"];
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector .hass=${hass} .location=${location} .forcedTab=${"vacuum"}></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    const addRuleButton = element.shadowRoot?.querySelector(
+      '[data-testid="action-rule-add"]'
+    ) as HTMLButtonElement | null;
+    expect(addRuleButton).to.exist;
+    addRuleButton!.click();
+    await element.updateComplete;
+
+    await waitUntil(
+      () => {
+        const row = element.shadowRoot!.querySelector(".dusk-block-row") as HTMLElement | null;
+        if (!row) return false;
+        const values = Array.from(
+          row.querySelectorAll('input[type="radio"][name^="vacuum-equip-target-"]')
+        ).map((r) => (r as HTMLInputElement).value);
+        return values.includes("vacuum.main_floor_vacuum_2");
+      },
+      "vacuum entity did not appear in Vacuum tab target picker"
+    );
+  });
+
   it("filters Appliances target entities to standalone fans and switches", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>) => {
