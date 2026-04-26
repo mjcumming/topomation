@@ -3,10 +3,10 @@
  * Copyright 2019 Google LLC
  * SPDX-License-Identifier: BSD-3-Clause
  */
-const ge = globalThis, gi = ge.ShadowRoot && (ge.ShadyCSS === void 0 || ge.ShadyCSS.nativeShadow) && "adoptedStyleSheets" in Document.prototype && "replace" in CSSStyleSheet.prototype, fi = Symbol(), ki = /* @__PURE__ */ new WeakMap();
+const ge = globalThis, gi = ge.ShadowRoot && (ge.ShadyCSS === void 0 || ge.ShadyCSS.nativeShadow) && "adoptedStyleSheets" in Document.prototype && "replace" in CSSStyleSheet.prototype, _i = Symbol(), ki = /* @__PURE__ */ new WeakMap();
 let dn = class {
   constructor(t, e, i) {
-    if (this._$cssResult$ = !0, i !== fi) throw Error("CSSResult is not constructable. Use `unsafeCSS` or `css` instead.");
+    if (this._$cssResult$ = !0, i !== _i) throw Error("CSSResult is not constructable. Use `unsafeCSS` or `css` instead.");
     this.cssText = t, this.t = e;
   }
   get styleSheet() {
@@ -22,13 +22,13 @@ let dn = class {
     return this.cssText;
   }
 };
-const Nn = (s) => new dn(typeof s == "string" ? s : s + "", void 0, fi), ee = (s, ...t) => {
+const Nn = (s) => new dn(typeof s == "string" ? s : s + "", void 0, _i), ee = (s, ...t) => {
   const e = s.length === 1 ? s[0] : t.reduce((i, n, o) => i + ((a) => {
     if (a._$cssResult$ === !0) return a.cssText;
     if (typeof a == "number") return a;
     throw Error("Value passed to 'css' function must be a 'css' function result: " + a + ". Use 'unsafeCSS' to pass non-literal values, but take care to ensure page security.");
   })(n) + s[o + 1], s[0]);
-  return new dn(e, s, fi);
+  return new dn(e, s, _i);
 }, Bn = (s, t) => {
   if (gi) s.adoptedStyleSheets = t.map((e) => e instanceof CSSStyleSheet ? e : e.styleSheet);
   else for (const e of t) {
@@ -284,24 +284,24 @@ kt.elementStyles = [], kt.shadowRootOptions = { mode: "open" }, kt[Ut("elementPr
  * Copyright 2017 Google LLC
  * SPDX-License-Identifier: BSD-3-Clause
  */
-const Wt = globalThis, we = Wt.trustedTypes, Di = we ? we.createPolicy("lit-html", { createHTML: (s) => s }) : void 0, hn = "$lit$", ct = `lit$${Math.random().toFixed(9).slice(2)}$`, pn = "?" + ct, Kn = `<${pn}>`, wt = document, Xt = () => wt.createComment(""), Qt = (s) => s === null || typeof s != "object" && typeof s != "function", _i = Array.isArray, Yn = (s) => _i(s) || typeof (s == null ? void 0 : s[Symbol.iterator]) == "function", Pe = `[ 	
-\f\r]`, Mt = /<(?:(!--|\/[^a-zA-Z])|(\/?[a-zA-Z][^>\s]*)|(\/?$))/g, Ci = /-->/g, Li = />/g, gt = RegExp(`>|${Pe}(?:([^\\s"'>=/]+)(${Pe}*=${Pe}*(?:[^ 	
+const Wt = globalThis, we = Wt.trustedTypes, Di = we ? we.createPolicy("lit-html", { createHTML: (s) => s }) : void 0, hn = "$lit$", ct = `lit$${Math.random().toFixed(9).slice(2)}$`, pn = "?" + ct, Kn = `<${pn}>`, wt = document, Xt = () => wt.createComment(""), Qt = (s) => s === null || typeof s != "object" && typeof s != "function", fi = Array.isArray, Yn = (s) => fi(s) || typeof (s == null ? void 0 : s[Symbol.iterator]) == "function", Pe = `[ 	
+\f\r]`, zt = /<(?:(!--|\/[^a-zA-Z])|(\/?[a-zA-Z][^>\s]*)|(\/?$))/g, Ci = /-->/g, Li = />/g, gt = RegExp(`>|${Pe}(?:([^\\s"'>=/]+)(${Pe}*=${Pe}*(?:[^ 	
 \f\r"'\`<>=]|("|')|))|$)`, "g"), Ii = /'/g, Oi = /"/g, gn = /^(?:script|style|textarea|title)$/i, Xn = (s) => (t, ...e) => ({ _$litType$: s, strings: t, values: e }), g = Xn(1), xt = Symbol.for("lit-noChange"), N = Symbol.for("lit-nothing"), Pi = /* @__PURE__ */ new WeakMap(), vt = wt.createTreeWalker(wt, 129);
-function fn(s, t) {
-  if (!_i(s) || !s.hasOwnProperty("raw")) throw Error("invalid template strings array");
+function _n(s, t) {
+  if (!fi(s) || !s.hasOwnProperty("raw")) throw Error("invalid template strings array");
   return Di !== void 0 ? Di.createHTML(t) : t;
 }
 const Qn = (s, t) => {
   const e = s.length - 1, i = [];
-  let n, o = t === 2 ? "<svg>" : t === 3 ? "<math>" : "", a = Mt;
+  let n, o = t === 2 ? "<svg>" : t === 3 ? "<math>" : "", a = zt;
   for (let r = 0; r < e; r++) {
     const c = s[r];
     let l, u, d = -1, h = 0;
-    for (; h < c.length && (a.lastIndex = h, u = a.exec(c), u !== null); ) h = a.lastIndex, a === Mt ? u[1] === "!--" ? a = Ci : u[1] !== void 0 ? a = Li : u[2] !== void 0 ? (gn.test(u[2]) && (n = RegExp("</" + u[2], "g")), a = gt) : u[3] !== void 0 && (a = gt) : a === gt ? u[0] === ">" ? (a = n ?? Mt, d = -1) : u[1] === void 0 ? d = -2 : (d = a.lastIndex - u[2].length, l = u[1], a = u[3] === void 0 ? gt : u[3] === '"' ? Oi : Ii) : a === Oi || a === Ii ? a = gt : a === Ci || a === Li ? a = Mt : (a = gt, n = void 0);
-    const f = a === gt && s[r + 1].startsWith("/>") ? " " : "";
-    o += a === Mt ? c + Kn : d >= 0 ? (i.push(l), c.slice(0, d) + hn + c.slice(d) + ct + f) : c + ct + (d === -2 ? r : f);
+    for (; h < c.length && (a.lastIndex = h, u = a.exec(c), u !== null); ) h = a.lastIndex, a === zt ? u[1] === "!--" ? a = Ci : u[1] !== void 0 ? a = Li : u[2] !== void 0 ? (gn.test(u[2]) && (n = RegExp("</" + u[2], "g")), a = gt) : u[3] !== void 0 && (a = gt) : a === gt ? u[0] === ">" ? (a = n ?? zt, d = -1) : u[1] === void 0 ? d = -2 : (d = a.lastIndex - u[2].length, l = u[1], a = u[3] === void 0 ? gt : u[3] === '"' ? Oi : Ii) : a === Oi || a === Ii ? a = gt : a === Ci || a === Li ? a = zt : (a = gt, n = void 0);
+    const _ = a === gt && s[r + 1].startsWith("/>") ? " " : "";
+    o += a === zt ? c + Kn : d >= 0 ? (i.push(l), c.slice(0, d) + hn + c.slice(d) + ct + _) : c + ct + (d === -2 ? r : _);
   }
-  return [fn(s, o + (s[e] || "<?>") + (t === 2 ? "</svg>" : t === 3 ? "</math>" : "")), i];
+  return [_n(s, o + (s[e] || "<?>") + (t === 2 ? "</svg>" : t === 3 ? "</math>" : "")), i];
 };
 class Zt {
   constructor({ strings: t, _$litType$: e }, i) {
@@ -316,14 +316,14 @@ class Zt {
     for (; (n = vt.nextNode()) !== null && c.length < r; ) {
       if (n.nodeType === 1) {
         if (n.hasAttributes()) for (const d of n.getAttributeNames()) if (d.endsWith(hn)) {
-          const h = u[a++], f = n.getAttribute(d).split(ct), p = /([.?@])?(.*)/.exec(h);
-          c.push({ type: 1, index: o, name: p[2], strings: f, ctor: p[1] === "." ? Jn : p[1] === "?" ? to : p[1] === "@" ? eo : Ce }), n.removeAttribute(d);
+          const h = u[a++], _ = n.getAttribute(d).split(ct), p = /([.?@])?(.*)/.exec(h);
+          c.push({ type: 1, index: o, name: p[2], strings: _, ctor: p[1] === "." ? Jn : p[1] === "?" ? to : p[1] === "@" ? eo : Ce }), n.removeAttribute(d);
         } else d.startsWith(ct) && (c.push({ type: 6, index: o }), n.removeAttribute(d));
         if (gn.test(n.tagName)) {
           const d = n.textContent.split(ct), h = d.length - 1;
           if (h > 0) {
             n.textContent = we ? we.emptyScript : "";
-            for (let f = 0; f < h; f++) n.append(d[f], Xt()), vt.nextNode(), c.push({ type: 2, index: ++o });
+            for (let _ = 0; _ < h; _++) n.append(d[_], Xt()), vt.nextNode(), c.push({ type: 2, index: ++o });
             n.append(d[h], Xt());
           }
         }
@@ -408,7 +408,7 @@ class Pt {
   }
   $(t) {
     var o;
-    const { values: e, _$litType$: i } = t, n = typeof i == "number" ? this._$AC(t) : (i.el === void 0 && (i.el = Zt.createElement(fn(i.h, i.h[0]), this.options)), i);
+    const { values: e, _$litType$: i } = t, n = typeof i == "number" ? this._$AC(t) : (i.el === void 0 && (i.el = Zt.createElement(_n(i.h, i.h[0]), this.options)), i);
     if (((o = this._$AH) == null ? void 0 : o._$AD) === n) this._$AH.p(e);
     else {
       const a = new Zn(n, this), r = a.u(this.options);
@@ -420,7 +420,7 @@ class Pt {
     return e === void 0 && Pi.set(t.strings, e = new Zt(t)), e;
   }
   k(t) {
-    _i(this._$AH) || (this._$AH = [], this._$AR());
+    fi(this._$AH) || (this._$AH = [], this._$AR());
     const e = this._$AH;
     let i, n = 0;
     for (const o of t) n === e.length ? e.push(i = new Pt(this.O(Xt()), this.O(Xt()), this, this.options)) : i = e[n], i._$AI(o), n++;
@@ -504,8 +504,8 @@ class io {
     Ct(this, t);
   }
 }
-const no = { I: Pt }, ze = Wt.litHtmlPolyfillSupport;
-ze == null || ze(Zt, Pt), (Wt.litHtmlVersions ?? (Wt.litHtmlVersions = [])).push("3.3.1");
+const no = { I: Pt }, Me = Wt.litHtmlPolyfillSupport;
+Me == null || Me(Zt, Pt), (Wt.litHtmlVersions ?? (Wt.litHtmlVersions = [])).push("3.3.1");
 const oo = (s, t, e) => {
   const i = (e == null ? void 0 : e.renderBefore) ?? t;
   let n = i._$litPart$;
@@ -548,8 +548,8 @@ let pt = class extends kt {
 };
 var nn;
 pt._$litElement$ = !0, pt.finalized = !0, (nn = bt.litElementHydrateSupport) == null || nn.call(bt, { LitElement: pt });
-const Me = bt.litElementPolyfillSupport;
-Me == null || Me({ LitElement: pt });
+const ze = bt.litElementPolyfillSupport;
+ze == null || ze({ LitElement: pt });
 (bt.litElementVersions ?? (bt.litElementVersions = [])).push("4.2.1");
 const Le = ee`
   :host {
@@ -752,7 +752,7 @@ function ei(s, t, e) {
   }
   return !1;
 }
-const lo = "managed_shadow", _n = /* @__PURE__ */ new Set(["floor", "building", "grounds", "property"]), ie = (s) => {
+const lo = "managed_shadow", fn = /* @__PURE__ */ new Set(["floor", "building", "grounds", "property"]), ie = (s) => {
   var t;
   return ((t = s == null ? void 0 : s.modules) == null ? void 0 : t._meta) || {};
 }, ne = (s, t) => {
@@ -762,7 +762,7 @@ const lo = "managed_shadow", _n = /* @__PURE__ */ new Set(["floor", "building", 
   const t = /* @__PURE__ */ new Set();
   for (const e of s) {
     const i = ie(e), n = ne(i, "shadow_area_id");
-    n && _n.has(ho(e)) && t.add(n);
+    n && fn.has(ho(e)) && t.add(n);
   }
   return t;
 }, te = (s, t) => {
@@ -796,8 +796,8 @@ function mi(s, t) {
     if (!d.length)
       return o.set(r, u), u;
     const h = d.map((p) => a(p));
-    let f;
-    return u === "occupied" || h.includes("occupied") ? f = "occupied" : u === "vacant" || h.length > 0 && h.every((p) => p === "vacant") ? f = "vacant" : f = "unknown", o.set(r, f), f;
+    let _;
+    return u === "occupied" || h.includes("occupied") ? _ = "occupied" : u === "vacant" || h.length > 0 && h.every((p) => p === "vacant") ? _ = "vacant" : _ = "unknown", o.set(r, _), _;
   };
   for (const r of s)
     e[r.id] = a(r.id);
@@ -806,7 +806,7 @@ function mi(s, t) {
 function po(s, t) {
   if (!s || s.is_explicit_root) return !1;
   const e = C(s);
-  return _n.has(e) ? !!Ht(s) : !1;
+  return fn.has(e) ? !!Ht(s) : !1;
 }
 function yi(s) {
   const t = String(s || "").trim();
@@ -819,8 +819,8 @@ function yi(s) {
  * Copyright 2017 Google LLC
  * SPDX-License-Identifier: BSD-3-Clause
  */
-const go = { CHILD: 2 }, fo = (s) => (...t) => ({ _$litDirective$: s, values: t });
-class _o {
+const go = { CHILD: 2 }, _o = (s) => (...t) => ({ _$litDirective$: s, values: t });
+class fo {
   constructor(t) {
   }
   get _$AU() {
@@ -841,11 +841,11 @@ class _o {
  * Copyright 2020 Google LLC
  * SPDX-License-Identifier: BSD-3-Clause
  */
-const { I: mo } = no, zi = () => document.createComment(""), Ft = (s, t, e) => {
+const { I: mo } = no, Mi = () => document.createComment(""), Ft = (s, t, e) => {
   var o;
   const i = s._$AA.parentNode, n = t === void 0 ? s._$AB : t._$AA;
   if (e === void 0) {
-    const a = i.insertBefore(zi(), n), r = i.insertBefore(zi(), n);
+    const a = i.insertBefore(Mi(), n), r = i.insertBefore(Mi(), n);
     e = new mo(a, r, s, s.options);
   } else {
     const a = e._$AB.nextSibling, r = e._$AM, c = r !== s;
@@ -862,7 +862,7 @@ const { I: mo } = no, zi = () => document.createComment(""), Ft = (s, t, e) => {
     }
   }
   return e;
-}, ft = (s, t, e = s) => (s._$AI(t, e), s), yo = {}, vo = (s, t = yo) => s._$AH = t, bo = (s) => s._$AH, Fe = (s) => {
+}, _t = (s, t, e = s) => (s._$AI(t, e), s), yo = {}, vo = (s, t = yo) => s._$AH = t, bo = (s) => s._$AH, Fe = (s) => {
   s._$AR(), s._$AA.remove();
 };
 /**
@@ -870,11 +870,11 @@ const { I: mo } = no, zi = () => document.createComment(""), Ft = (s, t, e) => {
  * Copyright 2017 Google LLC
  * SPDX-License-Identifier: BSD-3-Clause
  */
-const Mi = (s, t, e) => {
+const zi = (s, t, e) => {
   const i = /* @__PURE__ */ new Map();
   for (let n = t; n <= e; n++) i.set(s[n], n);
   return i;
-}, fe = fo(class extends _o {
+}, _e = _o(class extends fo {
   constructor(s) {
     if (super(s), s.type !== go.CHILD) throw Error("repeat() can only be used in text expressions");
   }
@@ -893,29 +893,29 @@ const Mi = (s, t, e) => {
     const n = bo(s), { values: o, keys: a } = this.dt(t, e, i);
     if (!Array.isArray(n)) return this.ut = a, o;
     const r = this.ut ?? (this.ut = []), c = [];
-    let l, u, d = 0, h = n.length - 1, f = 0, p = o.length - 1;
-    for (; d <= h && f <= p; ) if (n[d] === null) d++;
+    let l, u, d = 0, h = n.length - 1, _ = 0, p = o.length - 1;
+    for (; d <= h && _ <= p; ) if (n[d] === null) d++;
     else if (n[h] === null) h--;
-    else if (r[d] === a[f]) c[f] = ft(n[d], o[f]), d++, f++;
-    else if (r[h] === a[p]) c[p] = ft(n[h], o[p]), h--, p--;
-    else if (r[d] === a[p]) c[p] = ft(n[d], o[p]), Ft(s, c[p + 1], n[d]), d++, p--;
-    else if (r[h] === a[f]) c[f] = ft(n[h], o[f]), Ft(s, n[d], n[h]), h--, f++;
-    else if (l === void 0 && (l = Mi(a, f, p), u = Mi(r, d, h)), l.has(r[d])) if (l.has(r[h])) {
-      const _ = u.get(a[f]), m = _ !== void 0 ? n[_] : null;
+    else if (r[d] === a[_]) c[_] = _t(n[d], o[_]), d++, _++;
+    else if (r[h] === a[p]) c[p] = _t(n[h], o[p]), h--, p--;
+    else if (r[d] === a[p]) c[p] = _t(n[d], o[p]), Ft(s, c[p + 1], n[d]), d++, p--;
+    else if (r[h] === a[_]) c[_] = _t(n[h], o[_]), Ft(s, n[d], n[h]), h--, _++;
+    else if (l === void 0 && (l = zi(a, _, p), u = zi(r, d, h)), l.has(r[d])) if (l.has(r[h])) {
+      const f = u.get(a[_]), m = f !== void 0 ? n[f] : null;
       if (m === null) {
         const y = Ft(s, n[d]);
-        ft(y, o[f]), c[f] = y;
-      } else c[f] = ft(m, o[f]), Ft(s, n[d], m), n[_] = null;
-      f++;
+        _t(y, o[_]), c[_] = y;
+      } else c[_] = _t(m, o[_]), Ft(s, n[d], m), n[f] = null;
+      _++;
     } else Fe(n[h]), h--;
     else Fe(n[d]), d++;
-    for (; f <= p; ) {
-      const _ = Ft(s, c[p + 1]);
-      ft(_, o[f]), c[f++] = _;
+    for (; _ <= p; ) {
+      const f = Ft(s, c[p + 1]);
+      _t(f, o[_]), c[_++] = f;
     }
     for (; d <= h; ) {
-      const _ = n[d++];
-      _ !== null && Fe(_);
+      const f = n[d++];
+      f !== null && Fe(f);
     }
     return this.ut = a, vo(s, c), xt;
   }
@@ -947,13 +947,13 @@ function it(s) {
   }
   return s;
 }
-function _e(s) {
+function fe(s) {
   "@babel/helpers - typeof";
-  return typeof Symbol == "function" && typeof Symbol.iterator == "symbol" ? _e = function(t) {
+  return typeof Symbol == "function" && typeof Symbol.iterator == "symbol" ? fe = function(t) {
     return typeof t;
-  } : _e = function(t) {
+  } : fe = function(t) {
     return t && typeof Symbol == "function" && t.constructor === Symbol && t !== Symbol.prototype ? "symbol" : typeof t;
-  }, _e(s);
+  }, fe(s);
 }
 function wo(s, t, e) {
   return t in s ? Object.defineProperty(s, t, {
@@ -1091,8 +1091,8 @@ function F(s, t, e, i, n) {
         }
       while (n = n.parentNode);
     if (i && s !== window) {
-      var f = Dt(n || s), p = f && f.a, _ = f && f.d;
-      f && (a /= _, r /= p, d /= p, u /= _, c = a + u, l = r + d);
+      var _ = Dt(n || s), p = _ && _.a, f = _ && _.d;
+      _ && (a /= f, r /= p, d /= p, u /= f, c = a + u, l = r + d);
     }
     return {
       top: a,
@@ -1248,9 +1248,9 @@ function Ro() {
       }
       var o = !1, a = 0;
       s.forEach(function(r) {
-        var c = 0, l = r.target, u = l.fromRect, d = F(l), h = l.prevFromRect, f = l.prevToRect, p = r.rect, _ = Dt(l, !0);
-        _ && (d.top -= _.f, d.left -= _.e), l.toRect = d, l.thisAnimationDuration && Ne(h, d) && !Ne(u, d) && // Make sure animatingRect is on line between toRect & fromRect
-        (p.top - d.top) / (p.left - d.left) === (u.top - d.top) / (u.left - d.left) && (c = Do(p, h, f, n.options)), Ne(d, u) || (l.prevFromRect = u, l.prevToRect = d, c || (c = n.options.animation), n.animate(l, p, d, c)), c && (o = !0, a = Math.max(a, c), clearTimeout(l.animationResetTimer), l.animationResetTimer = setTimeout(function() {
+        var c = 0, l = r.target, u = l.fromRect, d = F(l), h = l.prevFromRect, _ = l.prevToRect, p = r.rect, f = Dt(l, !0);
+        f && (d.top -= f.f, d.left -= f.e), l.toRect = d, l.thisAnimationDuration && Ne(h, d) && !Ne(u, d) && // Make sure animatingRect is on line between toRect & fromRect
+        (p.top - d.top) / (p.left - d.left) === (u.top - d.top) / (u.left - d.left) && (c = Do(p, h, _, n.options)), Ne(d, u) || (l.prevFromRect = u, l.prevToRect = d, c || (c = n.options.animation), n.animate(l, p, d, c)), c && (o = !0, a = Math.max(a, c), clearTimeout(l.animationResetTimer), l.animationResetTimer = setTimeout(function() {
           l.animationTime = 0, l.prevFromRect = null, l.fromRect = null, l.prevToRect = null, l.thisAnimationDuration = null;
         }, c), l.thisAnimationDuration = c);
       }), clearTimeout(t), o ? t = setTimeout(function() {
@@ -1327,17 +1327,17 @@ var At = [], Be = {
   }
 };
 function Co(s) {
-  var t = s.sortable, e = s.rootEl, i = s.name, n = s.targetEl, o = s.cloneEl, a = s.toEl, r = s.fromEl, c = s.oldIndex, l = s.newIndex, u = s.oldDraggableIndex, d = s.newDraggableIndex, h = s.originalEvent, f = s.putSortable, p = s.extraEventProperties;
+  var t = s.sortable, e = s.rootEl, i = s.name, n = s.targetEl, o = s.cloneEl, a = s.toEl, r = s.fromEl, c = s.oldIndex, l = s.newIndex, u = s.oldDraggableIndex, d = s.newDraggableIndex, h = s.originalEvent, _ = s.putSortable, p = s.extraEventProperties;
   if (t = t || e && e[G], !!t) {
-    var _, m = t.options, y = "on" + i.charAt(0).toUpperCase() + i.substr(1);
-    window.CustomEvent && !at && !oe ? _ = new CustomEvent(i, {
+    var f, m = t.options, y = "on" + i.charAt(0).toUpperCase() + i.substr(1);
+    window.CustomEvent && !at && !oe ? f = new CustomEvent(i, {
       bubbles: !0,
       cancelable: !0
-    }) : (_ = document.createEvent("Event"), _.initEvent(i, !0, !0)), _.to = a || e, _.from = r || e, _.item = n || e, _.clone = o, _.oldIndex = c, _.newIndex = l, _.oldDraggableIndex = u, _.newDraggableIndex = d, _.originalEvent = h, _.pullMode = f ? f.lastPutMode : void 0;
+    }) : (f = document.createEvent("Event"), f.initEvent(i, !0, !0)), f.to = a || e, f.from = r || e, f.item = n || e, f.clone = o, f.oldIndex = c, f.newIndex = l, f.oldDraggableIndex = u, f.newDraggableIndex = d, f.originalEvent = h, f.pullMode = _ ? _.lastPutMode : void 0;
     var b = it(it({}, p), ae.getEventProperties(i, t));
     for (var A in b)
-      _[A] = b[A];
-    e && e.dispatchEvent(_), m[y] && m[y].call(t, _);
+      f[A] = b[A];
+    e && e.dispatchEvent(f), m[y] && m[y].call(t, f);
   }
 }
 var Lo = ["evt"], q = function(t, e) {
@@ -1388,7 +1388,7 @@ function H(s) {
     newDraggableIndex: st
   }, s));
 }
-var v, P, $, L, yt, me, I, lt, Rt, Y, Vt, st, se, j, Tt = !1, Se = !1, Ae = [], _t, Z, je, Ue, Wi, Hi, Nt, $t, Kt, Yt = !1, ce = !1, ye, U, We = [], ii = !1, $e = [], Ie = typeof document < "u", le = vi, qi = oe || at ? "cssFloat" : "float", Io = Ie && !mn && !vi && "draggable" in document.createElement("div"), $n = function() {
+var v, P, $, L, yt, me, I, lt, Rt, Y, Vt, st, se, j, Tt = !1, Se = !1, Ae = [], ft, Z, je, Ue, Wi, Hi, Nt, $t, Kt, Yt = !1, ce = !1, ye, U, We = [], ii = !1, $e = [], Ie = typeof document < "u", le = vi, qi = oe || at ? "cssFloat" : "float", Io = Ie && !mn && !vi && "draggable" in document.createElement("div"), $n = function() {
   if (Ie) {
     if (at)
       return !1;
@@ -1436,7 +1436,7 @@ var v, P, $, L, yt, me, I, lt, Rt, Y, Vt, st, se, j, Tt = !1, Se = !1, Ae = [], 
     };
   }
   var i = {}, n = t.group;
-  (!n || _e(n) != "object") && (n = {
+  (!n || fe(n) != "object") && (n = {
     name: n
   }), i.name = n.name, i.checkPull = e(n.pull, !0), i.checkPut = e(n.put), i.revertClone = n.revertClone, t.group = i;
 }, Rn = function() {
@@ -1459,7 +1459,7 @@ var mt = function(t) {
       i.target = i.rootEl = e, i.preventDefault = void 0, i.stopPropagation = void 0, e[G]._onDragOver(i);
     }
   }
-}, zo = function(t) {
+}, Mo = function(t) {
   v && v.parentNode[G]._isOutsideThisEl(t.target);
 };
 function S(s, t) {
@@ -1571,11 +1571,11 @@ S.prototype = /** @lends Sortable.prototype */
     var n = this, o = n.el, a = n.options, r = o.ownerDocument, c;
     if (i && !v && i.parentNode === o) {
       var l = F(i);
-      if (L = o, v = i, P = v.parentNode, yt = v.nextSibling, me = i, se = a.group, S.dragged = v, _t = {
+      if (L = o, v = i, P = v.parentNode, yt = v.nextSibling, me = i, se = a.group, S.dragged = v, ft = {
         target: v,
         clientX: (e || t).clientX,
         clientY: (e || t).clientY
-      }, Wi = _t.clientX - l.left, Hi = _t.clientY - l.top, this._lastX = (e || t).clientX, this._lastY = (e || t).clientY, v.style["will-change"] = "all", c = function() {
+      }, Wi = ft.clientX - l.left, Hi = ft.clientY - l.top, this._lastX = (e || t).clientX, this._lastY = (e || t).clientY, v.style["will-change"] = "all", c = function() {
         if (q("delayEnded", n, {
           evt: t
         }), S.eventCanceled) {
@@ -1625,7 +1625,7 @@ S.prototype = /** @lends Sortable.prototype */
     if (Tt = !1, L && v) {
       q("dragStarted", this, {
         evt: e
-      }), this.nativeDraggable && T(document, "dragover", zo);
+      }), this.nativeDraggable && T(document, "dragover", Mo);
       var i = this.options;
       !t && K(v, i.dragClass, !1), K(v, i.ghostClass, !0), S.active = this, t && this._appendGhost(), H({
         sortable: this,
@@ -1658,8 +1658,8 @@ S.prototype = /** @lends Sortable.prototype */
     }
   },
   _onTouchMove: function(t) {
-    if (_t) {
-      var e = this.options, i = e.fallbackTolerance, n = e.fallbackOffset, o = t.touches ? t.touches[0] : t, a = $ && Dt($, !0), r = $ && a && a.a, c = $ && a && a.d, l = le && U && Ui(U), u = (o.clientX - _t.clientX + n.x) / (r || 1) + (l ? l[0] - We[0] : 0) / (r || 1), d = (o.clientY - _t.clientY + n.y) / (c || 1) + (l ? l[1] - We[1] : 0) / (c || 1);
+    if (ft) {
+      var e = this.options, i = e.fallbackTolerance, n = e.fallbackOffset, o = t.touches ? t.touches[0] : t, a = $ && Dt($, !0), r = $ && a && a.a, c = $ && a && a.d, l = le && U && Ui(U), u = (o.clientX - ft.clientX + n.x) / (r || 1) + (l ? l[0] - We[0] : 0) / (r || 1), d = (o.clientY - ft.clientY + n.y) / (c || 1) + (l ? l[1] - We[1] : 0) / (c || 1);
       if (!S.active && !Tt) {
         if (i && Math.max(Math.abs(o.clientX - this._lastX), Math.abs(o.clientY - this._lastY)) < i)
           return;
@@ -1708,13 +1708,13 @@ S.prototype = /** @lends Sortable.prototype */
   },
   // Returns true - if no further action is needed (either inserted or another condition)
   _onDragOver: function(t) {
-    var e = this.el, i = t.target, n, o, a, r = this.options, c = r.group, l = S.active, u = se === c, d = r.sort, h = j || l, f, p = this, _ = !1;
+    var e = this.el, i = t.target, n, o, a, r = this.options, c = r.group, l = S.active, u = se === c, d = r.sort, h = j || l, _, p = this, f = !1;
     if (ii) return;
-    function m(zt, Mn) {
-      q(zt, p, it({
+    function m(Mt, zn) {
+      q(Mt, p, it({
         evt: t,
         isOwner: u,
-        axis: f ? "vertical" : "horizontal",
+        axis: _ ? "vertical" : "horizontal",
         revert: a,
         dragRect: n,
         targetRect: o,
@@ -1726,17 +1726,17 @@ S.prototype = /** @lends Sortable.prototype */
           return de(L, e, v, n, $i, F($i), t, Fn);
         },
         changed: A
-      }, Mn));
+      }, zn));
     }
     function y() {
       m("dragOverAnimationCapture"), p.captureAnimationState(), p !== h && h.captureAnimationState();
     }
-    function b(zt) {
+    function b(Mt) {
       return m("dragOverCompleted", {
-        insertion: zt
-      }), zt && (u ? l._hideClone() : l._showClone(p), p !== h && (K(v, j ? j.options.ghostClass : l.options.ghostClass, !1), K(v, r.ghostClass, !0)), j !== p && p !== S.active ? j = p : p === S.active && j && (j = null), h === p && (p._ignoreWhileAnimating = i), p.animateAll(function() {
+        insertion: Mt
+      }), Mt && (u ? l._hideClone() : l._showClone(p), p !== h && (K(v, j ? j.options.ghostClass : l.options.ghostClass, !1), K(v, r.ghostClass, !0)), j !== p && p !== S.active ? j = p : p === S.active && j && (j = null), h === p && (p._ignoreWhileAnimating = i), p.animateAll(function() {
         m("dragOverAnimationComplete"), p._ignoreWhileAnimating = null;
-      }), p !== h && (h.animateAll(), h._ignoreWhileAnimating = null)), (i === v && !v.animated || i === e && !i.animated) && ($t = null), !r.dragoverBubble && !t.rootEl && i !== document && (v.parentNode[G]._isOutsideThisEl(t.target), !zt && mt(t)), !r.dragoverBubble && t.stopPropagation && t.stopPropagation(), _ = !0;
+      }), p !== h && (h.animateAll(), h._ignoreWhileAnimating = null)), (i === v && !v.animated || i === e && !i.animated) && ($t = null), !r.dragoverBubble && !t.rootEl && i !== document && (v.parentNode[G]._isOutsideThisEl(t.target), !Mt && mt(t)), !r.dragoverBubble && t.stopPropagation && t.stopPropagation(), f = !0;
     }
     function A() {
       Y = Q(v), st = Q(v, r.draggable), H({
@@ -1748,29 +1748,29 @@ S.prototype = /** @lends Sortable.prototype */
         originalEvent: t
       });
     }
-    if (t.preventDefault !== void 0 && t.cancelable && t.preventDefault(), i = J(i, r.draggable, e, !0), m("dragOver"), S.eventCanceled) return _;
+    if (t.preventDefault !== void 0 && t.cancelable && t.preventDefault(), i = J(i, r.draggable, e, !0), m("dragOver"), S.eventCanceled) return f;
     if (v.contains(t.target) || i.animated && i.animatingX && i.animatingY || p._ignoreWhileAnimating === i)
       return b(!1);
     if (Se = !1, l && !r.disabled && (u ? d || (a = P !== L) : j === this || (this.lastPutMode = se.checkPull(this, l, v, t)) && c.checkPut(this, l, v, t))) {
-      if (f = this._getDirection(t, i) === "vertical", n = F(v), m("dragOverValid"), S.eventCanceled) return _;
+      if (_ = this._getDirection(t, i) === "vertical", n = F(v), m("dragOverValid"), S.eventCanceled) return f;
       if (a)
         return P = L, y(), this._hideClone(), m("revert"), S.eventCanceled || (yt ? L.insertBefore(v, yt) : L.appendChild(v)), b(!0);
       var w = bi(e, r.draggable);
-      if (!w || Bo(t, f, this) && !w.animated) {
+      if (!w || Bo(t, _, this) && !w.animated) {
         if (w === v)
           return b(!1);
         if (w && e === t.target && (i = w), i && (o = F(i)), de(L, e, v, n, i, o, t, !!i) !== !1)
           return y(), w && w.nextSibling ? e.insertBefore(v, w.nextSibling) : e.appendChild(v), P = e, A(), b(!0);
-      } else if (w && No(t, f, this)) {
-        var z = It(e, 0, r, !0);
-        if (z === v)
+      } else if (w && No(t, _, this)) {
+        var M = It(e, 0, r, !0);
+        if (M === v)
           return b(!1);
-        if (i = z, o = F(i), de(L, e, v, n, i, o, t, !1) !== !1)
-          return y(), e.insertBefore(v, z), P = e, A(), b(!0);
+        if (i = M, o = F(i), de(L, e, v, n, i, o, t, !1) !== !1)
+          return y(), e.insertBefore(v, M), P = e, A(), b(!0);
       } else if (i.parentNode === e) {
         o = F(i);
-        var E = 0, B, D = v.parentNode !== e, R = !Oo(v.animated && v.toRect || n, i.animated && i.toRect || o, f), O = f ? "top" : "left", W = ji(i, "top", "top") || ji(v, "top", "top"), St = W ? W.scrollTop : void 0;
-        $t !== i && (B = o[O], Yt = !1, ce = !R && r.invertSwap || D), E = jo(t, i, o, f, R ? 1 : r.swapThreshold, r.invertedSwapThreshold == null ? r.swapThreshold : r.invertedSwapThreshold, ce, $t === i);
+        var E = 0, B, D = v.parentNode !== e, R = !Oo(v.animated && v.toRect || n, i.animated && i.toRect || o, _), O = _ ? "top" : "left", W = ji(i, "top", "top") || ji(v, "top", "top"), St = W ? W.scrollTop : void 0;
+        $t !== i && (B = o[O], Yt = !1, ce = !R && r.invertSwap || D), E = jo(t, i, o, _, R ? 1 : r.swapThreshold, r.invertedSwapThreshold == null ? r.swapThreshold : r.invertedSwapThreshold, ce, $t === i);
         var V;
         if (E !== 0) {
           var tt = Q(v);
@@ -1855,7 +1855,7 @@ S.prototype = /** @lends Sortable.prototype */
     }), this.save()))), this._nulling();
   },
   _nulling: function() {
-    q("nulling", this), L = v = P = $ = yt = I = me = lt = _t = Z = Nt = Y = st = Rt = Vt = $t = Kt = j = se = S.dragged = S.ghost = S.clone = S.active = null, $e.forEach(function(t) {
+    q("nulling", this), L = v = P = $ = yt = I = me = lt = ft = Z = Nt = Y = st = Rt = Vt = $t = Kt = j = se = S.dragged = S.ghost = S.clone = S.active = null, $e.forEach(function(t) {
       t.checked = !0;
     }), $e.length = je = Ue = 0;
   },
@@ -1867,7 +1867,7 @@ S.prototype = /** @lends Sortable.prototype */
         break;
       case "dragenter":
       case "dragover":
-        v && (this._onDragOver(t), Mo(t));
+        v && (this._onDragOver(t), zo(t));
         break;
       case "selectstart":
         t.preventDefault();
@@ -1952,7 +1952,7 @@ S.prototype = /** @lends Sortable.prototype */
     }
   }
 };
-function Mo(s) {
+function zo(s) {
   s.dataTransfer && (s.dataTransfer.dropEffect = "move"), s.cancelable && s.preventDefault();
 }
 function de(s, t, e, i, n, o, a, r) {
@@ -2049,7 +2049,7 @@ S.create = function(s, t) {
   return new S(s, t);
 };
 S.version = Ao;
-var M = [], Bt, oi, ai = !1, qe, Ge, ke, jt;
+var z = [], Bt, oi, ai = !1, qe, Ge, ke, jt;
 function qo() {
   function s() {
     this.defaults = {
@@ -2075,7 +2075,7 @@ function qo() {
       this.sortable.nativeDraggable ? k(document, "dragover", this._handleAutoScroll) : (k(document, "pointermove", this._handleFallbackAutoScroll), k(document, "touchmove", this._handleFallbackAutoScroll), k(document, "mousemove", this._handleFallbackAutoScroll)), Gi(), be(), To();
     },
     nulling: function() {
-      ke = oi = Bt = ai = jt = qe = Ge = null, M.length = 0;
+      ke = oi = Bt = ai = jt = qe = Ge = null, z.length = 0;
     },
     _handleFallbackAutoScroll: function(e) {
       this._handleAutoScroll(e, !0);
@@ -2103,9 +2103,9 @@ function qo() {
   });
 }
 function be() {
-  M.forEach(function(s) {
+  z.forEach(function(s) {
     clearInterval(s.pid);
-  }), M = [];
+  }), z = [];
 }
 function Gi() {
   clearInterval(jt);
@@ -2116,16 +2116,16 @@ var Ve = wn(function(s, t, e, i) {
     oi !== e && (oi = e, be(), Bt = t.scroll, u = t.scrollFn, Bt === !0 && (Bt = ut(e, !0)));
     var d = 0, h = Bt;
     do {
-      var f = h, p = F(f), _ = p.top, m = p.bottom, y = p.left, b = p.right, A = p.width, w = p.height, z = void 0, E = void 0, B = f.scrollWidth, D = f.scrollHeight, R = x(f), O = f.scrollLeft, W = f.scrollTop;
-      f === c ? (z = A < B && (R.overflowX === "auto" || R.overflowX === "scroll" || R.overflowX === "visible"), E = w < D && (R.overflowY === "auto" || R.overflowY === "scroll" || R.overflowY === "visible")) : (z = A < B && (R.overflowX === "auto" || R.overflowX === "scroll"), E = w < D && (R.overflowY === "auto" || R.overflowY === "scroll"));
-      var St = z && (Math.abs(b - n) <= a && O + A < B) - (Math.abs(y - n) <= a && !!O), V = E && (Math.abs(m - o) <= a && W + w < D) - (Math.abs(_ - o) <= a && !!W);
-      if (!M[d])
+      var _ = h, p = F(_), f = p.top, m = p.bottom, y = p.left, b = p.right, A = p.width, w = p.height, M = void 0, E = void 0, B = _.scrollWidth, D = _.scrollHeight, R = x(_), O = _.scrollLeft, W = _.scrollTop;
+      _ === c ? (M = A < B && (R.overflowX === "auto" || R.overflowX === "scroll" || R.overflowX === "visible"), E = w < D && (R.overflowY === "auto" || R.overflowY === "scroll" || R.overflowY === "visible")) : (M = A < B && (R.overflowX === "auto" || R.overflowX === "scroll"), E = w < D && (R.overflowY === "auto" || R.overflowY === "scroll"));
+      var St = M && (Math.abs(b - n) <= a && O + A < B) - (Math.abs(y - n) <= a && !!O), V = E && (Math.abs(m - o) <= a && W + w < D) - (Math.abs(f - o) <= a && !!W);
+      if (!z[d])
         for (var tt = 0; tt <= d; tt++)
-          M[tt] || (M[tt] = {});
-      (M[d].vx != St || M[d].vy != V || M[d].el !== f) && (M[d].el = f, M[d].vx = St, M[d].vy = V, clearInterval(M[d].pid), (St != 0 || V != 0) && (l = !0, M[d].pid = setInterval((function() {
+          z[tt] || (z[tt] = {});
+      (z[d].vx != St || z[d].vy != V || z[d].el !== _) && (z[d].el = _, z[d].vx = St, z[d].vy = V, clearInterval(z[d].pid), (St != 0 || V != 0) && (l = !0, z[d].pid = setInterval((function() {
         i && this.layer === 0 && S.active._onTouchMove(ke);
-        var rt = M[this.layer].vy ? M[this.layer].vy * r : 0, X = M[this.layer].vx ? M[this.layer].vx * r : 0;
-        typeof u == "function" && u.call(S.dragged.parentNode[G], X, rt, s, ke, M[this.layer].el) !== "continue" || xn(M[this.layer].el, X, rt);
+        var rt = z[this.layer].vy ? z[this.layer].vy * r : 0, X = z[this.layer].vx ? z[this.layer].vx * r : 0;
+        typeof u == "function" && u.call(S.dragged.parentNode[G], X, rt, s, ke, z[this.layer].el) !== "continue" || xn(z[this.layer].el, X, rt);
       }).bind({
         layer: d
       }), 24))), d++;
@@ -2428,8 +2428,8 @@ function Vi(s, t) {
     }
   }
   function u(d, h) {
-    const f = i.get(d) || [];
-    for (const p of f) {
+    const _ = i.get(d) || [];
+    for (const p of _) {
       if (a.has(p.id)) continue;
       a.add(p.id);
       const m = (i.get(p.id) || []).length > 0, y = t.has(p.id);
@@ -2440,8 +2440,8 @@ function Vi(s, t) {
   for (const d of s) {
     if (r.has(d.id) || a.has(d.id)) continue;
     a.add(d.id);
-    const f = (i.get(d.id) || []).length > 0, p = t.has(d.id);
-    o.push({ location: d, depth: 0, hasChildren: f, isExpanded: p }), p && f && u(d.id, 1);
+    const _ = (i.get(d.id) || []).length > 0, p = t.has(d.id);
+    o.push({ location: d, depth: 0, hasChildren: _, isExpanded: p }), p && _ && u(d.id, 1);
   }
   return o;
 }
@@ -2532,7 +2532,7 @@ const Yi = "application/x-topomation-entity-id", Te = class Te extends pt {
             const c = this._resolveRelatedId(n) ?? a.getAttribute("data-id") ?? void 0;
             if (!c || c === o)
               return this._activeDropTarget = void 0, this._dropIndicator = void 0, !0;
-            const l = a.getBoundingClientRect(), u = n.originalEvent, d = typeof (u == null ? void 0 : u.clientX) == "number" ? u.clientX : l.left + l.width / 2, h = typeof (u == null ? void 0 : u.clientY) == "number" ? u.clientY : l.top + l.height / 2, f = this.locations.find((y) => y.id === o), p = (f == null ? void 0 : f.parent_id) ?? null, m = Ki(l, d, h, c === p);
+            const l = a.getBoundingClientRect(), u = n.originalEvent, d = typeof (u == null ? void 0 : u.clientX) == "number" ? u.clientX : l.left + l.width / 2, h = typeof (u == null ? void 0 : u.clientY) == "number" ? u.clientY : l.top + l.height / 2, _ = this.locations.find((y) => y.id === o), p = (_ == null ? void 0 : _.parent_id) ?? null, m = Ki(l, d, h, c === p);
             this._activeDropTarget = { relatedId: c, zone: m }, this._updateDropIndicator(o, a, m);
           } else
             this._activeDropTarget = void 0, this._dropIndicator = void 0;
@@ -2646,7 +2646,7 @@ const Yi = "application/x-topomation-entity-id", Te = class Te extends pt {
     const t = Vi(this._visibleTreeLocations(), this._expandedIds), e = this._computeOccupancyStatusByLocation(), i = this._computeLockStateByLocation();
     return g`
       <div class="tree-list">
-        ${fe(
+        ${_e(
       t,
       (n) => `${this.version}:${n.location.id}:${n.depth}`,
       (n) => this._renderItem(
@@ -2668,7 +2668,7 @@ const Yi = "application/x-topomation-entity-id", Te = class Te extends pt {
     `;
   }
   _renderItem(t, e, i) {
-    const { location: n, depth: o, hasChildren: a, isExpanded: r } = t, c = this.selectedId === n.id, l = this._editingId === n.id, u = o * 24, d = C(n), h = n.is_explicit_root ? "root" : d, f = n.is_explicit_root ? "home root" : d, p = i.isLocked ? "mdi:lock" : "mdi:lock-open-variant-outline", _ = i.isLocked ? i.lockedBy.length ? `Locked (${i.lockedBy.map((w) => yi(w)).join(", ")})` : "Locked" : "Unlocked", m = this._isEffectivelyOccupied(n), y = "mdi:home-switch-outline", b = m ? "Set vacant" : "Set occupied", A = Yo({
+    const { location: n, depth: o, hasChildren: a, isExpanded: r } = t, c = this.selectedId === n.id, l = this._editingId === n.id, u = o * 24, d = C(n), h = n.is_explicit_root ? "root" : d, _ = n.is_explicit_root ? "home root" : d, p = i.isLocked ? "mdi:lock" : "mdi:lock-open-variant-outline", f = i.isLocked ? i.lockedBy.length ? `Locked (${i.lockedBy.map((w) => yi(w)).join(", ")})` : "Locked" : "Unlocked", m = this._isEffectivelyOccupied(n), y = "mdi:home-switch-outline", b = m ? "Set vacant" : "Set occupied", A = Yo({
       location: n,
       locations: this.locations,
       hass: this.hass,
@@ -2716,7 +2716,7 @@ const Yi = "application/x-topomation-entity-id", Te = class Te extends pt {
     }}
             >${n.name}</div>`}
 
-        <span class="type-badge ${h}">${f}</span>
+        <span class="type-badge ${h}">${_}</span>
 
         ${n.is_explicit_root || this.readOnly ? "" : g`
               <button
@@ -2728,7 +2728,7 @@ const Yi = "application/x-topomation-entity-id", Te = class Te extends pt {
               </button>
               <button
                 class="lock-btn ${i.isLocked ? "locked" : ""}"
-                title=${_}
+                title=${f}
                 @click=${(w) => this._handleLockToggle(w, n, i)}
               >
                 <ha-icon .icon=${p}></ha-icon>
@@ -3417,7 +3417,7 @@ function Ye(s, t, e) {
     off_trailing: s.off_trailing ?? o.off_trailing
   };
 }
-const fa = [
+const _a = [
   "on_occupied",
   "on_vacant",
   "on_dark",
@@ -3426,7 +3426,7 @@ const fa = [
 function Pn(s) {
   return typeof s == "boolean" ? s : void 0;
 }
-const _a = "topomation/actions/rules/list", ma = "topomation/actions/rules/create", ya = "topomation/actions/rules/delete";
+const fa = "topomation/actions/rules/list", ma = "topomation/actions/rules/create", ya = "topomation/actions/rules/delete";
 function va(s) {
   if (!s || typeof s != "object") return;
   const t = s;
@@ -3458,7 +3458,7 @@ function ci(s, t) {
       const n = Ai(i);
       n && e.add(n);
     }
-  return e.size === 0 && t && e.add(t), fa.filter((i) => e.has(i));
+  return e.size === 0 && t && e.add(t), _a.filter((i) => e.has(i));
 }
 function li(s) {
   return s[0] || "on_occupied";
@@ -3467,7 +3467,7 @@ function ba(s) {
   const t = s.includes("on_dark"), e = s.includes("on_bright");
   return t && !e ? "dark" : e && !t ? "bright" : "any";
 }
-function zn(s, t, e) {
+function Mn(s, t, e) {
   const i = String(t || "").trim().toLowerCase();
   return i === "any" || i === "dark" || i === "bright" ? i : e ? "dark" : ba(s);
 }
@@ -3524,7 +3524,7 @@ function xa(s) {
 async function pe(s, t, e) {
   try {
     const i = await s.callWS({
-      type: _a,
+      type: fa,
       location_id: t,
       ...e ? { entry_id: e } : {}
     });
@@ -3532,7 +3532,7 @@ async function pe(s, t, e) {
       return i.rules.map((n) => {
         const o = Ai(n.trigger_type), a = ci(n.trigger_types, o || void 0);
         if (a.length === 0) return null;
-        const r = li(a), c = !!n.require_dark, l = zn(
+        const r = li(a), c = !!n.require_dark, l = Mn(
           a,
           n.ambient_condition,
           c
@@ -3589,6 +3589,8 @@ async function Qi(s, t, e) {
       start_time: t.start_time,
       end_time: t.end_time,
       ...typeof r == "boolean" ? { run_on_startup: r } : {},
+      ...typeof t.user_named == "boolean" ? { user_named: t.user_named } : {},
+      ...t.daily_gating_enabled ? { daily_gating_enabled: !0 } : {},
       require_dark: !!t.require_dark,
       ...t.automation_id ? { automation_id: t.automation_id } : {},
       ...t.rule_uuid ? { rule_uuid: t.rule_uuid } : {},
@@ -3598,17 +3600,17 @@ async function Qi(s, t, e) {
       const l = ci(
         c.rule.trigger_types,
         Ai(c.rule.trigger_type) || n
-      ), u = li(l), d = !!c.rule.require_dark, h = zn(
+      ), u = li(l), d = !!c.rule.require_dark, h = Mn(
         l,
         c.rule.ambient_condition,
         d
-      ), f = di(c.rule, u), p = f[0] || a;
+      ), _ = di(c.rule, u), p = _[0] || a;
       return {
         ...c.rule,
         trigger_type: u,
         trigger_types: l,
         rule_uuid: typeof c.rule.rule_uuid == "string" && c.rule.rule_uuid.trim().length > 0 ? c.rule.rule_uuid.trim() : t.rule_uuid,
-        actions: f,
+        actions: _,
         ambient_condition: h,
         action_entity_id: p == null ? void 0 : p.entity_id,
         action_service: p == null ? void 0 : p.service,
@@ -3866,9 +3868,17 @@ const Re = class Re extends pt {
     const t = this._locationType();
     return t === "floor" || t === "building" || t === "grounds" || t === "property";
   }
-  /** Tabs allowed on structural summary locations (no Appliances aggregate tab). */
+  /** Tabs allowed on structural summary locations (per ADR-HA-087: all action tabs). */
   _structuralInspectorTabSet() {
-    return /* @__PURE__ */ new Set(["detection", "ambient", "lighting", "media", "hvac"]);
+    return /* @__PURE__ */ new Set([
+      "detection",
+      "ambient",
+      "lighting",
+      "appliances",
+      "media",
+      "hvac",
+      "vacuum"
+    ]);
   }
   /** Integration-owned managed shadow HA area (device container); occupancy is derived from the tree. */
   _isManagedShadowAreaLocation() {
@@ -4230,7 +4240,7 @@ const Re = class Re extends pt {
   }
   _renderHeader() {
     if (!this.location) return "";
-    const t = this.location.ha_area_id, e = t ? "HA Area ID" : "Location ID", i = t || this.location.id, n = this._getLockState(), o = this._getOccupancyState(), a = this._treeAlignedOccupiedState(o), r = a === !0, c = a === !0 ? "Occupied" : a === !1 ? "Vacant" : "Unknown", l = this._resolveVacancyReason(o, a), u = this._resolveOccupiedReason(o, a), d = r ? u : l, h = o ? this._resolveVacantAt(o.attributes || {}, r) : void 0, f = h instanceof Date, p = r ? this._formatVacantAtLabel(h, this._isStructuralSummaryLocation()) : void 0, m = this._ambientSourceMethod(this._ambientReading) === "inherited_sensor" ? " (inherited)" : "", y = this._loadingAmbientReading ? "Ambient: loading..." : this._ambientReadingError ? "Ambient: unavailable" : `Ambient: ${this._formatAmbientLux(this._ambientReading)}${m}`;
+    const t = this.location.ha_area_id, e = t ? "HA Area ID" : "Location ID", i = t || this.location.id, n = this._getLockState(), o = this._getOccupancyState(), a = this._treeAlignedOccupiedState(o), r = a === !0, c = a === !0 ? "Occupied" : a === !1 ? "Vacant" : "Unknown", l = this._resolveVacancyReason(o, a), u = this._resolveOccupiedReason(o, a), d = r ? u : l, h = o ? this._resolveVacantAt(o.attributes || {}, r) : void 0, _ = h instanceof Date, p = r ? this._formatVacantAtLabel(h, this._isStructuralSummaryLocation()) : void 0, m = this._ambientSourceMethod(this._ambientReading) === "inherited_sensor" ? " (inherited)" : "", y = this._loadingAmbientReading ? "Ambient: loading..." : this._ambientReadingError ? "Ambient: unavailable" : `Ambient: ${this._formatAmbientLux(this._ambientReading)}${m}`;
     return g`
       <div class="header">
         <div class="header-main">
@@ -4257,7 +4267,7 @@ const Re = class Re extends pt {
               </span>
               ${r ? g`
                     <span class="header-vacant-at" data-testid="header-vacant-at">
-                      ${f ? g`Vacant at ${p}` : p}
+                      ${_ ? g`Vacant at ${p}` : p}
                     </span>
                   ` : ""}
             </div>
@@ -4301,6 +4311,12 @@ const Re = class Re extends pt {
           Lighting
         </button>
         <button
+          class="tab ${this._activeTab === "appliances" ? "active" : ""}"
+          @click=${() => this._handleTabChange("appliances")}
+        >
+          Appliances
+        </button>
+        <button
           class="tab ${this._activeTab === "media" ? "active" : ""}"
           @click=${() => this._handleTabChange("media")}
         >
@@ -4311,6 +4327,12 @@ const Re = class Re extends pt {
           @click=${() => this._handleTabChange("hvac")}
         >
           HVAC
+        </button>
+        <button
+          class="tab ${this._activeTab === "vacuum" ? "active" : ""}"
+          @click=${() => this._handleTabChange("vacuum")}
+        >
+          Vacuum
         </button>
       </div>
     `;
@@ -4359,6 +4381,12 @@ const Re = class Re extends pt {
         >
           HVAC
         </button>
+        <button
+          class="tab ${this._activeTab === "vacuum" ? "active" : ""}"
+          @click=${() => this._handleTabChange("vacuum")}
+        >
+          Vacuum
+        </button>
       </div>
     `;
   }
@@ -4378,7 +4406,7 @@ const Re = class Re extends pt {
     });
     return g`
       <div class="tab-content">
-        ${t === "detection" ? g`${i}${this._renderOccupancyTab()} ${this._renderAdvancedTab()}` : t === "ambient" ? g`${n}${this._renderAmbientTab()}` : t === "lighting" ? this._renderDeviceAutomationTab("lighting") : t === "appliances" ? this._renderDeviceAutomationTab("appliances") : t === "media" ? this._renderDeviceAutomationTab("media") : t === "hvac" ? this._renderDeviceAutomationTab("hvac") : ""}
+        ${t === "detection" ? g`${i}${this._renderOccupancyTab()} ${this._renderAdvancedTab()}` : t === "ambient" ? g`${n}${this._renderAmbientTab()}` : t === "lighting" ? this._renderDeviceAutomationTab("lighting") : t === "appliances" ? this._renderDeviceAutomationTab("appliances") : t === "media" ? this._renderDeviceAutomationTab("media") : t === "hvac" ? this._renderDeviceAutomationTab("hvac") : t === "vacuum" ? this._renderDeviceAutomationTab("vacuum") : ""}
       </div>
     `;
   }
@@ -4450,9 +4478,9 @@ const Re = class Re extends pt {
             var l, u, d;
             const n = (l = i == null ? void 0 : i.data) == null ? void 0 : l.entity_id, o = (u = i == null ? void 0 : i.data) == null ? void 0 : u.new_state, a = (d = i == null ? void 0 : i.data) == null ? void 0 : d.old_state, r = (o == null ? void 0 : o.attributes) || {}, c = (a == null ? void 0 : a.attributes) || {};
             if (typeof n == "string" && n.startsWith("binary_sensor.")) {
-              const h = typeof r.location_id == "string" ? r.location_id : void 0, f = typeof c.location_id == "string" ? c.location_id : void 0, p = h || f, _ = r.device_class === "occupancy", m = c.device_class === "occupancy";
-              if (p && (_ || m)) {
-                if (o && _)
+              const h = typeof r.location_id == "string" ? r.location_id : void 0, _ = typeof c.location_id == "string" ? c.location_id : void 0, p = h || _, f = r.device_class === "occupancy", m = c.device_class === "occupancy";
+              if (p && (f || m)) {
+                if (o && f)
                   this._liveOccupancyStateByLocation = {
                     ...this._liveOccupancyStateByLocation,
                     [p]: o
@@ -4647,24 +4675,24 @@ const Re = class Re extends pt {
     return t != null && t.why ? t.why : "No recent occupancy events are logged yet.";
   }
   _isAmbientStateChangeRelevant(t, e, i) {
-    var d, h, f, p;
+    var d, h, _, p;
     if (!this.location) return !1;
     const n = this._getAmbientConfig(), o = String(((d = this._ambientReading) == null ? void 0 : d.source_sensor) || "").trim(), a = String(n.lux_sensor || "").trim(), r = String(((h = this._ambientReading) == null ? void 0 : h.fallback_method) || "").toLowerCase(), c = !!n.fallback_to_sun || r.includes("sun");
     if (t === "sun.sun" && c) return !0;
     if (!t.startsWith("sensor.")) return !1;
-    const l = e || i || ((p = (f = this.hass) == null ? void 0 : f.states) == null ? void 0 : p[t]);
+    const l = e || i || ((p = (_ = this.hass) == null ? void 0 : _.states) == null ? void 0 : p[t]);
     if (!this._isLuxSensorEntityForState(t, l)) return !1;
     if (t === o || t === a || (this.location.entity_ids || []).includes(t)) return !0;
     const u = this._resolveEntityAreaId(t, l);
     if (u) {
-      for (const _ of this._ambientLuxEnumerationHaAreaIds())
-        if (u === _) return !0;
+      for (const f of this._ambientLuxEnumerationHaAreaIds())
+        if (u === f) return !0;
     }
     return !!(this._deviceEnumerationExtraEntityIds() || []).includes(t);
   }
   _renderAmbientSection() {
     if (!this.location) return "";
-    const t = this._getAmbientConfig(), e = this._ambientReading, i = this._ambientSensorCandidates(), n = this._ambientSourceMethod(e), o = this._ambientSourceMethodLabel(n), a = (e == null ? void 0 : e.source_sensor) || "-", r = typeof (e == null ? void 0 : e.source_location) == "string" && e.source_location ? this._locationName(e.source_location) : "-", c = this._ambientStateLabel(e), l = Math.max(0, Number(t.dark_threshold) || 0), u = Math.max(l + 1, Number(t.bright_threshold) || l + 1), d = this._selectedAmbientSensorId(t, e), h = "Inherit from parent", f = this._savingAmbientConfig;
+    const t = this._getAmbientConfig(), e = this._ambientReading, i = this._ambientSensorCandidates(), n = this._ambientSourceMethod(e), o = this._ambientSourceMethodLabel(n), a = (e == null ? void 0 : e.source_sensor) || "-", r = typeof (e == null ? void 0 : e.source_location) == "string" && e.source_location ? this._locationName(e.source_location) : "-", c = this._ambientStateLabel(e), l = Math.max(0, Number(t.dark_threshold) || 0), u = Math.max(l + 1, Number(t.bright_threshold) || l + 1), d = this._selectedAmbientSensorId(t, e), h = "Inherit from parent", _ = this._savingAmbientConfig;
     return g`
       <div class="card-section" data-testid="ambient-section">
         <div class="section-title-row">
@@ -4701,14 +4729,14 @@ const Re = class Re extends pt {
           </div>
           <div class="config-value">
             <select
-              ?disabled=${f}
+              ?disabled=${_}
               data-testid="ambient-lux-sensor-select"
               @change=${(p) => {
-      const _ = p.target.value.trim();
+      const f = p.target.value.trim();
       this._setAmbientDraft({
         ...t,
-        lux_sensor: _ || null,
-        inherit_from_parent: !_
+        lux_sensor: f || null,
+        inherit_from_parent: !f
       }), this._scheduleAmbientReadingReload();
     }}
             >
@@ -4734,14 +4762,14 @@ const Re = class Re extends pt {
               step="1"
               class="input"
               .value=${String(l)}
-              ?disabled=${f}
+              ?disabled=${_}
               data-testid="ambient-dark-threshold"
               @change=${(p) => {
-      const _ = Math.max(0, Number(p.target.value) || 0);
+      const f = Math.max(0, Number(p.target.value) || 0);
       this._setAmbientDraft({
         ...t,
-        dark_threshold: _,
-        bright_threshold: Math.max(_ + 1, Number(t.bright_threshold) || _ + 1)
+        dark_threshold: f,
+        bright_threshold: Math.max(f + 1, Number(t.bright_threshold) || f + 1)
       }), this._scheduleAmbientReadingReload();
     }}
             />
@@ -4760,16 +4788,16 @@ const Re = class Re extends pt {
               step="1"
               class="input"
               .value=${String(u)}
-              ?disabled=${f}
+              ?disabled=${_}
               data-testid="ambient-bright-threshold"
               @change=${(p) => {
-      const _ = Math.max(
+      const f = Math.max(
         l + 1,
         Number(p.target.value) || l + 1
       );
       this._setAmbientDraft({
         ...t,
-        bright_threshold: _
+        bright_threshold: f
       }), this._scheduleAmbientReadingReload();
     }}
             />
@@ -4786,7 +4814,7 @@ const Re = class Re extends pt {
               type="checkbox"
               class="switch-input"
               .checked=${!!t.fallback_to_sun}
-              ?disabled=${f}
+              ?disabled=${_}
               data-testid="ambient-fallback-to-sun-toggle"
               @change=${(p) => {
       this._setAmbientDraft({
@@ -4808,7 +4836,7 @@ const Re = class Re extends pt {
               type="checkbox"
               class="switch-input"
               .checked=${!!t.assume_dark_on_error}
-              ?disabled=${f}
+              ?disabled=${_}
               data-testid="ambient-assume-dark-on-error-toggle"
               @change=${(p) => {
       this._setAmbientDraft({
@@ -5172,7 +5200,7 @@ const Re = class Re extends pt {
             ` : ""}
         ${t.length === 0 ? g`<div class="adjacency-empty">No eligible direct child areas found on ${o}.</div>` : g`
               <div class="linked-location-list">
-                ${e.length === 0 ? g`<div class="adjacency-empty">No occupancy groups on ${o} yet.</div>` : fe(
+                ${e.length === 0 ? g`<div class="adjacency-empty">No occupancy groups on ${o} yet.</div>` : _e(
       e,
       (c) => c.id,
       (c, l) => g`
@@ -5201,11 +5229,11 @@ const Re = class Re extends pt {
                                       .checked=${d}
                                       ?disabled=${this._savingOccupancyDraft}
                                       @change=${(h) => {
-          const f = h.target;
+          const _ = h.target;
           this._toggleFloorGroupMembership(
             c.id,
             u.id,
-            f.checked
+            _.checked
           );
         }}
                                     />
@@ -5780,58 +5808,58 @@ const Re = class Re extends pt {
   _renderAreaSensorList(t) {
     if (!this.location) return "";
     const e = !!this.location.ha_area_id, i = this._workingSources(t), n = /* @__PURE__ */ new Map();
-    i.forEach((_, m) => n.set(this._sourceKeyFromSource(_), m));
+    i.forEach((f, m) => n.set(this._sourceKeyFromSource(f), m));
     const o = new Set(this.location.entity_ids || []);
     if (this.location.ha_area_id)
-      for (const _ of this._entitiesForArea(this.location.ha_area_id))
-        o.add(_);
+      for (const f of this._entitiesForArea(this.location.ha_area_id))
+        o.add(f);
     const c = [...o].sort(
-      (_, m) => this._entityName(_).localeCompare(this._entityName(m))
-    ).filter((_) => this._isCoreAreaSourceEntity(_)).flatMap(
-      (_) => this._candidateItemsForEntity(_)
-    ), l = c, u = new Set(c.map((_) => _.key)), d = i.filter((_) => !u.has(this._sourceKeyFromSource(_))).map((_) => ({
-      key: this._sourceKeyFromSource(_),
-      entityId: _.entity_id,
-      signalKey: this._normalizedSignalKeyForSource(_)
-    })), h = [...l, ...d].sort((_, m) => {
-      const y = n.has(_.key) ? 1 : 0, b = n.has(m.key) ? 1 : 0;
+      (f, m) => this._entityName(f).localeCompare(this._entityName(m))
+    ).filter((f) => this._isCoreAreaSourceEntity(f)).flatMap(
+      (f) => this._candidateItemsForEntity(f)
+    ), l = c, u = new Set(c.map((f) => f.key)), d = i.filter((f) => !u.has(this._sourceKeyFromSource(f))).map((f) => ({
+      key: this._sourceKeyFromSource(f),
+      entityId: f.entity_id,
+      signalKey: this._normalizedSignalKeyForSource(f)
+    })), h = [...l, ...d].sort((f, m) => {
+      const y = n.has(f.key) ? 1 : 0, b = n.has(m.key) ? 1 : 0;
       if (y !== b)
         return b - y;
-      const A = this._entityName(_.entityId).localeCompare(this._entityName(m.entityId));
+      const A = this._entityName(f.entityId).localeCompare(this._entityName(m.entityId));
       if (A !== 0) return A;
-      const w = this._signalSortWeight(_.signalKey) - this._signalSortWeight(m.signalKey);
+      const w = this._signalSortWeight(f.signalKey) - this._signalSortWeight(m.signalKey);
       if (w !== 0) return w;
-      const z = n.get(_.key), E = n.get(m.key);
-      return z !== void 0 && E !== void 0 ? z - E : z !== void 0 ? -1 : E !== void 0 ? 1 : 0;
-    }), f = [], p = /* @__PURE__ */ new Map();
-    for (const _ of h) {
-      const m = this._sourceCardGroupKey(_), y = p.get(m);
+      const M = n.get(f.key), E = n.get(m.key);
+      return M !== void 0 && E !== void 0 ? M - E : M !== void 0 ? -1 : E !== void 0 ? 1 : 0;
+    }), _ = [], p = /* @__PURE__ */ new Map();
+    for (const f of h) {
+      const m = this._sourceCardGroupKey(f), y = p.get(m);
       if (y) {
-        y.items.push(_);
+        y.items.push(f);
         continue;
       }
-      const b = { key: m, items: [_] };
-      p.set(m, b), f.push(b);
+      const b = { key: m, items: [f] };
+      p.set(m, b), _.push(b);
     }
-    return f.sort((_, m) => {
+    return _.sort((f, m) => {
       var B, D;
-      const y = (R) => R.items.some((O) => n.has(O.key)), b = y(_), A = y(m);
+      const y = (R) => R.items.some((O) => n.has(O.key)), b = y(f), A = y(m);
       if (b !== A)
         return b ? -1 : 1;
-      const w = ((B = _.items[0]) == null ? void 0 : B.entityId) ?? "", z = ((D = m.items[0]) == null ? void 0 : D.entityId) ?? "", E = this._entityName(w).localeCompare(this._entityName(z));
-      return E !== 0 ? E : _.key.localeCompare(m.key);
-    }), f.length ? g`
+      const w = ((B = f.items[0]) == null ? void 0 : B.entityId) ?? "", M = ((D = m.items[0]) == null ? void 0 : D.entityId) ?? "", E = this._entityName(w).localeCompare(this._entityName(M));
+      return E !== 0 ? E : f.key.localeCompare(m.key);
+    }), _.length ? g`
       <div class="candidate-list">
-        ${fe(f, (_) => _.key, (_) => {
-      if (this._isIntegratedLightGroup(_.items))
-        return this._renderIntegratedLightCard(t, _.items, i, n);
-      if (this._isIntegratedMediaGroup(_.items))
-        return this._renderIntegratedMediaCard(t, _.items, i, n);
-      const m = _.items.some((y) => n.has(y.key));
+        ${_e(_, (f) => f.key, (f) => {
+      if (this._isIntegratedLightGroup(f.items))
+        return this._renderIntegratedLightCard(t, f.items, i, n);
+      if (this._isIntegratedMediaGroup(f.items))
+        return this._renderIntegratedMediaCard(t, f.items, i, n);
+      const m = f.items.some((y) => n.has(y.key));
       return g`
             <div class="source-card ${m ? "enabled" : ""}">
-              ${fe(_.items, (y) => y.key, (y, b) => {
-        const A = n.get(y.key), w = A !== void 0, z = w ? i[A] : void 0, E = w && z ? z : void 0, B = this._modeOptionsForEntity(y.entityId);
+              ${_e(f.items, (y) => y.key, (y, b) => {
+        const A = n.get(y.key), w = A !== void 0, M = w ? i[A] : void 0, E = w && M ? M : void 0, B = this._modeOptionsForEntity(y.entityId);
         return g`
                   <div class=${`source-card-item${b > 0 ? " grouped" : ""}`}>
                     <div class="candidate-item">
@@ -5879,7 +5907,7 @@ const Re = class Re extends pt {
                         ${(this._isMediaEntity(y.entityId) || y.entityId.startsWith("light.")) && y.signalKey ? g`<div class="candidate-submeta">Activity trigger: ${this._mediaSignalLabel(y.signalKey)}</div>` : ""}
                       </div>
                     </div>
-                    ${w && z ? this._renderSourceEditor(t, z, A) : ""}
+                    ${w && M ? this._renderSourceEditor(t, M, A) : ""}
                   </div>
                 `;
       })}
@@ -5896,10 +5924,10 @@ const Re = class Re extends pt {
       `;
   }
   _renderIntegratedLightCard(t, e, i, n) {
-    var f;
-    const o = (f = e[0]) == null ? void 0 : f.entityId;
+    var _;
+    const o = (_ = e[0]) == null ? void 0 : _.entityId;
     if (!o) return "";
-    const a = [...e].filter((p) => this._isLightSignalKey(p.signalKey)).sort((p, _) => this._signalSortWeight(p.signalKey) - this._signalSortWeight(_.signalKey));
+    const a = [...e].filter((p) => this._isLightSignalKey(p.signalKey)).sort((p, f) => this._signalSortWeight(p.signalKey) - this._signalSortWeight(f.signalKey));
     if (a.length === 0) return "";
     const r = a.filter((p) => n.has(p.key)), c = r.length > 0, l = r.find((p) => p.signalKey === "power") || r[0] || a[0], u = n.get(l.key), d = u !== void 0 ? i[u] : void 0, h = this._modeOptionsForEntity(o);
     return g`
@@ -5914,8 +5942,8 @@ const Re = class Re extends pt {
                 .checked=${c}
                 @change=${(p) => {
       var m;
-      const _ = p.target.checked;
-      if (_ && !c) {
+      const f = p.target.checked;
+      if (f && !c) {
         const y = ((m = a.find((A) => A.signalKey === "power")) == null ? void 0 : m.signalKey) || a[0].signalKey;
         this._addSourceWithDefaults(o, t, {
           resetExternalPicker: !1,
@@ -5923,7 +5951,7 @@ const Re = class Re extends pt {
         }) || this.requestUpdate();
         return;
       }
-      !_ && c && this._removeSourcesByKey(
+      !f && c && this._removeSourcesByKey(
         a.map((y) => y.key),
         t
       );
@@ -5945,7 +5973,7 @@ const Re = class Re extends pt {
                             class="inline-mode-select"
                             .value=${h.some((p) => p.value === d.mode) ? d.mode : h[0].value}
                             @change=${(p) => {
-      const _ = p.target.value, m = this.hass.states[o], y = Ye(d, _, m);
+      const f = p.target.value, m = this.hass.states[o], y = Ye(d, f, m);
       this._updateSourceDraft(t, u, {
         ...y,
         entity_id: d.entity_id
@@ -5962,22 +5990,22 @@ const Re = class Re extends pt {
               <div class="candidate-submeta">Activity triggers</div>
               <div class="light-signal-toggles">
                 ${a.map((p) => {
-      const _ = n.has(p.key);
+      const f = n.has(p.key);
       return g`
                     <label class="light-signal-toggle">
                       <input
                         type="checkbox"
-                        .checked=${_}
+                        .checked=${f}
                         @change=${(m) => {
         const y = m.target.checked;
-        if (y && !_) {
+        if (y && !f) {
           this._addSourceWithDefaults(o, t, {
             resetExternalPicker: !1,
             signalKey: p.signalKey
           }) || this.requestUpdate();
           return;
         }
-        !y && _ && this._removeSourcesByKey([p.key], t);
+        !y && f && this._removeSourcesByKey([p.key], t);
       }}
                       />
                       <span>${this._mediaSignalLabel(p.signalKey)}</span>
@@ -5993,10 +6021,10 @@ const Re = class Re extends pt {
     `;
   }
   _renderIntegratedMediaCard(t, e, i, n) {
-    var f;
-    const o = (f = e[0]) == null ? void 0 : f.entityId;
+    var _;
+    const o = (_ = e[0]) == null ? void 0 : _.entityId;
     if (!o) return "";
-    const a = [...e].filter((p) => this._isMediaSignalKey(p.signalKey)).sort((p, _) => this._signalSortWeight(p.signalKey) - this._signalSortWeight(_.signalKey));
+    const a = [...e].filter((p) => this._isMediaSignalKey(p.signalKey)).sort((p, f) => this._signalSortWeight(p.signalKey) - this._signalSortWeight(f.signalKey));
     if (a.length === 0) return "";
     const r = a.filter((p) => n.has(p.key)), c = r.length > 0, l = r.find((p) => p.signalKey === "playback") || r[0] || a[0], u = n.get(l.key), d = u !== void 0 ? i[u] : void 0, h = this._modeOptionsForEntity(o);
     return g`
@@ -6011,8 +6039,8 @@ const Re = class Re extends pt {
                 .checked=${c}
                 @change=${(p) => {
       var m;
-      const _ = p.target.checked;
-      if (_ && !c) {
+      const f = p.target.checked;
+      if (f && !c) {
         const y = ((m = a.find((A) => A.signalKey === "playback")) == null ? void 0 : m.signalKey) || a[0].signalKey;
         this._addSourceWithDefaults(o, t, {
           resetExternalPicker: !1,
@@ -6020,7 +6048,7 @@ const Re = class Re extends pt {
         }) || this.requestUpdate();
         return;
       }
-      !_ && c && this._removeSourcesByKey(
+      !f && c && this._removeSourcesByKey(
         a.map((y) => y.key),
         t
       );
@@ -6042,7 +6070,7 @@ const Re = class Re extends pt {
                             class="inline-mode-select"
                             .value=${h.some((p) => p.value === d.mode) ? d.mode : h[0].value}
                             @change=${(p) => {
-      const _ = p.target.value, m = this.hass.states[o], y = Ye(d, _, m);
+      const f = p.target.value, m = this.hass.states[o], y = Ye(d, f, m);
       this._updateSourceDraft(t, u, {
         ...y,
         entity_id: d.entity_id
@@ -6059,22 +6087,22 @@ const Re = class Re extends pt {
               <div class="candidate-submeta">Activity triggers</div>
               <div class="light-signal-toggles">
                 ${a.map((p) => {
-      const _ = n.has(p.key);
+      const f = n.has(p.key);
       return g`
                     <label class="light-signal-toggle">
                       <input
                         type="checkbox"
-                        .checked=${_}
+                        .checked=${f}
                         @change=${(m) => {
         const y = m.target.checked;
-        if (y && !_) {
+        if (y && !f) {
           this._addSourceWithDefaults(o, t, {
             resetExternalPicker: !1,
             signalKey: p.signalKey
           }) || this.requestUpdate();
           return;
         }
-        !y && _ && this._removeSourcesByKey([p.key], t);
+        !y && f && this._removeSourcesByKey([p.key], t);
       }}
                       />
                       <span>${this._mediaSignalLabel(p.signalKey)}</span>
@@ -6090,8 +6118,8 @@ const Re = class Re extends pt {
     `;
   }
   _renderExternalSourceComposer(t) {
-    var h, f;
-    const e = this._availableSourceAreas(), i = this._isSiblingAreaSourceScope(), n = ((h = this.location) == null ? void 0 : h.ha_area_id) || "", o = !!n, a = this._externalAreaId || "", r = a ? a === "__this_area__" ? n ? this._entitiesForArea(n) : [] : this._entitiesForArea(a) : [], c = new Set(this._workingSources(t).map((p) => this._sourceKeyFromSource(p))), l = this._externalEntityId || "", u = i ? "Sibling Area" : (f = this.location) != null && f.ha_area_id ? "Other Area" : "Source Area", d = i ? "Select sibling area..." : "Select area...";
+    var h, _;
+    const e = this._availableSourceAreas(), i = this._isSiblingAreaSourceScope(), n = ((h = this.location) == null ? void 0 : h.ha_area_id) || "", o = !!n, a = this._externalAreaId || "", r = a ? a === "__this_area__" ? n ? this._entitiesForArea(n) : [] : this._entitiesForArea(a) : [], c = new Set(this._workingSources(t).map((p) => this._sourceKeyFromSource(p))), l = this._externalEntityId || "", u = i ? "Sibling Area" : (_ = this.location) != null && _.ha_area_id ? "Other Area" : "Source Area", d = i ? "Select sibling area..." : "Select area...";
     return g`
       <div class="external-composer is-dialog">
         ${i ? g`<div class="runtime-note">Sibling areas on this floor are available, plus all compatible entities in this area.</div>` : ""}
@@ -6107,8 +6135,8 @@ const Re = class Re extends pt {
             data-testid="external-source-area-select"
             .value=${a}
             @change=${(p) => {
-      const _ = p.target.value;
-      this._externalAreaId = _, this._externalEntityId = "", this.requestUpdate();
+      const f = p.target.value;
+      this._externalAreaId = f, this._externalEntityId = "", this.requestUpdate();
     }}
           >
             <option value="">${d}</option>
@@ -6233,8 +6261,8 @@ const Re = class Re extends pt {
     ` : "";
   }
   _renderWiabSection(t) {
-    var u, d, h, f;
-    const e = this._getWiabConfig(t), i = this._wiabInteriorCandidates(), n = this._wiabDoorCandidates(), o = ((u = this.location) == null ? void 0 : u.ha_area_id) || "", a = o ? ((f = (h = (d = this.hass) == null ? void 0 : d.areas) == null ? void 0 : h[o]) == null ? void 0 : f.name) || o : "", r = !!o && !this._wiabShowAllEntities, c = e.preset || "off";
+    var u, d, h, _;
+    const e = this._getWiabConfig(t), i = this._wiabInteriorCandidates(), n = this._wiabDoorCandidates(), o = ((u = this.location) == null ? void 0 : u.ha_area_id) || "", a = o ? ((_ = (h = (d = this.hass) == null ? void 0 : d.areas) == null ? void 0 : h[o]) == null ? void 0 : _.name) || o : "", r = !!o && !this._wiabShowAllEntities, c = e.preset || "off";
     return g`
       <div class="card-section">
         <div class="section-title">
@@ -6254,14 +6282,14 @@ const Re = class Re extends pt {
               data-testid="wiab-preset-select"
               .value=${c}
               @change=${(p) => {
-      const _ = this._normalizeWiabPreset(
+      const f = this._normalizeWiabPreset(
         p.target.value
-      ), m = this._defaultWiabTimeouts(_);
+      ), m = this._defaultWiabTimeouts(f);
       this._setOccupancyDraft({
         ...t,
         wiab: {
           ...e,
-          preset: _,
+          preset: f,
           hold_timeout_sec: m.hold_timeout_sec,
           release_timeout_sec: m.release_timeout_sec
         }
@@ -6342,8 +6370,8 @@ const Re = class Re extends pt {
                       max="86400"
                       .value=${String(e.hold_timeout_sec ?? 0)}
                       @change=${(p) => {
-      const _ = Number(p.target.value);
-      this._updateWiabValue(t, "hold_timeout_sec", _);
+      const f = Number(p.target.value);
+      this._updateWiabValue(t, "hold_timeout_sec", f);
     }}
                     />
                   </div>
@@ -6357,8 +6385,8 @@ const Re = class Re extends pt {
                       max="86400"
                       .value=${String(e.release_timeout_sec ?? 0)}
                       @change=${(p) => {
-      const _ = Number(p.target.value);
-      this._updateWiabValue(t, "release_timeout_sec", _);
+      const f = Number(p.target.value);
+      this._updateWiabValue(t, "release_timeout_sec", f);
     }}
                     />
                   </div>
@@ -6523,7 +6551,7 @@ const Re = class Re extends pt {
     return ["door", "garage_door", "opening", "window"].includes(o);
   }
   _renderSourceEditor(t, e, i) {
-    const n = e, o = this._eventLabelsForSource(e), a = this._sourceKeyFromSource(e), r = this._supportsOffBehavior(e), c = this._isStateHeldPresenceSource(n), l = t.default_timeout || 300, u = this._onTimeoutMemory[a], d = n.on_timeout === null ? u ?? l : n.on_timeout ?? u ?? l, h = Math.max(1, Math.min(120, Math.round(d / 60))), f = n.off_trailing ?? 0, p = Math.max(0, Math.min(120, Math.round(f / 60)));
+    const n = e, o = this._eventLabelsForSource(e), a = this._sourceKeyFromSource(e), r = this._supportsOffBehavior(e), c = this._isStateHeldPresenceSource(n), l = t.default_timeout || 300, u = this._onTimeoutMemory[a], d = n.on_timeout === null ? u ?? l : n.on_timeout ?? u ?? l, h = Math.max(1, Math.min(120, Math.round(d / 60))), _ = n.off_trailing ?? 0, p = Math.max(0, Math.min(120, Math.round(_ / 60)));
     return g`
       <div class="source-editor">
         ${(this._isMediaEntity(e.entity_id) || e.entity_id.startsWith("light.")) && e.signal_key ? g`<div class="media-signals">Trigger signal: ${this._mediaSignalLabel(e.signal_key)} (${this._signalDescription(e.signal_key)}).</div>` : ""}
@@ -6544,10 +6572,10 @@ const Re = class Re extends pt {
             <select
               id="source-on-event-${i}"
               .value=${n.on_event || "trigger"}
-              @change=${(_) => {
+              @change=${(f) => {
       this._updateSourceDraft(t, i, {
         ...n,
-        on_event: _.target.value
+        on_event: f.target.value
       });
     }}
             >
@@ -6572,8 +6600,8 @@ const Re = class Re extends pt {
                       step="1"
                       .value=${String(h)}
                       ?disabled=${n.on_timeout === null}
-                      @input=${(_) => {
-      const m = Number(_.target.value) || 1;
+                      @input=${(f) => {
+      const m = Number(f.target.value) || 1;
       this._onTimeoutMemory = {
         ...this._onTimeoutMemory,
         [a]: m * 60
@@ -6586,8 +6614,8 @@ const Re = class Re extends pt {
                       max="120"
                       .value=${String(h)}
                       ?disabled=${n.on_timeout === null}
-                      @change=${(_) => {
-      const m = Math.max(1, Math.min(120, Number(_.target.value) || 1));
+                      @change=${(f) => {
+      const m = Math.max(1, Math.min(120, Number(f.target.value) || 1));
       this._onTimeoutMemory = {
         ...this._onTimeoutMemory,
         [a]: m * 60
@@ -6600,8 +6628,8 @@ const Re = class Re extends pt {
                     <input
                       type="checkbox"
                       .checked=${n.on_timeout === null}
-                      @change=${(_) => {
-      const m = _.target.checked, y = this._onTimeoutMemory[a], b = h * 60, A = y ?? b;
+                      @change=${(f) => {
+      const m = f.target.checked, y = this._onTimeoutMemory[a], b = h * 60, A = y ?? b;
       m && (this._onTimeoutMemory = {
         ...this._onTimeoutMemory,
         [a]: n.on_timeout ?? A
@@ -6633,10 +6661,10 @@ const Re = class Re extends pt {
                   <select
                     id="source-off-event-${i}"
                     .value=${n.off_event || "none"}
-                    @change=${(_) => {
+                    @change=${(f) => {
       this._updateSourceDraft(t, i, {
         ...n,
-        off_event: _.target.value
+        off_event: f.target.value
       });
     }}
                   >
@@ -6656,8 +6684,8 @@ const Re = class Re extends pt {
                       step="1"
                       .value=${String(p)}
                       ?disabled=${(n.off_event || "none") !== "clear"}
-                      @input=${(_) => {
-      const m = Math.max(0, Math.min(120, Number(_.target.value) || 0));
+                      @input=${(f) => {
+      const m = Math.max(0, Math.min(120, Number(f.target.value) || 0));
       this._updateSourceDraft(t, i, { ...n, off_trailing: m * 60 });
     }}
                     />
@@ -6667,8 +6695,8 @@ const Re = class Re extends pt {
                       max="120"
                       .value=${String(p)}
                       ?disabled=${(n.off_event || "none") !== "clear"}
-                      @change=${(_) => {
-      const m = Math.max(0, Math.min(120, Number(_.target.value) || 0));
+                      @change=${(f) => {
+      const m = Math.max(0, Math.min(120, Number(f.target.value) || 0));
       this._updateSourceDraft(t, i, { ...n, off_trailing: m * 60 });
     }}
                     />
@@ -6946,7 +6974,7 @@ const Re = class Re extends pt {
   }
   _defaultActionServiceForTrigger(t, e) {
     const i = String(t || "").split(".", 1)[0], n = e === "on_vacant" || e === "on_bright";
-    return i === "media_player" ? n ? "media_stop" : "media_play" : n ? "turn_off" : "turn_on";
+    return i === "media_player" ? n ? "media_stop" : "media_play" : i === "switch" || i === "light" ? n ? "turn_off" : "turn_on" : i === "vacuum" ? e === "on_occupied" ? "pause" : "start" : n ? "turn_off" : "turn_on";
   }
   _actionSupportsOnlyIfOff(t, e) {
     return t.startsWith("light.") && e === "turn_on";
@@ -7047,6 +7075,14 @@ const Re = class Re extends pt {
         { value: "turn_off", label: "Turn off", service: "turn_off" },
         { value: "toggle", label: "Toggle", service: "toggle" }
       ];
+    if (n === "vacuum") {
+      const a = [
+        { value: "start", label: "Start", service: "start" },
+        { value: "pause", label: "Pause", service: "pause" },
+        { value: "return_to_base", label: "Return to dock", service: "return_to_base" }
+      ], r = this._defaultActionServiceForTrigger(i, e);
+      return a.sort((c, l) => c.service === r ? -1 : l.service === r ? 1 : 0);
+    }
     const o = this._defaultActionServiceForTrigger(i, e);
     return [
       { value: "turn_on", label: "Turn on", service: "turn_on" },
@@ -7079,13 +7115,14 @@ const Re = class Re extends pt {
     };
   }
   _actionDomainsForTab(t) {
-    return t === "lighting" ? ["light"] : t === "media" ? ["media_player"] : t === "appliances" ? ["fan", "switch"] : ["fan"];
+    return t === "lighting" ? ["light"] : t === "media" ? ["media_player"] : t === "appliances" ? ["fan", "switch"] : t === "vacuum" ? ["vacuum"] : ["fan"];
   }
   _tabForActionEntity(t) {
     const e = String(t || "").split(".", 1)[0];
     if (e === "light") return "lighting";
     if (e === "media_player") return "media";
     if (e === "switch") return "appliances";
+    if (e === "vacuum") return "vacuum";
     if (e === "fan")
       return this._climateDeviceLinkRevision, this._fanEntityLinkedToClimate(t) ? "hvac" : "appliances";
   }
@@ -7093,7 +7130,7 @@ const Re = class Re extends pt {
     var o, a;
     if (!((a = (o = this.hass) == null ? void 0 : o.states) == null ? void 0 : a[t])) return !1;
     const n = t.split(".", 1)[0];
-    return e ? e === "hvac" ? n !== "fan" ? !1 : (this._climateDeviceLinkRevision, this._fanEntityLinkedToClimate(t)) : e === "appliances" ? n === "switch" ? !0 : n === "fan" ? (this._climateDeviceLinkRevision, !this._fanEntityLinkedToClimate(t)) : !1 : this._actionDomainsForTab(e).includes(n) : n === "light" || n === "switch" || n === "media_player" || n === "fan";
+    return e ? e === "hvac" ? n !== "fan" ? !1 : (this._climateDeviceLinkRevision, this._fanEntityLinkedToClimate(t)) : e === "appliances" ? n === "switch" ? !0 : n === "fan" ? (this._climateDeviceLinkRevision, !this._fanEntityLinkedToClimate(t)) : !1 : this._actionDomainsForTab(e).includes(n) : n === "light" || n === "switch" || n === "media_player" || n === "fan" || n === "vacuum";
   }
   _actionRuleTargetEntities(t) {
     if (!this.location) return [];
@@ -7111,7 +7148,7 @@ const Re = class Re extends pt {
     const i = this._normalizeActionTriggerTypes(
       t.trigger_types,
       this._normalizeActionTriggerType(t.trigger_type)
-    ), n = this._primaryActionTriggerType(i), o = typeof t.id == "string" && t.id.trim().length > 0 ? t.id : `action_rule_${e + 1}`, r = this._actionTargetsForRule(t), c = r[0], l = c == null ? void 0 : c.entity_id, u = c == null ? void 0 : c.service, d = c == null ? void 0 : c.data, h = this._normalizeRuleUuid(t.rule_uuid, o);
+    ), n = this._primaryActionTriggerType(i), o = typeof t.id == "string" && t.id.trim().length > 0 ? t.id : `action_rule_${e + 1}`, r = this._actionTargetsForRule(t), c = r[0], l = c == null ? void 0 : c.entity_id, u = c == null ? void 0 : c.service, d = c == null ? void 0 : c.data, h = this._normalizeRuleUuid(t.rule_uuid, o), _ = typeof t.run_on_startup == "boolean" ? t.run_on_startup : this._isLightingActionRule(t);
     return {
       id: o,
       entity_id: typeof t.entity_id == "string" && t.entity_id.trim().length > 0 ? t.entity_id : `automation.${o}`,
@@ -7131,11 +7168,19 @@ const Re = class Re extends pt {
       time_condition_enabled: !!t.time_condition_enabled,
       start_time: this._normalizeActionTime(t.start_time, "18:00"),
       end_time: this._normalizeActionTime(t.end_time, "23:59"),
-      run_on_startup: !1,
+      run_on_startup: _,
       user_named: typeof t.user_named == "boolean" ? t.user_named : !1,
+      daily_gating_enabled: typeof t.daily_gating_enabled == "boolean" ? t.daily_gating_enabled : !1,
       enabled: t.enabled !== !1,
       require_dark: this._normalizeActionAmbientCondition(t.ambient_condition, i) === "dark"
     };
+  }
+  _isLightingActionRule(t) {
+    var n;
+    const e = this._actionTargetsForRule(t);
+    return String(
+      ((n = e[0]) == null ? void 0 : n.entity_id) || t.action_entity_id || ""
+    ).trim().startsWith("light.");
   }
   _workingActionRules() {
     return (this._actionRulesDraft ?? this._actionRules).map((e, i) => this._normalizeActionRule(e, i));
@@ -7236,23 +7281,23 @@ const Re = class Re extends pt {
   _rebuildActionRulesDraftAfterSync(t, e, i = {}) {
     const n = t.map((l, u) => this._normalizeActionRule(l, u)), o = this._actionRuleLookup(n), a = [...n], r = i.ruleIds || /* @__PURE__ */ new Set(), c = i.ruleUuids || /* @__PURE__ */ new Set();
     for (const [l, u] of e.entries()) {
-      const d = this._normalizeActionRule(u, l), h = String(d.id || "").trim(), f = this._normalizeRuleUuid(d.rule_uuid, h);
-      if (r.has(h) || c.has(f))
+      const d = this._normalizeActionRule(u, l), h = String(d.id || "").trim(), _ = this._normalizeRuleUuid(d.rule_uuid, h);
+      if (r.has(h) || c.has(_))
         continue;
-      const p = (h ? o.byId.get(h) : void 0) || (f ? o.byRuleUuid.get(f) : void 0);
+      const p = (h ? o.byId.get(h) : void 0) || (_ ? o.byRuleUuid.get(_) : void 0);
       if (!p) {
         a.push(d);
         continue;
       }
-      const _ = a.findIndex((m) => String(m.id || "") === String(p.id || ""));
-      _ < 0 || this._isActionRuleDirty(d, _, p) && (a[_] = this._normalizeActionRule(
+      const f = a.findIndex((m) => String(m.id || "") === String(p.id || ""));
+      f < 0 || this._isActionRuleDirty(d, f, p) && (a[f] = this._normalizeActionRule(
         {
           ...d,
           id: p.id,
           entity_id: p.entity_id,
           rule_uuid: p.rule_uuid
         },
-        _
+        f
       ));
     }
     this._actionRules = n, this._setActionRulesDraft(a);
@@ -7298,6 +7343,7 @@ const Re = class Re extends pt {
         end_time: "23:59",
         run_on_startup: !1,
         user_named: !1,
+        daily_gating_enabled: !1,
         enabled: !0
       };
       l.name = this._autoActionRuleName(l, e.length), this._setActionRulesDraft([...e, l]), this._showToast(`Draft ${t} rule added`, "success");
@@ -7322,18 +7368,18 @@ const Re = class Re extends pt {
           Object.prototype.hasOwnProperty.call(e, "trigger_type") ? this._normalizeActionTriggerType(e.trigger_type) : this._normalizeActionTriggerType(r.trigger_type)
         ), d = this._primaryActionTriggerType(u);
         if (r.trigger_type = d, r.trigger_types = u, !Object.prototype.hasOwnProperty.call(e, "ambient_condition")) {
-          const h = this._defaultActionAmbientConditionForTrigger(a), f = this._defaultActionAmbientConditionForTrigger(u);
-          r.ambient_condition = this._normalizeActionAmbientCondition(r.ambient_condition, a) === h ? f : this._normalizeActionAmbientCondition(r.ambient_condition, u);
+          const h = this._defaultActionAmbientConditionForTrigger(a), _ = this._defaultActionAmbientConditionForTrigger(u);
+          r.ambient_condition = this._normalizeActionAmbientCondition(r.ambient_condition, a) === h ? _ : this._normalizeActionAmbientCondition(r.ambient_condition, u);
         }
         !Object.prototype.hasOwnProperty.call(e, "action_service") && !Object.prototype.hasOwnProperty.call(e, "actions") && (c = c.map((h) => {
-          const f = this._defaultActionServiceForTrigger(h.entity_id, d), p = this._normalizeActionDataForRule(
+          const _ = this._defaultActionServiceForTrigger(h.entity_id, d), p = this._normalizeActionDataForRule(
             h.data,
             h.entity_id,
-            f
+            _
           );
           return {
             entity_id: h.entity_id,
-            service: f,
+            service: _,
             ...p ? { data: p } : {}
           };
         }));
@@ -7507,11 +7553,11 @@ const Re = class Re extends pt {
         }).filter(([l]) => l.length > 0)
       ), a = /* @__PURE__ */ new Set();
       for (const [l, u] of t.entries()) {
-        const d = this._normalizeActionRule(u, l), h = this._actionTargetsForRule(d), f = h[0];
-        if (!f) continue;
+        const d = this._normalizeActionRule(u, l), h = this._actionTargetsForRule(d), _ = h[0];
+        if (!_) continue;
         const p = n.get(String(d.id || "")) || o.get(
           this._normalizeRuleUuid(d.rule_uuid, d.id)
-        ), _ = this._ruleTabForEditing(d), m = this._effectiveAmbientConditionForRule(d, _), y = this._sanitizedTriggersForManagedSave(d, _), b = p ? String(p.id || "") : void 0, A = await Qi(
+        ), f = this._ruleTabForEditing(d), m = this._effectiveAmbientConditionForRule(d, f), y = this._sanitizedTriggersForManagedSave(d, f), b = p ? String(p.id || "") : void 0, A = await Qi(
           this.hass,
           {
             location: this.location,
@@ -7521,9 +7567,9 @@ const Re = class Re extends pt {
             trigger_type: y.trigger_type,
             trigger_types: y.trigger_types,
             actions: h,
-            action_entity_id: f.entity_id,
-            action_service: f.service,
-            action_data: f.data,
+            action_entity_id: _.entity_id,
+            action_service: _.service,
+            action_data: _.data,
             ambient_condition: m,
             must_be_occupied: d.must_be_occupied,
             time_condition_enabled: !!d.time_condition_enabled,
@@ -7603,8 +7649,9 @@ const Re = class Re extends pt {
           time_condition_enabled: !!n.time_condition_enabled,
           start_time: n.start_time,
           end_time: n.end_time,
-          run_on_startup: !1,
+          run_on_startup: l === "lighting" ? !!n.run_on_startup : !1,
           user_named: !!n.user_named,
+          daily_gating_enabled: !!n.daily_gating_enabled,
           require_dark: u === "dark"
         },
         this.entryId
@@ -7693,6 +7740,10 @@ const Re = class Re extends pt {
       icon: "mdi:speaker-wireless",
       label: "Media Rules",
       emptyMessage: "No media rules configured yet."
+    } : t === "vacuum" ? {
+      icon: "mdi:robot-vacuum",
+      label: "Vacuum Rules",
+      emptyMessage: "No vacuum rules configured yet."
     } : {
       icon: "mdi:thermostat",
       label: "HVAC Rules",
@@ -7865,15 +7916,15 @@ const Re = class Re extends pt {
     return c.length === 0 ? g`<div class="text-muted">No local lights found for this location.</div>` : g`
       <div class="dusk-light-actions" data-testid=${`action-rule-${t}-actions`}>
         ${c.map((l, u) => {
-      const d = r.get(l), h = !!d, f = this._isDimmableEntity(l), p = this._defaultActionServiceForTrigger(
+      const d = r.get(l), h = !!d, _ = this._isDimmableEntity(l), p = this._defaultActionServiceForTrigger(
         l,
         this._primaryActionTriggerType(
           this._normalizeActionTriggerTypes(e.trigger_types, e.trigger_type)
         )
-      ), _ = String((d == null ? void 0 : d.service) || p), m = this._normalizeActionDataForRule(d == null ? void 0 : d.data, l, _), y = this._normalizeActionBrightnessPct(
+      ), f = String((d == null ? void 0 : d.service) || p), m = this._normalizeActionDataForRule(d == null ? void 0 : d.data, l, f), y = this._normalizeActionBrightnessPct(
         m == null ? void 0 : m.brightness_pct,
         100
-      ), b = this._actionSupportsOnlyIfOff(l, _), A = b ? !!(d != null && d.only_if_off) : !1, w = h ? _ === "turn_off" ? "off" : _ === "toggle" ? "toggle" : "on" : p === "turn_off" ? "off" : "on", z = h && _ === "turn_off" ? 0 : y, E = (D) => {
+      ), b = this._actionSupportsOnlyIfOff(l, f), A = b ? !!(d != null && d.only_if_off) : !1, w = h ? f === "turn_off" ? "off" : f === "toggle" ? "toggle" : "on" : p === "turn_off" ? "off" : "on", M = h && f === "turn_off" ? 0 : y, E = (D) => {
         const R = a.map((X) => ({ ...X })), O = R.findIndex((X) => X.entity_id === l), W = O >= 0 ? { ...R[O] } : {
           service: p
         }, V = String(D.service ?? W.service ?? "").trim() || p, tt = this._normalizeActionDataForRule(
@@ -7909,7 +7960,7 @@ const Re = class Re extends pt {
         }
         E({
           service: p,
-          data: f && p === "turn_on" ? {
+          data: _ && p === "turn_on" ? {
             brightness_pct: y
           } : {}
         });
@@ -7919,7 +7970,7 @@ const Re = class Re extends pt {
                   <span>${this._entityName(l)}</span>
                   <code>${l}</code>
                 </div>
-                ${f ? g`
+                ${_ ? g`
                       <label class="dusk-level-control">
                         <input
                           type="range"
@@ -7927,7 +7978,7 @@ const Re = class Re extends pt {
                           max="100"
                           step="1"
                           class="dusk-level-slider"
-                          .value=${String(z)}
+                          .value=${String(M)}
                           ?disabled=${i || !h}
                           data-testid=${`action-rule-${t}-device-level-${u}`}
                           @input=${(D) => {
@@ -7948,7 +7999,7 @@ const Re = class Re extends pt {
         });
       }}
                         />
-                        <span class="dusk-level-value">${z}%</span>
+                        <span class="dusk-level-value">${M}%</span>
                       </label>
                       ${h && b ? g`
                             <div class="dusk-inline-option-row">
@@ -8078,6 +8129,26 @@ const Re = class Re extends pt {
       n,
       o
     )}
+
+      <div class="dusk-rule-section-title">Execution</div>
+      <div class="startup-inline" data-testid=${`action-rule-${t}-startup`}>
+        <label class="startup-inline-toggle">
+          <input
+            type="checkbox"
+            class="switch-input"
+            .checked=${!!e.run_on_startup}
+            ?disabled=${i}
+            data-testid=${`action-rule-${t}-run-on-startup`}
+            @change=${(a) => this._updateActionRule(t, {
+      run_on_startup: a.target.checked
+    })}
+          />
+          <span>Run on startup if conditions match</span>
+        </label>
+        <div class="startup-inline-help">
+          Useful when Home Assistant was offline during a sunrise, sunset, or lux threshold crossing.
+        </div>
+      </div>
     `;
   }
   _occupancyOnlyPickOccupancyTrigger(t, e) {
@@ -8153,10 +8224,10 @@ const Re = class Re extends pt {
         i,
         () => {
           if (r === h) return;
-          const f = this._defaultActionServiceForTrigger(h, a);
+          const _ = this._defaultActionServiceForTrigger(h, a);
           this._updateActionRule(t, {
             action_entity_id: h,
-            action_service: f,
+            action_service: _,
             action_data: {}
           });
         }
@@ -8180,14 +8251,14 @@ const Re = class Re extends pt {
         i,
         () => {
           if (u === h.value) return;
-          const f = this._actionServiceSelection(
+          const _ = this._actionServiceSelection(
             h.value,
             r,
             a
           );
           this._updateActionRule(t, {
-            action_service: f.service,
-            action_data: f.data || {}
+            action_service: _.service,
+            action_data: _.data || {}
           });
         }
       )
@@ -8209,12 +8280,12 @@ const Re = class Re extends pt {
                       .value=${String(this._mediaVolumePercent(c))}
                       ?disabled=${i}
                       @input=${(h) => {
-      const f = this._normalizeActionPercent(
+      const _ = this._normalizeActionPercent(
         h.target.value,
         30
       );
       this._updateActionRule(t, {
-        action_data: { volume_level: f / 100 }
+        action_data: { volume_level: _ / 100 }
       });
     }}
                     />
@@ -8237,9 +8308,9 @@ const Re = class Re extends pt {
     ), u = this._actionServiceOptionsForRule(c, r), d = this._actionServiceOptionValue(
       i.action_service,
       l
-    ), h = c.startsWith("fan.") && d === "set_percentage", f = t === "hvac" ? "hvac-rule-actions" : "appliances-rule-actions", p = t === "hvac" ? `hvac-equip-target-${e}` : `appl-equip-target-${e}`, _ = t === "hvac" ? `hvac-equip-cmd-${e}` : `appl-equip-cmd-${e}`, m = t === "hvac" ? "Equipment" : "Device", y = t === "hvac" ? "No HVAC-linked fans in this location." : "No fans or switches in this location.";
+    ), h = c.startsWith("fan.") && d === "set_percentage", _ = t === "hvac" ? "hvac-rule-actions" : t === "vacuum" ? "vacuum-rule-actions" : "appliances-rule-actions", p = t === "hvac" ? `hvac-equip-target-${e}` : t === "vacuum" ? `vacuum-equip-target-${e}` : `appl-equip-target-${e}`, f = t === "hvac" ? `hvac-equip-cmd-${e}` : t === "vacuum" ? `vacuum-equip-cmd-${e}` : `appl-equip-cmd-${e}`, m = t === "hvac" ? "Equipment" : t === "vacuum" ? "Vacuum" : "Device", y = t === "hvac" ? "No HVAC-linked fans in this location." : t === "vacuum" ? "No vacuums in this location." : "No fans or switches in this location.";
     return g`
-      <div class="dusk-equipment-actions" data-testid=${f}>
+      <div class="dusk-equipment-actions" data-testid=${_}>
         <div class="dusk-rule-section-title">Actions</div>
         ${t === "hvac" ? g`
               <p class="dusk-equipment-actions-hint">
@@ -8282,7 +8353,7 @@ const Re = class Re extends pt {
                   <div class="choice-pill-group" role="radiogroup" aria-label="Command">
                     ${u.map(
       (b) => this._renderChoicePill(
-        _,
+        f,
         b.value,
         b.label,
         d === b.value,
@@ -8302,7 +8373,7 @@ const Re = class Re extends pt {
       )
     )}
                   </div>
-                ` : g`<div class="text-muted">Choose ${t === "hvac" ? "equipment" : "a device"} first.</div>`}
+                ` : g`<div class="text-muted">Choose ${t === "hvac" ? "equipment" : t === "vacuum" ? "a vacuum" : "a device"} first.</div>`}
           </div>
         </div>
         ${h ? g`
@@ -8336,7 +8407,7 @@ const Re = class Re extends pt {
     `;
   }
   _renderOccupancyOnlyActionsBlock(t, e, i, n, o) {
-    return t === "media" ? this._renderMediaOccupancyOnlyActionsBlock(e, i, n, o) : t === "hvac" ? this._renderEquipmentPillActionsBlock("hvac", e, i, n, o) : t === "appliances" ? this._renderEquipmentPillActionsBlock("appliances", e, i, n, o) : g``;
+    return t === "media" ? this._renderMediaOccupancyOnlyActionsBlock(e, i, n, o) : t === "hvac" ? this._renderEquipmentPillActionsBlock("hvac", e, i, n, o) : t === "appliances" ? this._renderEquipmentPillActionsBlock("appliances", e, i, n, o) : t === "vacuum" ? this._renderEquipmentPillActionsBlock("vacuum", e, i, n, o) : g``;
   }
   _renderOccupancyOnlyRuleEditor(t, e, i, n, o) {
     return g`
@@ -8398,7 +8469,35 @@ const Re = class Re extends pt {
               </div>
             ` : ""}
       </div>
+      ${t === "vacuum" ? this._renderDailyGatingPills(e, i, n) : ""}
       ${this._renderOccupancyOnlyActionsBlock(t, e, i, n, o)}
+    `;
+  }
+  /** ADR-HA-091: opt-in "Run at most once per day" toggle on Vacuum rules. */
+  _renderDailyGatingPills(t, e, i) {
+    const n = !!e.daily_gating_enabled;
+    return g`
+      <div class="dusk-inline-heading-row">
+        <div class="dusk-rule-section-title">Daily run gating</div>
+        <div class="choice-pill-group">
+          ${this._renderTogglePill(
+      "Run every time",
+      !n,
+      i,
+      () => this._updateActionRule(t, {
+        daily_gating_enabled: !1
+      })
+    )}
+          ${this._renderTogglePill(
+      "Run at most once per day",
+      n,
+      i,
+      () => this._updateActionRule(t, {
+        daily_gating_enabled: !n
+      })
+    )}
+        </div>
+      </div>
     `;
   }
   _renderRunRuleButton(t, e) {
@@ -8439,7 +8538,7 @@ const Re = class Re extends pt {
                   ${o.length === 0 ? g`No compatible ${a} devices found in this location.` : ""}
                 </div>
               ` : n.map((c, l) => {
-      const u = String(c.id || ""), d = this._resolveActionRuleName(c, l), h = this._persistedActionRuleForDraft(c), f = !!h, p = this._isActionRuleDirty(c, l, h), _ = f && !p;
+      const u = String(c.id || ""), d = this._resolveActionRuleName(c, l), h = this._persistedActionRuleForDraft(c), _ = !!h, p = this._isActionRuleDirty(c, l, h), f = _ && !p;
       return g`
                   <div class="dusk-block-row" data-testid=${`action-rule-${u}`}>
                     <div class="dusk-block-head">
@@ -8458,10 +8557,10 @@ const Re = class Re extends pt {
         c,
         e,
         o,
-        _
+        f
       ) : this._renderOccupancyOnlyRuleEditor(t, u, c, e, o)}
                     <div class="dusk-block-footer">
-                      ${f ? p ? g`
+                      ${_ ? p ? g`
                               <button
                                 class="button button-primary"
                                 type="button"
@@ -8882,13 +8981,13 @@ const Re = class Re extends pt {
         const h = `${e}::${d}`;
         if (t.has(h)) return;
         t.add(h);
-        const f = this._parseDateValue(u == null ? void 0 : u.updated_at) || this._parseDateValue(u == null ? void 0 : u.changed_at) || this._parseDateValue(u == null ? void 0 : u.last_changed) || this._parseDateValue(u == null ? void 0 : u.timestamp), p = String((u == null ? void 0 : u.state) || (u == null ? void 0 : u.state_value) || "").trim() || "active", _ = f ? `${this._formatElapsedDuration(f)} ago` : "active", m = this._sourceLabelForSourceId(o, d);
+        const _ = this._parseDateValue(u == null ? void 0 : u.updated_at) || this._parseDateValue(u == null ? void 0 : u.changed_at) || this._parseDateValue(u == null ? void 0 : u.last_changed) || this._parseDateValue(u == null ? void 0 : u.timestamp), p = String((u == null ? void 0 : u.state) || (u == null ? void 0 : u.state_value) || "").trim() || "active", f = _ ? `${this._formatElapsedDuration(_)} ago` : "active", m = this._sourceLabelForSourceId(o, d);
         return {
           sourceLabel: `${(i == null ? void 0 : i.name) || e}: ${m}`,
           sourceId: d,
           stateLabel: p,
-          relativeTime: _,
-          _timestampMs: f ? f.getTime() : this._nowEpochMs
+          relativeTime: f,
+          _timestampMs: _ ? _.getTime() : this._nowEpochMs
         };
       }).filter(
         (u) => !!u
@@ -8992,7 +9091,7 @@ const Re = class Re extends pt {
     return this._formatOccupancyReason((u = t == null ? void 0 : t.attributes) == null ? void 0 : u.reason);
   }
   _resolveOccupiedReason(t, e) {
-    var l, u, d, h, f;
+    var l, u, d, h, _;
     if (e !== !0) return;
     const i = this._effectiveOccupancyTopologyId();
     if (!i) return;
@@ -9001,7 +9100,7 @@ const Re = class Re extends pt {
       const p = this._formatOccupancyReason(n);
       if (p) return p;
     }
-    const a = this._formatOccupancyReason((f = t == null ? void 0 : t.attributes) == null ? void 0 : f.reason);
+    const a = this._formatOccupancyReason((_ = t == null ? void 0 : t.attributes) == null ? void 0 : _.reason);
     if (a) return a;
     const r = this._occupancyContributions(this._getOccupancyConfig(), !0);
     return r.length ? `Contributed by ${r[0].sourceLabel}` : "Active source events detected";
@@ -9096,27 +9195,27 @@ const Re = class Re extends pt {
     const i = this._getOccupancyState();
     if (!i) return [];
     const n = i.attributes || {}, o = Array.isArray(n.contributions) ? n.contributions : [], a = this._nowEpochMs, r = o.map((h) => {
-      const f = typeof (h == null ? void 0 : h.source_id) == "string" && h.source_id ? h.source_id : typeof (h == null ? void 0 : h.source) == "string" && h.source ? h.source : "";
-      if (!f) return;
-      const p = this._sourceLabelForSourceId(t, f), _ = String((h == null ? void 0 : h.state) || (h == null ? void 0 : h.state_value) || "").trim() || "active", m = this._parseDateValue(h == null ? void 0 : h.updated_at) || this._parseDateValue(h == null ? void 0 : h.changed_at) || this._parseDateValue(h == null ? void 0 : h.last_changed) || this._parseDateValue(h == null ? void 0 : h.timestamp), y = m ? `${this._formatElapsedDuration(m)} ago` : this._isContributionActive(h) ? "active" : "inactive";
+      const _ = typeof (h == null ? void 0 : h.source_id) == "string" && h.source_id ? h.source_id : typeof (h == null ? void 0 : h.source) == "string" && h.source ? h.source : "";
+      if (!_) return;
+      const p = this._sourceLabelForSourceId(t, _), f = String((h == null ? void 0 : h.state) || (h == null ? void 0 : h.state_value) || "").trim() || "active", m = this._parseDateValue(h == null ? void 0 : h.updated_at) || this._parseDateValue(h == null ? void 0 : h.changed_at) || this._parseDateValue(h == null ? void 0 : h.last_changed) || this._parseDateValue(h == null ? void 0 : h.timestamp), y = m ? `${this._formatElapsedDuration(m)} ago` : this._isContributionActive(h) ? "active" : "inactive";
       return {
         sourceLabel: p,
-        sourceId: f,
-        stateLabel: _,
+        sourceId: _,
+        stateLabel: f,
         relativeTime: y,
-        _timestampMs: m ? m.getTime() : a + (_ === "active" ? 0 : -1),
+        _timestampMs: m ? m.getTime() : a + (f === "active" ? 0 : -1),
         _active: this._isContributionActive(h)
       };
     }).filter((h) => !!h), c = /* @__PURE__ */ new Map();
     for (const h of r) {
-      const f = c.get(h.sourceId);
-      (!f || h._timestampMs > f._timestampMs) && c.set(h.sourceId, h);
+      const _ = c.get(h.sourceId);
+      (!_ || h._timestampMs > _._timestampMs) && c.set(h.sourceId, h);
     }
-    const u = [...[...c.values()]].sort((h, f) => h._active !== f._active ? h._active ? -1 : 1 : f._timestampMs - h._timestampMs);
-    return (e ? u.filter((h) => h._active) : u).map(({ sourceLabel: h, stateLabel: f, relativeTime: p, sourceId: _ }) => ({
-      sourceLabel: h === _ || this._structuralSourceLabel(_) ? h : `${h} (${_})`,
-      sourceId: _,
-      stateLabel: f,
+    const u = [...[...c.values()]].sort((h, _) => h._active !== _._active ? h._active ? -1 : 1 : _._timestampMs - h._timestampMs);
+    return (e ? u.filter((h) => h._active) : u).map(({ sourceLabel: h, stateLabel: _, relativeTime: p, sourceId: f }) => ({
+      sourceLabel: h === f || this._structuralSourceLabel(f) ? h : `${h} (${f})`,
+      sourceId: f,
+      stateLabel: _,
       relativeTime: p
     }));
   }
@@ -12491,16 +12590,16 @@ const De = class De extends pt {
           ]), o = /* @__PURE__ */ new Map();
           if (Array.isArray(n))
             for (const d of n) {
-              const h = typeof (d == null ? void 0 : d.id) == "string" ? d.id : void 0, f = typeof (d == null ? void 0 : d.area_id) == "string" ? d.area_id : void 0;
-              h && f && o.set(h, f);
+              const h = typeof (d == null ? void 0 : d.id) == "string" ? d.id : void 0, _ = typeof (d == null ? void 0 : d.area_id) == "string" ? d.area_id : void 0;
+              h && _ && o.set(h, _);
             }
           const a = {};
           if (Array.isArray(i))
             for (const d of i) {
               const h = typeof (d == null ? void 0 : d.entity_id) == "string" ? d.entity_id : void 0;
               if (!h) continue;
-              const f = typeof (d == null ? void 0 : d.area_id) == "string" ? d.area_id : void 0, p = typeof (d == null ? void 0 : d.device_id) == "string" ? o.get(d.device_id) : void 0;
-              a[h] = f || p || null;
+              const _ = typeof (d == null ? void 0 : d.area_id) == "string" ? d.area_id : void 0, p = typeof (d == null ? void 0 : d.device_id) == "string" ? o.get(d.device_id) : void 0;
+              a[h] = _ || p || null;
             }
           const r = this._entityAreaById, c = Object.keys(r), l = Object.keys(a);
           (c.length !== l.length || l.some((d) => r[d] !== a[d])) && (this._entityAreaById = a, this._entityAreaRevision += 1), this._entityAreaIndexLoaded = !0;
@@ -12705,17 +12804,17 @@ const De = class De extends pt {
     for (const d of this._locations)
       for (const h of d.entity_ids || [])
         h && !o.has(h) && o.set(h, d.id);
-    const a = /* @__PURE__ */ new Map(), r = (d, h, f, p) => {
-      const _ = a.get(d);
-      if (_) return _;
-      const m = { key: d, label: h, type: f, locationId: p, entities: [] };
+    const a = /* @__PURE__ */ new Map(), r = (d, h, _, p) => {
+      const f = a.get(d);
+      if (f) return f;
+      const m = { key: d, label: h, type: _, locationId: p, entities: [] };
       return a.set(d, m), m;
     };
     r("unassigned", "Unassigned", "unassigned");
     for (const d of this._allKnownEntityIds()) {
       if (!this._isAssignableEntity(d)) continue;
-      const h = this._entityDisplayName(d), f = o.get(d), p = f ? n.get(f) : void 0, _ = this._areaLabel(this._effectiveAreaIdForEntity(d));
-      if (t && !`${h} ${d} ${(p == null ? void 0 : p.name) || ""} ${_}`.toLowerCase().includes(t))
+      const h = this._entityDisplayName(d), _ = o.get(d), p = _ ? n.get(_) : void 0, f = this._areaLabel(this._effectiveAreaIdForEntity(d));
+      if (t && !`${h} ${d} ${(p == null ? void 0 : p.name) || ""} ${f}`.toLowerCase().includes(t))
         continue;
       if (!p) {
         r("unassigned", "Unassigned", "unassigned").entities.push(d);
@@ -12731,7 +12830,7 @@ const De = class De extends pt {
     }
     for (const d of a.values())
       d.entities.sort(
-        (h, f) => this._entityDisplayName(h).localeCompare(this._entityDisplayName(f))
+        (h, _) => this._entityDisplayName(h).localeCompare(this._entityDisplayName(_))
       );
     const c = {
       unassigned: 0,
@@ -12742,8 +12841,8 @@ const De = class De extends pt {
       grounds: 5,
       other: 6
     }, l = [...a.values()].filter((d) => d.entities.length > 0 || d.key === "unassigned").sort((d, h) => {
-      const f = c[d.type] - c[h.type];
-      return f !== 0 ? f : d.label.localeCompare(h.label);
+      const _ = c[d.type] - c[h.type];
+      return _ !== 0 ? _ : d.label.localeCompare(h.label);
     });
     return this._deviceGroupsCacheKey = i, this._deviceGroupsCache = l, l;
   }
@@ -13058,7 +13157,7 @@ const De = class De extends pt {
       var u, d;
       const a = this._locations.find((h) => h.id === e), r = (a == null ? void 0 : a.name) || e, { isLocked: c, lockedBy: l } = this._getLocationLockState(e);
       if (c) {
-        const h = l.length ? ` (${l.map((f) => yi(f)).join(", ")})` : "";
+        const h = l.length ? ` (${l.map((_) => yi(_)).join(", ")})` : "";
         this._showToast(`Hey, can't do it. "${r}" is locked${h}.`, "warning");
         return;
       }
@@ -13067,22 +13166,22 @@ const De = class De extends pt {
           this._showToast("Invalid occupancy request", "error");
           return;
         }
-        const h = this._getLocationOccupiedForToggle(e), f = typeof h == "boolean" ? !h : i, p = f ? "trigger" : "vacate_area", _ = {
+        const h = this._getLocationOccupiedForToggle(e), _ = typeof h == "boolean" ? !h : i, p = _ ? "trigger" : "vacate_area", f = {
           location_id: e,
           source_id: en
         };
-        if (f) {
+        if (_) {
           const m = (d = (u = a.modules) == null ? void 0 : u.occupancy) == null ? void 0 : d.default_timeout;
-          typeof m == "number" && m >= 0 && (_.timeout = Math.floor(m));
+          typeof m == "number" && m >= 0 && (f.timeout = Math.floor(m));
         } else
-          _.include_locked = !1;
+          f.include_locked = !1;
         await this.hass.callWS({
           type: "call_service",
           domain: "topomation",
           service: p,
-          service_data: this._serviceDataWithEntryId(_)
+          service_data: this._serviceDataWithEntryId(f)
         }), await this._loadLocations(!0), this._locationsVersion += 1, this._showToast(
-          f ? `Marked "${r}" as occupied` : `Marked "${r}" as unoccupied (vacated)`,
+          _ ? `Marked "${r}" as occupied` : `Marked "${r}" as unoccupied (vacated)`,
           "success"
         );
       } catch (h) {
@@ -13271,11 +13370,11 @@ const De = class De extends pt {
               handoff_window_sec: typeof n.handoff_window_sec == "number" ? n.handoff_window_sec : 12,
               status: typeof n.status == "string" ? n.status : "provisional_triggered",
               timestamp: typeof n.timestamp == "string" && n.timestamp.trim() ? n.timestamp : (/* @__PURE__ */ new Date()).toISOString()
-            }, l = (d, h, f) => {
+            }, l = (d, h, _) => {
               const p = d[h] || [];
               return {
                 ...d,
-                [h]: [f, ...p].slice(0, 25)
+                [h]: [_, ...p].slice(0, 25)
               };
             };
             let u = l(this._handoffTraceByLocation, a, c);

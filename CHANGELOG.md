@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Lighting rule startup replay control**: Lighting rule cards now include
+  an `Execution` checkbox, `Run on startup if conditions match`, wired to the
+  existing `run_on_startup` managed-rule metadata. Existing Lighting rules
+  with no explicit startup setting are temporarily backfilled to enabled on
+  first load for this release; new rules default to off, and non-Lighting
+  rule tabs remain off.
+
+### Removed
+
+- Removed the completed one-off managed-rule rename migration
+  (`async_migrate_rule_names` and its startup caller). Rule names now rely on
+  the normal live auto-naming/user-renaming behavior without rewriting aliases
+  on every integration load.
+
 ## [0.2.68] - 2026-04-25
 
 ### Added

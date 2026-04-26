@@ -7993,6 +7993,10 @@ export class HtLocationInspector extends LitElement {
     const actionService = primaryAction?.service;
     const actionData = primaryAction?.data;
     const ruleUuid = this._normalizeRuleUuid(rule.rule_uuid, id);
+    const runOnStartup =
+      typeof rule.run_on_startup === "boolean"
+        ? rule.run_on_startup
+        : this._isLightingActionRule(rule);
     return {
       id,
       entity_id:
@@ -8018,13 +8022,21 @@ export class HtLocationInspector extends LitElement {
       time_condition_enabled: Boolean(rule.time_condition_enabled),
       start_time: this._normalizeActionTime(rule.start_time, "18:00"),
       end_time: this._normalizeActionTime(rule.end_time, "23:59"),
-      run_on_startup: false,
+      run_on_startup: runOnStartup,
       user_named: typeof rule.user_named === "boolean" ? rule.user_named : false,
       daily_gating_enabled:
         typeof rule.daily_gating_enabled === "boolean" ? rule.daily_gating_enabled : false,
       enabled: rule.enabled !== false,
       require_dark: this._normalizeActionAmbientCondition(rule.ambient_condition, triggerTypes) === "dark",
     };
+  }
+
+  private _isLightingActionRule(rule: Partial<TopomationActionRule>): boolean {
+    const targets = this._actionTargetsForRule(rule);
+    const primaryEntityId = String(
+      targets[0]?.entity_id || rule.action_entity_id || ""
+    ).trim();
+    return primaryEntityId.startsWith("light.");
   }
 
   private _workingActionRules(): TopomationActionRule[] {
@@ -8790,7 +8802,7 @@ export class HtLocationInspector extends LitElement {
           time_condition_enabled: Boolean(rule.time_condition_enabled),
           start_time: rule.start_time,
           end_time: rule.end_time,
-          run_on_startup: false,
+          run_on_startup: ruleTab === "lighting" ? Boolean(rule.run_on_startup) : false,
           user_named: Boolean(rule.user_named),
           daily_gating_enabled: Boolean(rule.daily_gating_enabled),
           require_dark: ambientCondition === "dark",
@@ -8931,6 +8943,13 @@ export class HtLocationInspector extends LitElement {
         icon: "mdi:speaker-wireless",
         label: "Media Rules",
         emptyMessage: "No media rules configured yet.",
+      };
+    }
+    if (tab === "vacuum") {
+      return {
+        icon: "mdi:robot-vacuum",
+        label: "Vacuum Rules",
+        emptyMessage: "No vacuum rules configured yet.",
       };
     }
     return {
@@ -9430,6 +9449,27 @@ export class HtLocationInspector extends LitElement {
         entityOptions,
         preferConfiguredLightsFirst
       )}
+
+      <div class="dusk-rule-section-title">Execution</div>
+      <div class="startup-inline" data-testid=${`action-rule-${ruleId}-startup`}>
+        <label class="startup-inline-toggle">
+          <input
+            type="checkbox"
+            class="switch-input"
+            .checked=${Boolean(rule.run_on_startup)}
+            ?disabled=${busy}
+            data-testid=${`action-rule-${ruleId}-run-on-startup`}
+            @change=${(ev: Event) =>
+              this._updateActionRule(ruleId, {
+                run_on_startup: (ev.target as HTMLInputElement).checked,
+              })}
+          />
+          <span>Run on startup if conditions match</span>
+        </label>
+        <div class="startup-inline-help">
+          Useful when Home Assistant was offline during a sunrise, sunset, or lux threshold crossing.
+        </div>
+      </div>
     `;
   }
 
@@ -9610,7 +9650,7 @@ export class HtLocationInspector extends LitElement {
    * HVAC / appliances: enumerate entities and commands as choice pills (same interaction model as media).
    */
   private _renderEquipmentPillActionsBlock(
-    variant: "hvac" | "appliances",
+    variant: "hvac" | "appliances" | "vacuum",
     ruleId: string,
     rule: TopomationActionRule,
     busy: boolean,
@@ -9631,14 +9671,32 @@ export class HtLocationInspector extends LitElement {
     );
     const showFanSpeedRow =
       selectedActionEntityId.startsWith("fan.") && selectedServiceOptionValue === "set_percentage";
-    const testId = variant === "hvac" ? "hvac-rule-actions" : "appliances-rule-actions";
-    const targetGroupName = variant === "hvac" ? `hvac-equip-target-${ruleId}` : `appl-equip-target-${ruleId}`;
-    const cmdGroupName = variant === "hvac" ? `hvac-equip-cmd-${ruleId}` : `appl-equip-cmd-${ruleId}`;
-    const deviceLabel = variant === "hvac" ? "Equipment" : "Device";
+    const testId =
+      variant === "hvac"
+        ? "hvac-rule-actions"
+        : variant === "vacuum"
+          ? "vacuum-rule-actions"
+          : "appliances-rule-actions";
+    const targetGroupName =
+      variant === "hvac"
+        ? `hvac-equip-target-${ruleId}`
+        : variant === "vacuum"
+          ? `vacuum-equip-target-${ruleId}`
+          : `appl-equip-target-${ruleId}`;
+    const cmdGroupName =
+      variant === "hvac"
+        ? `hvac-equip-cmd-${ruleId}`
+        : variant === "vacuum"
+          ? `vacuum-equip-cmd-${ruleId}`
+          : `appl-equip-cmd-${ruleId}`;
+    const deviceLabel =
+      variant === "hvac" ? "Equipment" : variant === "vacuum" ? "Vacuum" : "Device";
     const emptyPool =
       variant === "hvac"
         ? "No HVAC-linked fans in this location."
-        : "No fans or switches in this location.";
+        : variant === "vacuum"
+          ? "No vacuums in this location."
+          : "No fans or switches in this location.";
     return html`
       <div class="dusk-equipment-actions" data-testid=${testId}>
         <div class="dusk-rule-section-title">Actions</div>
@@ -9684,7 +9742,7 @@ export class HtLocationInspector extends LitElement {
           <span class="config-label">Command</span>
           <div class="config-value">
             ${!selectedActionEntityId
-              ? html`<div class="text-muted">Choose ${variant === "hvac" ? "equipment" : "a device"} first.</div>`
+              ? html`<div class="text-muted">Choose ${variant === "hvac" ? "equipment" : variant === "vacuum" ? "a vacuum" : "a device"} first.</div>`
               : html`
                   <div class="choice-pill-group" role="radiogroup" aria-label="Command">
                     ${serviceOptions.map((option) =>
@@ -9760,6 +9818,9 @@ export class HtLocationInspector extends LitElement {
     }
     if (tab === "appliances") {
       return this._renderEquipmentPillActionsBlock("appliances", ruleId, rule, busy, entityOptions);
+    }
+    if (tab === "vacuum") {
+      return this._renderEquipmentPillActionsBlock("vacuum", ruleId, rule, busy, entityOptions);
     }
     return html``;
   }

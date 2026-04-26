@@ -6122,6 +6122,113 @@ describe("HtLocationInspector WIAB configuration", () => {
     expect(deleteRuleCount).to.equal(1);
   });
 
+  it("backfills and saves run-on-startup for existing lighting rules", async () => {
+    const createCalls: Array<Record<string, any>> = [];
+    const persistedRules = [
+      {
+        id: "rule_existing",
+        entity_id: "automation.rule_existing",
+        name: "Existing",
+        trigger_type: "on_dark",
+        trigger_types: ["on_dark"],
+        rule_uuid: "rule_existing_uuid",
+        actions: [{ entity_id: "light.kitchen_ceiling", service: "turn_on" }],
+        action_entity_id: "light.kitchen_ceiling",
+        action_service: "turn_on",
+        ambient_condition: "dark",
+        must_be_occupied: undefined,
+        time_condition_enabled: false,
+        start_time: "18:00",
+        end_time: "23:59",
+        enabled: true,
+      },
+    ];
+
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>): Promise<T> => {
+        if (request.type === "topomation/actions/rules/list") {
+          return { rules: persistedRules } as T;
+        }
+        if (request.type === "topomation/actions/rules/create") {
+          createCalls.push(request);
+          return {
+            rule: {
+              ...persistedRules[0],
+              trigger_type: request.trigger_type,
+              trigger_types: request.trigger_types,
+              ambient_condition: request.ambient_condition,
+              run_on_startup: request.run_on_startup,
+            },
+          } as T;
+        }
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        return {} as T;
+      },
+      connection: {},
+      states: {
+        "light.kitchen_ceiling": {
+          entity_id: "light.kitchen_ceiling",
+          state: "off",
+          attributes: {
+            friendly_name: "Kitchen Ceiling",
+            supported_color_modes: ["brightness"],
+          },
+        },
+      },
+      areas: {
+        kitchen: { area_id: "kitchen", name: "Kitchen" },
+      },
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_kitchen";
+    location.name = "Kitchen";
+    location.ha_area_id = "kitchen";
+    location.entity_ids = ["light.kitchen_ceiling"];
+    location.modules._meta = { type: "area" };
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${location}
+        .forcedTab=${"lighting"}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    await waitUntil(
+      () => !!element.shadowRoot?.querySelector('[data-testid="action-rule-rule_existing"]'),
+      "expected persisted lighting rule row to render"
+    );
+
+    const startupCheckbox = element.shadowRoot?.querySelector(
+      '[data-testid="action-rule-rule_existing-run-on-startup"]'
+    ) as HTMLInputElement | null;
+    expect(startupCheckbox).to.exist;
+    expect(startupCheckbox!.checked).to.equal(true);
+
+    const brightAmbientTrigger = Array.from(
+      element.shadowRoot?.querySelectorAll(".choice-pill") || []
+    ).find((pill) => (pill.textContent || "").includes("It becomes bright")) as
+      | HTMLButtonElement
+      | undefined;
+    expect(brightAmbientTrigger).to.exist;
+    brightAmbientTrigger!.click();
+    await element.updateComplete;
+
+    const updateButton = element.shadowRoot?.querySelector(
+      '[data-testid="action-rule-rule_existing-update"]'
+    ) as HTMLButtonElement | null;
+    expect(updateButton).to.exist;
+    updateButton!.click();
+
+    await waitUntil(() => createCalls.length === 1, "expected updated lighting rule save");
+    expect(createCalls[0].run_on_startup).to.equal(true);
+  });
+
   it("renders configured lighting entities first when a persisted rule is clean", async () => {
     const persistedRules = [
       {
