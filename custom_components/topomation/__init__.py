@@ -517,7 +517,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # 10. Runtime observers for occupied/vacant native HA automations.
     actions_runtime = TopomationActionsRuntime(hass, loc_mgr, bus)
     await actions_runtime.async_setup()
-    managed_action_rules = TopomationManagedActions(hass)
+    managed_action_rules = TopomationManagedActions(hass, loc_mgr)
 
     @callback
     def _cleanup_managed_entities_on_location_deleted(event: Event) -> None:

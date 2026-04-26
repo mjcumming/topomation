@@ -852,3 +852,60 @@ def test_daily_gating_condition_appears_after_time_condition() -> None:
     kinds = [c.get("condition") for c in conditions]
     assert kinds == ["time", "template"]
 
+
+def test_find_occupancy_entity_id_resolves_via_managed_shadow_for_host(
+    hass: HomeAssistant,
+) -> None:
+    """Floor host has no own binary_sensor; lookup falls back to its shadow location.
+
+    Regression for ADR-HA-091 vacuum-rule create on a floor host failing with
+    'No occupancy binary sensor found': occupancy lookup checked only the
+    host's own location_id but the binary_sensor lives on the managed-shadow
+    location per ADR-HA-077.
+    """
+    host_id = "floor_main_floor"
+    shadow_id = "area_main_floor_shadow"
+
+    shadow_location = SimpleNamespace(
+        id=shadow_id,
+        modules={
+            "_meta": {
+                "role": "managed_shadow",
+                "shadow_for_location_id": host_id,
+            }
+        },
+    )
+    other_location = SimpleNamespace(
+        id="area_kitchen",
+        modules={"_meta": {"type": "area"}},
+    )
+    fake_loc_mgr = SimpleNamespace(
+        all_locations=lambda: [shadow_location, other_location]
+    )
+
+    manager = TopomationManagedActions(hass, fake_loc_mgr)
+
+    # Direct match misses (no binary_sensor for the host itself).
+    hass.states.async_set(
+        "binary_sensor.main_floor_shadow_occupancy",
+        "on",
+        {"device_class": "occupancy", "location_id": shadow_id},
+    )
+
+    resolved = manager._find_occupancy_entity_id(host_id)  # noqa: SLF001
+    assert resolved == "binary_sensor.main_floor_shadow_occupancy"
+
+
+def test_find_occupancy_entity_id_returns_none_when_no_loc_mgr_and_no_direct_match(
+    hass: HomeAssistant,
+) -> None:
+    """Without a loc_mgr we can't resolve the shadow; degrade to direct-only."""
+    manager = TopomationManagedActions(hass, None)
+    hass.states.async_set(
+        "binary_sensor.kitchen_occupancy",
+        "on",
+        {"device_class": "occupancy", "location_id": "area_kitchen"},
+    )
+    assert manager._find_occupancy_entity_id("floor_main_floor") is None  # noqa: SLF001
+    assert manager._find_occupancy_entity_id("area_kitchen") == "binary_sensor.kitchen_occupancy"  # noqa: SLF001
+

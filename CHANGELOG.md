@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.71] - 2026-04-26
+
+### Fixed
+
+- **Action rule create on shadow-host locations** (regression visible
+  on Vacuum tab in 0.2.70 and earlier): saving a rule on a `floor`,
+  `building`, `grounds`, or `property` host failed with
+  `No occupancy binary sensor found for location "<name>" (<id>)`
+  even though the host's occupancy was rolling up correctly. Per
+  ADR-HA-077 shadow hosts have no binary_sensor of their own; the
+  occupancy lives on the managed-shadow location's sensor.
+  `_find_occupancy_entity_id` now falls back to the shadow location's
+  id when the host has no direct binary_sensor match. Affects all
+  action tabs authored at structural-host scope, but Vacuum was the
+  most likely workflow to hit it (whole-floor rule against a
+  floor-scoped vacuum).
+
 ## [0.2.70] - 2026-04-26
 
 ### Fixed

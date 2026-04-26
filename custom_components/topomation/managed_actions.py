@@ -108,9 +108,17 @@ class _RecentRuleSnapshot:
 class TopomationManagedActions:
     """Create/list/update/delete Topomation managed automations via HA's config REST API."""
 
-    def __init__(self, hass: HomeAssistant) -> None:
-        """Initialize managed automation helper."""
+    def __init__(self, hass: HomeAssistant, loc_mgr: Any = None) -> None:
+        """Initialize managed automation helper.
+
+        ``loc_mgr`` is optional only for backward compatibility with older
+        construction sites and tests; production code should pass it so that
+        occupancy lookup on shadow-host locations (floor / building / grounds /
+        property) can resolve the underlying managed-shadow location whose
+        binary_sensor actually carries the occupancy state (ADR-HA-077).
+        """
         self.hass = hass
+        self._loc_mgr = loc_mgr
         self._token_lock = asyncio.Lock()
         self._recent_rule_snapshots: dict[str, _RecentRuleSnapshot] = {}
 
@@ -751,13 +759,42 @@ class TopomationManagedActions:
         return list(raw_entities)
 
     def _find_occupancy_entity_id(self, location_id: str) -> str | None:
-        """Resolve occupancy binary sensor entity_id for a location id."""
+        """Resolve occupancy binary sensor entity_id for a location id.
+
+        Direct match first. For shadow-host locations (floor / building /
+        grounds / property) the host itself has no binary_sensor — its
+        occupancy lives on the managed-shadow location's sensor (ADR-HA-077).
+        Fall back to that shadow location when no direct match is found.
+        """
+        candidate_ids: set[str] = {location_id}
+        shadow_id = self._shadow_location_id_for_host(location_id)
+        if shadow_id:
+            candidate_ids.add(shadow_id)
+
         for state in self.hass.states.async_all("binary_sensor"):
             if state.attributes.get("device_class") != "occupancy":
                 continue
-            if state.attributes.get("location_id") != location_id:
+            if state.attributes.get("location_id") in candidate_ids:
+                return state.entity_id
+        return None
+
+    def _shadow_location_id_for_host(self, host_location_id: str) -> str | None:
+        """Return the managed-shadow location_id whose host matches, if any."""
+        if self._loc_mgr is None:
+            return None
+        try:
+            locations = list(self._loc_mgr.all_locations())
+        except Exception:  # pragma: no cover - defensive
+            return None
+        for location in locations:
+            modules = getattr(location, "modules", None) or {}
+            meta = modules.get("_meta") if isinstance(modules, Mapping) else None
+            if not isinstance(meta, Mapping):
                 continue
-            return state.entity_id
+            if meta.get("role") != "managed_shadow":
+                continue
+            if meta.get("shadow_for_location_id") == host_location_id:
+                return getattr(location, "id", None)
         return None
 
     def _normalize_trigger_type(self, trigger_type: str) -> ActionTriggerType:
