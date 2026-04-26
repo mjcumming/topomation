@@ -2,7 +2,7 @@
 
 **Last reviewed**: 2026-04-13  
 **Status**: Active (design baseline)  
-**Authority**: ADR-HA-055, ADR-HA-056, ADR-HA-060, ADR-HA-066, ADR-HA-068, ADR-HA-069, ADR-HA-080, ADR-HA-087, ADR-HA-089 + `docs/contracts.md`
+**Authority**: ADR-HA-055, ADR-HA-056, ADR-HA-060, ADR-HA-066, ADR-HA-068, ADR-HA-069, ADR-HA-080, ADR-HA-087, ADR-HA-089, ADR-HA-091 + `docs/contracts.md`
 
 This guide defines the intended user interaction model for Topomation's
 automation workspace and inspector tabs.
@@ -25,6 +25,7 @@ automation workspace and inspector tabs.
    - `Appliances`
    - `Media`
    - `HVAC`
+   - `Vacuum`
 
 ## 1.1 Structural aggregate hosts (`property`, `floor`, `building`, `grounds`)
 
@@ -32,8 +33,8 @@ These locations use **derived** occupancy surfaces (summary or occupancy groups)
 not room-style source lists on structural hosts—see `docs/contracts.md` and
 ADR-HA-073 (initial intent) as superseded by **ADR-HA-087** (current tab policy).
 
-1. **Tabs shown**: `Occupancy Groups`, `Ambient`, `Lighting`, `Appliances`, `Media`, `HVAC`.
-2. **Device and lux enumeration** (Ambient selector, Lighting/Appliances/Media/HVAC
+1. **Tabs shown**: `Occupancy Groups`, `Ambient`, `Lighting`, `Appliances`, `Media`, `HVAC`, `Vacuum`.
+2. **Device and lux enumeration** (Ambient selector, Lighting/Appliances/Media/HVAC/Vacuum
    action targets): the host’s `entity_ids` and `ha_area_id` plus the **managed
    shadow** wrapper’s `ha_area_id` and `entity_ids` (`_meta.shadow_area_id` on the
    host). **No descendant walk** — devices in child-room HA areas are authored
@@ -98,7 +99,7 @@ Top-to-bottom layout order:
      the host’s **managed shadow** when applicable; see ADR-HA-087 / C-015)
    - `Inherit from parent` as the empty/default option
    - do not render a separate inherit checkbox alongside the selector.
-5. Rule-authoring tabs (`Lighting`, `Appliances`, `Media`, `HVAC`) use
+5. Rule-authoring tabs (`Lighting`, `Appliances`, `Media`, `HVAC`, `Vacuum`) use
    per-rule card controls for rule lifecycle edits.
 6. Do not mix tab-level `Save changes` / `Discard changes` with per-card
    `Delete rule` for the same rule workflow.
@@ -122,10 +123,25 @@ Top-to-bottom layout order:
    - occupancy edge triggers only (choice pills; no ambient rows)
    - optional time window (same pill pattern as Lighting)
    - `Set volume` exposes a percentage control only when selected
-4. `Appliances`, `Media`, and `HVAC` do not expose ambient-light triggers or
+4. `Appliances`, `Media`, `HVAC`, and `Vacuum` do not expose ambient-light triggers or
    ambient condition filters in v1.
 5. Do not present `climate.*` thermostat/preset editing until a narrower common
    occupancy contract is agreed and documented.
+6. `Vacuum` (v1, ADR-HA-091): `vacuum.*` targets with occupancy-driven start/pause/dock.
+   - occupancy edge triggers only; same time-window pill pattern
+   - action verbs: **Start**, **Pause**, **Return to dock** (no `vacuum.stop`)
+   - default verb on `on_occupied` is `Pause`; on other triggers, `Start`
+     (inverse of switch/fan, since vacancy is the safe time to clean)
+   - one vacuum target per rule (multi-target deferred)
+   - optional **Daily run gating** pill row: `Run every time` (default) /
+     `Run at most once per day`. When enabled, the rule's automation YAML
+     gets a template condition that reads its own `last_triggered` attribute
+     and only allows firing when not yet fired today — with a Path Y carve-out
+     that allows re-fire if the target vacuum is currently `paused`, so the
+     two-rule "pause on occupied + start on vacant" composition keeps working.
+   - daily gating is offered on every Vacuum rule regardless of action verb;
+     enabling it on `Pause` or `Return to dock` is permitted but rarely
+     meaningful and not blocked.
 
 ## 7. Rule Lifecycle Controls
 
