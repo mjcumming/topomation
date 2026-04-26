@@ -2464,8 +2464,10 @@ describe("HtLocationInspector occupancy source composer", () => {
       "Occupancy Groups",
       "Ambient",
       "Lighting",
+      "Appliances",
       "Media",
       "HVAC",
+      "Vacuum",
     ]);
     expect(groupsSection).to.exist;
     expect(kitchenCheckbox).to.exist;
@@ -2695,8 +2697,10 @@ describe("HtLocationInspector occupancy source composer", () => {
       "Occupancy Groups",
       "Ambient",
       "Lighting",
+      "Appliances",
       "Media",
       "HVAC",
+      "Vacuum",
     ]);
     expect(
       element.shadowRoot!.querySelector('[data-testid="occupancy-group-create-location-area_entry"]')
@@ -4768,7 +4772,7 @@ describe("HtLocationInspector WIAB configuration", () => {
     const buildingTabs = Array.from(element.shadowRoot?.querySelectorAll(".tabs > .tab") || []).map((t) =>
       (t.textContent || "").trim()
     );
-    expect(buildingTabs).to.deep.equal(["Occupancy Groups", "Ambient", "Lighting", "Media", "HVAC"]);
+    expect(buildingTabs).to.deep.equal(["Occupancy Groups", "Ambient", "Lighting", "Appliances", "Media", "HVAC", "Vacuum"]);
     expect(element.shadowRoot?.querySelector('[data-testid="occupancy-groups-section"]')).to.exist;
     expect(element.shadowRoot?.querySelector('[data-testid="structure-summary-panel"]')).to.exist;
     expect(element.shadowRoot?.querySelector('[data-testid="open-external-source-dialog"]')).to.equal(null);
@@ -4818,7 +4822,7 @@ describe("HtLocationInspector WIAB configuration", () => {
     const groundsTabs = Array.from(element.shadowRoot?.querySelectorAll(".tabs > .tab") || []).map((t) =>
       (t.textContent || "").trim()
     );
-    expect(groundsTabs).to.deep.equal(["Occupancy Groups", "Ambient", "Lighting", "Media", "HVAC"]);
+    expect(groundsTabs).to.deep.equal(["Occupancy Groups", "Ambient", "Lighting", "Appliances", "Media", "HVAC", "Vacuum"]);
     expect(element.shadowRoot?.querySelector('[data-testid="occupancy-groups-section"]')).to.exist;
     expect(element.shadowRoot?.querySelector('[data-testid="structure-summary-panel"]')).to.exist;
     expect(element.shadowRoot?.querySelector('[data-testid="open-external-source-dialog"]')).to.equal(null);

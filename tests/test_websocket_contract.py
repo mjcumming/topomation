@@ -2969,6 +2969,7 @@ async def test_action_rules_create_uses_managed_runtime(hass: HomeAssistant) -> 
         rule_uuid=None,
         run_on_startup=None,
         user_named=False,
+        daily_gating_enabled=False,
     )
     schedule_persist.assert_called_once_with("actions/rules/create")
     connection.send_error.assert_not_called()
@@ -3048,6 +3049,7 @@ async def test_action_rules_create_forwards_rule_conditions(hass: HomeAssistant)
         automation_id="topomation_kitchen_on_dark_fan_kitchen_hood_rule_abc123",
         rule_uuid="rule_abc123",
         user_named=False,
+        daily_gating_enabled=False,
     )
     connection.send_error.assert_not_called()
     connection.send_result.assert_called_once()
@@ -3133,6 +3135,7 @@ async def test_action_rules_create_forwards_action_data_and_normalizes_brightnes
         rule_uuid=None,
         run_on_startup=None,
         user_named=False,
+        daily_gating_enabled=False,
     )
     connection.send_error.assert_not_called()
     connection.send_result.assert_called_once()
@@ -3225,6 +3228,7 @@ async def test_action_rules_create_forwards_multi_actions_payload(
         rule_uuid=None,
         run_on_startup=None,
         user_named=False,
+        daily_gating_enabled=False,
     )
     connection.send_error.assert_not_called()
     connection.send_result.assert_called_once()
