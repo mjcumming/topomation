@@ -9,14 +9,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.69] - 2026-04-26
+
 ### Added
 
+- **Vacuum action tab** (ADR-HA-091): new top-level rule-authoring tab for
+  `vacuum.*` targets. Available on every device-hosting location (room or
+  structural floor / property / building / grounds, per ADR-HA-087 scoping).
+  Action verbs: **Start**, **Pause**, **Return to dock** (no `vacuum.stop`).
+  Default verb on `Room becomes occupied` is **Pause**; on other triggers,
+  **Start** — inverse of switch/fan, since vacancy is the safe time to clean.
+  One vacuum target per rule.
+- **Daily run gating toggle** on Vacuum rules: opt-in
+  `Run at most once per day` (default off). When on, the rule's automation
+  YAML gets a template condition that reads its own `last_triggered`
+  attribute and only allows firing when not yet fired today, with a
+  Path Y carve-out that allows re-fire if the target vacuum is currently
+  `paused` so the natural two-rule "pause on occupied + start on vacant"
+  composition keeps working.
 - **Lighting rule startup replay control**: Lighting rule cards now include
   an `Execution` checkbox, `Run on startup if conditions match`, wired to the
   existing `run_on_startup` managed-rule metadata. Existing Lighting rules
   with no explicit startup setting are temporarily backfilled to enabled on
   first load for this release; new rules default to off, and non-Lighting
   rule tabs remain off.
+
+### Changed
+
+- Frontend `_structuralInspectorTabSet` now exposes all action-authoring
+  tabs (`Lighting`, `Appliances`, `Media`, `HVAC`, `Vacuum`) on structural
+  hosts, matching ADR-HA-087/HA-089. Previously omitted Appliances against
+  the docs; corrected here.
+- ADR-HA-073 amended to explicitly cite ADR-HA-087 as the live tab-policy
+  authority. Removed phantom `ADR-HA-078` citations from `automation-ui-guide.md`
+  and `contracts.md` (the cited ADR never existed; HA-087 is the real one).
+- Renumbered the duplicate `ADR-HA-069 Appliances Tab` (2026-04-10) to
+  `ADR-HA-089` to resolve the number collision with the canonical
+  `ADR-HA-069 Floor Inspectors Manage Occupancy Groups` (2026-04-03).
 
 ### Removed
 
