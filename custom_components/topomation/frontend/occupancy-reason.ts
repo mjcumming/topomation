@@ -60,36 +60,44 @@ export function buildOccupancyExplanation(ctx: OccupancyReasonContext): Occupanc
 
   let detail: string | undefined;
   const activeContributors = activeContributorRows(attrs, ctx);
+  const kernelExplanation = occupancyExplanationFromAttrs(attrs);
+  const explanationContributors = activeContributors.length
+    ? []
+    : explanationHolderRows(kernelExplanation, ctx);
+  const currentHolders = activeContributors.length ? activeContributors : explanationContributors;
   const details: string[] = [];
 
   if (ctx.status === "occupied") {
     detail =
-      activeContributors[0]?.lineLabel ||
+      currentHolders[0]?.lineLabel ||
       formatOccupancyReason(transition?.reason, "occupied", ctx) ||
-      formatOccupancyReason(attrs.reason, "occupied", ctx);
+      formatOccupancyReason(attrs.reason, "occupied", ctx) ||
+      formatExplanationBasis(kernelExplanation, ctx);
   } else {
     detail =
       formatOccupancyReason(transition?.reason, "vacancy", ctx) ||
-      formatOccupancyReason(attrs.reason, "vacancy", ctx);
+      formatOccupancyReason(attrs.reason, "vacancy", ctx) ||
+      formatExplanationBasis(kernelExplanation, ctx);
   }
 
   const line = detail ? `${header} · ${detail}` : header;
   const reasonLine = timeLabel ? `${line} (${timeLabel})` : line;
 
-  if (activeContributors.length) {
-    const shown = activeContributors.slice(0, 4).map((row) => row.detailLabel);
+  if (currentHolders.length) {
+    const shown = currentHolders.slice(0, 4).map((row) => row.detailLabel);
     const more =
-      activeContributors.length > shown.length
-        ? `, +${activeContributors.length - shown.length} more`
+      currentHolders.length > shown.length
+        ? `, +${currentHolders.length - shown.length} more`
         : "";
+    const holderKind = activeContributors.length ? "source" : "holder";
     details.push(
-      `Active ${activeContributors.length === 1 ? "source" : "sources"}: ${shown.join(", ")}${more}.`
+      `Active ${currentHolders.length === 1 ? holderKind : `${holderKind}s`}: ${shown.join(", ")}${more}.`
     );
   } else if (ctx.status === "vacant") {
     details.push("No active occupancy sources are currently holding this location.");
   }
 
-  const nextChange = nextChangeDetail(attrs, activeContributors, ctx);
+  const nextChange = nextChangeDetail(attrs, currentHolders, ctx);
   if (nextChange) details.push(nextChange);
 
   const latestChange = latestRecentChange(attrs, ctx);
@@ -115,7 +123,7 @@ export function buildOccupancyExplanation(ctx: OccupancyReasonContext): Occupanc
     statusLabel: header,
     summary:
       ctx.status === "occupied"
-        ? occupiedSummary(detail, activeContributors)
+        ? occupiedSummary(detail, currentHolders)
         : vacantSummary(detail),
     reasonLine,
     details,
@@ -149,7 +157,8 @@ function activeContributorRows(
       contribution?.source_id || contribution?.source || "",
     ).trim();
     if (!sourceId) continue;
-    const lineLabel = sourceLabelForSourceId(sourceId, sources, ctx);
+    const sourceContext = contributionSourceContext(contribution, sourceId, sources, ctx);
+    const lineLabel = sourceContext.lineLabel;
     const ts =
       parseDateMs(contribution?.updated_at) ??
       parseDateMs(contribution?.changed_at) ??
@@ -161,7 +170,7 @@ function activeContributorRows(
       sourceId,
       lineLabel,
       detailLabel: detailContributorLabel(lineLabel, ts, now, expiresMs),
-      sentence: contributorSentence(sourceId, lineLabel, ctx),
+      sentence: sourceContext.sentence || contributorSentence(sourceId, lineLabel, ctx),
       ts,
       expiresMs,
       indefinite: contribution?.expires_at === null || contribution?.expires_at === undefined,
@@ -180,11 +189,83 @@ function activeContributorRows(
 function isContributionActive(contribution: any, nowMs: number): boolean {
   if (!contribution) return false;
   const state = String(contribution.state || contribution.value || "").toLowerCase();
+  if (state === "off" || state === "inactive" || state === "vacant" || state === "clear") {
+    return false;
+  }
   if (state === "on" || state === "active" || state === "occupied" || state === "trigger") {
     return true;
   }
+  if (contribution.expires_at === null || contribution.expires_at === undefined) return true;
   const expires = parseDateMs(contribution.expires_at);
   return Boolean(expires && expires > nowMs);
+}
+
+function occupancyExplanationFromAttrs(attrs: Record<string, any>): Record<string, any> | undefined {
+  const explanation = attrs.explanation;
+  return explanation && typeof explanation === "object" ? explanation : undefined;
+}
+
+function explanationHolderRows(
+  explanation: Record<string, any> | undefined,
+  ctx: OccupancyReasonContext,
+): ContributorRow[] {
+  const heldBy = Array.isArray(explanation?.held_by) ? explanation?.held_by : [];
+  if (!heldBy.length) return [];
+  return activeContributorRows({ contributions: heldBy }, ctx);
+}
+
+function contributionSourceContext(
+  contribution: any,
+  sourceId: string,
+  sources: OccupancySource[],
+  ctx: OccupancyReasonContext,
+): { lineLabel: string; sentence?: string } {
+  const parsed = contributionOrigin(contribution, sourceId);
+  if (!parsed) {
+    return { lineLabel: sourceLabelForSourceId(sourceId, sources, ctx) };
+  }
+
+  const originLocation = (ctx.locations || []).find((location) => location.id === parsed.locationId);
+  const originCtx = originLocation ? { ...ctx, location: originLocation } : ctx;
+  const sourceLabel = sourceLabelForSourceId(
+    parsed.sourceId,
+    originLocation ? getOccupancySources(originLocation) : sources,
+    originCtx,
+  );
+  const locationName = displayNameForLocationOrAreaId(parsed.locationId, ctx);
+  return {
+    lineLabel: `${sourceLabel} in ${locationName}`,
+    sentence: `${sourceLabel} in ${locationName} is active`,
+  };
+}
+
+function contributionOrigin(
+  contribution: any,
+  sourceId: string,
+): { locationId: string; sourceId: string } | undefined {
+  const originLocationId = stringField(contribution?.origin_location_id);
+  const originSourceId = stringField(contribution?.origin_source_id);
+  if (originLocationId && originSourceId) {
+    return { locationId: originLocationId, sourceId: originSourceId };
+  }
+
+  return parseGroupMemberSourceId(sourceId);
+}
+
+function stringField(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function parseGroupMemberSourceId(sourceId: string): { locationId: string; sourceId: string } | undefined {
+  const marker = "__group_member__:";
+  if (!sourceId.startsWith(marker)) return undefined;
+  const remainder = sourceId.slice(marker.length);
+  const separatorIndex = remainder.indexOf("::");
+  if (separatorIndex <= 0) return undefined;
+  const locationId = remainder.slice(0, separatorIndex).trim();
+  const originSourceId = remainder.slice(separatorIndex + 2).trim();
+  if (!locationId || !originSourceId) return undefined;
+  return { locationId, sourceId: originSourceId };
 }
 
 function getOccupancySources(location: Location): OccupancySource[] {
@@ -225,7 +306,9 @@ function contributorSentence(
     locationIdAfterMarker("__group_member__:") ||
     locationIdAfterMarker("__group_member__.");
   if (groupId) {
-    return `${displayNameForLocationOrAreaId(groupId, ctx)} is occupied through the group`;
+    const parsed = parseGroupMemberSourceId(raw);
+    const locationId = parsed?.locationId || groupId;
+    return `${displayNameForLocationOrAreaId(locationId, ctx)} is occupied through the group`;
   }
 
   const linkedId = locationIdAfterMarker("linked:");
@@ -278,16 +361,29 @@ function structuralSourceLabel(
   };
 
   return (
+    groupMemberStructuralLabel(raw, ctx) ||
     prefixedLabel("__child__", ":", (n) => `${n} is occupied`) ||
     prefixedLabel("__child__", ".", (n) => `${n} is occupied`) ||
+    prefixedLabel("__follow_parent__", ":", (n) => `linked to ${n}`) ||
+    prefixedLabel("__follow_parent__", ".", (n) => `linked to ${n}`) ||
     prefixedLabel("__follow__", ":", (n) => `linked to ${n}`) ||
     prefixedLabel("__follow__", ".", (n) => `linked to ${n}`) ||
-    prefixedLabel("__group_member__", ":", (n) => `group member ${n}`) ||
     prefixedLabel("__group_member__", ".", (n) => `group member ${n}`) ||
+    prefixedLabel("__lock_hold__", ":", (n) => `lock hold for ${n}`) ||
+    prefixedLabel("__lock_hold__", ".", (n) => `lock hold for ${n}`) ||
     (raw.startsWith("linked:")
       ? `linked from ${displayNameForLocationOrAreaId(raw.slice("linked:".length).trim(), ctx)}`
       : undefined)
   );
+}
+
+function groupMemberStructuralLabel(
+  sourceId: string,
+  ctx: OccupancyReasonContext,
+): string | undefined {
+  const parsed = parseGroupMemberSourceId(sourceId);
+  if (!parsed) return undefined;
+  return `group member ${displayNameForLocationOrAreaId(parsed.locationId, ctx)}`;
 }
 
 function displayNameForLocationOrAreaId(
@@ -355,6 +451,30 @@ function formatOccupancyReason(
   return raw;
 }
 
+function formatExplanationBasis(
+  explanation: Record<string, any> | undefined,
+  ctx: OccupancyReasonContext,
+): string | undefined {
+  const basis = typeof explanation?.basis === "string" ? explanation.basis : "";
+  if (!basis) return undefined;
+  if (basis === "occupancy_group") {
+    const projectedFrom = explanation?.projected_from;
+    const members = Array.isArray(projectedFrom?.members) ? projectedFrom.members : [];
+    const memberNames = members
+      .map((id: unknown) => (typeof id === "string" ? displayNameForLocationOrAreaId(id, ctx) : ""))
+      .filter(Boolean);
+    if (memberNames.length) {
+      return `occupancy group ${memberNames.slice(0, 3).join(", ")} is occupied`;
+    }
+    return "the occupancy group is occupied";
+  }
+  if (basis === "child_rollup") return "a child location is occupied";
+  if (basis === "follow_parent") return "the parent location is occupied";
+  if (basis === "lock_hold" || basis === "lock_freeze") return "a lock is holding occupancy";
+  if (basis === "no_active_holds") return "no active holders remain";
+  return undefined;
+}
+
 function occupiedSummary(
   detail: string | undefined,
   contributors: ContributorRow[],
@@ -364,7 +484,7 @@ function occupiedSummary(
     if (contributors.length === 1) return `Occupied because ${first}.`;
     return `Occupied because ${first} and ${contributors.length - 1} other source${contributors.length === 2 ? "" : "s"} are active.`;
   }
-  if (!detail) return "Occupied, but no active reason is available yet.";
+  if (!detail) return "Occupied. No active holder is exposed by the runtime yet.";
   if (detail.endsWith(".")) return `Occupied because ${detail}`;
   return `Occupied because ${detail}.`;
 }
@@ -417,7 +537,7 @@ function latestRecentChange(
 ): string | undefined {
   const changes = Array.isArray(attrs.recent_changes) ? attrs.recent_changes : [];
   const latest = changes[0];
-  if (!latest || typeof latest !== "object") return undefined;
+  if (!latest || typeof latest !== "object") return latestTransitionChange(attrs, ctx);
   const kind = String(latest.kind || "").toLowerCase();
   const event = String(latest.event || "").toLowerCase();
   const sourceId = typeof latest.source_id === "string" ? latest.source_id.trim() : "";
@@ -440,7 +560,52 @@ function latestRecentChange(
     return `Latest event: location became vacant${suffix}.`;
   }
   if (event) return `Latest event: ${event}${suffix}.`;
-  return undefined;
+  return latestTransitionChange(attrs, ctx);
+}
+
+function latestTransitionChange(
+  attrs: Record<string, any>,
+  ctx: OccupancyReasonContext,
+): string | undefined {
+  const transition = occupancyExplanationFromAttrs(attrs)?.latest_transition;
+  if (!transition || typeof transition !== "object") return undefined;
+  const event = String(transition.event || "").toLowerCase();
+  if (!event) return undefined;
+  const changedAt = parseDateMs(transition.changed_at);
+  const age = changedAt ? formatElapsed(changedAt, ctx.nowMs ?? Date.now()) : undefined;
+  const suffix = age ? ` ${age} ago` : "";
+  const sourceLabel = transitionSourceLabel(transition, ctx);
+  if (event === "occupied") {
+    return sourceLabel
+      ? `Latest event: ${sourceLabel} reported activity${suffix}.`
+      : `Latest event: location became occupied${suffix}.`;
+  }
+  if (event === "vacant") {
+    return sourceLabel
+      ? `Latest event: ${sourceLabel} cleared${suffix}.`
+      : `Latest event: location became vacant${suffix}.`;
+  }
+  return `Latest event: ${event}${suffix}.`;
+}
+
+function transitionSourceLabel(
+  transition: Record<string, any>,
+  ctx: OccupancyReasonContext,
+): string | undefined {
+  const originSourceId = stringField(transition.origin_source_id) || stringField(transition.source_id);
+  if (!originSourceId) return undefined;
+  const originLocationId = stringField(transition.origin_location_id);
+  const originLocation = originLocationId
+    ? (ctx.locations || []).find((location) => location.id === originLocationId)
+    : undefined;
+  const originCtx = originLocation ? { ...ctx, location: originLocation } : ctx;
+  const sourceLabel = sourceLabelForSourceId(
+    originSourceId,
+    originLocation ? getOccupancySources(originLocation) : getOccupancySources(ctx.location),
+    originCtx,
+  );
+  if (!originLocationId) return sourceLabel;
+  return `${sourceLabel} in ${displayNameForLocationOrAreaId(originLocationId, ctx)}`;
 }
 
 function parseDateMs(value: unknown): number | undefined {

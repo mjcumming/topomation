@@ -2167,6 +2167,13 @@ async def test_set_module_config_occupancy_group_id_uses_shared_runtime_state_fo
     kitchen_sources = kitchen_state.get("contributions") or []
     assert any(item.get("origin_location_id") == "area_family_room" for item in family_sources)
     assert any(item.get("origin_location_id") == "area_family_room" for item in kitchen_sources)
+    kitchen_explanation = kitchen_state.get("explanation") or {}
+    assert kitchen_explanation.get("basis") == "occupancy_group"
+    assert any(
+        item.get("origin_location_id") == "area_family_room"
+        and item.get("origin_source_id") == "sensor.family_motion"
+        for item in kitchen_explanation.get("held_by", [])
+    )
 
 
 @pytest.mark.asyncio
@@ -2282,6 +2289,18 @@ async def test_occupancy_states_list_projects_group_members_from_backend(
     assert states_by_id["area_kitchen"]["projection"] == "occupancy_group_member"
     assert states_by_id["area_front_entry"]["occupancy_group_id"] == "main_open_area"
     assert states_by_id["area_kitchen"]["occupancy_group_id"] == "main_open_area"
+    kitchen_explanation = states_by_id["area_kitchen"]["explanation"]
+    assert kitchen_explanation["basis"] == "occupancy_group"
+    assert kitchen_explanation["projected_from"]["kind"] == "occupancy_group"
+    assert any(
+        item.get("origin_location_id") == "area_front_entry"
+        and item.get("origin_source_id") == "sensor.front_entry_motion"
+        for item in kitchen_explanation["held_by"]
+    )
+    assert (
+        states_by_id["area_kitchen"]["state"]["attributes"]["explanation"]["basis"]
+        == "occupancy_group"
+    )
     assert states_by_id["floor_main"]["occupied"] is True
     assert states_by_id["floor_main"]["projection"] in {
         "managed_shadow_host",

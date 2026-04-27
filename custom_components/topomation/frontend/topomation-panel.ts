@@ -2509,6 +2509,7 @@ export class TopomationPanel extends LitElement {
         seconds_until_vacant: runtimeState.seconds_until_vacant,
         previous_occupied: runtimeState.previous_occupied,
         reason: runtimeState.reason,
+        explanation: runtimeState.explanation,
         recent_changes: Array.isArray(runtimeState.recent_changes)
           ? runtimeState.recent_changes
           : [],

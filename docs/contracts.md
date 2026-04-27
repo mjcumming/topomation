@@ -760,6 +760,11 @@ Additional save points:
   - occupied/vacant state, previous state, reason, changed timestamp, lock
     summary, effective timeout/vacancy fields, and concise contributor/recent
     evidence where available
+  - `explanation`: a machine-readable current-state explanation from the
+    occupancy runtime when available. It is not a localized sentence; it carries
+    stable facts such as `basis`, `held_by`, `projected_from`, locks, suspended
+    holds, and `latest_transition` so the panel can render user copy without
+    reverse-engineering group/source provenance from raw ids.
 - Occupancy Groups remain runtime-authority objects per C-013. A grouped member's
   projection must already be group-projected when it reaches the panel; the panel
   must not need to inspect sibling `occupancy_group_id` values to decide whether

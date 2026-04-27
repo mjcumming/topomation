@@ -110,60 +110,113 @@ Outcome:
 
 ## 8. Current Release Candidate Record
 
-Commit under test: **release-candidate worktree for Topomation `0.2.73`**
-(occupancy default projection, ambient lux defaults migration, release metadata).
-Frontend bundle rebuilt from same commit: **yes** (`npm run build` →
-committed `topomation-panel.js`; parity verified by
-`./scripts/test-comprehensive.sh` and split live release gate on 2026-04-27).
+Commit under test: **release-candidate worktree for Topomation `0.2.74`**
+with sibling `home-topology` `1.0.5` installed into the local HA venv for live
+validation. This candidate adds structured occupancy explanations and includes
+the location-inspector run-on-startup dirty-state bug fix.
+Frontend bundle rebuilt from same candidate: **yes** (`npm run build` via
+`./scripts/test-comprehensive.sh`; committed `topomation-panel.js` also passed
+`node --check` after the generated Lit regex whitespace cleanup).
 
 Touched workflows:
-- **Backend occupancy projection default state**: `occupancy/states/list`
-  projects locations with no runtime occupancy record as known vacant instead of
-  unknown.
-- **Panel/tree/inspector occupancy rendering**: quiet rooms and structural
-  rollups show vacant/off instead of unknown on initial panel load.
-- **Ambient lux default authoring**: new lighting rules and fallback automation
-  configs use 800 lux dark / 1200 lux bright defaults.
-- **Ambient lux one-shot migration**: integration reload updates legacy
-  default-looking 50/500 ambient configs while preserving custom thresholds.
-- **Ideas/documentation tracking**: `docs/ideas.md` records deferred product
-  ideas without changing runtime behavior.
+- **Home-topology occupancy explanation contract**: occupancy states expose a
+  structured `explanation` payload with holder provenance, grouped-origin
+  metadata, latest transitions, lock holders, and suspended holds.
+- **Topomation occupancy state projection/entity attributes**:
+  `occupancy/states/list`, state-like websocket payloads, and occupancy binary
+  sensors pass the structured `explanation` through.
+- **Panel/tree/inspector occupancy reason rendering**: indefinite holders,
+  occupancy-group peers, follow-parent/lock holders, and latest-transition
+  fallbacks render as useful user-facing reasons instead of "no active reason".
+- **Grouped occupancy projection recency**: projected grouped peers merge recent
+  changes from the shared/effective runtime source so the UI can explain synced
+  peer state.
+- **Live occupancy projection event payload size**: occupancy state changed
+  events publish only the changed location and grouped peers while websocket
+  snapshots remain full.
+- **Location inspector action-rule hydration**: persisted
+  `run_on_startup` settings hydrate into the editor dirty-state baseline so
+  unchanged rules do not look modified.
+- **Dependency pin/release metadata**: Topomation `0.2.74` pins
+  `home-topology==1.0.5`; changelogs and contracts document the new contract.
 
 Commands run:
-- `pytest --no-cov tests/test_websocket_contract.py -k
-  "missing_runtime or group_members"` — **PASS** (focused occupancy projection
-  regression, 2026-04-27)
-- `pytest --no-cov tests/test_ambient_config_defaults.py
-  tests/test_managed_action_config_build_matrix.py -q` — **PASS** (ambient
-  defaults and migration regression, 2026-04-27)
-- `pytest` — **PASS** (300 passed, 15 skipped, 2026-04-27)
-- `npm test` — **PASS** (196 browser component tests, 2026-04-27)
-- `npm run build` — **PASS** (rebuilt `topomation-panel.js`, 2026-04-27)
-- `./scripts/test-comprehensive.sh` — **PASS** (local comprehensive matrix,
+- `cd /workspaces/home-topology && make check` — **PASS** (`ruff`, `mypy`,
+  `PYTHONPATH=src pytest tests/`: 280 passed, 1 warning; 2026-04-27)
+- `cd /workspaces/home-topology && python -m build` — **PASS**
+  (`home_topology-1.0.5` sdist and wheel built; 2026-04-27)
+- `cd /workspaces/home-topology && python -m twine check
+  dist/home_topology-1.0.5*` — **PASS** (sdist and wheel metadata; 2026-04-27)
+- `pytest /workspaces/home-topology/tests/test_occupancy_module.py -q` —
+  **PASS** (18 passed; 2026-04-27)
+- `pytest tests/test_websocket_contract.py -q -k
+  "occupancy_group_id_uses_shared_runtime_state or
+  occupancy_states_list_projects_group_members" --no-cov` — **PASS**
+  (2 passed; 2026-04-27)
+- `pytest tests/test_binary_sensor.py -q --no-cov` — **PASS** (5 passed;
   2026-04-27)
-- `make test-release-live` — **PARTIAL PASS / wrapper failure**: local
-  comprehensive matrix passed on `0.2.73`; the Make wrapper failed only after
-  the wrapper-managed HA process exited before the live handoff.
-- `./tests/run-live-tests.sh tests/test-live-managed-actions-contract.py` —
-  **PASS** (real HA managed-action contract, 2026-04-27)
+- `cd custom_components/topomation/frontend && npm test -- --run
+  occupancy-reason.test.ts` — **PASS** (11 passed; 2026-04-27)
+- `cd custom_components/topomation/frontend && npm run build` — **PASS**
+  (rebuilt `topomation-panel.js`; 2026-04-27)
+- `cd custom_components/topomation/frontend && npx playwright test
+  playwright/production-smoke.spec.ts --project=chromium` — **PASS**
+  (4 passed; 2026-04-27)
+- `./scripts/test-comprehensive.sh` — **PASS** (version sync `0.2.74`,
+  `ruff`, `mypy`, backend `pytest`: 301 passed / 15 skipped, Vitest, Web Test
+  Runner: 199 passed, frontend build, Playwright: 34 passed; 2026-04-27)
+- `pytest
+  tests/test_init.py::test_setup_entry_forwards_minimal_occupancy_projection_event
+  tests/test_init.py::test_setup_entry_forwards_occupancy_changed_to_ha_bus -q
+  --no-cov` — **PASS** (2 passed; 2026-04-27)
+- `make test-release-live` — **PARTIAL PASS / live handoff failure**: local
+  comprehensive matrix passed on `0.2.74`; live handoff failed because local HA
+  was not running. Starting HA then exposed the expected pre-publish dependency
+  issue until `home-topology 1.0.5` was installed into the HA venv.
+- `/home/vscode/.local/ha-venv/bin/python -m pip install -e
+  /workspaces/home-topology` — **PASS** (local HA venv now has
+  `home-topology 1.0.5`; 2026-04-27)
+- `/home/vscode/.local/ha-venv/bin/hass -c /workspaces/core/config --debug` —
+  **PASS** (foreground HA API reachable and Topomation setup complete;
+  2026-04-27)
+- `TOPOMATION_PREFER_LOCAL_HA=1 HA_TARGET=dev
+  ./tests/run-live-tests.sh tests/test-live-managed-actions-contract.py` —
+  **PASS** (2 live HA contract tests; 2026-04-27)
 - `HA_URL="http://localhost:8123" HA_TOKEN="$(cat ha_long_lived_token)"
   npx playwright test --config playwright.live.config.ts
   playwright/live-automation-ui.spec.ts` — **PASS** (6 live browser workflow
   tests, 2026-04-27)
+- `rg -n
+  "2026-04-27 18:5[0-9].*Event data for topomation_occupancy_state_changed exceed"
+  /workspaces/core/config/home-assistant.log || true` — **PASS** (no 32KB
+  recorder warning after the post-trim live run; 2026-04-27)
+- `git diff --check` and
+  `node --check custom_components/topomation/frontend/topomation-panel.js` —
+  **PASS** after final bundle whitespace cleanup (2026-04-27)
 
 Outcome:
-- Version sync (`0.2.73`): **PASS**
-- Backend occupancy default projection: **PASS**
-- Frontend quiet-room occupancy rendering: **PASS**
-- Ambient defaults and one-shot migration: **PASS**
+- Version sync (`0.2.74`): **PASS**
+- Home-topology structured occupancy explanation contract: **PASS**
+- Topomation occupancy projection/entity explanation passthrough: **PASS**
+- Occupancy reason rendering for indefinite/grouped/projected holders: **PASS**
+- Grouped occupancy projection recency: **PASS**
+- Live occupancy projection event payload size: **PASS**
+- Location inspector run-on-startup dirty-state hydration: **PASS**
 - Frontend bundle parity: **PASS**
 - Local comprehensive gate: **PASS**
 - Live HA managed-action contract: **PASS**
 - Live HA browser workflows: **PASS**
 
 Notes:
-- `make test-release-live` exposed a local HA process-wrapper problem: HA was
-  reachable briefly, then exited before the live test handoff. Running HA in the
-  foreground and executing the same live contract/browser commands passed.
+- Local live validation required installing the sibling `home-topology 1.0.5`
+  into the HA venv before publication because Topomation `0.2.74` pins that
+  version. Release order is therefore: publish/tag `home-topology 1.0.5`, then
+  push Topomation `0.2.74`.
+- `make test-release-live` remains useful as the one-command gate, but this run
+  used the split live path after starting HA in the foreground so the current
+  workspace integration stayed loaded during the browser handoff.
+- Live HA initially logged a recorder-size warning for full projection events;
+  the event payload was trimmed and the post-trim live run did not reproduce the
+  warning.
 - After push to `main`, confirm CI and **Auto Release** are green for the
   release commit before considering the release complete.

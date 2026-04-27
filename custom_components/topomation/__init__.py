@@ -131,6 +131,39 @@ def _should_skip_occupied_extension_explainability(
     return delta < _OCCUPANCY_EXTENSION_EXPLAINABILITY_THROTTLE_SECONDS
 
 
+def _live_occupancy_projection_event_states(
+    projected_states: list[dict[str, Any]],
+    location_id: str,
+) -> list[dict[str, Any]]:
+    """Return the minimal occupancy projection rows needed for a live update."""
+    states = [
+        state
+        for state in projected_states
+        if isinstance(state, Mapping) and isinstance(state.get("location_id"), str)
+    ]
+    changed_state = next(
+        (state for state in states if state.get("location_id") == location_id),
+        None,
+    )
+    if changed_state is None:
+        return []
+
+    include_location_ids = {location_id}
+    occupancy_group_id = changed_state.get("occupancy_group_id")
+    if isinstance(occupancy_group_id, str) and occupancy_group_id:
+        include_location_ids.update(
+            state["location_id"]
+            for state in states
+            if state.get("occupancy_group_id") == occupancy_group_id
+        )
+
+    return [
+        dict(state)
+        for state in states
+        if state.get("location_id") in include_location_ids
+    ]
+
+
 async def _async_handle_options_update(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Reload integration when options change."""
     await hass.config_entries.async_reload(entry.entry_id)
@@ -321,13 +354,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     exc_info=True,
                 )
             else:
-                hass.bus.async_fire(
-                    EVENT_TOPOMATION_OCCUPANCY_STATE_CHANGED,
-                    {
-                        "entry_id": entry.entry_id,
-                        "states": projected_states,
-                    },
+                live_states = _live_occupancy_projection_event_states(
+                    projected_states,
+                    location_id,
                 )
+                if live_states:
+                    hass.bus.async_fire(
+                        EVENT_TOPOMATION_OCCUPANCY_STATE_CHANGED,
+                        {
+                            "entry_id": entry.entry_id,
+                            "states": live_states,
+                        },
+                    )
 
     bus.subscribe(_forward_occupancy_changed, EventFilter(event_type="occupancy.changed"))
 

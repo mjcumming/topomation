@@ -91,6 +91,7 @@ async def test_binary_sensor_updates_on_live_occupancy_changed_event() -> None:
 
     assert sensor.is_on is True
     assert sensor.extra_state_attributes["reason"] == "event:trigger"
+    assert "explanation" in sensor.extra_state_attributes
     assert sensor.extra_state_attributes["recent_changes"] == [{"kind": "state", "event": "occupied"}]
     assert sensor.async_write_ha_state.call_count == 1
 

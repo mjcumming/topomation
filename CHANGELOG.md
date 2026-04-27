@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.74] - 2026-04-27
+
+### Changed
+
+- **Occupancy explanation contract**: Topomation now requires
+  `home-topology==1.0.5` and consumes the kernel's structured occupancy
+  `explanation` payload (`basis`, `held_by`, `projected_from`, and
+  `latest_transition`) instead of relying on frontend-only reason inference for
+  grouped/rolled-up occupancy.
+
+### Fixed
+
+- **Occupied with no visible reason**: indefinite holders (`expires_at: null`)
+  now count as active evidence in the header/detail reason builder, and grouped
+  contributions use their origin room/source metadata so peers such as Kitchen
+  and Front Entry can say what is actually holding the group occupied.
+- **Large live occupancy events**: `topomation_occupancy_state_changed` now emits
+  only the changed location and its occupancy-group peers instead of the full
+  projection snapshot, avoiding Home Assistant recorder size warnings while
+  keeping websocket snapshots complete.
+
 ## [0.2.73] - 2026-04-27
 
 ### Fixed

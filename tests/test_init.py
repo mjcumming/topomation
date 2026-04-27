@@ -22,6 +22,7 @@ from custom_components.topomation import _prune_hidden_entities
 from custom_components.topomation.const import (
     DOMAIN,
     EVENT_TOPOMATION_OCCUPANCY_CHANGED,
+    EVENT_TOPOMATION_OCCUPANCY_STATE_CHANGED,
     STORAGE_KEY_CONFIG,
     STORAGE_VERSION,
 )
@@ -217,6 +218,84 @@ async def test_setup_entry_forwards_occupancy_changed_to_ha_bus(
     assert matched["reason"] == "event:trigger"
     assert matched["recent_changes"][0]["kind"] == "state"
     assert matched["recent_changes"][0]["event"] == "occupied"
+
+
+async def test_setup_entry_forwards_minimal_occupancy_projection_event(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    mock_event_bus: Mock,
+) -> None:
+    """Live occupancy projection events should not publish full snapshots."""
+    config_entry.add_to_hass(hass)
+
+    with (
+        patch("custom_components.topomation.async_register_panel"),
+        patch("custom_components.topomation.async_register_websocket_api"),
+        patch("custom_components.topomation.async_register_services"),
+        patch.object(hass.config_entries, "async_forward_entry_setups", return_value=True),
+    ):
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    occupancy_forwarders = []
+    for call in mock_event_bus.subscribe.call_args_list:
+        if len(call.args) < 2:
+            continue
+        callback = call.args[0]
+        event_filter = call.args[1]
+        if (
+            getattr(event_filter, "event_type", None) == "occupancy.changed"
+            and getattr(callback, "__name__", None) == "_forward_occupancy_changed"
+        ):
+            occupancy_forwarders.append(callback)
+
+    forwarded_projection_events: list[dict] = []
+    unsub = hass.bus.async_listen(
+        EVENT_TOPOMATION_OCCUPANCY_STATE_CHANGED,
+        lambda evt: forwarded_projection_events.append(dict(evt.data or {})),
+    )
+
+    event = Mock()
+    event.location_id = "area_kitchen"
+    event.payload = {
+        "occupied": True,
+        "previous_occupied": False,
+        "reason": "event:trigger",
+    }
+    with patch(
+        "custom_components.topomation.build_occupancy_projection_states",
+        return_value=[
+            {
+                "location_id": "area_kitchen",
+                "occupied": True,
+                "occupancy_group_id": "main_open_area",
+                "explanation": {"basis": "held_by"},
+            },
+            {
+                "location_id": "area_front_entry",
+                "occupied": True,
+                "occupancy_group_id": "main_open_area",
+                "explanation": {"basis": "held_by"},
+            },
+            {
+                "location_id": "area_guest_bedroom",
+                "occupied": False,
+                "explanation": {"basis": "none"},
+            },
+        ],
+    ):
+        for callback in occupancy_forwarders:
+            callback(event)
+
+    await hass.async_block_till_done()
+    unsub()
+
+    assert len(forwarded_projection_events) == 1
+    states = forwarded_projection_events[0]["states"]
+    assert {state["location_id"] for state in states} == {
+        "area_kitchen",
+        "area_front_entry",
+    }
 
 
 async def test_setup_entry_throttles_stayed_occupied_explainability_within_window(

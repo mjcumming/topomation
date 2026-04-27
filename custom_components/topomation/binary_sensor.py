@@ -246,6 +246,7 @@ class OccupancyBinarySensor(BinarySensorEntity):
             "seconds_until_vacant": seconds_until_vacant,
             "previous_occupied": payload.get("previous_occupied", False),
             "reason": payload.get("reason"),
+            "explanation": payload.get("explanation"),
             "recent_changes": self._recent_changes_provider(self._location_id),
         }
 

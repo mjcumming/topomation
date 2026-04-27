@@ -8224,6 +8224,7 @@ export class HtLocationInspector extends LitElement {
       time_condition_enabled: Boolean(rule.time_condition_enabled),
       start_time: this._normalizeActionTime(rule.start_time, "18:00"),
       end_time: this._normalizeActionTime(rule.end_time, "23:59"),
+      run_on_startup: Boolean(rule.run_on_startup),
       enabled: rule.enabled !== false,
     });
   }
@@ -11202,9 +11203,14 @@ export class HtLocationInspector extends LitElement {
   private _isContributionActive(contribution: any): boolean {
     if (!contribution) return false;
     const state = String(contribution.state || contribution.value || "").toLowerCase();
+    if (state === "off" || state === "inactive" || state === "vacant" || state === "clear") {
+      return false;
+    }
     if (state === "on" || state === "active" || state === "occupied" || state === "trigger") {
       return true;
     }
+
+    if (contribution.expires_at === null || contribution.expires_at === undefined) return true;
 
     const expiresAt = this._parseDateValue(contribution.expires_at);
     if (!expiresAt) return false;

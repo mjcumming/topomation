@@ -105,6 +105,7 @@ export interface OccupancyRuntimeState {
   effective_timeout_at?: string | null;
   seconds_until_vacant?: number | null;
   occupancy_group_id?: string | null;
+  explanation?: Record<string, any> | null;
   summary?: string;
   contributors?: unknown[];
   contributions?: unknown[];

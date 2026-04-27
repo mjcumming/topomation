@@ -115,6 +115,121 @@ describe("buildOccupancyReasonLine", () => {
     expect(line).to.include("2m");
   });
 
+  it("treats indefinite active contributions as current holders", () => {
+    const location = makeLocation({ id: "kitchen" });
+    const hass = makeHass({
+      states: {
+        "binary_sensor.kitchen_presence": {
+          entity_id: "binary_sensor.kitchen_presence",
+          state: "on",
+          attributes: { friendly_name: "Kitchen Presence" },
+        },
+      } as any,
+    });
+
+    const explanation = buildOccupancyExplanation({
+      location,
+      locations: [location],
+      hass,
+      occupancyStates: { kitchen: true },
+      occupancyTransitions: {},
+      occupancyRuntimeStates: {
+        kitchen: runtimeState("kitchen", "on", tMinus(90), {
+          contributions: [
+            {
+              source_id: "binary_sensor.kitchen_presence",
+              expires_at: null,
+            },
+          ],
+        }),
+      },
+      status: "occupied",
+      nowMs: NOW,
+    });
+
+    expect(explanation.summary).to.equal("Occupied because Kitchen Presence is active.");
+    expect(explanation.details.join(" ")).to.include("Stays occupied until the active source clears");
+  });
+
+  it("uses structured group contribution provenance for occupied summaries", () => {
+    const frontEntry = makeLocation({
+      id: "front_entry",
+      name: "Front Entry",
+      modules: {
+        _meta: { type: "area" },
+        occupancy: { enabled: true, default_timeout: 300, occupancy_sources: [] },
+      },
+    });
+    const kitchen = makeLocation({
+      id: "kitchen",
+      name: "Kitchen",
+      modules: {
+        _meta: { type: "area" },
+        occupancy: {
+          enabled: true,
+          default_timeout: 300,
+          occupancy_sources: [{ entity_id: "binary_sensor.kitchen_motion", mode: "specific_states" }],
+        },
+      },
+    });
+    const hass = makeHass({
+      states: {
+        "binary_sensor.kitchen_motion": {
+          entity_id: "binary_sensor.kitchen_motion",
+          state: "on",
+          attributes: { friendly_name: "Kitchen Motion" },
+        },
+      } as any,
+    });
+
+    const explanation = buildOccupancyExplanation({
+      location: frontEntry,
+      locations: [frontEntry, kitchen],
+      hass,
+      occupancyStates: { front_entry: true, kitchen: true },
+      occupancyTransitions: {},
+      occupancyRuntimeStates: {
+        front_entry: runtimeState("front_entry", "on", tMinus(30), {
+          explanation: {
+            version: 1,
+            basis: "occupancy_group",
+            projected_from: {
+              kind: "occupancy_group",
+              group_id: "main_open_area",
+              members: ["front_entry", "kitchen"],
+            },
+            held_by: [
+              {
+                kind: "source",
+                source_id: "__group_member__:kitchen::binary_sensor.kitchen_motion",
+                origin_location_id: "kitchen",
+                origin_source_id: "binary_sensor.kitchen_motion",
+                via_occupancy_group: "main_open_area",
+                expires_at: null,
+              },
+            ],
+            latest_transition: {
+              event: "occupied",
+              cause: "trigger",
+              source_id: "__group_member__:kitchen::binary_sensor.kitchen_motion",
+              origin_location_id: "kitchen",
+              origin_source_id: "binary_sensor.kitchen_motion",
+              changed_at: tMinus(30),
+            },
+          },
+        }),
+      },
+      status: "occupied",
+      nowMs: NOW,
+    });
+
+    expect(explanation.summary).to.equal("Occupied because Kitchen Motion in Kitchen is active.");
+    expect(explanation.details.join(" ")).to.include("Active holder: Kitchen Motion in Kitchen");
+    expect(explanation.details.join(" ")).to.include(
+      "Latest event: Kitchen Motion in Kitchen reported activity"
+    );
+  });
+
   it("renders linked occupancy as 'linked from <name>'", () => {
     const kitchen = makeLocation({
       id: "kitchen",

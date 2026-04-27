@@ -21,6 +21,7 @@ except Exception:  # pragma: no cover - compatibility import
 
 from .const import (
     DOMAIN,
+    EVENT_TOPOMATION_UPDATED,
     META_TOPOLOGY_ANCHOR_KEY,
     WS_TYPE_ACTION_RULES_CREATE,
     WS_TYPE_ACTION_RULES_DELETE,
@@ -76,6 +77,22 @@ _ACTION_LEGACY_TRIGGER_MAP: dict[str, str] = {
     "vacant": "on_vacant",
 }
 _ACTION_AMBIENT_CONDITIONS = frozenset({"any", "dark", "bright"})
+
+
+def _fire_topomation_updated(
+    hass: HomeAssistant,
+    kernel: dict[str, Any],
+    reason: str,
+    **payload: Any,
+) -> None:
+    """Publish a panel refresh signal after successful topology mutations."""
+    entry = kernel.get("entry")
+    entry_id = getattr(entry, "entry_id", None)
+    event_payload: dict[str, Any] = {"reason": reason}
+    if isinstance(entry_id, str) and entry_id:
+        event_payload["entry_id"] = entry_id
+    event_payload.update(payload)
+    hass.bus.async_fire(EVENT_TOPOMATION_UPDATED, event_payload)
 
 
 def _normalize_action_trigger_type(raw_value: Any) -> str:
@@ -527,10 +544,45 @@ def _serialize_projection_state_like(
             "seconds_until_vacant": payload.get("seconds_until_vacant"),
             "previous_occupied": payload.get("previous_occupied", False),
             "reason": payload.get("reason"),
+            "explanation": payload.get("explanation"),
             "recent_changes": recent_changes,
             "occupancy_group_id": payload.get("occupancy_group_id"),
         },
     }
+
+
+def _projection_recent_changes(
+    recent_by_location: Any,
+    location_id: str,
+    effective_id: str,
+) -> list[dict[str, Any]]:
+    """Return newest-first explainability rows for a projected occupancy row."""
+    rows: list[dict[str, Any]] = []
+    seen: set[tuple[Any, ...]] = set()
+    for candidate_id in (location_id, effective_id):
+        if not candidate_id:
+            continue
+        try:
+            source_rows = recent_by_location.get(candidate_id, [])
+        except AttributeError:
+            source_rows = []
+        for row in source_rows:
+            if not isinstance(row, dict):
+                continue
+            identity = (
+                row.get("kind"),
+                row.get("event"),
+                row.get("changed_at"),
+                row.get("source_id"),
+                row.get("signal_key"),
+                row.get("occupied"),
+            )
+            if identity in seen:
+                continue
+            seen.add(identity)
+            rows.append(dict(row))
+
+    return sorted(rows, key=lambda row: str(row.get("changed_at") or ""), reverse=True)
 
 
 def build_occupancy_projection_states(
@@ -635,7 +687,7 @@ def build_occupancy_projection_states(
         previous_occupied = payload.get("previous_occupied")
         reason = payload.get("reason")
         timeout_at = payload.get("effective_timeout_at") or payload.get("vacant_at")
-        recent_changes = list(recent_by_location.get(location_id, []))
+        recent_changes = _projection_recent_changes(recent_by_location, location_id, effective_id)
 
         state_like = _serialize_projection_state_like(
             location_id=location_id,
@@ -663,6 +715,7 @@ def build_occupancy_projection_states(
                 "effective_timeout_at": timeout_at,
                 "seconds_until_vacant": payload.get("seconds_until_vacant"),
                 "occupancy_group_id": group_id or payload.get("occupancy_group_id"),
+                "explanation": payload.get("explanation"),
                 "summary": (
                     "Occupied" if occupied is True else "Vacant" if occupied is False else "Occupancy unknown"
                 ),
@@ -1352,6 +1405,12 @@ def handle_adjacency_create(
         if callable(schedule_persist):
             schedule_persist("adjacency/create")
 
+        _fire_topomation_updated(
+            hass,
+            kernel,
+            "adjacency_create",
+            edge_id=payload.get("edge_id"),
+        )
         connection.send_result(msg["id"], {"success": True, "adjacency_edge": payload})
     except (TypeError, ValueError) as err:
         connection.send_error(msg["id"], "create_failed", str(err))
@@ -1430,6 +1489,7 @@ def handle_adjacency_update(
         if callable(schedule_persist):
             schedule_persist("adjacency/update")
 
+        _fire_topomation_updated(hass, kernel, "adjacency_update", edge_id=edge_id)
         connection.send_result(msg["id"], {"success": True, "adjacency_edge": payload})
     except (TypeError, ValueError) as err:
         connection.send_error(msg["id"], "update_failed", str(err))
@@ -1475,6 +1535,7 @@ def handle_adjacency_delete(
         if callable(schedule_persist):
             schedule_persist("adjacency/delete")
 
+        _fire_topomation_updated(hass, kernel, "adjacency_delete", edge_id=edge_id)
         connection.send_result(msg["id"], {"success": True, "edge_id": edge_id, "adjacency_edge": payload})
     except ValueError as err:
         connection.send_error(msg["id"], "delete_failed", str(err))
@@ -1603,6 +1664,7 @@ def handle_locations_create(
         if callable(schedule_persist):
             schedule_persist("locations/create")
 
+        _fire_topomation_updated(hass, kernel, "create", location_id=location.id)
         connection.send_result(
             msg["id"],
             {
@@ -1713,6 +1775,7 @@ def handle_locations_update(
         if callable(schedule_persist):
             schedule_persist("locations/update")
 
+        _fire_topomation_updated(hass, kernel, "update", location_id=updated.id)
         connection.send_result(
             msg["id"],
             {
@@ -1863,6 +1926,14 @@ def handle_locations_delete(
         if callable(schedule_persist):
             schedule_persist("locations/delete")
 
+        _fire_topomation_updated(
+            hass,
+            kernel,
+            "delete",
+            location_id=location_id,
+            deleted_ids=deleted_ids,
+            reparented_ids=reparented_ids,
+        )
         connection.send_result(
             msg["id"],
             {
@@ -1952,6 +2023,13 @@ def handle_locations_reorder(
         schedule_persist = kernel.get("schedule_persist")
         if callable(schedule_persist):
             schedule_persist("locations/reorder")
+        _fire_topomation_updated(
+            hass,
+            kernel,
+            "reorder",
+            location_id=location.id,
+            parent_id=location.parent_id,
+        )
         connection.send_result(
             msg["id"],
             {
@@ -2063,6 +2141,13 @@ def handle_locations_set_module_config(
         if callable(schedule_persist):
             schedule_persist("locations/set_module_config")
 
+        _fire_topomation_updated(
+            hass,
+            kernel,
+            "module_config",
+            location_id=location_id,
+            module_id=module_id,
+        )
         connection.send_result(msg["id"], {"success": True})
     except (ValueError, KeyError) as e:
         connection.send_error(msg["id"], "config_failed", str(e))
@@ -2154,6 +2239,15 @@ def handle_locations_assign_entity(
         if ambient_mod is not None and hasattr(ambient_mod, "invalidate_ambient_sensor_cache"):
             ambient_mod.invalidate_ambient_sensor_cache()
 
+        _fire_topomation_updated(
+            hass,
+            kernel,
+            "assign_entity",
+            entity_id=entity_id,
+            previous_location_ids=previous_location_ids,
+            requested_target_location_id=requested_target_location_id,
+            target_location_id=target_location_id,
+        )
         connection.send_result(
             msg["id"],
             {
@@ -2729,6 +2823,7 @@ async def handle_sync_import(
                 "message": f"Imported {location_count} locations from Home Assistant",
             },
         )
+        _fire_topomation_updated(hass, kernel, "sync_import")
     except Exception as e:
         _LOGGER.error("Sync import failed: %s", e, exc_info=True)
         connection.send_error(msg["id"], "import_failed", str(e))
@@ -2863,6 +2958,13 @@ def handle_sync_enable(
         meta["sync_enabled"] = enabled
         loc_mgr.set_module_config(location_id, "_meta", meta)
 
+        _fire_topomation_updated(
+            hass,
+            kernel,
+            "sync_enable",
+            location_id=location_id,
+            sync_enabled=enabled,
+        )
         connection.send_result(
             msg["id"],
             {
