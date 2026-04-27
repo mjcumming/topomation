@@ -134,6 +134,11 @@ Touched workflows:
 - **Live occupancy projection event payload size**: occupancy state changed
   events publish only the changed location and grouped peers while websocket
   snapshots remain full.
+- **Panel HA connection replacement**: the panel resubscribes to Topomation
+  update events when Home Assistant swaps the connection object, even when
+  hass-only renders are filtered.
+- **Topology mutation panel refresh events**: successful `locations/create`
+  mutations publish the production panel refresh event.
 - **Location inspector action-rule hydration**: persisted
   `run_on_startup` settings hydrate into the editor dirty-state baseline so
   unchanged rules do not look modified.
@@ -157,6 +162,10 @@ Commands run:
   2026-04-27)
 - `cd custom_components/topomation/frontend && npm test -- --run
   occupancy-reason.test.ts` — **PASS** (11 passed; 2026-04-27)
+- `cd custom_components/topomation/frontend && npm test -- --run
+  topomation-panel.test.ts` — **PASS** (38 passed; 2026-04-27)
+- `pytest tests/test_websocket_contract.py::test_locations_create_fires_panel_update_event
+  -q --no-cov` — **PASS** (1 passed; 2026-04-27)
 - `cd custom_components/topomation/frontend && npm run build` — **PASS**
   (rebuilt `topomation-panel.js`; 2026-04-27)
 - `cd custom_components/topomation/frontend && npx playwright test
@@ -201,6 +210,8 @@ Outcome:
 - Occupancy reason rendering for indefinite/grouped/projected holders: **PASS**
 - Grouped occupancy projection recency: **PASS**
 - Live occupancy projection event payload size: **PASS**
+- Panel HA connection replacement subscription: **PASS**
+- Topology mutation panel refresh event: **PASS**
 - Location inspector run-on-startup dirty-state hydration: **PASS**
 - Frontend bundle parity: **PASS**
 - Local comprehensive gate: **PASS**

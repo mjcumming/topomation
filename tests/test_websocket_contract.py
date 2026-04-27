@@ -26,6 +26,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.topomation.const import (  # type: ignore[import]
     DOMAIN,
+    EVENT_TOPOMATION_UPDATED,
     STORAGE_KEY_CONFIG,
     STORAGE_VERSION,
     WS_TYPE_ADJACENCY_CREATE,
@@ -252,6 +253,40 @@ async def test_locations_create_allows_floor_and_area(hass: HomeAssistant) -> No
     created_area = area_registry.async_get_area(area_payload["location"]["ha_area_id"])
     assert created_area is not None
     assert created_area.name == "Bonus Room"
+
+
+@pytest.mark.asyncio
+async def test_locations_create_fires_panel_update_event(hass: HomeAssistant) -> None:
+    """Successful topology mutations publish the production panel refresh event."""
+    entry = MockConfigEntry(domain=DOMAIN, data={}, entry_id="test_entry")
+    entry.add_to_hass(hass)
+
+    with patch("custom_components.topomation.async_register_panel", AsyncMock()):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    events = []
+    hass.bus.async_listen(EVENT_TOPOMATION_UPDATED, lambda event: events.append(event))
+
+    connection = _fake_connection()
+    handle_locations_create(
+        hass,
+        connection,
+        {
+            "id": 4,
+            "type": WS_TYPE_LOCATIONS_CREATE,
+            "name": "Studio",
+            "parent_id": None,
+            "meta": {"type": "building"},
+        },
+    )
+    await hass.async_block_till_done()
+
+    connection.send_error.assert_not_called()
+    assert events
+    assert events[-1].data["entry_id"] == "test_entry"
+    assert events[-1].data["reason"] == "create"
+    assert events[-1].data["location_id"] == "building_studio"
 
 
 @pytest.mark.asyncio

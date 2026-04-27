@@ -29,6 +29,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   only the changed location and its occupancy-group peers instead of the full
   projection snapshot, avoiding Home Assistant recorder size warnings while
   keeping websocket snapshots complete.
+- **Panel refresh after HA reconnects**: the panel now resubscribes when Home
+  Assistant replaces the websocket connection object, even when hass-only renders
+  are filtered for performance.
+- **Location create refresh event**: successful `locations/create` websocket
+  mutations now fire the production `topomation_updated` panel refresh event.
 
 ## [0.2.73] - 2026-04-27
 

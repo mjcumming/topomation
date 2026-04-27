@@ -109,18 +109,30 @@ jobs:
           echo "Waiting for CI checks before creating release..."
           COMMIT_SHA="${{ github.sha }}"
           WORKFLOW_NAME="CI"
+          WORKFLOW_PATH=".github/workflows/frontend-tests.yml"
           REPO="${{ github.repository }}"
           MAX_WAIT=1200
           ELAPSED=0
           INTERVAL=10
 
+          WORKFLOW_ID="$(gh workflow list \
+            --repo="$REPO" \
+            --json id,name,path \
+            --jq ".[] | select(.name == \"$WORKFLOW_NAME\" and .path == \"$WORKFLOW_PATH\") | .id" \
+            | head -n1)"
+          if [ -z "$WORKFLOW_ID" ] || [ "$WORKFLOW_ID" = "null" ]; then
+            echo "Unable to resolve CI workflow id for $WORKFLOW_PATH; aborting release."
+            exit 1
+          fi
+
           while [ $ELAPSED -lt $MAX_WAIT ]; do
             RUN_ID=$(gh run list \
-              --workflow="$WORKFLOW_NAME" \
-              --commit="$COMMIT_SHA" \
+              --workflow="$WORKFLOW_ID" \
               --repo="$REPO" \
-              --json databaseId \
-              --jq '.[0].databaseId' 2>/dev/null || echo "")
+              --limit 20 \
+              --json databaseId,headSha \
+              --jq ".[] | select(.headSha == \"$COMMIT_SHA\") | .databaseId" 2>/dev/null \
+              | head -n1 || echo "")
 
             if [ -z "$RUN_ID" ] || [ "$RUN_ID" = "null" ]; then
               sleep $INTERVAL

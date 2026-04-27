@@ -247,6 +247,63 @@ describe('TopomationPanel integration (fake hass)', () => {
     ).to.be.true;
   });
 
+  it("resubscribes when hass connection changes even when hass-only renders are filtered", async () => {
+    const callWsCalls: Array<Record<string, any>> = [];
+    const subscribeCalls: string[] = [];
+    const areas = {};
+
+    const makeConnection = (label: string) => ({
+      subscribeEvents: async (_handler: unknown, eventType: string) => {
+        subscribeCalls.push(`${label}:${eventType}`);
+        return () => undefined;
+      },
+    });
+
+    const baseHass: HomeAssistant = {
+      callWS: async <T>(req: Record<string, any>): Promise<T> => {
+        callWsCalls.push(req);
+        if (req.type === "topomation/locations/list") {
+          return { locations } as T;
+        }
+        if (req.type === "config/entity_registry/list") {
+          return [] as T;
+        }
+        if (req.type === "config/device_registry/list") {
+          return [] as T;
+        }
+        throw new Error("Unexpected WS call");
+      },
+      connection: makeConnection("first") as any,
+      states: {},
+      areas,
+      floors: {},
+      config: { location_name: "Test Property" },
+      localize: (key: string) => key,
+    };
+
+    const element = await fixture<any>(html`
+      <topomation-panel .hass=${baseHass}></topomation-panel>
+    `);
+    await waitUntil(
+      () => subscribeCalls.some((call) => call === "first:topomation_updated"),
+      "initial subscription was not established"
+    );
+
+    element.hass = {
+      ...baseHass,
+      connection: makeConnection("second") as any,
+      areas,
+    };
+
+    await waitUntil(
+      () => subscribeCalls.some((call) => call === "second:topomation_updated"),
+      "connection replacement did not resubscribe"
+    );
+    expect(
+      callWsCalls.some((call) => call.type === "topomation/locations/list")
+    ).to.be.true;
+  });
+
   it("route /topomation-appliances passes forcedTab appliances to the room inspector", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(req: Record<string, any>): Promise<T> => {

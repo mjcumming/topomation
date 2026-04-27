@@ -66,7 +66,18 @@ try {
  */
 // @customElement("topomation-panel")
 export class TopomationPanel extends LitElement {
-  @property({ attribute: false }) public hass!: HomeAssistant;
+  private _hass?: HomeAssistant;
+  @property({ attribute: false })
+  public get hass(): HomeAssistant {
+    return this._hass as HomeAssistant;
+  }
+  public set hass(value: HomeAssistant) {
+    const old = this._hass;
+    if (old === value) return;
+    this._hass = value;
+    this._handleHassChanged(old, value);
+    this.requestUpdate("hass", old);
+  }
   @property({ attribute: false }) public narrow = false;
   @property({ attribute: false }) public panel?: {
     config?: { topomation_view?: ManagerView; entry_id?: string };
@@ -196,26 +207,37 @@ export class TopomationPanel extends LitElement {
     super();
   }
 
-  protected willUpdate(changedProps: PropertyValues): void {
-    super.willUpdate(changedProps);
-    if (!this._hasLoaded && this.hass) {
-      this._hasLoaded = true;
-      this._loadLocations();
-    }
-
-    if (changedProps.has("hass")) {
-      const previousHass = changedProps.get("hass") as HomeAssistant | undefined;
-      const previousConnection = previousHass?.connection;
-      const nextConnection = this.hass?.connection;
-      if (previousConnection !== nextConnection) {
-        if (!nextConnection) {
-          this._teardownUpdateSubscriptions();
-          this._updatesSubscriptionConnection = undefined;
-        } else {
-          void this._subscribeToUpdates();
-        }
+  private _handleHassChanged(
+    previousHass: HomeAssistant | undefined,
+    nextHass: HomeAssistant | undefined
+  ): void {
+    if (!this._hasLoaded && nextHass) {
+      if (this.isConnected) {
+        this._scheduleInitialLoad();
+      } else {
+        this._queueInitialLoad();
       }
     }
+
+    const previousConnection = previousHass?.connection;
+    const nextConnection = nextHass?.connection;
+    if (previousConnection === nextConnection) return;
+
+    if (!nextConnection) {
+      this._teardownUpdateSubscriptions();
+      this._updatesSubscriptionConnection = undefined;
+      return;
+    }
+
+    void this._subscribeToUpdates();
+  }
+
+  private _queueInitialLoad(): void {
+    if (this._hasLoaded || this._pendingLoadTimer) return;
+    this._pendingLoadTimer = window.setTimeout(() => {
+      this._pendingLoadTimer = undefined;
+      this._scheduleInitialLoad();
+    }, 0);
   }
 
   connectedCallback(): void {
