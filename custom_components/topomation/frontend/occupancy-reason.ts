@@ -30,6 +30,13 @@ export interface OccupancyExplanation {
   summary: string;
   reasonLine: string;
   details: string[];
+  detailSections: OccupancyDetailSection[];
+}
+
+export interface OccupancyDetailSection {
+  title: string;
+  items?: string[];
+  note?: string;
 }
 
 export function buildOccupancyReasonLine(ctx: OccupancyReasonContext): string {
@@ -44,6 +51,12 @@ export function buildOccupancyExplanation(ctx: OccupancyReasonContext): Occupanc
       summary: "Occupancy is unknown.",
       reasonLine: "Occupancy unknown",
       details: ["No occupancy state is available for this location yet."],
+      detailSections: [
+        {
+          title: "Current evidence",
+          note: "No occupancy state is available for this location yet.",
+        },
+      ],
     };
   }
 
@@ -66,6 +79,7 @@ export function buildOccupancyExplanation(ctx: OccupancyReasonContext): Occupanc
     : explanationHolderRows(kernelExplanation, ctx);
   const currentHolders = activeContributors.length ? activeContributors : explanationContributors;
   const details: string[] = [];
+  const detailSections: OccupancyDetailSection[] = [];
 
   if (ctx.status === "occupied") {
     detail =
@@ -85,37 +99,68 @@ export function buildOccupancyExplanation(ctx: OccupancyReasonContext): Occupanc
 
   if (currentHolders.length) {
     const shown = currentHolders.slice(0, 4).map((row) => row.detailLabel);
-    const more =
-      currentHolders.length > shown.length
-        ? `, +${currentHolders.length - shown.length} more`
-        : "";
+    const hiddenCount = Math.max(0, currentHolders.length - shown.length);
+    const more = hiddenCount ? `, +${hiddenCount} more` : "";
     const holderKind = activeContributors.length ? "source" : "holder";
+    const holderKindLabel = currentHolders.length === 1 ? holderKind : `${holderKind}s`;
     details.push(
-      `Active ${currentHolders.length === 1 ? holderKind : `${holderKind}s`}: ${shown.join(", ")}${more}.`
+      `Active ${holderKindLabel}: ${shown.join(", ")}${more}.`
     );
+    detailSections.push({
+      title: `Active ${holderKindLabel}`,
+      items: shown,
+      note: hiddenCount
+        ? `+${hiddenCount} more active ${pluralize(holderKind, hiddenCount)}`
+        : undefined,
+    });
   } else if (ctx.status === "vacant") {
-    details.push("No active occupancy sources are currently holding this location.");
+    const noSources = "No active occupancy sources are currently holding this location.";
+    details.push(noSources);
+    detailSections.push({
+      title: "Current evidence",
+      note: noSources,
+    });
   }
 
   const nextChange = nextChangeDetail(attrs, currentHolders, ctx);
-  if (nextChange) details.push(nextChange);
+  if (nextChange) {
+    details.push(nextChange);
+    detailSections.push({
+      title: "Next change",
+      note: nextChange,
+    });
+  }
 
   const latestChange = latestRecentChange(attrs, ctx);
-  if (latestChange) details.push(latestChange);
+  if (latestChange) {
+    details.push(latestChange);
+    detailSections.push({
+      title: "Latest event",
+      note: stripDetailPrefix(latestChange, "Latest event"),
+    });
+  }
 
   const lockedBy = Array.isArray(attrs.locked_by)
     ? attrs.locked_by.map((item: unknown) => String(item).trim()).filter(Boolean)
     : [];
   if (attrs.is_locked || lockedBy.length) {
-    details.push(
-      lockedBy.length
-        ? `Lock: held by ${lockedBy.map((item) => humanizeTechnicalId(item)).join(", ")}.`
-        : "Lock: occupancy is currently locked."
-    );
+    const lockDetail = lockedBy.length
+      ? `Lock: held by ${lockedBy.map((item) => humanizeTechnicalId(item)).join(", ")}.`
+      : "Lock: occupancy is currently locked.";
+    details.push(lockDetail);
+    detailSections.push({
+      title: "Lock",
+      note: stripDetailPrefix(lockDetail, "Lock"),
+    });
   }
 
   if (!details.length && ctx.status === "occupied") {
-    details.push("No source-level evidence is available from the occupancy entity yet.");
+    const missingEvidence = "No source-level evidence is available from the occupancy entity yet.";
+    details.push(missingEvidence);
+    detailSections.push({
+      title: "Current evidence",
+      note: missingEvidence,
+    });
   }
 
   return {
@@ -127,6 +172,7 @@ export function buildOccupancyExplanation(ctx: OccupancyReasonContext): Occupanc
         : vacantSummary(detail),
     reasonLine,
     details,
+    detailSections,
   };
 }
 
@@ -496,6 +542,15 @@ function vacantSummary(detail: string | undefined): string {
   if (detail === "vacated") return "Vacant because it was explicitly vacated.";
   if (detail.endsWith(".")) return `Vacant because ${detail}`;
   return `Vacant because ${detail}.`;
+}
+
+function pluralize(noun: string, count: number): string {
+  return count === 1 ? noun : `${noun}s`;
+}
+
+function stripDetailPrefix(detail: string, prefix: string): string {
+  const marker = `${prefix}:`;
+  return detail.startsWith(marker) ? detail.slice(marker.length).trim() : detail;
 }
 
 function nextChangeDetail(

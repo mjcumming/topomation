@@ -1499,6 +1499,77 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(reason!.textContent || "").to.include("No active occupancy sources");
   });
 
+  it("renders crowded occupancy reason details as a compact evidence list", async () => {
+    const sourceIds = Array.from(
+      { length: 6 },
+      (_, index) => `binary_sensor.family_room_source_${index + 1}`
+    );
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>) => {
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        return [] as T;
+      },
+      connection: {},
+      states: Object.fromEntries(
+        sourceIds.map((entityId, index) => [
+          entityId,
+          {
+            entity_id: entityId,
+            state: "on",
+            attributes: { friendly_name: `Family Room Source ${index + 1}` },
+          },
+        ])
+      ) as any,
+      areas: {},
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_family_room";
+    location.name = "Family Room";
+    location.modules._meta = { type: "area" };
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${location}
+        .occupancyStates=${{ area_family_room: true }}
+        .occupancyRuntimeStates=${{
+          area_family_room: occupancyRuntimeState("area_family_room", "on", {
+            contributions: sourceIds.map((sourceId) => ({
+              source_id: sourceId,
+              state: "active",
+            })),
+          }),
+        }}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    const reason = element.shadowRoot!.querySelector(
+      '[data-testid="header-occupancy-reason"]'
+    ) as HTMLDetailsElement | null;
+    expect(reason).to.exist;
+    expect(reason!.textContent || "").not.to.include("Details");
+    reason!.open = true;
+    await element.updateComplete;
+
+    const panel = element.shadowRoot!.querySelector(
+      ".header-reason-panel"
+    ) as HTMLElement | null;
+    expect(panel).to.exist;
+    expect(panel!.textContent || "").to.include("Why occupied?");
+    expect(panel!.textContent || "").to.include("Active sources");
+    expect(panel!.textContent || "").to.include("+2 more active sources");
+    const activeItems = Array.from(
+      element.shadowRoot!.querySelectorAll(".header-reason-item")
+    ) as HTMLElement[];
+    expect(activeItems).to.have.length(4);
+    expect(activeItems[0].textContent || "").to.include("Family Room Source 1");
+  });
+
   it("shows vacant status and explains event-driven vacancy in the header", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>) => {

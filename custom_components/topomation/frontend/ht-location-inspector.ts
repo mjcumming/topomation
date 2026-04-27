@@ -24,7 +24,10 @@ import {
 } from "./shadow-location-utils";
 import { ambientLuxEnumerationHaAreaIds } from "./ambient-lux-enumeration";
 import { applyModeDefaults, getSourceDefaultsForEntity } from "./source-profile-utils";
-import { buildOccupancyExplanation } from "./occupancy-reason";
+import {
+  buildOccupancyExplanation,
+  type OccupancyDetailSection,
+} from "./occupancy-reason";
 import {
   createTopomationActionRule,
   deleteTopomationActionRule,
@@ -324,56 +327,145 @@ export class HtLocationInspector extends LitElement {
 
       .header-occupancy-reason {
         position: relative;
-        max-width: min(100%, 520px);
+        flex: 1 1 280px;
+        min-width: 180px;
+        max-width: min(100%, 640px);
         font-size: 12px;
         color: var(--text-secondary-color);
       }
 
       .header-occupancy-reason summary {
-        display: inline-flex;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
         align-items: center;
         gap: 6px;
-        min-width: 0;
+        width: 100%;
         cursor: pointer;
         list-style: none;
+        border-radius: 6px;
       }
 
       .header-occupancy-reason summary::-webkit-details-marker {
         display: none;
       }
 
-      .header-occupancy-reason summary span:first-child {
+      .header-occupancy-reason summary:focus-visible {
+        outline: 2px solid var(--primary-color);
+        outline-offset: 2px;
+      }
+
+      .header-reason-summary {
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
       }
 
-      .header-reason-more {
+      .header-reason-trigger {
+        width: 18px;
+        height: 18px;
+        display: inline-grid;
+        place-items: center;
+        border: 1px solid var(--divider-color);
+        border-radius: 50%;
+        background: var(--secondary-background-color);
         color: var(--primary-color);
-        font-weight: 600;
         flex: 0 0 auto;
+      }
+
+      .header-reason-trigger ha-icon {
+        width: 14px;
+        height: 14px;
+        --mdc-icon-size: 14px;
+      }
+
+      .header-occupancy-reason[open] .header-reason-trigger {
+        background: var(--primary-color);
+        color: var(--text-primary-color, #fff);
+        border-color: var(--primary-color);
       }
 
       .header-reason-panel {
         position: absolute;
-        z-index: 3;
-        top: calc(100% + 6px);
+        z-index: 20;
+        top: calc(100% + 8px);
         left: 0;
-        width: min(420px, calc(100vw - 48px));
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-        padding: 10px 12px;
+        width: min(520px, calc(100vw - 64px));
+        max-height: min(360px, calc(100vh - 180px));
+        overflow: auto;
+        padding: 12px;
         border: 1px solid var(--divider-color);
         border-radius: 8px;
         background: var(--card-background-color);
-        box-shadow: var(--ha-card-box-shadow, 0 2px 8px rgba(0, 0, 0, 0.18));
+        box-shadow: var(--ha-card-box-shadow, 0 8px 24px rgba(0, 0, 0, 0.2));
         color: var(--primary-text-color);
         line-height: 1.4;
       }
 
-      .header-reason-detail {
+      .header-reason-title {
+        margin-bottom: 8px;
+        color: var(--secondary-text-color);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      .header-reason-section + .header-reason-section {
+        margin-top: 8px;
+        padding-top: 8px;
+        border-top: 1px solid var(--divider-color);
+      }
+
+      .header-reason-section-title {
+        margin-bottom: 4px;
         font-size: 12px;
+        font-weight: 700;
+      }
+
+      .header-reason-list {
+        display: grid;
+        gap: 4px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .header-reason-item {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 6px;
+        min-width: 0;
+        font-size: 12px;
+      }
+
+      .header-reason-item::before {
+        content: "";
+        width: 6px;
+        height: 6px;
+        margin-top: 0.55em;
+        border-radius: 50%;
+        background: var(--primary-color);
+      }
+
+      .header-reason-note {
+        color: var(--secondary-text-color);
+        font-size: 12px;
+      }
+
+      .header-reason-list + .header-reason-note {
+        margin-top: 6px;
+      }
+
+      @media (max-width: 600px) {
+        .header-occupancy-reason {
+          flex-basis: 100%;
+          max-width: 100%;
+        }
+
+        .header-reason-panel {
+          width: min(520px, calc(100vw - 48px));
+          max-height: min(320px, calc(100vh - 160px));
+        }
       }
 
       .header-ambient {
@@ -3645,20 +3737,61 @@ export class HtLocationInspector extends LitElement {
 
   private _renderHeaderOccupancyReason(explanation: {
     summary: string;
-    details: string[];
+    statusLabel?: string;
+    details?: string[];
+    detailSections?: OccupancyDetailSection[];
   }) {
     if (!explanation.summary) return "";
     const details = explanation.details || [];
+    const sections =
+      explanation.detailSections?.length
+        ? explanation.detailSections
+        : details.map((detail, index) => ({
+            title: index === 0 ? "Current evidence" : "Context",
+            note: detail,
+          }));
+    const panelTitle = explanation.statusLabel
+      ? `Why ${explanation.statusLabel.toLowerCase()}?`
+      : "Why this state?";
     return html`
       <details class="header-occupancy-reason" data-testid="header-occupancy-reason">
-        <summary>
-          <span data-testid="header-occupancy-summary">${explanation.summary}</span>
-          ${details.length ? html`<span class="header-reason-more">Details</span>` : ""}
+        <summary
+          aria-label=${sections.length ? "Show occupancy explanation" : "Occupancy explanation"}
+        >
+          <span class="header-reason-summary" data-testid="header-occupancy-summary">
+            ${explanation.summary}
+          </span>
+          ${sections.length
+            ? html`
+                <span class="header-reason-trigger" aria-hidden="true">
+                  <ha-icon .icon=${"mdi:information-outline"}></ha-icon>
+                </span>
+              `
+            : ""}
         </summary>
-        ${details.length
+        ${sections.length
           ? html`
-              <div class="header-reason-panel">
-                ${details.map((detail) => html`<div class="header-reason-detail">${detail}</div>`)}
+              <div class="header-reason-panel" role="note">
+                <div class="header-reason-title">${panelTitle}</div>
+                ${sections.map(
+                  (section) => html`
+                    <section class="header-reason-section">
+                      <div class="header-reason-section-title">${section.title}</div>
+                      ${section.items?.length
+                        ? html`
+                            <ul class="header-reason-list">
+                              ${section.items.map(
+                                (item) => html`<li class="header-reason-item">${item}</li>`
+                              )}
+                            </ul>
+                          `
+                        : ""}
+                      ${section.note
+                        ? html`<div class="header-reason-note">${section.note}</div>`
+                        : ""}
+                    </section>
+                  `
+                )}
               </div>
             `
           : ""}

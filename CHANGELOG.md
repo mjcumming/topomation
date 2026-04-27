@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.75] - 2026-04-27
+
+### Changed
+
+- **Occupancy reason popover**: header explanations now render structured
+  evidence sections instead of a single cramped detail sentence. Active
+  sources/holders appear as a capped list with a `+N more active sources`
+  summary, while next-change, latest-event, and lock context get their own
+  rows.
+- **Frontend bundle publishing**: the build publisher now normalizes Lit's
+  generated whitespace character class before copying `topomation-panel.js`, so
+  fresh builds stay byte-for-byte aligned with the committed runtime bundle
+  without tripping whitespace checks.
+
 ## [0.2.74] - 2026-04-27
 
 ### Changed

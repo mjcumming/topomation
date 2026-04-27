@@ -358,7 +358,7 @@ describe("buildOccupancyReasonLine", () => {
     expect(line).to.equal("Occupied");
   });
 
-  it("builds a human summary and click-away details for occupied sources", () => {
+  it("builds a human summary and structured details for occupied sources", () => {
     const location = makeLocation({
       id: "kitchen",
       modules: {
@@ -405,6 +405,53 @@ describe("buildOccupancyReasonLine", () => {
     expect(explanation.summary).to.equal("Occupied because Kitchen Motion is active.");
     expect(explanation.details.join(" ")).to.include("Active source: Kitchen Motion");
     expect(explanation.details.join(" ")).to.include("hold timer expires in 4m");
+    expect(explanation.detailSections[0].title).to.equal("Active source");
+    expect(explanation.detailSections[0].items?.[0]).to.include("Kitchen Motion");
+    expect(explanation.detailSections[1].title).to.equal("Next change");
+  });
+
+  it("keeps crowded active source details structured and capped", () => {
+    const location = makeLocation({ id: "family_room" });
+    const sourceIds = Array.from(
+      { length: 6 },
+      (_, index) => `binary_sensor.family_room_source_${index + 1}`
+    );
+    const hass = makeHass({
+      states: Object.fromEntries(
+        sourceIds.map((entityId, index) => [
+          entityId,
+          {
+            entity_id: entityId,
+            state: "on",
+            attributes: { friendly_name: `Family Room Source ${index + 1}` },
+          },
+        ])
+      ) as any,
+    });
+
+    const explanation = buildOccupancyExplanation({
+      location,
+      locations: [location],
+      hass,
+      occupancyStates: { family_room: true },
+      occupancyTransitions: {},
+      occupancyRuntimeStates: {
+        family_room: runtimeState("family_room", "on", tMinus(30), {
+          contributions: sourceIds.map((sourceId) => ({
+            source_id: sourceId,
+            state: "active",
+            updated_at: tMinus(30),
+          })),
+        }),
+      },
+      status: "occupied",
+      nowMs: NOW,
+    });
+
+    expect(explanation.details.join(" ")).to.include("+2 more");
+    expect(explanation.detailSections[0].title).to.equal("Active sources");
+    expect(explanation.detailSections[0].items).to.have.length(4);
+    expect(explanation.detailSections[0].note).to.equal("+2 more active sources");
   });
 
   it("builds a human vacancy summary", () => {
