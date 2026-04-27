@@ -67,7 +67,6 @@ try {
 // @customElement("topomation-panel")
 export class TopomationPanel extends LitElement {
   private _hass?: HomeAssistant;
-  @property({ attribute: false })
   public get hass(): HomeAssistant {
     return this._hass as HomeAssistant;
   }
