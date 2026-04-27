@@ -3167,8 +3167,8 @@ export class HtLocationInspector extends LitElement {
       lux_sensor: null,
       auto_discover: false,
       inherit_from_parent: true,
-      dark_threshold: 50,
-      bright_threshold: 500,
+      dark_threshold: 800,
+      bright_threshold: 1200,
       fallback_to_sun: true,
       assume_dark_on_error: true,
     };

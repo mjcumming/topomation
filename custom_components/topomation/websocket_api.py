@@ -579,12 +579,16 @@ def build_occupancy_projection_states(
         own_payload = raw_states.get(_location_id(location))
         return dict(own_payload) if isinstance(own_payload, dict) else {}
 
-    def projected_occupied(location: object, effective_id: str, payload: dict[str, Any]) -> bool | None:
+    def projected_occupied(location: object, effective_id: str, payload: dict[str, Any]) -> bool:
         own = payload.get("occupied")
         if own is True:
             return True
         if own is not False and own is not True:
-            own = None
+            # The occupancy engine may not allocate a runtime record until the
+            # first signal/lock touches a location. That does not make the
+            # location unknowable: Topomation occupancy is binary, and the HA
+            # entity surface initializes absence of active evidence as vacant.
+            own = False
 
         if _is_shadow_host_location(location) or bool(getattr(location, "is_explicit_root", False)):
             child_states: list[bool] = []
@@ -600,7 +604,7 @@ def build_occupancy_projection_states(
             if child_states and all(state is False for state in child_states):
                 return False
 
-        return own if isinstance(own, bool) else None
+        return own if isinstance(own, bool) else False
 
     projections: list[dict[str, Any]] = []
     now = datetime.now(UTC)

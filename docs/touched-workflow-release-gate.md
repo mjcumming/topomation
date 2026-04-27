@@ -110,56 +110,60 @@ Outcome:
 
 ## 8. Current Release Candidate Record
 
-Commit under test: **release-candidate worktree for Topomation `0.2.72`**
-(backend-owned runtime occupancy projection + release metadata).
+Commit under test: **release-candidate worktree for Topomation `0.2.73`**
+(occupancy default projection, ambient lux defaults migration, release metadata).
 Frontend bundle rebuilt from same commit: **yes** (`npm run build` →
 committed `topomation-panel.js`; parity verified by
-`./scripts/test-comprehensive.sh` and `make test-release-live` on
-2026-04-26).
+`./scripts/test-comprehensive.sh` and split live release gate on 2026-04-27).
 
 Touched workflows:
-- **Backend occupancy projection contract**: `locations/list` and
-  `occupancy/states/list` expose one backend-owned runtime occupancy state per
-  topology row, including grouped peers, structural rollups, managed-shadow
-  hosts, lock metadata, contributors, and transition reasons.
-- **Panel/tree/inspector runtime occupancy rendering**: topology dots, header
-  occupancy, lock/toggle decisions, and occupancy reason text consume the
-  backend projection instead of deriving effective occupancy from raw HA
-  `binary_sensor` snapshots or local rollups.
-- **Occupancy group visual sync**: grouped areas such as Kitchen and Front Entry
-  render the same backend-projected occupied/vacant state even when HA state
-  snapshots arrive stale or out of order.
+- **Backend occupancy projection default state**: `occupancy/states/list`
+  projects locations with no runtime occupancy record as known vacant instead of
+  unknown.
+- **Panel/tree/inspector occupancy rendering**: quiet rooms and structural
+  rollups show vacant/off instead of unknown on initial panel load.
+- **Ambient lux default authoring**: new lighting rules and fallback automation
+  configs use 800 lux dark / 1200 lux bright defaults.
+- **Ambient lux one-shot migration**: integration reload updates legacy
+  default-looking 50/500 ambient configs while preserving custom thresholds.
+- **Ideas/documentation tracking**: `docs/ideas.md` records deferred product
+  ideas without changing runtime behavior.
 
 Commands run:
-- `make lint` — **PASS** (Ruff, 2026-04-26)
-- `npm test -- --files occupancy-reason.test.ts topomation-panel.test.ts` —
-  **PASS** (focused pre-release regression, 2026-04-26)
-- `npm run test:unit -- ht-location-inspector.test.ts ht-location-tree.test.ts
-  occupancy-reason.test.ts` — **PASS** (141 targeted frontend projection
-  tests, 2026-04-26)
-- `npm run build` — **PASS** (rebuilt `topomation-panel.js`, 2026-04-26)
-- `pytest tests/test_websocket_contract.py --no-cov -q` — **PASS**
-  (focused backend contract pre-release regression, 2026-04-26)
-- `scripts/check-docs-consistency.sh` — **PASS** (pre-release docs gate,
-  2026-04-26)
+- `pytest --no-cov tests/test_websocket_contract.py -k
+  "missing_runtime or group_members"` — **PASS** (focused occupancy projection
+  regression, 2026-04-27)
+- `pytest --no-cov tests/test_ambient_config_defaults.py
+  tests/test_managed_action_config_build_matrix.py -q` — **PASS** (ambient
+  defaults and migration regression, 2026-04-27)
+- `pytest` — **PASS** (300 passed, 15 skipped, 2026-04-27)
+- `npm test` — **PASS** (196 browser component tests, 2026-04-27)
+- `npm run build` — **PASS** (rebuilt `topomation-panel.js`, 2026-04-27)
 - `./scripts/test-comprehensive.sh` — **PASS** (local comprehensive matrix,
-  2026-04-26)
-- `make test-release-live` — **PASS** (local comprehensive matrix plus live HA
-  managed-action contract plus live browser workflows, 2026-04-26)
+  2026-04-27)
+- `make test-release-live` — **PARTIAL PASS / wrapper failure**: local
+  comprehensive matrix passed on `0.2.73`; the Make wrapper failed only after
+  the wrapper-managed HA process exited before the live handoff.
+- `./tests/run-live-tests.sh tests/test-live-managed-actions-contract.py` —
+  **PASS** (real HA managed-action contract, 2026-04-27)
+- `HA_URL="http://localhost:8123" HA_TOKEN="$(cat ha_long_lived_token)"
+  npx playwright test --config playwright.live.config.ts
+  playwright/live-automation-ui.spec.ts` — **PASS** (6 live browser workflow
+  tests, 2026-04-27)
 
 Outcome:
-- Version sync (`0.2.72`): **PASS**
-- Backend projection contract: **PASS**
-- Frontend backend-only occupancy rendering: **PASS**
-- Occupancy group visual sync: **PASS**
+- Version sync (`0.2.73`): **PASS**
+- Backend occupancy default projection: **PASS**
+- Frontend quiet-room occupancy rendering: **PASS**
+- Ambient defaults and one-shot migration: **PASS**
 - Frontend bundle parity: **PASS**
 - Local comprehensive gate: **PASS**
-- Live HA release gate: **PASS**
+- Live HA managed-action contract: **PASS**
+- Live HA browser workflows: **PASS**
 
 Notes:
-- Initial live browser attempt failed because the already-running local HA
-  process had not restarted after this branch added the new
-  `topomation/occupancy/states/list` websocket command. After restarting HA so
-  the updated backend command table was loaded, `make test-release-live` passed.
+- `make test-release-live` exposed a local HA process-wrapper problem: HA was
+  reachable briefly, then exited before the live test handoff. Running HA in the
+  foreground and executing the same live contract/browser commands passed.
 - After push to `main`, confirm CI and **Auto Release** are green for the
   release commit before considering the release complete.

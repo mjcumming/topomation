@@ -12,6 +12,10 @@ from typing import Any
 import pytest
 from homeassistant.core import HomeAssistant
 
+from custom_components.topomation.const import (
+    AMBIENT_BRIGHT_THRESHOLD_DEFAULT,
+    AMBIENT_DARK_THRESHOLD_DEFAULT,
+)
 from custom_components.topomation.managed_actions import TopomationManagedActions
 
 OCC = "binary_sensor.topomation_occupancy_test_room"
@@ -123,6 +127,21 @@ def build_manager(hass: HomeAssistant) -> TopomationManagedActions:
             id="on_dark_lux_no_sun_fallback",
         ),
         pytest.param(
+            ("on_dark",),
+            {
+                "lux_sensor": "sensor.living_lux",
+                "fallback_to_sun": False,
+            },
+            [
+                {
+                    "trigger": "numeric_state",
+                    "entity_id": "sensor.living_lux",
+                    "below": AMBIENT_DARK_THRESHOLD_DEFAULT,
+                }
+            ],
+            id="on_dark_lux_default_threshold",
+        ),
+        pytest.param(
             ("on_bright",),
             {
                 "lux_sensor": "sensor.living_lux",
@@ -138,6 +157,21 @@ def build_manager(hass: HomeAssistant) -> TopomationManagedActions:
                 }
             ],
             id="on_bright_lux_no_sun_fallback",
+        ),
+        pytest.param(
+            ("on_bright",),
+            {
+                "lux_sensor": "sensor.living_lux",
+                "fallback_to_sun": False,
+            },
+            [
+                {
+                    "trigger": "numeric_state",
+                    "entity_id": "sensor.living_lux",
+                    "above": AMBIENT_BRIGHT_THRESHOLD_DEFAULT,
+                }
+            ],
+            id="on_bright_lux_default_threshold",
         ),
     ],
 )

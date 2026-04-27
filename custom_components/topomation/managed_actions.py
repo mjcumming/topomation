@@ -32,7 +32,12 @@ from homeassistant.helpers import label_registry as lr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.network import get_url
 
-from .const import DOMAIN, TOPOMATION_AUTOMATION_METADATA_PREFIX
+from .const import (
+    AMBIENT_BRIGHT_THRESHOLD_DEFAULT,
+    AMBIENT_DARK_THRESHOLD_DEFAULT,
+    DOMAIN,
+    TOPOMATION_AUTOMATION_METADATA_PREFIX,
+)
 
 ActionTriggerType = Literal["on_occupied", "on_vacant", "on_dark", "on_bright"]
 ActionAmbientCondition = Literal["any", "dark", "bright"]
@@ -986,13 +991,15 @@ class TopomationManagedActions:
         lux_sensor = lux_sensor_raw if lux_sensor_raw.startswith("sensor.") else None
 
         try:
-            dark_threshold = float(ambient.get("dark_threshold", 50))
+            dark_threshold = float(ambient.get("dark_threshold", AMBIENT_DARK_THRESHOLD_DEFAULT))
         except (TypeError, ValueError):
-            dark_threshold = 50.0
+            dark_threshold = AMBIENT_DARK_THRESHOLD_DEFAULT
         try:
-            bright_threshold = float(ambient.get("bright_threshold", 500))
+            bright_threshold = float(
+                ambient.get("bright_threshold", AMBIENT_BRIGHT_THRESHOLD_DEFAULT)
+            )
         except (TypeError, ValueError):
-            bright_threshold = max(dark_threshold + 1.0, 500.0)
+            bright_threshold = max(dark_threshold + 1.0, AMBIENT_BRIGHT_THRESHOLD_DEFAULT)
 
         if bright_threshold <= dark_threshold:
             bright_threshold = dark_threshold + 1.0
@@ -1033,7 +1040,12 @@ class TopomationManagedActions:
                         {
                             "trigger": "numeric_state",
                             "entity_id": lux_sensor,
-                            "below": float(ambient_config.get("dark_threshold", 50.0)),
+                            "below": float(
+                                ambient_config.get(
+                                    "dark_threshold",
+                                    AMBIENT_DARK_THRESHOLD_DEFAULT,
+                                )
+                            ),
                         }
                     )
                 elif trigger_type == "on_bright":
@@ -1041,7 +1053,12 @@ class TopomationManagedActions:
                         {
                             "trigger": "numeric_state",
                             "entity_id": lux_sensor,
-                            "above": float(ambient_config.get("bright_threshold", 500.0)),
+                            "above": float(
+                                ambient_config.get(
+                                    "bright_threshold",
+                                    AMBIENT_BRIGHT_THRESHOLD_DEFAULT,
+                                )
+                            ),
                         }
                     )
 
@@ -1073,7 +1090,14 @@ class TopomationManagedActions:
 
         if isinstance(lux_sensor, str) and lux_sensor:
             threshold_key = "dark_threshold" if dark_state else "bright_threshold"
-            threshold = float(ambient_config.get(threshold_key, 50.0 if dark_state else 500.0))
+            threshold = float(
+                ambient_config.get(
+                    threshold_key,
+                    AMBIENT_DARK_THRESHOLD_DEFAULT
+                    if dark_state
+                    else AMBIENT_BRIGHT_THRESHOLD_DEFAULT,
+                )
+            )
             clauses.append(
                 {
                     "condition": "numeric_state",

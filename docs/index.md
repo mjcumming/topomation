@@ -30,6 +30,7 @@ If a file is not listed as active below, treat it as reference-only.
 | `docs/integration-guide.md` | Broad integration reference (not policy source) | Active (Reference) |
 | `docs/work-tracking.md` | Current sprint execution status | Active (Operational) |
 | `docs/current-work.md` | Live parallel-work and handoff context | Active (Operational) |
+| `docs/ideas.md` | Lightweight parking lot for uncommitted ideas before ADR/contract/issue promotion | Active (Reference) |
 | `docs/cursor-guide.md` | Agent reference and repository operating notes | Active (Reference) |
 | `docs/tree-dnd-stabilization-plan.md` | Tree DnD explicit drop targets — implementation plan (C-011, ADR-HA-039) | Active (Operational) |
 | `docs/ambient-light-v1-design.md` | Ambient light v1 design scope, UX, and phased implementation plan | Active (Operational) |

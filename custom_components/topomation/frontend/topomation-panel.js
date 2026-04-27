@@ -4067,8 +4067,8 @@ const Te = class Te extends gt {
       lux_sensor: null,
       auto_discover: !1,
       inherit_from_parent: !0,
-      dark_threshold: 50,
-      bright_threshold: 500,
+      dark_threshold: 800,
+      bright_threshold: 1200,
       fallback_to_sun: !0,
       assume_dark_on_error: !0
     };

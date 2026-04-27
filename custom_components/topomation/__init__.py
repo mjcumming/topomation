@@ -24,6 +24,12 @@ from .actions_runtime import (
     TopomationActionsRuntime,
 )
 from .const import (
+    AMBIENT_BRIGHT_THRESHOLD_DEFAULT,
+    AMBIENT_DARK_THRESHOLD_DEFAULT,
+    AMBIENT_LEGACY_BRIGHT_THRESHOLD_DEFAULT,
+    AMBIENT_LEGACY_DARK_THRESHOLD_DEFAULT,
+    AMBIENT_LUX_DEFAULTS_MIGRATION_KEY,
+    AMBIENT_LUX_DEFAULTS_MIGRATION_VALUE,
     AUTOSAVE_DEBOUNCE_SECONDS,
     DOMAIN,
     EVENT_TOPOMATION_HANDOFF_TRACE,
@@ -713,21 +719,54 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 # which handles initial import and live bidirectional sync
 
 
+def _ambient_threshold_matches(value: Any, expected: float) -> bool:
+    """Return true when a stored ambient threshold is absent or matches a default."""
+    if value is None:
+        return True
+    try:
+        return float(value) == expected
+    except (TypeError, ValueError):
+        return True
+
+
+def _apply_topomation_ambient_defaults(config: Mapping[str, Any]) -> dict[str, Any]:
+    """Apply Topomation ambient defaults and the temporary one-shot lux migration."""
+    updated = dict(config)
+    updated["auto_discover"] = False
+
+    if updated.get(AMBIENT_LUX_DEFAULTS_MIGRATION_KEY) == AMBIENT_LUX_DEFAULTS_MIGRATION_VALUE:
+        return updated
+
+    has_legacy_default_thresholds = _ambient_threshold_matches(
+        updated.get("dark_threshold"),
+        AMBIENT_LEGACY_DARK_THRESHOLD_DEFAULT,
+    ) and _ambient_threshold_matches(
+        updated.get("bright_threshold"),
+        AMBIENT_LEGACY_BRIGHT_THRESHOLD_DEFAULT,
+    )
+    if has_legacy_default_thresholds:
+        updated["dark_threshold"] = AMBIENT_DARK_THRESHOLD_DEFAULT
+        updated["bright_threshold"] = AMBIENT_BRIGHT_THRESHOLD_DEFAULT
+
+    updated[AMBIENT_LUX_DEFAULTS_MIGRATION_KEY] = AMBIENT_LUX_DEFAULTS_MIGRATION_VALUE
+    return updated
+
+
 def _setup_default_configs(loc_mgr: LocationManager, modules: dict[str, Any]) -> None:
     """Set up default module configurations for all locations."""
     for location in loc_mgr.all_locations():
         for module_id, module in modules.items():
             existing = loc_mgr.get_module_config(location.id, module_id)
             if isinstance(existing, dict):
-                if module_id == "ambient" and existing.get("auto_discover") is not False:
-                    loc_mgr.set_module_config(
-                        location_id=location.id,
-                        module_id=module_id,
-                        config={
-                            **existing,
-                            "auto_discover": False,
-                        },
-                    )
+                if module_id == "ambient":
+                    updated = _apply_topomation_ambient_defaults(existing)
+                    if updated != existing:
+                        loc_mgr.set_module_config(
+                            location_id=location.id,
+                            module_id=module_id,
+                            config=updated,
+                        )
+                    continue
                 continue
             if existing:
                 continue
@@ -738,7 +777,7 @@ def _setup_default_configs(loc_mgr: LocationManager, modules: dict[str, Any]) ->
             if module_id == "occupancy":
                 default_config.setdefault(_OCCUPANCY_LINKED_LOCATIONS_KEY, [])
             if module_id == "ambient":
-                default_config["auto_discover"] = False
+                default_config = _apply_topomation_ambient_defaults(default_config)
 
             # Store in LocationManager
             loc_mgr.set_module_config(

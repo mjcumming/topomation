@@ -2170,6 +2170,50 @@ async def test_set_module_config_occupancy_group_id_uses_shared_runtime_state_fo
 
 
 @pytest.mark.asyncio
+async def test_occupancy_states_list_projects_missing_runtime_state_as_vacant(
+    hass: HomeAssistant,
+) -> None:
+    """C-023 projection treats no active runtime record as known vacant state."""
+    entry = MockConfigEntry(domain=DOMAIN, data={}, entry_id="test_entry")
+    entry.add_to_hass(hass)
+
+    with patch("custom_components.topomation.async_register_panel", AsyncMock()):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    kernel = hass.data[DOMAIN][entry.entry_id]
+    loc_mgr = kernel["location_manager"]
+
+    if loc_mgr.get_location("building_main") is None:
+        loc_mgr.create_location(id="building_main", name="Home", parent_id=None)
+    loc_mgr.set_module_config("building_main", "_meta", {"type": "building"})
+    loc_mgr.create_location(id="floor_main", name="Main Floor", parent_id="building_main")
+    loc_mgr.set_module_config("floor_main", "_meta", {"type": "floor"})
+    loc_mgr.create_location(id="area_kitchen", name="Kitchen", parent_id="floor_main")
+    loc_mgr.set_module_config("area_kitchen", "_meta", {"type": "area"})
+
+    projection_conn = _fake_connection()
+    handle_occupancy_states_list(
+        hass,
+        projection_conn,
+        {
+            "id": 4219,
+            "type": WS_TYPE_OCCUPANCY_STATES_LIST,
+            "entry_id": entry.entry_id,
+        },
+    )
+
+    projection_conn.send_error.assert_not_called()
+    payload = projection_conn.send_result.call_args[0][1]
+    states_by_id = {item["location_id"]: item for item in payload["states"]}
+
+    assert states_by_id["area_kitchen"]["occupied"] is False
+    assert states_by_id["area_kitchen"]["state"]["state"] == "off"
+    assert states_by_id["floor_main"]["occupied"] is False
+    assert states_by_id["building_main"]["occupied"] is False
+
+
+@pytest.mark.asyncio
 async def test_occupancy_states_list_projects_group_members_from_backend(
     hass: HomeAssistant,
 ) -> None:

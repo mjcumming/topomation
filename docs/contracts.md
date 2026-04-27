@@ -453,6 +453,10 @@ Additional save points:
   - one lux sensor selector whose empty/default option is `Inherit from parent`
   - dark/bright threshold controls
   - fallback-to-sun and assume-dark-on-error toggles.
+- Topomation ambient defaults are `dark_threshold: 800` and
+  `bright_threshold: 1200`; a temporary startup migration updates legacy
+  default-looking configs (`50`/`500`) once while preserving explicit custom
+  calibration.
 
 ## C-016 Re-entrant Occupancy Callback Safety Contract
 

@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.73] - 2026-04-27
+
+### Fixed
+
+- **Occupancy projection default state**: locations with no occupancy runtime
+  record now project as **vacant** instead of **unknown**, matching the HA
+  binary sensor contract where no active occupancy evidence is a known off
+  state. This prevents quiet rooms/structural rollups from showing
+  "Occupancy is unknown" on initial panel load.
+- **Ambient lux defaults**: Topomation defaults now treat rooms as dark below
+  **800 lux** and bright above **1200 lux**. A temporary one-shot startup
+  migration updates legacy default-looking ambient configs (`50`/`500`) on
+  integration reload while preserving explicit custom thresholds.
+
 ## [0.2.72] - 2026-04-26
 
 ### Added
