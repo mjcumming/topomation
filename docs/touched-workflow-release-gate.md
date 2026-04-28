@@ -79,7 +79,27 @@ Run the rows that match the touched workflow.
    gate and re-recording. Otherwise previous evidence is stale (see
    `docs/working-agreement.md` §6).
 
-## 6. Blocking Outcomes
+## 6. Release Records
+
+### 2026-04-28 - v0.2.78 structural occupancy projection
+
+1. Commit under test: 3c162be.
+2. Frontend bundle rebuilt from that commit: no, backend projection only.
+3. Touched workflow list:
+   - Structural occupancy projection for floor/building/grounds/property hosts.
+   - Manual vacancy display after vacating a structural host with a managed shadow.
+4. Commands run:
+   - `pytest -q --no-cov tests/test_websocket_contract.py::test_occupancy_projection_uses_host_rollup_not_stale_managed_shadow tests/test_websocket_contract.py::test_occupancy_states_list_projects_group_members_from_backend tests/test_init.py::test_setup_entry_propagates_linked_location_clear`
+   - `pytest -q --no-cov tests/test_managed_shadow_occupancy_invariant.py /workspaces/home-topology/tests/test_occupancy_module.py::test_vacate_area_cascades /workspaces/home-topology/tests/test_advanced_occupancy.py::test_module_vacate_area`
+   - `ruff check custom_components/topomation/websocket_api.py tests/test_websocket_contract.py`
+   - `python scripts/verify-version-sync.py && pytest -q --no-cov tests/test_websocket_contract.py::test_occupancy_projection_uses_host_rollup_not_stale_managed_shadow tests/test_websocket_contract.py::test_occupancy_states_list_projects_group_members_from_backend tests/test_init.py::test_setup_entry_propagates_linked_location_clear`
+   - `./scripts/test-comprehensive.sh`
+5. Outcome:
+   - Targeted backend projection and linked propagation checks passed.
+   - Kernel vacate-area and managed-shadow occupancy invariant checks passed.
+   - Full release gate passed.
+
+## 7. Blocking Outcomes
 
 Release/live status is blocked if any of these are true:
 
@@ -89,7 +109,7 @@ Release/live status is blocked if any of these are true:
 4. The runtime bundle was not rebuilt after frontend behavior changes.
 5. Status docs claim `Released` or `Live-validated` without this gate.
 
-## 7. Release Record Template
+## 8. Release Record Template
 
 ```md
 Commit under test: <sha>
@@ -108,7 +128,7 @@ Outcome:
 - <workflow 2>: PASS/FAIL
 ```
 
-## 8. Current Release Candidate Record
+## 9. Current Release Candidate Record
 
 Commit under test: **release-candidate worktree for Topomation `0.2.74`**
 with sibling `home-topology` `1.0.5` installed into the local HA venv for live

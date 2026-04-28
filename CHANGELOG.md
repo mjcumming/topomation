@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.78] - 2026-04-28
+
+### Fixed
+
+- **Structural occupancy projection**: floor/building/grounds/property rows now
+  project occupancy from their own structural rollup and ignore hidden managed
+  shadow areas when scanning descendants. This prevents a stale follow-parent
+  shadow from making a vacated floor such as Basement still appear occupied.
+
 ## [0.2.77] - 2026-04-28
 
 ### Fixed

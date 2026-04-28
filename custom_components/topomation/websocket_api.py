@@ -595,6 +595,7 @@ def build_occupancy_projection_states(
     recent_by_location = kernel.get("occupancy_recent_changes", {})
 
     locations = list(_ordered_locations_for_list(loc_mgr))
+    locations_by_id = {_location_id(loc): loc for loc in locations if _location_id(loc)}
     by_parent: dict[str, list[object]] = {}
     for loc in locations:
         parent_id = getattr(loc, "parent_id", None)
@@ -645,6 +646,9 @@ def build_occupancy_projection_states(
         if _is_shadow_host_location(location) or bool(getattr(location, "is_explicit_root", False)):
             child_states: list[bool] = []
             for child_id in descendant_ids(_location_id(location)):
+                child_location = locations_by_id.get(child_id)
+                if child_location is not None and _is_managed_shadow_area(child_location):
+                    continue
                 child_payload = raw_states.get(child_id)
                 child_occupied = child_payload.get("occupied") if isinstance(child_payload, dict) else None
                 if child_occupied is True:
@@ -666,7 +670,11 @@ def build_occupancy_projection_states(
             continue
 
         shadow_id = _managed_shadow_area_id(loc_mgr, location)
-        effective_id = shadow_id or location_id
+        # Managed shadow areas expose HA entities for structural hosts, but their
+        # occupancy is a follow-parent mirror. The panel projection must stay
+        # anchored on the structural host rollup so a stale shadow mirror cannot
+        # make an otherwise vacant floor/building look occupied.
+        effective_id = location_id
         group_id = _occupancy_group_id(location)
         loc_type = _location_type(location)
         if shadow_id:

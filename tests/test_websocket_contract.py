@@ -22,6 +22,7 @@ from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import floor_registry as fr
 from homeassistant.helpers.storage import Store
+from home_topology import LocationManager
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.topomation.const import (  # type: ignore[import]
@@ -49,6 +50,7 @@ from custom_components.topomation.const import (  # type: ignore[import]
     WS_TYPE_SYNC_STATUS,
 )
 from custom_components.topomation.websocket_api import (  # type: ignore[import]
+    build_occupancy_projection_states,
     handle_adjacency_create,
     handle_adjacency_delete,
     handle_adjacency_list,
@@ -2253,6 +2255,74 @@ async def test_occupancy_states_list_projects_missing_runtime_state_as_vacant(
     assert states_by_id["area_kitchen"]["state"]["state"] == "off"
     assert states_by_id["floor_main"]["occupied"] is False
     assert states_by_id["building_main"]["occupied"] is False
+
+
+def test_occupancy_projection_uses_host_rollup_not_stale_managed_shadow(
+    hass: HomeAssistant,
+) -> None:
+    """A stale follow-parent shadow must not make a vacant floor look occupied."""
+    loc_mgr = LocationManager()
+    loc_mgr.create_location(id="building_main", name="Home")
+    loc_mgr.set_module_config("building_main", "_meta", {"type": "building"})
+    loc_mgr.create_location(id="floor_basement", name="Basement", parent_id="building_main")
+    loc_mgr.set_module_config(
+        "floor_basement",
+        "_meta",
+        {"type": "floor", "shadow_area_id": "area_shadow_basement"},
+    )
+    loc_mgr.create_location(
+        id="area_shadow_basement",
+        name="Basement",
+        parent_id="floor_basement",
+    )
+    loc_mgr.set_module_config(
+        "area_shadow_basement",
+        "_meta",
+        {
+            "type": "area",
+            "role": "managed_shadow",
+            "shadow_for_location_id": "floor_basement",
+        },
+    )
+    loc_mgr.create_location(id="area_rec_room", name="Rec Room", parent_id="floor_basement")
+    loc_mgr.set_module_config("area_rec_room", "_meta", {"type": "area"})
+
+    occupancy = Mock()
+    occupancy.get_location_state.side_effect = lambda location_id: {
+        "floor_basement": {
+            "occupied": False,
+            "contributions": [],
+            "reason": "event:vacate",
+        },
+        "area_shadow_basement": {
+            "occupied": True,
+            "contributions": [{"source_id": "__follow_parent__:floor_basement"}],
+            "reason": "event:trigger",
+        },
+        "area_rec_room": {
+            "occupied": False,
+            "contributions": [],
+        },
+        "building_main": {
+            "occupied": False,
+            "contributions": [],
+        },
+    }.get(location_id)
+
+    states = build_occupancy_projection_states(
+        hass,
+        {
+            "location_manager": loc_mgr,
+            "modules": {"occupancy": occupancy},
+            "occupancy_recent_changes": {},
+        },
+    )
+    states_by_id = {item["location_id"]: item for item in states}
+
+    assert states_by_id["floor_basement"]["occupied"] is False
+    assert states_by_id["floor_basement"]["effective_location_id"] == "floor_basement"
+    assert states_by_id["floor_basement"]["state"]["state"] == "off"
+    assert states_by_id["floor_basement"]["contributions"] == []
 
 
 @pytest.mark.asyncio
