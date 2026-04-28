@@ -59,6 +59,8 @@ This is the part that pays off most in awkward real houses: bathrooms with no mo
 
 Lighting rules can fire only when the room is dark, so the kitchen overhead doesn't slam on at noon and the living room lamps come on at dusk without a time-based trigger. Each location has a `dark` / `bright` state derived from a lux sensor, with configurable thresholds and inheritance from parent locations. Put one outdoor lux sensor on `grounds` and let it apply to the whole property; override at the room level if a specific room needs different thresholds. If no lux reading is available, there's an optional fallback to sunrise/sunset, plus an "assume dark on error" toggle.
 
+For most homes, a property-level outdoor illuminance estimate is the simplest and most reliable source. Home Assistant's built-in [Illuminance integration](https://www.home-assistant.io/integrations/illuminance/) is a good fit here: expose one illuminance entity, assign it high in the TopoMation tree (`property`, `grounds`, or `building`), and let rooms inherit it unless a specific room truly needs its own local lux sensor.
+
 ## What you can automate
 
 ![Lighting rule editor](docs/screenshots/lighting-occupancy.jpg)

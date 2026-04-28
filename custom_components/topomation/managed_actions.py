@@ -1004,11 +1004,42 @@ class TopomationManagedActions:
         if bright_threshold <= dark_threshold:
             bright_threshold = dark_threshold + 1.0
 
+        inherited_lux_sensor: str | None = None
+        if bool(ambient.get("inherit_from_parent", True)) and self._loc_mgr is not None:
+            try:
+                ancestors = self._loc_mgr.ancestors_of(location.id)
+            except Exception:
+                ancestors = []
+            for ancestor in ancestors:
+                ancestor_modules = getattr(ancestor, "modules", {}) or {}
+                ancestor_ambient = (
+                    ancestor_modules.get("ambient", {})
+                    if isinstance(ancestor_modules, Mapping)
+                    else {}
+                )
+                if not isinstance(ancestor_ambient, Mapping):
+                    continue
+                candidate = str(ancestor_ambient.get("lux_sensor", "") or "").strip()
+                if candidate.startswith("sensor."):
+                    inherited_lux_sensor = candidate
+                    break
+
+        local_light_entity_ids = [
+            entity_id
+            for entity_id in list(getattr(location, "entity_ids", []) or [])
+            if isinstance(entity_id, str) and entity_id.startswith("light.")
+        ]
+
         return {
             "lux_sensor": lux_sensor,
+            "inherited_lux_sensor": inherited_lux_sensor,
             "dark_threshold": dark_threshold,
             "bright_threshold": bright_threshold,
             "fallback_to_sun": bool(ambient.get("fallback_to_sun", True)),
+            "ignore_local_lux_when_lights_on": bool(
+                ambient.get("ignore_local_lux_when_lights_on", False)
+            ),
+            "local_light_entity_ids": local_light_entity_ids,
         }
 
     def _build_trigger_definitions(
@@ -1062,6 +1093,35 @@ class TopomationManagedActions:
                         }
                     )
 
+            inherited_lux_sensor = ambient_config.get("inherited_lux_sensor")
+            if isinstance(inherited_lux_sensor, str) and inherited_lux_sensor:
+                if trigger_type == "on_dark":
+                    triggers.append(
+                        {
+                            "trigger": "numeric_state",
+                            "entity_id": inherited_lux_sensor,
+                            "below": float(
+                                ambient_config.get(
+                                    "dark_threshold",
+                                    AMBIENT_DARK_THRESHOLD_DEFAULT,
+                                )
+                            ),
+                        }
+                    )
+                elif trigger_type == "on_bright":
+                    triggers.append(
+                        {
+                            "trigger": "numeric_state",
+                            "entity_id": inherited_lux_sensor,
+                            "above": float(
+                                ambient_config.get(
+                                    "bright_threshold",
+                                    AMBIENT_BRIGHT_THRESHOLD_DEFAULT,
+                                )
+                            ),
+                        }
+                    )
+
             fallback_to_sun = bool(ambient_config.get("fallback_to_sun", True))
             if fallback_to_sun or not isinstance(lux_sensor, str) or not lux_sensor:
                 triggers.append(
@@ -1098,10 +1158,47 @@ class TopomationManagedActions:
                     else AMBIENT_BRIGHT_THRESHOLD_DEFAULT,
                 )
             )
+            local_lux_clause: dict[str, Any] = {
+                "condition": "numeric_state",
+                "entity_id": lux_sensor,
+                "below" if dark_state else "above": threshold,
+            }
+            if bool(ambient_config.get("ignore_local_lux_when_lights_on", False)):
+                local_light_entity_ids = [
+                    entity_id
+                    for entity_id in ambient_config.get("local_light_entity_ids", [])
+                    if isinstance(entity_id, str) and entity_id.startswith("light.")
+                ]
+                if local_light_entity_ids:
+                    local_lux_clause = {
+                        "condition": "and",
+                        "conditions": [
+                            {
+                                "condition": "state",
+                                "entity_id": entity_id,
+                                "state": "off",
+                            }
+                            for entity_id in local_light_entity_ids
+                        ]
+                        + [local_lux_clause],
+                    }
+            clauses.append(local_lux_clause)
+
+        inherited_lux_sensor = ambient_config.get("inherited_lux_sensor")
+        if isinstance(inherited_lux_sensor, str) and inherited_lux_sensor:
+            threshold_key = "dark_threshold" if dark_state else "bright_threshold"
+            threshold = float(
+                ambient_config.get(
+                    threshold_key,
+                    AMBIENT_DARK_THRESHOLD_DEFAULT
+                    if dark_state
+                    else AMBIENT_BRIGHT_THRESHOLD_DEFAULT,
+                )
+            )
             clauses.append(
                 {
                     "condition": "numeric_state",
-                    "entity_id": lux_sensor,
+                    "entity_id": inherited_lux_sensor,
                     "below" if dark_state else "above": threshold,
                 }
             )

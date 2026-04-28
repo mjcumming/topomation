@@ -8,6 +8,8 @@ import pytest
 from home_topology import EventBus, LocationManager
 from home_topology.modules.ambient import AmbientLightModule
 
+from custom_components.topomation import TopomationAmbientLightModule
+
 
 @pytest.fixture
 def loc_mgr() -> LocationManager:
@@ -66,3 +68,139 @@ def test_invalidate_ambient_sensor_cache_clears_resolution(loc_mgr: LocationMana
     assert mod.get_lux_sensor("host", inherit=False) == "sensor.a"
     mod.invalidate_ambient_sensor_cache("host")
     assert mod.get_lux_sensor("host", inherit=False) == "sensor.b"
+
+
+def test_topomation_ambient_skips_local_lux_when_local_light_is_on() -> None:
+    """Local lux can be ignored while local area lights are on, falling back to parent lux."""
+    mgr = LocationManager()
+    mgr.create_location("parent", "Parent", is_explicit_root=True)
+    mgr.create_location("room", "Room", parent_id="parent")
+    mgr.add_entity_to_location("sensor.outdoor_lux", "parent")
+    mgr.add_entity_to_location("sensor.room_lux", "room")
+    mgr.add_entity_to_location("light.room_ceiling", "room")
+    mgr.set_module_config(
+        "parent",
+        "ambient",
+        {
+            "version": 1,
+            "lux_sensor": "sensor.outdoor_lux",
+            "auto_discover": False,
+            "inherit_from_parent": True,
+        },
+    )
+    mgr.set_module_config(
+        "room",
+        "ambient",
+        {
+            "version": 1,
+            "lux_sensor": "sensor.room_lux",
+            "auto_discover": False,
+            "inherit_from_parent": True,
+            "ignore_local_lux_when_lights_on": True,
+        },
+    )
+    bus = EventBus()
+    bus.set_location_manager(mgr)
+    mgr.set_event_bus(bus)
+
+    adapter = Mock()
+    adapter.get_device_class.return_value = "illuminance"
+    adapter.get_numeric_state.side_effect = lambda entity_id: {
+        "sensor.room_lux": 900.0,
+        "sensor.outdoor_lux": 120.0,
+    }.get(entity_id)
+    adapter.get_state.side_effect = lambda entity_id: {
+        "light.room_ceiling": "on",
+    }.get(entity_id)
+
+    mod = TopomationAmbientLightModule(platform_adapter=adapter)
+    mod.attach(bus, mgr)
+
+    reading = mod.get_ambient_light("room")
+    payload = reading.to_dict()
+
+    assert reading.source_sensor == "sensor.outdoor_lux"
+    assert reading.source_location == "parent"
+    assert reading.is_inherited is True
+    assert payload["ignored_local_lux_sensor"] == "sensor.room_lux"
+    assert payload["ignored_local_lux_reason"] == "local_lights_on"
+    assert payload["ignored_local_lux_light_entity_ids"] == ["light.room_ceiling"]
+
+
+def test_topomation_ambient_uses_local_lux_when_local_light_is_off() -> None:
+    """The local sensor remains authoritative when no local light is on."""
+    mgr = LocationManager()
+    mgr.create_location("room", "Room", is_explicit_root=True)
+    mgr.add_entity_to_location("sensor.room_lux", "room")
+    mgr.add_entity_to_location("light.room_ceiling", "room")
+    mgr.set_module_config(
+        "room",
+        "ambient",
+        {
+            "version": 1,
+            "lux_sensor": "sensor.room_lux",
+            "auto_discover": False,
+            "inherit_from_parent": True,
+            "ignore_local_lux_when_lights_on": True,
+        },
+    )
+    bus = EventBus()
+    bus.set_location_manager(mgr)
+    mgr.set_event_bus(bus)
+
+    adapter = Mock()
+    adapter.get_device_class.return_value = "illuminance"
+    adapter.get_numeric_state.return_value = 900.0
+    adapter.get_state.return_value = "off"
+
+    mod = TopomationAmbientLightModule(platform_adapter=adapter)
+    mod.attach(bus, mgr)
+
+    reading = mod.get_ambient_light("room")
+    payload = reading.to_dict()
+
+    assert reading.source_sensor == "sensor.room_lux"
+    assert reading.source_location == "room"
+    assert reading.is_inherited is False
+    assert payload["ignored_local_lux_sensor"] is None
+
+
+def test_topomation_ambient_reports_ignored_local_lux_when_falling_back_to_sun() -> None:
+    """Fallback readings include local lux ignore diagnostics."""
+    mgr = LocationManager()
+    mgr.create_location("room", "Room", is_explicit_root=True)
+    mgr.add_entity_to_location("sensor.room_lux", "room")
+    mgr.add_entity_to_location("light.room_ceiling", "room")
+    mgr.set_module_config(
+        "room",
+        "ambient",
+        {
+            "version": 1,
+            "lux_sensor": "sensor.room_lux",
+            "auto_discover": False,
+            "inherit_from_parent": True,
+            "fallback_to_sun": True,
+            "ignore_local_lux_when_lights_on": True,
+        },
+    )
+    bus = EventBus()
+    bus.set_location_manager(mgr)
+    mgr.set_event_bus(bus)
+
+    adapter = Mock()
+    adapter.get_device_class.return_value = "illuminance"
+    adapter.get_numeric_state.return_value = 900.0
+    adapter.get_state.side_effect = lambda entity_id: {
+        "light.room_ceiling": "on",
+        "sun.sun": "below_horizon",
+    }.get(entity_id)
+
+    mod = TopomationAmbientLightModule(platform_adapter=adapter)
+    mod.attach(bus, mgr)
+
+    payload = mod.get_ambient_light("room").to_dict()
+
+    assert payload["source_sensor"] is None
+    assert payload["fallback_method"] == "sun_position"
+    assert payload["ignored_local_lux_sensor"] == "sensor.room_lux"
+    assert payload["ignored_local_lux_reason"] == "local_lights_on"

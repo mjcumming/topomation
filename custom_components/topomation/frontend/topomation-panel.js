@@ -4180,7 +4180,8 @@ const De = class De extends _t {
       dark_threshold: 800,
       bright_threshold: 1200,
       fallback_to_sun: !0,
-      assume_dark_on_error: !0
+      assume_dark_on_error: !0,
+      ignore_local_lux_when_lights_on: !1
     };
   }
   _persistedAmbientConfig() {
@@ -4202,7 +4203,8 @@ const De = class De extends _t {
       dark_threshold: n,
       bright_threshold: o,
       fallback_to_sun: typeof t.fallback_to_sun == "boolean" ? t.fallback_to_sun : e.fallback_to_sun,
-      assume_dark_on_error: typeof t.assume_dark_on_error == "boolean" ? t.assume_dark_on_error : e.assume_dark_on_error
+      assume_dark_on_error: typeof t.assume_dark_on_error == "boolean" ? t.assume_dark_on_error : e.assume_dark_on_error,
+      ignore_local_lux_when_lights_on: typeof t.ignore_local_lux_when_lights_on == "boolean" ? t.ignore_local_lux_when_lights_on : e.ignore_local_lux_when_lights_on
     };
   }
   _resetAmbientDraftFromLocation() {
@@ -4216,7 +4218,8 @@ const De = class De extends _t {
       dark_threshold: e.dark_threshold,
       bright_threshold: e.bright_threshold,
       fallback_to_sun: !!e.fallback_to_sun,
-      assume_dark_on_error: !!e.assume_dark_on_error
+      assume_dark_on_error: !!e.assume_dark_on_error,
+      ignore_local_lux_when_lights_on: !!e.ignore_local_lux_when_lights_on
     });
   }
   _getAmbientConfig() {
@@ -4489,6 +4492,7 @@ const De = class De extends _t {
           ${i.length ? g`
                 <span class="header-reason-trigger" aria-hidden="true">
                   <ha-icon .icon=${"mdi:information-outline"}></ha-icon>
+                  <span>Details</span>
                 </span>
               ` : ""}
         </summary>
@@ -4899,7 +4903,8 @@ const De = class De extends _t {
     var d, h, _, p;
     if (!this.location) return !1;
     const n = this._getAmbientConfig(), o = String(((d = this._ambientReading) == null ? void 0 : d.source_sensor) || "").trim(), a = String(n.lux_sensor || "").trim(), r = String(((h = this._ambientReading) == null ? void 0 : h.fallback_method) || "").toLowerCase(), c = !!n.fallback_to_sun || r.includes("sun");
-    if (t === "sun.sun" && c) return !0;
+    if (t === "sun.sun" && c || n.ignore_local_lux_when_lights_on && t.startsWith("light.") && (this.location.entity_ids || []).includes(t))
+      return !0;
     if (!t.startsWith("sensor.")) return !1;
     const l = e || i || ((p = (_ = this.hass) == null ? void 0 : _.states) == null ? void 0 : p[t]);
     if (!this._isLuxSensorEntityForState(t, l)) return !1;
@@ -4913,7 +4918,7 @@ const De = class De extends _t {
   }
   _renderAmbientSection() {
     if (!this.location) return "";
-    const t = this._getAmbientConfig(), e = this._ambientReading, i = this._ambientSensorCandidates(), n = this._ambientSourceMethod(e), o = this._ambientSourceMethodLabel(n), a = (e == null ? void 0 : e.source_sensor) || "-", r = typeof (e == null ? void 0 : e.source_location) == "string" && e.source_location ? this._locationName(e.source_location) : "-", c = this._ambientStateLabel(e), l = Math.max(0, Number(t.dark_threshold) || 0), u = Math.max(l + 1, Number(t.bright_threshold) || l + 1), d = this._selectedAmbientSensorId(t, e), h = "Inherit from parent", _ = this._savingAmbientConfig;
+    const t = this._getAmbientConfig(), e = this._ambientReading, i = this._ambientSensorCandidates(), n = this._ambientSourceMethod(e), o = this._ambientSourceMethodLabel(n), a = (e == null ? void 0 : e.source_sensor) || "-", r = typeof (e == null ? void 0 : e.source_location) == "string" && e.source_location ? this._locationName(e.source_location) : "-", c = typeof (e == null ? void 0 : e.ignored_local_lux_sensor) == "string" ? e.ignored_local_lux_sensor : "", l = Array.isArray(e == null ? void 0 : e.ignored_local_lux_light_entity_ids) ? e.ignored_local_lux_light_entity_ids : [], u = c ? `Local lux ignored because ${l.map((y) => this._entityName(y)).join(", ")} ${l.length === 1 ? "is" : "are"} on.` : "", d = this._ambientStateLabel(e), h = Math.max(0, Number(t.dark_threshold) || 0), _ = Math.max(h + 1, Number(t.bright_threshold) || h + 1), p = this._selectedAmbientSensorId(t, e), f = "Inherit from parent", m = this._savingAmbientConfig;
     return g`
       <div class="card-section" data-testid="ambient-section">
         <div class="section-title-row">
@@ -4930,7 +4935,7 @@ const De = class De extends _t {
           <div class="ambient-key">Lux level</div>
           <div class="ambient-value" data-testid="ambient-lux-level">${this._formatAmbientLux(e)}</div>
           <div class="ambient-key">Ambient state</div>
-          <div class="ambient-value" data-testid="ambient-state">${c}</div>
+          <div class="ambient-value" data-testid="ambient-state">${d}</div>
           <div class="ambient-key">Source method</div>
           <div class="ambient-value" data-testid="ambient-source-method">${o}</div>
           <div class="ambient-key">Source sensor</div>
@@ -4942,6 +4947,7 @@ const De = class De extends _t {
         <div class="policy-note" style="margin-bottom: 8px;">
           Lux sensor assignment is explicit. Set a location sensor or inherit from parent.
         </div>
+        ${u ? g`<div class="policy-note" data-testid="ambient-ignored-local-lux">${u}</div>` : ""}
 
         <div class="config-row">
           <div>
@@ -4950,21 +4956,21 @@ const De = class De extends _t {
           </div>
           <div class="config-value">
             <select
-              ?disabled=${_}
+              ?disabled=${m}
               data-testid="ambient-lux-sensor-select"
-              @change=${(p) => {
-      const f = p.target.value.trim();
+              @change=${(y) => {
+      const b = y.target.value.trim();
       this._setAmbientDraft({
         ...t,
-        lux_sensor: f || null,
-        inherit_from_parent: !f
+        lux_sensor: b || null,
+        inherit_from_parent: !b
       }), this._scheduleAmbientReadingReload();
     }}
             >
-              <option value="" ?selected=${d === ""}>${h}</option>
+              <option value="" ?selected=${p === ""}>${f}</option>
               ${i.map(
-      (p) => g`<option value=${p} ?selected=${d === p}>
-                    ${this._entityName(p)}
+      (y) => g`<option value=${y} ?selected=${p === y}>
+                    ${this._entityName(y)}
                   </option>`
     )}
             </select>
@@ -4982,15 +4988,15 @@ const De = class De extends _t {
               min="0"
               step="1"
               class="input"
-              .value=${String(l)}
-              ?disabled=${_}
+              .value=${String(h)}
+              ?disabled=${m}
               data-testid="ambient-dark-threshold"
-              @change=${(p) => {
-      const f = Math.max(0, Number(p.target.value) || 0);
+              @change=${(y) => {
+      const b = Math.max(0, Number(y.target.value) || 0);
       this._setAmbientDraft({
         ...t,
-        dark_threshold: f,
-        bright_threshold: Math.max(f + 1, Number(t.bright_threshold) || f + 1)
+        dark_threshold: b,
+        bright_threshold: Math.max(b + 1, Number(t.bright_threshold) || b + 1)
       }), this._scheduleAmbientReadingReload();
     }}
             />
@@ -5005,20 +5011,20 @@ const De = class De extends _t {
           <div class="config-value">
             <input
               type="number"
-              min=${String(l + 1)}
+              min=${String(h + 1)}
               step="1"
               class="input"
-              .value=${String(u)}
-              ?disabled=${_}
+              .value=${String(_)}
+              ?disabled=${m}
               data-testid="ambient-bright-threshold"
-              @change=${(p) => {
-      const f = Math.max(
-        l + 1,
-        Number(p.target.value) || l + 1
+              @change=${(y) => {
+      const b = Math.max(
+        h + 1,
+        Number(y.target.value) || h + 1
       );
       this._setAmbientDraft({
         ...t,
-        bright_threshold: f
+        bright_threshold: b
       }), this._scheduleAmbientReadingReload();
     }}
             />
@@ -5035,12 +5041,34 @@ const De = class De extends _t {
               type="checkbox"
               class="switch-input"
               .checked=${!!t.fallback_to_sun}
-              ?disabled=${_}
+              ?disabled=${m}
               data-testid="ambient-fallback-to-sun-toggle"
-              @change=${(p) => {
+              @change=${(y) => {
       this._setAmbientDraft({
         ...t,
-        fallback_to_sun: p.target.checked
+        fallback_to_sun: y.target.checked
+      }), this._scheduleAmbientReadingReload();
+    }}
+            />
+          </div>
+        </div>
+
+        <div class="config-row">
+          <div>
+            <div class="config-label">Ignore local lux while lights are on</div>
+            <div class="config-help">Prevents this area's own lights from making the local lux sensor read artificially bright.</div>
+          </div>
+          <div class="config-value">
+            <input
+              type="checkbox"
+              class="switch-input"
+              .checked=${!!t.ignore_local_lux_when_lights_on}
+              ?disabled=${m}
+              data-testid="ambient-ignore-local-lux-toggle"
+              @change=${(y) => {
+      this._setAmbientDraft({
+        ...t,
+        ignore_local_lux_when_lights_on: y.target.checked
       }), this._scheduleAmbientReadingReload();
     }}
             />
@@ -5057,12 +5085,12 @@ const De = class De extends _t {
               type="checkbox"
               class="switch-input"
               .checked=${!!t.assume_dark_on_error}
-              ?disabled=${_}
+              ?disabled=${m}
               data-testid="ambient-assume-dark-on-error-toggle"
-              @change=${(p) => {
+              @change=${(y) => {
       this._setAmbientDraft({
         ...t,
-        assume_dark_on_error: p.target.checked
+        assume_dark_on_error: y.target.checked
       }), this._scheduleAmbientReadingReload();
     }}
             />
@@ -7048,7 +7076,7 @@ const De = class De extends _t {
   _actionTriggerLabel(t) {
     return t === "on_occupied" ? "On occupied" : t === "on_vacant" ? "On vacant" : t === "on_bright" ? "On bright" : "On dark";
   }
-  _renderChoicePill(t, e, i, n, o, a) {
+  _renderChoicePill(t, e, i, n, o, a, r) {
     return g`
       <label class="choice-pill ${n ? "active" : ""} ${o ? "disabled" : ""}">
         <input
@@ -7059,7 +7087,10 @@ const De = class De extends _t {
           ?disabled=${o}
           @change=${() => a()}
         />
-        <span>${i}</span>
+        <span class="choice-pill-content">
+          <span>${i}</span>
+          ${r ? g`<span class="choice-pill-meta">${r}</span>` : ""}
+        </span>
       </label>
     `;
   }
@@ -8190,7 +8221,10 @@ const De = class De extends _t {
       }}
                 />
                 <div class="dusk-light-entity-meta">
-                  <span>${this._entityName(l)}</span>
+                  <span class="dusk-light-entity-title">
+                    <span>${this._entityName(l)}</span>
+                    <span class="entity-state-badge">${this._entityStateLabel(l)}</span>
+                  </span>
                   <code>${l}</code>
                 </div>
                 ${_ ? g`
@@ -8453,7 +8487,8 @@ const De = class De extends _t {
             action_service: _,
             action_data: {}
           });
-        }
+        },
+        this._entityStateLabel(h)
       )
     )}
                   </div>
@@ -8562,7 +8597,8 @@ const De = class De extends _t {
             action_service: x,
             action_data: {}
           });
-        }
+        },
+        this._entityStateLabel(b)
       )
     )}
                   </div>
@@ -9651,6 +9687,29 @@ const De = class De extends _t {
     const e = (i = this.hass.states[t]) == null ? void 0 : i.state;
     return e || "unknown";
   }
+  _entityStateLabel(t) {
+    var a, r;
+    const e = (r = (a = this.hass) == null ? void 0 : a.states) == null ? void 0 : r[t], i = String((e == null ? void 0 : e.state) || "unknown").trim(), n = i.replace(/_/g, " "), o = (e == null ? void 0 : e.attributes) || {};
+    if (i === "unknown" || i === "unavailable") return n;
+    if (t.startsWith("light.")) {
+      if (i !== "on") return n;
+      const c = Number(o.brightness);
+      return Number.isFinite(c) && c > 0 ? `on ${Math.round(c / 255 * 100)}%` : "on";
+    }
+    if (t.startsWith("media_player.")) {
+      const c = Number(o.volume_level);
+      return Number.isFinite(c) ? `${n} ${Math.round(c * 100)}%` : n;
+    }
+    if (t.startsWith("fan.")) {
+      const c = Number(o.percentage);
+      return Number.isFinite(c) && i === "on" ? `on ${Math.round(c)}%` : n;
+    }
+    if (t.startsWith("climate.")) {
+      const c = o.current_temperature ?? o.temperature;
+      return c != null && c !== "" ? `${n} ${c} deg` : n;
+    }
+    return n;
+  }
   async _handleTestSource(t, e) {
     if (!(!this.location || this._isOccupancyGroupHostLocation()))
       try {
@@ -9899,6 +9958,7 @@ De.properties = {
         display: flex;
         align-items: center;
         gap: var(--spacing-lg);
+        flex: 1 1 auto;
         min-width: 0;
       }
 
@@ -9916,6 +9976,7 @@ De.properties = {
       }
 
       .header-content {
+        flex: 1 1 auto;
         min-width: 0;
       }
 
@@ -9941,22 +10002,27 @@ De.properties = {
 
       .header-occupancy-reason {
         position: relative;
-        flex: 1 1 280px;
+        order: 2;
+        flex: 1 0 100%;
         min-width: 180px;
-        max-width: min(100%, 640px);
-        font-size: 12px;
-        color: var(--text-secondary-color);
+        max-width: min(100%, 720px);
+        font-size: 13px;
+        color: var(--primary-text-color);
       }
 
       .header-occupancy-reason summary {
         display: grid;
         grid-template-columns: minmax(0, 1fr) auto;
         align-items: center;
-        gap: 6px;
+        gap: 8px;
         width: 100%;
         cursor: pointer;
         list-style: none;
-        border-radius: 6px;
+        box-sizing: border-box;
+        padding: 7px 9px;
+        border: 1px solid rgba(var(--rgb-primary-color), 0.22);
+        border-radius: 8px;
+        background: rgba(var(--rgb-primary-color), 0.08);
       }
 
       .header-occupancy-reason summary::-webkit-details-marker {
@@ -9969,20 +10035,23 @@ De.properties = {
       }
 
       .header-reason-summary {
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
+        min-width: 0;
+        line-height: 1.35;
       }
 
       .header-reason-trigger {
-        width: 18px;
-        height: 18px;
-        display: inline-grid;
-        place-items: center;
-        border: 1px solid var(--divider-color);
-        border-radius: 50%;
-        background: var(--secondary-background-color);
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        min-height: 24px;
+        padding: 0 7px;
+        border: 1px solid rgba(var(--rgb-primary-color), 0.34);
+        border-radius: 999px;
+        background: var(--card-background-color);
         color: var(--primary-color);
+        font-size: 12px;
+        font-weight: 600;
+        line-height: 1;
         flex: 0 0 auto;
       }
 
@@ -10000,25 +10069,26 @@ De.properties = {
 
       .header-reason-panel {
         position: absolute;
-        z-index: 20;
+        z-index: 40;
         top: calc(100% + 8px);
         left: 0;
-        width: min(520px, calc(100vw - 64px));
+        width: min(560px, calc(100vw - 64px));
         max-height: min(360px, calc(100vh - 180px));
         overflow: auto;
-        padding: 12px;
-        border: 1px solid var(--divider-color);
+        padding: 14px;
+        border: 1px solid rgba(var(--rgb-primary-color), 0.2);
         border-radius: 8px;
         background: var(--card-background-color);
         box-shadow: var(--ha-card-box-shadow, 0 8px 24px rgba(0, 0, 0, 0.2));
         color: var(--primary-text-color);
-        line-height: 1.4;
+        font-size: 13px;
+        line-height: 1.45;
       }
 
       .header-reason-title {
         margin-bottom: 8px;
         color: var(--secondary-text-color);
-        font-size: 11px;
+        font-size: 12px;
         font-weight: 700;
         letter-spacing: 0.04em;
         text-transform: uppercase;
@@ -10032,7 +10102,7 @@ De.properties = {
 
       .header-reason-section-title {
         margin-bottom: 4px;
-        font-size: 12px;
+        font-size: 13px;
         font-weight: 700;
       }
 
@@ -10049,7 +10119,7 @@ De.properties = {
         grid-template-columns: auto minmax(0, 1fr);
         gap: 6px;
         min-width: 0;
-        font-size: 12px;
+        font-size: 13px;
       }
 
       .header-reason-item::before {
@@ -10063,7 +10133,7 @@ De.properties = {
 
       .header-reason-note {
         color: var(--secondary-text-color);
-        font-size: 12px;
+        font-size: 13px;
       }
 
       .header-reason-list + .header-reason-note {
@@ -10189,11 +10259,35 @@ De.properties = {
         min-width: 0;
       }
 
+      .dusk-light-entity-title {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+        flex-wrap: wrap;
+      }
+
       .dusk-light-entity-meta code {
         font-size: 11px;
         color: var(--text-secondary-color);
         overflow: hidden;
         text-overflow: ellipsis;
+      }
+
+      .entity-state-badge,
+      .choice-pill-meta {
+        color: var(--text-secondary-color);
+        font-size: 11px;
+        font-weight: 600;
+        line-height: 1.2;
+        white-space: nowrap;
+      }
+
+      .entity-state-badge {
+        padding: 1px 6px;
+        border: 1px solid var(--divider-color);
+        border-radius: 999px;
+        background: rgba(var(--rgb-primary-color), 0.06);
       }
 
       .dusk-light-action-grid input[type="color"] {
@@ -10437,6 +10531,13 @@ De.properties = {
         font-size: 13px;
         cursor: pointer;
         user-select: none;
+      }
+
+      .choice-pill-content {
+        display: inline-flex;
+        flex-direction: column;
+        gap: 2px;
+        min-width: 0;
       }
 
       .choice-pill.active {

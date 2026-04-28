@@ -285,6 +285,7 @@ export class HtLocationInspector extends LitElement {
         display: flex;
         align-items: center;
         gap: var(--spacing-lg);
+        flex: 1 1 auto;
         min-width: 0;
       }
 
@@ -302,6 +303,7 @@ export class HtLocationInspector extends LitElement {
       }
 
       .header-content {
+        flex: 1 1 auto;
         min-width: 0;
       }
 
@@ -327,22 +329,27 @@ export class HtLocationInspector extends LitElement {
 
       .header-occupancy-reason {
         position: relative;
-        flex: 1 1 280px;
+        order: 2;
+        flex: 1 0 100%;
         min-width: 180px;
-        max-width: min(100%, 640px);
-        font-size: 12px;
-        color: var(--text-secondary-color);
+        max-width: min(100%, 720px);
+        font-size: 13px;
+        color: var(--primary-text-color);
       }
 
       .header-occupancy-reason summary {
         display: grid;
         grid-template-columns: minmax(0, 1fr) auto;
         align-items: center;
-        gap: 6px;
+        gap: 8px;
         width: 100%;
         cursor: pointer;
         list-style: none;
-        border-radius: 6px;
+        box-sizing: border-box;
+        padding: 7px 9px;
+        border: 1px solid rgba(var(--rgb-primary-color), 0.22);
+        border-radius: 8px;
+        background: rgba(var(--rgb-primary-color), 0.08);
       }
 
       .header-occupancy-reason summary::-webkit-details-marker {
@@ -355,20 +362,23 @@ export class HtLocationInspector extends LitElement {
       }
 
       .header-reason-summary {
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
+        min-width: 0;
+        line-height: 1.35;
       }
 
       .header-reason-trigger {
-        width: 18px;
-        height: 18px;
-        display: inline-grid;
-        place-items: center;
-        border: 1px solid var(--divider-color);
-        border-radius: 50%;
-        background: var(--secondary-background-color);
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        min-height: 24px;
+        padding: 0 7px;
+        border: 1px solid rgba(var(--rgb-primary-color), 0.34);
+        border-radius: 999px;
+        background: var(--card-background-color);
         color: var(--primary-color);
+        font-size: 12px;
+        font-weight: 600;
+        line-height: 1;
         flex: 0 0 auto;
       }
 
@@ -386,25 +396,26 @@ export class HtLocationInspector extends LitElement {
 
       .header-reason-panel {
         position: absolute;
-        z-index: 20;
+        z-index: 40;
         top: calc(100% + 8px);
         left: 0;
-        width: min(520px, calc(100vw - 64px));
+        width: min(560px, calc(100vw - 64px));
         max-height: min(360px, calc(100vh - 180px));
         overflow: auto;
-        padding: 12px;
-        border: 1px solid var(--divider-color);
+        padding: 14px;
+        border: 1px solid rgba(var(--rgb-primary-color), 0.2);
         border-radius: 8px;
         background: var(--card-background-color);
         box-shadow: var(--ha-card-box-shadow, 0 8px 24px rgba(0, 0, 0, 0.2));
         color: var(--primary-text-color);
-        line-height: 1.4;
+        font-size: 13px;
+        line-height: 1.45;
       }
 
       .header-reason-title {
         margin-bottom: 8px;
         color: var(--secondary-text-color);
-        font-size: 11px;
+        font-size: 12px;
         font-weight: 700;
         letter-spacing: 0.04em;
         text-transform: uppercase;
@@ -418,7 +429,7 @@ export class HtLocationInspector extends LitElement {
 
       .header-reason-section-title {
         margin-bottom: 4px;
-        font-size: 12px;
+        font-size: 13px;
         font-weight: 700;
       }
 
@@ -435,7 +446,7 @@ export class HtLocationInspector extends LitElement {
         grid-template-columns: auto minmax(0, 1fr);
         gap: 6px;
         min-width: 0;
-        font-size: 12px;
+        font-size: 13px;
       }
 
       .header-reason-item::before {
@@ -449,7 +460,7 @@ export class HtLocationInspector extends LitElement {
 
       .header-reason-note {
         color: var(--secondary-text-color);
-        font-size: 12px;
+        font-size: 13px;
       }
 
       .header-reason-list + .header-reason-note {
@@ -575,11 +586,35 @@ export class HtLocationInspector extends LitElement {
         min-width: 0;
       }
 
+      .dusk-light-entity-title {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+        flex-wrap: wrap;
+      }
+
       .dusk-light-entity-meta code {
         font-size: 11px;
         color: var(--text-secondary-color);
         overflow: hidden;
         text-overflow: ellipsis;
+      }
+
+      .entity-state-badge,
+      .choice-pill-meta {
+        color: var(--text-secondary-color);
+        font-size: 11px;
+        font-weight: 600;
+        line-height: 1.2;
+        white-space: nowrap;
+      }
+
+      .entity-state-badge {
+        padding: 1px 6px;
+        border: 1px solid var(--divider-color);
+        border-radius: 999px;
+        background: rgba(var(--rgb-primary-color), 0.06);
       }
 
       .dusk-light-action-grid input[type="color"] {
@@ -823,6 +858,13 @@ export class HtLocationInspector extends LitElement {
         font-size: 13px;
         cursor: pointer;
         user-select: none;
+      }
+
+      .choice-pill-content {
+        display: inline-flex;
+        flex-direction: column;
+        gap: 2px;
+        min-width: 0;
       }
 
       .choice-pill.active {
@@ -3263,6 +3305,7 @@ export class HtLocationInspector extends LitElement {
       bright_threshold: 1200,
       fallback_to_sun: true,
       assume_dark_on_error: true,
+      ignore_local_lux_when_lights_on: false,
     };
   }
 
@@ -3299,6 +3342,10 @@ export class HtLocationInspector extends LitElement {
         typeof config.assume_dark_on_error === "boolean"
           ? config.assume_dark_on_error
           : defaults.assume_dark_on_error,
+      ignore_local_lux_when_lights_on:
+        typeof config.ignore_local_lux_when_lights_on === "boolean"
+          ? config.ignore_local_lux_when_lights_on
+          : defaults.ignore_local_lux_when_lights_on,
     };
   }
 
@@ -3317,6 +3364,7 @@ export class HtLocationInspector extends LitElement {
       bright_threshold: sanitized.bright_threshold,
       fallback_to_sun: Boolean(sanitized.fallback_to_sun),
       assume_dark_on_error: Boolean(sanitized.assume_dark_on_error),
+      ignore_local_lux_when_lights_on: Boolean(sanitized.ignore_local_lux_when_lights_on),
     });
   }
 
@@ -3765,6 +3813,7 @@ export class HtLocationInspector extends LitElement {
             ? html`
                 <span class="header-reason-trigger" aria-hidden="true">
                   <ha-icon .icon=${"mdi:information-outline"}></ha-icon>
+                  <span>Details</span>
                 </span>
               `
             : ""}
@@ -4397,6 +4446,13 @@ export class HtLocationInspector extends LitElement {
     const tracksSun = Boolean(config.fallback_to_sun) || fallbackMethod.includes("sun");
 
     if (entityId === "sun.sun" && tracksSun) return true;
+    if (
+      Boolean(config.ignore_local_lux_when_lights_on) &&
+      entityId.startsWith("light.") &&
+      (this.location.entity_ids || []).includes(entityId)
+    ) {
+      return true;
+    }
     if (!entityId.startsWith("sensor.")) return false;
 
     const candidateState = newStateObj || oldStateObj || this.hass?.states?.[entityId];
@@ -4428,6 +4484,16 @@ export class HtLocationInspector extends LitElement {
       typeof reading?.source_location === "string" && reading.source_location
         ? this._locationName(reading.source_location)
         : "-";
+    const ignoredLocalLuxSensor =
+      typeof reading?.ignored_local_lux_sensor === "string" ? reading.ignored_local_lux_sensor : "";
+    const ignoredLocalLuxLights = Array.isArray(reading?.ignored_local_lux_light_entity_ids)
+      ? reading.ignored_local_lux_light_entity_ids
+      : [];
+    const ignoredLocalLuxMessage = ignoredLocalLuxSensor
+      ? `Local lux ignored because ${ignoredLocalLuxLights.map((entityId) => this._entityName(entityId)).join(", ")} ${
+          ignoredLocalLuxLights.length === 1 ? "is" : "are"
+        } on.`
+      : "";
     const ambientStateLabel = this._ambientStateLabel(reading);
     const darkThreshold = Math.max(0, Number(config.dark_threshold) || 0);
     const brightThreshold = Math.max(darkThreshold + 1, Number(config.bright_threshold) || darkThreshold + 1);
@@ -4465,6 +4531,9 @@ export class HtLocationInspector extends LitElement {
         <div class="policy-note" style="margin-bottom: 8px;">
           Lux sensor assignment is explicit. Set a location sensor or inherit from parent.
         </div>
+        ${ignoredLocalLuxMessage
+          ? html`<div class="policy-note" data-testid="ambient-ignored-local-lux">${ignoredLocalLuxMessage}</div>`
+          : ""}
 
         <div class="config-row">
           <div>
@@ -4568,6 +4637,29 @@ export class HtLocationInspector extends LitElement {
                 this._setAmbientDraft({
                   ...config,
                   fallback_to_sun: (ev.target as HTMLInputElement).checked,
+                });
+                this._scheduleAmbientReadingReload();
+              }}
+            />
+          </div>
+        </div>
+
+        <div class="config-row">
+          <div>
+            <div class="config-label">Ignore local lux while lights are on</div>
+            <div class="config-help">Prevents this area's own lights from making the local lux sensor read artificially bright.</div>
+          </div>
+          <div class="config-value">
+            <input
+              type="checkbox"
+              class="switch-input"
+              .checked=${Boolean(config.ignore_local_lux_when_lights_on)}
+              ?disabled=${busy}
+              data-testid="ambient-ignore-local-lux-toggle"
+              @change=${(ev: Event) => {
+                this._setAmbientDraft({
+                  ...config,
+                  ignore_local_lux_when_lights_on: (ev.target as HTMLInputElement).checked,
                 });
                 this._scheduleAmbientReadingReload();
               }}
@@ -7526,7 +7618,8 @@ export class HtLocationInspector extends LitElement {
     label: string,
     checked: boolean,
     disabled: boolean,
-    onChange: () => void
+    onChange: () => void,
+    meta?: string
   ) {
     return html`
       <label class="choice-pill ${checked ? "active" : ""} ${disabled ? "disabled" : ""}">
@@ -7538,7 +7631,10 @@ export class HtLocationInspector extends LitElement {
           ?disabled=${disabled}
           @change=${() => onChange()}
         />
-        <span>${label}</span>
+        <span class="choice-pill-content">
+          <span>${label}</span>
+          ${meta ? html`<span class="choice-pill-meta">${meta}</span>` : ""}
+        </span>
       </label>
     `;
   }
@@ -9462,7 +9558,10 @@ export class HtLocationInspector extends LitElement {
                   }}
                 />
                 <div class="dusk-light-entity-meta">
-                  <span>${this._entityName(entityId)}</span>
+                  <span class="dusk-light-entity-title">
+                    <span>${this._entityName(entityId)}</span>
+                    <span class="entity-state-badge">${this._entityStateLabel(entityId)}</span>
+                  </span>
                   <code>${entityId}</code>
                 </div>
                 ${dimmable
@@ -9773,7 +9872,8 @@ export class HtLocationInspector extends LitElement {
                             action_service: nextService,
                             action_data: {},
                           });
-                        }
+                        },
+                        this._entityStateLabel(entityId)
                       )
                     )}
                   </div>
@@ -9930,7 +10030,8 @@ export class HtLocationInspector extends LitElement {
                             action_service: nextService,
                             action_data: {},
                           });
-                        }
+                        },
+                        this._entityStateLabel(entityId)
                       )
                     )}
                   </div>
@@ -11761,6 +11862,49 @@ export class HtLocationInspector extends LitElement {
   private _entityState(entityId: string): string {
     const state = this.hass.states[entityId]?.state;
     if (!state) return "unknown";
+    return state;
+  }
+
+  private _entityStateLabel(entityId: string): string {
+    const stateObj = this.hass?.states?.[entityId];
+    const rawState = String(stateObj?.state || "unknown").trim();
+    const state = rawState.replace(/_/g, " ");
+    const attrs = stateObj?.attributes || {};
+    if (rawState === "unknown" || rawState === "unavailable") return state;
+
+    if (entityId.startsWith("light.")) {
+      if (rawState !== "on") return state;
+      const brightness = Number(attrs.brightness);
+      if (Number.isFinite(brightness) && brightness > 0) {
+        return `on ${Math.round((brightness / 255) * 100)}%`;
+      }
+      return "on";
+    }
+
+    if (entityId.startsWith("media_player.")) {
+      const volume = Number(attrs.volume_level);
+      if (Number.isFinite(volume)) {
+        return `${state} ${Math.round(volume * 100)}%`;
+      }
+      return state;
+    }
+
+    if (entityId.startsWith("fan.")) {
+      const percentage = Number(attrs.percentage);
+      if (Number.isFinite(percentage) && rawState === "on") {
+        return `on ${Math.round(percentage)}%`;
+      }
+      return state;
+    }
+
+    if (entityId.startsWith("climate.")) {
+      const temperature = attrs.current_temperature ?? attrs.temperature;
+      if (temperature !== undefined && temperature !== null && temperature !== "") {
+        return `${state} ${temperature} deg`;
+      }
+      return state;
+    }
+
     return state;
   }
 

@@ -40,6 +40,7 @@ Ambient support already exists in backend module wiring and WebSocket APIs, but 
 3. Optional per-location override is supported but not required.
 4. Backup input is sun position (`sun.sun`) when lux input is unavailable.
 5. When a lux sensor becomes available later, lux is authoritative and sun fallback is only used on error/unavailable states.
+6. Indoor/local lux sensors can opt into `ignore_local_lux_when_lights_on`; when any local `light.*` entity is `on`, that location's local lux sensor is skipped and the normal inherited/sun/error fallback chain is used.
 
 ### 5.2 Dark/bright classification
 
@@ -60,6 +61,20 @@ Ambient support already exists in backend module wiring and WebSocket APIs, but 
 2. If sun fallback is disabled, use explicit safety default (`assume_dark_on_error`).
 3. Always expose fallback method in diagnostics/UI.
 
+### 5.3.1 Startup reconciliation
+
+1. Startup ambient evaluation is bounded reconciliation, not an immediate
+   one-shot guess.
+2. When a startup-enabled ambient rule is discovered, Topomation waits for
+   configured/inherited lux sensors to publish a numeric state.
+3. If lux becomes numeric inside the reconciliation window, the managed HA
+   automation is triggered with `skip_condition=false`; HA evaluates the
+   generated lux/sun/time/occupancy conditions.
+4. If lux stays `unknown` or `unavailable` until timeout, Topomation proceeds
+   once so sun fallback or explicit error policy can decide the outcome.
+5. Startup summaries must name the reason for waiting or falling back so users
+   can distinguish "dark condition false" from "sensor stack not ready."
+
 ### 5.4 Transparency requirements
 
 Ambient UI should show:
@@ -75,6 +90,7 @@ Ambient UI should show:
    - `assume_dark`
    - `assume_bright`
 6. Thresholds in effect
+7. Local lux ignore diagnostics when an enabled location skips its local lux sensor because local lights are on
 
 ### 5.5 Output contract (v1)
 
@@ -88,6 +104,9 @@ Ambient read-path payload must support:
 6. `source_location: string | null`
 7. `dark_threshold: number`
 8. `bright_threshold: number`
+9. `ignored_local_lux_sensor: string | null`
+10. `ignored_local_lux_reason: "local_lights_on" | null`
+11. `ignored_local_lux_light_entity_ids: string[]`
 
 Notes:
 
@@ -105,6 +124,7 @@ Add an `Ambient` section in the location inspector (no dusk/dawn action tab yet)
    - dark threshold / bright threshold
    - fallback to sun toggle
    - assume dark on error toggle
+   - ignore local lux while lights are on toggle
 3. Utility actions:
    - refresh reading
 

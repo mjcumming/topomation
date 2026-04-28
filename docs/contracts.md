@@ -442,9 +442,14 @@ Additional save points:
     that shadow location’s `entity_ids` (ADR-HA-087)
 - Ambient module configs must persist with `auto_discover: false` in integration defaults.
 - Ambient source priority:
-  1. assigned location lux sensor
+  1. assigned location lux sensor, unless the location enables
+     `ignore_local_lux_when_lights_on` and one of its local `light.*` entities
+     is currently `on`
   2. inherited ancestor lux sensor (when enabled)
   3. sun fallback (`sun.sun`) when lux input is unavailable and fallback is enabled
+- `ignore_local_lux_when_lights_on` applies only to the configured location's
+  local lux source. It does not suppress inherited/ancestor lux sources and does
+  not scan descendant locations.
 - Inspector header must expose ambient status at-a-glance:
   - show effective lux level on the top card
   - indicate inherited source state when applicable.
@@ -453,6 +458,8 @@ Additional save points:
   - one lux sensor selector whose empty/default option is `Inherit from parent`
   - dark/bright threshold controls
   - fallback-to-sun and assume-dark-on-error toggles.
+  - `Ignore local lux while lights are on` toggle and a diagnostic note when the
+    local lux sensor is skipped because local lights are on.
 - Topomation ambient defaults are `dark_threshold: 800` and
   `bright_threshold: 1200`; a temporary startup migration updates legacy
   default-looking configs (`50`/`500`) once while preserving explicit custom
@@ -535,6 +542,24 @@ Additional save points:
 - Startup behavior contract:
   - `Appliances`, `HVAC`, `Lighting`, and `Media` do not expose tab-global startup reapply
     toggles.
+  - Per-rule `run_on_startup` is a bounded reconciliation process, not a
+    single fire-and-forget edge. After Home Assistant start, Topomation waits
+    for startup-enabled rule inputs to become usable, then triggers the managed
+    HA automation with `skip_condition=false` so HA still owns final condition
+    evaluation.
+  - Ambient startup rules wait briefly for numeric lux state from configured or
+    inherited lux sensors. If lux remains unavailable until the reconciliation
+    timeout, rules may proceed to HA condition evaluation so configured sun
+    fallback/error policy can decide the result.
+  - Occupancy startup rules wait for a known `on`/`off` occupancy state before
+    replay. Ambient-only startup rules are not blocked by missing occupancy
+    state.
+  - Startup summaries must report pending input reasons such as
+    `waiting_for_lux_state`, `waiting_for_fallback_state`, or
+    `waiting_for_occupancy_state`.
+  - Action tabs should show each target entity's current HA state alongside
+    its friendly name so operators can understand live behavior without opening
+    another HA view.
 - Lighting multi-trigger contract:
   - a Lighting rule may include up to one occupancy-edge trigger and up to one
     ambient-edge trigger.
@@ -558,6 +583,10 @@ Additional save points:
   - condition controls only render when their trigger family is active.
   - Lighting may default condition values from the selected trigger set, but
     users retain explicit control of those condition rows.
+  - When Ambient config enables `ignore_local_lux_when_lights_on`, managed
+    Lighting dark/bright conditions may only trust the local lux sensor while
+    the location's local `light.*` entities are `off`; inherited lux and sun
+    fallback remain valid condition sources.
 - Lighting multi-action contract:
   - one Lighting rule may include multiple action targets.
   - persistence writes those targets as ordered HA automation action steps.

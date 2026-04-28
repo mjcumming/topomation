@@ -1552,7 +1552,7 @@ describe("HtLocationInspector occupancy source composer", () => {
       '[data-testid="header-occupancy-reason"]'
     ) as HTMLDetailsElement | null;
     expect(reason).to.exist;
-    expect(reason!.textContent || "").not.to.include("Details");
+    expect(reason!.textContent || "").to.include("Details");
     reason!.open = true;
     await element.updateComplete;
 

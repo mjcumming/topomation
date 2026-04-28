@@ -2,7 +2,7 @@
 
 DOMAIN = "topomation"
 NAME = "Topomation"
-VERSION = "0.2.75"
+VERSION = "0.2.76"
 
 # Location `_meta` keys (integration-owned semantics)
 META_TOPOLOGY_ANCHOR_KEY = "topology_anchor"
@@ -87,6 +87,8 @@ WS_TYPE_ACTION_RULES_SET_ENABLED = f"{DOMAIN}/actions/rules/set_enabled"
 # Actions automation metadata/logging
 TOPOMATION_AUTOMATION_METADATA_PREFIX = "[topomation]"
 AUTOMATION_STARTUP_BUFFER_SECONDS = 20
+AUTOMATION_STARTUP_RECONCILE_INTERVAL_SECONDS = 5
+AUTOMATION_STARTUP_RECONCILE_TIMEOUT_SECONDS = 60
 EVENT_TOPOMATION_ACTIONS_SUMMARY = f"{DOMAIN}_actions_summary"
 EVENT_TOPOMATION_UPDATED = f"{DOMAIN}_updated"
 EVENT_TOPOMATION_OCCUPANCY_CHANGED = f"{DOMAIN}_occupancy_changed"

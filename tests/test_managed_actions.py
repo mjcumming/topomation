@@ -770,6 +770,94 @@ def test_daily_gating_condition_omitted_when_disabled() -> None:
     assert all(c.get("condition") != "template" for c in conditions)
 
 
+def test_ambient_condition_ignores_local_lux_while_local_lights_are_on() -> None:
+    """Dark/bright guards require local lights off before trusting local lux."""
+    manager = TopomationManagedActions(cast(HomeAssistant, SimpleNamespace()))
+
+    conditions = manager._build_condition_definitions(  # noqa: SLF001
+        ambient_condition="bright",
+        must_be_occupied=None,
+        occupancy_entity_id=None,
+        time_condition_enabled=False,
+        start_time="00:00",
+        end_time="23:59",
+        ambient_config={
+            "lux_sensor": "sensor.room_lux",
+            "dark_threshold": 800,
+            "bright_threshold": 1200,
+            "fallback_to_sun": False,
+            "ignore_local_lux_when_lights_on": True,
+            "local_light_entity_ids": ["light.room_ceiling", "light.room_lamp"],
+        },
+    )
+
+    assert conditions == [
+        {
+            "condition": "and",
+            "conditions": [
+                {"condition": "state", "entity_id": "light.room_ceiling", "state": "off"},
+                {"condition": "state", "entity_id": "light.room_lamp", "state": "off"},
+                {
+                    "condition": "numeric_state",
+                    "entity_id": "sensor.room_lux",
+                    "above": 1200.0,
+                },
+            ],
+        }
+    ]
+
+
+def test_ambient_condition_can_use_inherited_lux_when_local_lux_is_ignored() -> None:
+    """Inherited lux remains usable when local light state contaminates the room sensor."""
+    manager = TopomationManagedActions(cast(HomeAssistant, SimpleNamespace()))
+
+    conditions = manager._build_condition_definitions(  # noqa: SLF001
+        ambient_condition="dark",
+        must_be_occupied=None,
+        occupancy_entity_id=None,
+        time_condition_enabled=False,
+        start_time="00:00",
+        end_time="23:59",
+        ambient_config={
+            "lux_sensor": "sensor.room_lux",
+            "inherited_lux_sensor": "sensor.outdoor_lux",
+            "dark_threshold": 800,
+            "bright_threshold": 1200,
+            "fallback_to_sun": False,
+            "ignore_local_lux_when_lights_on": True,
+            "local_light_entity_ids": ["light.room_ceiling"],
+        },
+    )
+
+    assert conditions == [
+        {
+            "condition": "or",
+            "conditions": [
+                {
+                    "condition": "and",
+                    "conditions": [
+                        {
+                            "condition": "state",
+                            "entity_id": "light.room_ceiling",
+                            "state": "off",
+                        },
+                        {
+                            "condition": "numeric_state",
+                            "entity_id": "sensor.room_lux",
+                            "below": 800.0,
+                        },
+                    ],
+                },
+                {
+                    "condition": "numeric_state",
+                    "entity_id": "sensor.outdoor_lux",
+                    "below": 800.0,
+                },
+            ],
+        }
+    ]
+
+
 def test_daily_gating_condition_emitted_for_vacuum_target_with_paused_carveout() -> None:
     """Vacuum target gets the Path Y carve-out clause (ADR-HA-091 §7)."""
     manager = TopomationManagedActions(cast(HomeAssistant, SimpleNamespace()))
@@ -908,4 +996,3 @@ def test_find_occupancy_entity_id_returns_none_when_no_loc_mgr_and_no_direct_mat
     )
     assert manager._find_occupancy_entity_id("floor_main_floor") is None  # noqa: SLF001
     assert manager._find_occupancy_entity_id("area_kitchen") == "binary_sensor.kitchen_occupancy"  # noqa: SLF001
-

@@ -19,6 +19,8 @@ from homeassistant.helpers.event import async_call_later
 
 from .const import (
     AUTOMATION_STARTUP_BUFFER_SECONDS,
+    AUTOMATION_STARTUP_RECONCILE_INTERVAL_SECONDS,
+    AUTOMATION_STARTUP_RECONCILE_TIMEOUT_SECONDS,
     EVENT_TOPOMATION_ACTIONS_SUMMARY,
     TOPOMATION_AUTOMATION_METADATA_PREFIX,
 )
@@ -41,6 +43,8 @@ class _TopomationAutomation:
     trigger_type: ManagedActionTriggerType
     run_on_startup: bool | None
     daily_gating_enabled: bool = False
+    ambient_lux_entity_ids: tuple[str, ...] = ()
+    ambient_fallback_entity_ids: tuple[str, ...] = ()
 
 
 @dataclass(slots=True)
@@ -63,14 +67,23 @@ class TopomationActionsRuntime:
         bus: EventBus,
         *,
         startup_delay_seconds: int = AUTOMATION_STARTUP_BUFFER_SECONDS,
+        startup_reconcile_interval_seconds: int = (
+            AUTOMATION_STARTUP_RECONCILE_INTERVAL_SECONDS
+        ),
+        startup_reconcile_timeout_seconds: int = AUTOMATION_STARTUP_RECONCILE_TIMEOUT_SECONDS,
     ) -> None:
         """Initialize runtime helpers."""
         self.hass = hass
         self._loc_mgr = loc_mgr
         self._bus = bus
         self._startup_delay_seconds = startup_delay_seconds
+        self._startup_reconcile_interval_seconds = startup_reconcile_interval_seconds
+        self._startup_reconcile_timeout_seconds = startup_reconcile_timeout_seconds
         self._startup_listener_unsub: CALLBACK_TYPE | None = None
         self._startup_delay_unsub: CALLBACK_TYPE | None = None
+        self._startup_reconcile_retry_unsub: CALLBACK_TYPE | None = None
+        self._startup_reconcile_started_at: float | None = None
+        self._startup_triggered_automation_ids: set[str] = set()
         self._bus_subscribed = False
 
     async def async_setup(self) -> None:
@@ -81,9 +94,6 @@ class TopomationActionsRuntime:
                 EventFilter(event_type="occupancy.changed"),
             )
             self._bus_subscribed = True
-
-        if not self._has_startup_reapply_enabled():
-            return
 
         if self.hass.state is CoreState.running:
             self._schedule_startup_reapply()
@@ -107,6 +117,9 @@ class TopomationActionsRuntime:
         if callable(self._startup_delay_unsub):
             self._startup_delay_unsub()
             self._startup_delay_unsub = None
+        if callable(self._startup_reconcile_retry_unsub):
+            self._startup_reconcile_retry_unsub()
+            self._startup_reconcile_retry_unsub = None
 
     @callback
     def _handle_homeassistant_started(self, _: HAEvent) -> None:
@@ -131,77 +144,83 @@ class TopomationActionsRuntime:
 
     async def async_reapply_startup_actions(self) -> None:
         """Apply startup-eligible automations for opted-in locations."""
+        if self._startup_reconcile_started_at is None:
+            self._startup_reconcile_started_at = monotonic()
         automations = self._iter_topomation_automations()
         automations_by_location: dict[str, list[_TopomationAutomation]] = {}
         for automation in automations:
             automations_by_location.setdefault(automation.location_id, []).append(automation)
 
+        total_pending = 0
+        total_startup_rules = 0
         for location in self._loc_mgr.all_locations():
             location_automations = automations_by_location.get(location.id, [])
+            total_startup_rules += sum(
+                1
+                for automation in location_automations
+                if automation.run_on_startup is True
+            )
             if not any(
                 automation.run_on_startup is True for automation in location_automations
             ):
                 continue
-            await self._async_reapply_location(
+            total_pending += await self._async_reapply_location(
                 location.id,
                 automations=location_automations,
             )
+        self._schedule_startup_reconcile_retry(
+            total_pending if total_startup_rules > 0 else 1
+        )
 
     async def _async_reapply_location(
         self,
         location_id: str,
         *,
         automations: list[_TopomationAutomation] | None = None,
-    ) -> None:
-        """Reapply automations for one location based on current occupancy state."""
+    ) -> int:
+        """Reapply startup automations for one location against current HA state."""
         start = monotonic()
-        occupancy_entity_id = self._find_occupancy_entity(location_id)
-        if occupancy_entity_id is None:
-            self._emit_summary(
-                {
-                    "phase": "startup_reapply",
-                    "location_id": location_id,
-                    "skipped": True,
-                    "reason": "missing_occupancy_entity",
-                }
-            )
-            _LOGGER.info(
-                "Startup reapply summary: location=%s skipped=missing_occupancy_entity",
-                location_id,
-            )
-            return
-
-        occupancy_state = self.hass.states.get(occupancy_entity_id)
-        if occupancy_state is None or occupancy_state.state not in {"on", "off"}:
-            self._emit_summary(
-                {
-                    "phase": "startup_reapply",
-                    "location_id": location_id,
-                    "skipped": True,
-                    "reason": "unknown_occupancy_state",
-                    "occupancy_entity_id": occupancy_entity_id,
-                    "occupancy_state": occupancy_state.state if occupancy_state else None,
-                }
-            )
-            _LOGGER.info(
-                "Startup reapply summary: location=%s skipped=unknown_occupancy_state",
-                location_id,
-            )
-            return
-
-        trigger_type: OccupancyActionTriggerType = (
-            "on_occupied" if occupancy_state.state == "on" else "on_vacant"
+        reconcile_elapsed_seconds = int(
+            start - (self._startup_reconcile_started_at or start)
         )
-        transition_label = "occupied" if trigger_type == "on_occupied" else "vacant"
+        reconcile_timed_out = (
+            reconcile_elapsed_seconds >= self._startup_reconcile_timeout_seconds
+        )
+        occupancy_entity_id = self._find_occupancy_entity(location_id)
+        occupancy_state = (
+            self.hass.states.get(occupancy_entity_id)
+            if occupancy_entity_id is not None
+            else None
+        )
+        trigger_type: OccupancyActionTriggerType | None = None
+        transition_label = "unknown"
+        skip_reason: str | None = None
+        if occupancy_entity_id is None:
+            skip_reason = "missing_occupancy_entity"
+        elif occupancy_state is None or occupancy_state.state not in {"on", "off"}:
+            skip_reason = "unknown_occupancy_state"
+        else:
+            trigger_type = "on_occupied" if occupancy_state.state == "on" else "on_vacant"
+            transition_label = "occupied" if trigger_type == "on_occupied" else "vacant"
+
         matched_automations = self._startup_automations_for(
             location_id,
             trigger_type=trigger_type,
             automations=automations,
+            reconcile_timed_out=reconcile_timed_out,
+        )
+        pending_automations = self._pending_startup_automations_for(
+            location_id,
+            trigger_type=trigger_type,
+            automations=automations,
+            reconcile_timed_out=reconcile_timed_out,
         )
         failures: list[dict[str, str]] = []
         triggered = 0
 
         for automation_entity_id in matched_automations:
+            if automation_entity_id in self._startup_triggered_automation_ids:
+                continue
             try:
                 await self.hass.services.async_call(
                     "automation",
@@ -213,6 +232,7 @@ class TopomationActionsRuntime:
                     blocking=True,
                 )
                 triggered += 1
+                self._startup_triggered_automation_ids.add(automation_entity_id)
             except Exception as err:
                 failures.append(
                     {
@@ -233,11 +253,19 @@ class TopomationActionsRuntime:
             "location_id": location_id,
             "transition": transition_label,
             "occupancy_entity_id": occupancy_entity_id,
+            "occupancy_state": occupancy_state.state if occupancy_state else None,
             "total_automations": len(matched_automations),
+            "pending_automations": len(pending_automations),
             "triggered_automations": triggered,
             "failed_automations": len(failures),
+            "reconcile_elapsed_seconds": reconcile_elapsed_seconds,
+            "reconcile_timed_out": reconcile_timed_out,
             "duration_ms": duration_ms,
         }
+        if skip_reason is not None:
+            summary["occupancy_skip_reason"] = skip_reason
+        if pending_automations:
+            summary["pending_details"] = pending_automations
         if failures:
             summary["failure_details"] = failures
 
@@ -253,6 +281,32 @@ class TopomationActionsRuntime:
             triggered,
             len(failures),
             duration_ms,
+        )
+        return len(pending_automations)
+
+    def _schedule_startup_reconcile_retry(self, total_pending: int) -> None:
+        """Schedule another startup pass while opted-in rules are waiting for HA state."""
+        if total_pending <= 0:
+            return
+        if self._startup_reconcile_started_at is None:
+            return
+        if (
+            monotonic() - self._startup_reconcile_started_at
+            >= self._startup_reconcile_timeout_seconds
+        ):
+            return
+        if callable(self._startup_reconcile_retry_unsub):
+            return
+
+        @callback
+        def _retry(_: object) -> None:
+            self._startup_reconcile_retry_unsub = None
+            self.hass.async_create_task(self.async_reapply_startup_actions())
+
+        self._startup_reconcile_retry_unsub = async_call_later(
+            self.hass,
+            self._startup_reconcile_interval_seconds,
+            _retry,
         )
 
     @callback
@@ -285,13 +339,6 @@ class TopomationActionsRuntime:
         """Emit a Home Assistant bus event for action summary observability."""
         self.hass.bus.async_fire(EVENT_TOPOMATION_ACTIONS_SUMMARY, payload)
 
-    def _has_startup_reapply_enabled(self) -> bool:
-        """Return True when at least one rule opts into startup reapply."""
-        return any(
-            automation.run_on_startup is True
-            for automation in self._iter_topomation_automations()
-        )
-
     def _find_occupancy_entity(self, location_id: str) -> str | None:
         """Resolve the occupancy binary sensor entity for a location."""
         for state in self.hass.states.async_all("binary_sensor"):
@@ -323,8 +370,9 @@ class TopomationActionsRuntime:
         self,
         location_id: str,
         *,
-        trigger_type: OccupancyActionTriggerType,
+        trigger_type: OccupancyActionTriggerType | None,
         automations: list[_TopomationAutomation] | None = None,
+        reconcile_timed_out: bool = False,
     ) -> list[str]:
         """Collect startup-eligible automations for a location/current occupancy state."""
         matched: list[str] = []
@@ -336,13 +384,136 @@ class TopomationActionsRuntime:
                 continue
             if automation.run_on_startup is False:
                 continue
+            if automation.entity_id in self._startup_triggered_automation_ids:
+                continue
+            if (
+                automation.trigger_type in {"on_occupied", "on_vacant"}
+                and trigger_type is None
+            ):
+                continue
             if automation.trigger_type == "on_occupied" and trigger_type != "on_occupied":
                 continue
             if automation.trigger_type == "on_vacant" and trigger_type != "on_vacant":
                 continue
+            if not self._startup_ambient_ready(
+                automation,
+                reconcile_timed_out=reconcile_timed_out,
+            ):
+                continue
             if automation.run_on_startup is True:
                 matched.append(automation.entity_id)
         return matched
+
+    def _pending_startup_automations_for(
+        self,
+        location_id: str,
+        *,
+        trigger_type: OccupancyActionTriggerType | None,
+        automations: list[_TopomationAutomation] | None = None,
+        reconcile_timed_out: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Collect startup automations still waiting for prerequisite state."""
+        pending: list[dict[str, Any]] = []
+        source_automations = (
+            automations if automations is not None else self._iter_topomation_automations()
+        )
+        for automation in source_automations:
+            if automation.location_id != location_id:
+                continue
+            if automation.run_on_startup is not True:
+                continue
+            if automation.entity_id in self._startup_triggered_automation_ids:
+                continue
+            if (
+                automation.trigger_type in {"on_occupied", "on_vacant"}
+                and trigger_type is None
+            ):
+                pending.append(
+                    {
+                        "automation_entity_id": automation.entity_id,
+                        "reason": "waiting_for_occupancy_state",
+                    }
+                )
+                continue
+            if automation.trigger_type == "on_occupied" and trigger_type != "on_occupied":
+                continue
+            if automation.trigger_type == "on_vacant" and trigger_type != "on_vacant":
+                continue
+            ambient_reason = self._startup_ambient_pending_reason(
+                automation,
+                reconcile_timed_out=reconcile_timed_out,
+            )
+            if ambient_reason is not None:
+                pending.append(
+                    {
+                        "automation_entity_id": automation.entity_id,
+                        "reason": ambient_reason,
+                        "lux_entity_ids": list(automation.ambient_lux_entity_ids),
+                        "fallback_entity_ids": list(automation.ambient_fallback_entity_ids),
+                    }
+                )
+        return pending
+
+    def _startup_ambient_ready(
+        self,
+        automation: _TopomationAutomation,
+        *,
+        reconcile_timed_out: bool,
+    ) -> bool:
+        """Return True when an ambient automation has enough state to evaluate."""
+        return (
+            self._startup_ambient_pending_reason(
+                automation,
+                reconcile_timed_out=reconcile_timed_out,
+            )
+            is None
+        )
+
+    def _startup_ambient_pending_reason(
+        self,
+        automation: _TopomationAutomation,
+        *,
+        reconcile_timed_out: bool,
+    ) -> str | None:
+        """Return why an ambient automation should wait, or None when it can run."""
+        if automation.trigger_type not in {"on_dark", "on_bright"}:
+            return None
+        lux_entity_ids = automation.ambient_lux_entity_ids
+        if lux_entity_ids and not reconcile_timed_out:
+            if not any(self._has_numeric_state(entity_id) for entity_id in lux_entity_ids):
+                return "waiting_for_lux_state"
+        fallback_entity_ids = automation.ambient_fallback_entity_ids
+        if not lux_entity_ids and fallback_entity_ids:
+            if not any(
+                self._has_known_state(entity_id) for entity_id in fallback_entity_ids
+            ):
+                return "waiting_for_fallback_state"
+        if reconcile_timed_out and lux_entity_ids and fallback_entity_ids:
+            if not any(
+                self._has_numeric_state(entity_id) for entity_id in lux_entity_ids
+            ) and not any(
+                self._has_known_state(entity_id) for entity_id in fallback_entity_ids
+            ):
+                return "waiting_for_ambient_state"
+        return None
+
+    def _has_numeric_state(self, entity_id: str) -> bool:
+        """Return True when an entity currently has a numeric state."""
+        state = self.hass.states.get(entity_id)
+        if state is None:
+            return False
+        try:
+            float(state.state)
+        except (TypeError, ValueError):
+            return False
+        return True
+
+    def _has_known_state(self, entity_id: str) -> bool:
+        """Return True when an entity is present and not unknown/unavailable."""
+        state = self.hass.states.get(entity_id)
+        if state is None:
+            return False
+        return state.state not in {"unknown", "unavailable"}
 
     def _iter_topomation_automations(self) -> list[_TopomationAutomation]:
         """Parse Topomation-managed automation entities from HA automation component."""
@@ -370,6 +541,9 @@ class TopomationActionsRuntime:
             metadata = self._parse_topomation_metadata(raw_config.get("description"))
             if metadata is None:
                 continue
+            ambient_lux_entity_ids, ambient_fallback_entity_ids = (
+                self._startup_ambient_entity_ids(raw_config)
+            )
             parsed.append(
                 _TopomationAutomation(
                     entity_id=entity_id,
@@ -377,9 +551,52 @@ class TopomationActionsRuntime:
                     trigger_type=metadata.trigger_type,
                     run_on_startup=metadata.run_on_startup,
                     daily_gating_enabled=metadata.daily_gating_enabled,
+                    ambient_lux_entity_ids=ambient_lux_entity_ids,
+                    ambient_fallback_entity_ids=ambient_fallback_entity_ids,
                 )
             )
         return parsed
+
+    def _startup_ambient_entity_ids(
+        self,
+        raw_config: Mapping[str, Any],
+    ) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        """Extract lux and fallback state dependencies from a generated automation."""
+        lux_entity_ids: list[str] = []
+        fallback_entity_ids: list[str] = []
+
+        def _add_unique(target: list[str], value: object) -> None:
+            values = value if isinstance(value, list) else [value]
+            for item in values:
+                if not isinstance(item, str) or not item:
+                    continue
+                if item not in target:
+                    target.append(item)
+
+        def _walk(value: object) -> None:
+            if isinstance(value, list):
+                for item in value:
+                    _walk(item)
+                return
+            if not isinstance(value, Mapping):
+                return
+            entity_id = value.get("entity_id")
+            condition = str(value.get("condition", "") or "").lower()
+            trigger = str(value.get("trigger", "") or "").lower()
+            if condition == "numeric_state" or trigger == "numeric_state":
+                _add_unique(lux_entity_ids, entity_id)
+            elif entity_id == "sun.sun":
+                _add_unique(fallback_entity_ids, entity_id)
+            for nested_key in ("conditions", "choose", "sequence"):
+                nested = value.get(nested_key)
+                if nested is not None:
+                    _walk(nested)
+
+        _walk(raw_config.get("triggers"))
+        _walk(raw_config.get("trigger"))
+        _walk(raw_config.get("conditions"))
+        _walk(raw_config.get("condition"))
+        return tuple(lux_entity_ids), tuple(fallback_entity_ids)
 
     def _is_automation_enabled(self, entity_id: str) -> bool:
         """Return True when automation entity is currently enabled."""

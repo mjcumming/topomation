@@ -5,11 +5,11 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 from home_topology import Event, EventBus
 from homeassistant.components.automation import DATA_COMPONENT as AUTOMATION_DATA_COMPONENT
-from homeassistant.core import HomeAssistant
+from homeassistant.core import CoreState, HomeAssistant
 from pytest_homeassistant_custom_component.common import async_capture_events
 
 from custom_components.topomation.actions_runtime import TopomationActionsRuntime
@@ -121,6 +121,24 @@ async def test_occupancy_transition_emits_summary_event(hass: HomeAssistant) -> 
     await runtime.async_teardown()
 
 
+async def test_setup_schedules_startup_reapply_before_automation_entities_exist(
+    hass: HomeAssistant,
+) -> None:
+    """Startup replay should not depend on automation entities being loaded at setup."""
+    location_manager = _LocationManager({"area_kitchen": {}})
+    event_bus = EventBus()
+    runtime = TopomationActionsRuntime(hass, location_manager, event_bus)
+
+    hass.state = CoreState.running
+    schedule = Mock()
+
+    with patch.object(runtime, "_schedule_startup_reapply", schedule):
+        await runtime.async_setup()
+
+    schedule.assert_called_once_with()
+    await runtime.async_teardown()
+
+
 async def test_startup_reapply_reports_failures(hass: HomeAssistant) -> None:
     """Startup reapply should summarize totals and include failure details."""
     location_id = "area_kitchen"
@@ -190,6 +208,191 @@ async def test_startup_reapply_reports_failures(hass: HomeAssistant) -> None:
     assert summary["triggered_automations"] == 1
     assert summary["failed_automations"] == 1
     assert len(summary["failure_details"]) == 1
+
+
+async def test_startup_reapply_runs_ambient_rules_without_occupancy_sensor(
+    hass: HomeAssistant,
+) -> None:
+    """Ambient startup rules should not be blocked by missing occupancy state."""
+    location_id = "area_porch"
+    location_manager = _LocationManager({location_id: {}})
+    event_bus = EventBus()
+    runtime = TopomationActionsRuntime(hass, location_manager, event_bus, startup_delay_seconds=0)
+
+    hass.data[AUTOMATION_DATA_COMPONENT] = SimpleNamespace(
+        entities=[
+            _AutomationEntity(
+                entity_id="automation.porch_dark",
+                raw_config={
+                    "description": _metadata_line(
+                        location_id,
+                        "on_dark",
+                        run_on_startup=True,
+                    )
+                },
+            ),
+            _AutomationEntity(
+                entity_id="automation.porch_occupied",
+                raw_config={
+                    "description": _metadata_line(
+                        location_id,
+                        "on_occupied",
+                        run_on_startup=True,
+                    )
+                },
+            ),
+        ]
+    )
+    hass.states.async_set("automation.porch_dark", "on")
+    hass.states.async_set("automation.porch_occupied", "on")
+
+    mock_async_call = AsyncMock(return_value=None)
+
+    with patch("homeassistant.core.ServiceRegistry.async_call", new=mock_async_call):
+        events = async_capture_events(hass, EVENT_TOPOMATION_ACTIONS_SUMMARY)
+        await runtime.async_reapply_startup_actions()
+        await hass.async_block_till_done()
+
+    mock_async_call.assert_awaited_once_with(
+        "automation",
+        "trigger",
+        {"entity_id": "automation.porch_dark", "skip_condition": False},
+        blocking=True,
+    )
+    assert events
+    summary = events[-1].data
+    assert summary["transition"] == "unknown"
+    assert summary["occupancy_skip_reason"] == "missing_occupancy_entity"
+    assert summary["total_automations"] == 1
+    assert summary["triggered_automations"] == 1
+
+
+async def test_startup_reapply_waits_for_lux_before_ambient_rule(
+    hass: HomeAssistant,
+) -> None:
+    """Ambient startup replay should wait for lux sensors during the reconcile window."""
+    location_id = "area_porch"
+    location_manager = _LocationManager({location_id: {}})
+    event_bus = EventBus()
+    runtime = TopomationActionsRuntime(
+        hass,
+        location_manager,
+        event_bus,
+        startup_delay_seconds=0,
+        startup_reconcile_interval_seconds=30,
+        startup_reconcile_timeout_seconds=60,
+    )
+
+    hass.data[AUTOMATION_DATA_COMPONENT] = SimpleNamespace(
+        entities=[
+            _AutomationEntity(
+                entity_id="automation.porch_dark",
+                raw_config={
+                    "description": _metadata_line(
+                        location_id,
+                        "on_dark",
+                        run_on_startup=True,
+                    ),
+                    "triggers": [
+                        {
+                            "trigger": "numeric_state",
+                            "entity_id": "sensor.porch_lux",
+                            "below": 800,
+                        }
+                    ],
+                },
+            ),
+        ]
+    )
+    hass.states.async_set("automation.porch_dark", "on")
+    hass.states.async_set("sensor.porch_lux", "unknown")
+
+    mock_async_call = AsyncMock(return_value=None)
+
+    with patch("homeassistant.core.ServiceRegistry.async_call", new=mock_async_call):
+        events = async_capture_events(hass, EVENT_TOPOMATION_ACTIONS_SUMMARY)
+        await runtime.async_reapply_startup_actions()
+        await hass.async_block_till_done()
+        mock_async_call.assert_not_awaited()
+
+        hass.states.async_set("sensor.porch_lux", "3")
+        await runtime.async_reapply_startup_actions()
+        await hass.async_block_till_done()
+
+    mock_async_call.assert_awaited_once_with(
+        "automation",
+        "trigger",
+        {"entity_id": "automation.porch_dark", "skip_condition": False},
+        blocking=True,
+    )
+    assert events[0].data["pending_automations"] == 1
+    assert events[0].data["pending_details"][0]["reason"] == "waiting_for_lux_state"
+    assert events[-1].data["triggered_automations"] == 1
+    await runtime.async_teardown()
+
+
+async def test_startup_reapply_uses_sun_fallback_after_lux_timeout(
+    hass: HomeAssistant,
+) -> None:
+    """After the bounded wait, ambient startup rules may fall back to HA conditions."""
+    location_id = "area_porch"
+    location_manager = _LocationManager({location_id: {}})
+    event_bus = EventBus()
+    runtime = TopomationActionsRuntime(
+        hass,
+        location_manager,
+        event_bus,
+        startup_delay_seconds=0,
+        startup_reconcile_interval_seconds=30,
+        startup_reconcile_timeout_seconds=0,
+    )
+
+    hass.data[AUTOMATION_DATA_COMPONENT] = SimpleNamespace(
+        entities=[
+            _AutomationEntity(
+                entity_id="automation.porch_dark",
+                raw_config={
+                    "description": _metadata_line(
+                        location_id,
+                        "on_dark",
+                        run_on_startup=True,
+                    ),
+                    "triggers": [
+                        {
+                            "trigger": "numeric_state",
+                            "entity_id": "sensor.porch_lux",
+                            "below": 800,
+                        },
+                        {
+                            "trigger": "state",
+                            "entity_id": "sun.sun",
+                            "to": "below_horizon",
+                        },
+                    ],
+                },
+            ),
+        ]
+    )
+    hass.states.async_set("automation.porch_dark", "on")
+    hass.states.async_set("sensor.porch_lux", "unavailable")
+    hass.states.async_set("sun.sun", "below_horizon")
+
+    mock_async_call = AsyncMock(return_value=None)
+
+    with patch("homeassistant.core.ServiceRegistry.async_call", new=mock_async_call):
+        events = async_capture_events(hass, EVENT_TOPOMATION_ACTIONS_SUMMARY)
+        await runtime.async_reapply_startup_actions()
+        await hass.async_block_till_done()
+
+    mock_async_call.assert_awaited_once_with(
+        "automation",
+        "trigger",
+        {"entity_id": "automation.porch_dark", "skip_condition": False},
+        blocking=True,
+    )
+    assert events[-1].data["reconcile_timed_out"] is True
+    assert events[-1].data["triggered_automations"] == 1
+    await runtime.async_teardown()
 
 
 async def test_startup_reapply_honors_per_rule_run_on_startup_without_global_flag(

@@ -10,7 +10,7 @@ from inspect import isawaitable
 from typing import TYPE_CHECKING, Any
 
 from home_topology import EventBus, EventFilter, LocationManager
-from home_topology.modules.ambient import AmbientLightModule
+from home_topology.modules.ambient import AmbientLightModule, AmbientLightReading
 from home_topology.modules.automation import AutomationModule
 from home_topology.modules.occupancy import OccupancyModule
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP, Platform
@@ -241,6 +241,170 @@ class HAPlatformAdapter:
         return dt_util.utcnow()
 
 
+class TopomationAmbientLightReading(AmbientLightReading):
+    """Ambient reading with Topomation-specific diagnostic metadata."""
+
+    ignored_local_lux_sensor: str | None = None
+    ignored_local_lux_reason: str | None = None
+    ignored_local_lux_light_entity_ids: list[str]
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize reading including local lux ignore diagnostics."""
+        payload = super().to_dict()
+        payload["ignored_local_lux_sensor"] = self.ignored_local_lux_sensor
+        payload["ignored_local_lux_reason"] = self.ignored_local_lux_reason
+        payload["ignored_local_lux_light_entity_ids"] = list(
+            self.ignored_local_lux_light_entity_ids
+        )
+        return payload
+
+
+class TopomationAmbientLightModule(AmbientLightModule):
+    """Ambient module with Topomation's local-light contamination guard."""
+
+    def default_config(self) -> dict:
+        """Default configuration for a location."""
+        config = super().default_config()
+        config.setdefault("ignore_local_lux_when_lights_on", False)
+        return config
+
+    def location_config_schema(self) -> dict:
+        """JSON schema for location configuration."""
+        schema = super().location_config_schema()
+        properties = schema.setdefault("properties", {})
+        properties["ignore_local_lux_when_lights_on"] = {
+            "type": "boolean",
+            "title": "Ignore local lux while lights are on",
+            "description": "Skip this location's local lux sensor while any local light is on.",
+            "default": False,
+        }
+        return schema
+
+    def get_ambient_light(
+        self,
+        location_id: str,
+        dark_threshold: float | None = None,
+        bright_threshold: float | None = None,
+        inherit: bool = True,
+    ) -> AmbientLightReading:
+        """Get ambient light, skipping contaminated local lux when configured."""
+        config = self._get_location_config(location_id)
+        dark_thresh = dark_threshold or config.dark_threshold
+        bright_thresh = bright_threshold or config.bright_threshold
+
+        ignored_sensor: str | None = None
+        ignored_lights: list[str] = []
+        if self._ignore_local_lux_when_lights_on(location_id):
+            ignored_lights = self._local_on_light_entity_ids(location_id)
+
+        sensor = self._find_lux_sensor_for_location(location_id)
+        if sensor and ignored_lights:
+            ignored_sensor = sensor
+        elif sensor:
+            lux = self._get_sensor_value(sensor)
+            if lux is not None:
+                reading = TopomationAmbientLightReading(
+                    lux=lux,
+                    source_sensor=sensor,
+                    source_location=location_id,
+                    is_inherited=False,
+                    is_dark=lux < dark_thresh,
+                    is_bright=lux > bright_thresh,
+                    dark_threshold=dark_thresh,
+                    bright_threshold=bright_thresh,
+                    timestamp=datetime.now(),
+                )
+                self._annotate_ignored_local_lux(reading, None, [])
+                self._last_readings[location_id] = reading
+                return reading
+
+        if inherit and config.inherit_from_parent:
+            for ancestor in self._require_location_manager().ancestors_of(location_id):
+                sensor = self._find_lux_sensor_for_location(ancestor.id)
+                if sensor:
+                    lux = self._get_sensor_value(sensor)
+                    if lux is not None:
+                        reading = TopomationAmbientLightReading(
+                            lux=lux,
+                            source_sensor=sensor,
+                            source_location=ancestor.id,
+                            is_inherited=True,
+                            is_dark=lux < dark_thresh,
+                            is_bright=lux > bright_thresh,
+                            dark_threshold=dark_thresh,
+                            bright_threshold=bright_thresh,
+                            timestamp=datetime.now(),
+                        )
+                        self._annotate_ignored_local_lux(
+                            reading, ignored_sensor, ignored_lights
+                        )
+                        self._last_readings[location_id] = reading
+                        return reading
+
+        if config.fallback_to_sun:
+            reading = self._topomation_reading(
+                self._get_sun_fallback(dark_thresh, bright_thresh)
+            )
+        else:
+            reading = self._topomation_reading(
+                self._get_error_fallback(config, dark_thresh, bright_thresh)
+            )
+
+        self._annotate_ignored_local_lux(reading, ignored_sensor, ignored_lights)
+        self._last_readings[location_id] = reading
+        return reading
+
+    def _ignore_local_lux_when_lights_on(self, location_id: str) -> bool:
+        """Return true when the local-light contamination guard is enabled."""
+        config = self._require_location_manager().get_module_config(location_id, self.id)
+        return bool(
+            isinstance(config, Mapping)
+            and config.get("ignore_local_lux_when_lights_on") is True
+        )
+
+    def _local_on_light_entity_ids(self, location_id: str) -> list[str]:
+        """Return local light entities currently on for a location."""
+        location = self._require_location_manager().get_location(location_id)
+        entity_ids = list(getattr(location, "entity_ids", []) or []) if location else []
+        on_lights: list[str] = []
+        for entity_id in entity_ids:
+            if not isinstance(entity_id, str) or not entity_id.startswith("light."):
+                continue
+            if self._platform and self._platform.get_state(entity_id) == "on":
+                on_lights.append(entity_id)
+        return on_lights
+
+    def _annotate_ignored_local_lux(
+        self,
+        reading: AmbientLightReading,
+        ignored_sensor: str | None,
+        ignored_lights: list[str],
+    ) -> None:
+        """Attach local-lux ignore diagnostics to a reading."""
+        reading.ignored_local_lux_sensor = ignored_sensor
+        reading.ignored_local_lux_reason = (
+            "local_lights_on" if ignored_sensor and ignored_lights else None
+        )
+        reading.ignored_local_lux_light_entity_ids = list(ignored_lights)
+
+    def _topomation_reading(self, reading: AmbientLightReading) -> TopomationAmbientLightReading:
+        """Return a Topomation reading copy so diagnostics serialize consistently."""
+        if isinstance(reading, TopomationAmbientLightReading):
+            return reading
+        return TopomationAmbientLightReading(
+            lux=reading.lux,
+            source_sensor=reading.source_sensor,
+            source_location=reading.source_location,
+            is_inherited=reading.is_inherited,
+            is_dark=reading.is_dark,
+            is_bright=reading.is_bright,
+            dark_threshold=reading.dark_threshold,
+            bright_threshold=reading.bright_threshold,
+            fallback_method=reading.fallback_method,
+            timestamp=reading.timestamp,
+        )
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Topomation from a config entry."""
     _LOGGER.info("Setting up Topomation integration")
@@ -266,7 +430,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     modules = {
         "occupancy": occupancy_module,
         "automation": automation_module,
-        "ambient": AmbientLightModule(
+        "ambient": TopomationAmbientLightModule(
             platform_adapter=platform_adapter,
             extra_lux_entity_ids=lambda lid: managed_shadow_entity_ids_for_ambient(
                 loc_mgr, lid
@@ -771,6 +935,7 @@ def _apply_topomation_ambient_defaults(config: Mapping[str, Any]) -> dict[str, A
     """Apply Topomation ambient defaults and the temporary one-shot lux migration."""
     updated = dict(config)
     updated["auto_discover"] = False
+    updated.setdefault("ignore_local_lux_when_lights_on", False)
 
     if updated.get(AMBIENT_LUX_DEFAULTS_MIGRATION_KEY) == AMBIENT_LUX_DEFAULTS_MIGRATION_VALUE:
         return updated

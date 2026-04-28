@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.76] - 2026-04-28
+
+### Changed
+
+- **Startup lighting reconciliation**: startup-enabled managed rules now run
+  through a bounded reconciliation window. Ambient rules wait for numeric lux
+  state before replaying, then fall back to HA condition evaluation after the
+  timeout so sun/error policy can decide instead of silently missing boot-time
+  darkness.
+- **Action target state visibility**: Lighting, Media, HVAC, Appliances, and
+  Vacuum action target choices now show compact live HA state next to the
+  target name.
+- **Ambient local lux guard**: Ambient settings now include
+  `Ignore local lux while lights are on`. When enabled, a location skips its
+  own lux sensor while any local `light.*` entity is on, then falls back to
+  inherited lux/sun/error behavior and shows a diagnostic note naming the local
+  lights that caused the skip. Managed Lighting dark/bright guards also require
+  local lights to be off before trusting the local lux sensor, while inherited
+  lux and sun fallback remain valid.
+- **Occupancy reason visibility**: the inspector header explanation now renders
+  as a full-width, higher-contrast callout with a visible `Details` affordance,
+  and the expanded reason panel uses larger text, stronger contrast, and more
+  reliable layering so occupancy evidence is readable in the header.
+
 ## [0.2.75] - 2026-04-27
 
 ### Changed

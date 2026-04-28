@@ -148,6 +148,7 @@ export interface AmbientConfig extends ModuleConfig {
   bright_threshold?: number;
   fallback_to_sun?: boolean;
   assume_dark_on_error?: boolean;
+  ignore_local_lux_when_lights_on?: boolean;
 }
 
 export interface AmbientLightReading {
@@ -160,6 +161,9 @@ export interface AmbientLightReading {
   dark_threshold?: number;
   bright_threshold?: number;
   fallback_method?: string | null;
+  ignored_local_lux_sensor?: string | null;
+  ignored_local_lux_reason?: string | null;
+  ignored_local_lux_light_entity_ids?: string[];
   timestamp?: string;
 }
 
