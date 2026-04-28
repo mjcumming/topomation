@@ -312,7 +312,7 @@ class TopomationAmbientLightModule(AmbientLightModule):
                     is_bright=lux > bright_thresh,
                     dark_threshold=dark_thresh,
                     bright_threshold=bright_thresh,
-                    timestamp=datetime.now(),
+                    timestamp=datetime.now(UTC),
                 )
                 self._annotate_ignored_local_lux(reading, None, [])
                 self._last_readings[location_id] = reading
@@ -333,7 +333,7 @@ class TopomationAmbientLightModule(AmbientLightModule):
                             is_bright=lux > bright_thresh,
                             dark_threshold=dark_thresh,
                             bright_threshold=bright_thresh,
-                            timestamp=datetime.now(),
+                            timestamp=datetime.now(UTC),
                         )
                         self._annotate_ignored_local_lux(
                             reading, ignored_sensor, ignored_lights
