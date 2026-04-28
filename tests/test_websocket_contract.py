@@ -2413,6 +2413,79 @@ async def test_occupancy_states_list_projects_group_members_from_backend(
     }
 
 
+def test_occupancy_projection_rolls_area_children_into_parent_area(
+    hass: HomeAssistant,
+) -> None:
+    """Nested area occupancy should project through every visible ancestor."""
+    building = _mock_location("building_rollup", "Rollup Home", None, "building")
+    grounds = _mock_location("grounds_rollup", "Grounds", "building_rollup", "grounds")
+    south_yard = _mock_location("south_yard", "South Side Yard", "grounds_rollup", "area")
+    hottub = _mock_location("hottub", "Hottub", "south_yard", "area")
+
+    loc_mgr = Mock()
+    loc_mgr.all_locations.return_value = [building, grounds, south_yard, hottub]
+    occupancy_module = Mock()
+    occupancy_module.get_location_state.side_effect = lambda location_id: {
+        "building_rollup": {
+            "occupied": False,
+            "reason": "no_active_holds",
+            "contributions": [],
+            "explanation": {"basis": "no_active_holds"},
+        },
+        "grounds_rollup": {
+            "occupied": False,
+            "reason": "no_active_holds",
+            "contributions": [],
+            "explanation": {"basis": "no_active_holds"},
+        },
+        "south_yard": {
+            "occupied": False,
+            "reason": "no_active_holds",
+            "contributions": [],
+            "explanation": {"basis": "no_active_holds"},
+        },
+        "hottub": {
+            "occupied": True,
+            "reason": "event:trigger",
+            "contributions": [
+                {
+                    "source_id": "binary_sensor.hot_tub_spa_in_use",
+                    "state": "active",
+                    "expires_at": None,
+                }
+            ],
+        },
+    }.get(location_id)
+
+    states = build_occupancy_projection_states(
+        hass,
+        {
+            "location_manager": loc_mgr,
+            "modules": {"occupancy": occupancy_module},
+            "occupancy_recent_changes": {},
+        },
+    )
+    states_by_id = {item["location_id"]: item for item in states}
+
+    assert states_by_id["hottub"]["occupied"] is True
+    assert states_by_id["south_yard"]["occupied"] is True
+    assert states_by_id["grounds_rollup"]["occupied"] is True
+    assert states_by_id["building_rollup"]["occupied"] is True
+
+    south_explanation = states_by_id["south_yard"]["explanation"]
+    assert south_explanation["basis"] == "child_rollup"
+    assert south_explanation["projected_from"]["location_id"] == "hottub"
+    assert states_by_id["south_yard"]["contributions"] == [
+        {
+            "source_id": "__child__:hottub",
+            "state": "active",
+            "origin_location_id": "hottub",
+            "origin_source_id": "__child__:hottub",
+            "expires_at": None,
+        }
+    ]
+
+
 @pytest.mark.asyncio
 async def test_grouped_area_binary_sensors_timeout_together(
     hass: HomeAssistant,
@@ -3634,6 +3707,18 @@ def _supports_adjacency(location_manager: object) -> bool:
         "delete_adjacency_edge",
     )
     return all(callable(getattr(location_manager, name, None)) for name in required)
+
+
+def _mock_location(location_id: str, name: str, parent_id: str | None, location_type: str) -> Mock:
+    """Create a minimal location object for projection unit tests."""
+    location = Mock()
+    location.id = location_id
+    location.name = name
+    location.parent_id = parent_id
+    location.is_explicit_root = False
+    location.entity_ids = []
+    location.modules = {"_meta": {"type": location_type}}
+    return location
 
 
 def _fake_connection() -> Mock:

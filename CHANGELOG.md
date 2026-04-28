@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.79] - 2026-04-28
+
+### Fixed
+
+- **Nested-area occupancy rollup**: occupied descendants now project through
+  every visible ancestor, including area-under-area hierarchies such as
+  `Grounds -> South Side Yard -> Hottub`. Parent rows no longer stay vacant
+  while a child is occupied, and stale `no active holders` explanations are
+  replaced with child-rollup evidence.
+- **State-held occupancy sources**: legacy indefinite sources
+  (`on_timeout: null`) now clear on OFF even if older config still says
+  `off_event: none`. The editor also normalizes future indefinite source saves
+  to `off_event: clear`, matching the displayed `Indefinite (until OFF)`
+  behavior.
+- **Occupancy reason labels**: raw synthetic occupancy-group IDs are hidden from
+  header reason text so popups show readable group evidence instead of internal
+  IDs.
+
 ## [0.2.78] - 2026-04-28
 
 ### Fixed

@@ -362,6 +362,10 @@ function contributorSentence(
     return `${displayNameForLocationOrAreaId(linkedId, ctx)} is linked as occupied`;
   }
 
+  if (raw.startsWith("occupancy_group:") || raw.startsWith("occupancy_group.")) {
+    return "the occupancy group is occupied";
+  }
+
   if (label.endsWith(" is occupied")) return label;
   return `${label} is active`;
 }
@@ -415,6 +419,8 @@ function structuralSourceLabel(
     prefixedLabel("__follow__", ":", (n) => `linked to ${n}`) ||
     prefixedLabel("__follow__", ".", (n) => `linked to ${n}`) ||
     prefixedLabel("__group_member__", ".", (n) => `group member ${n}`) ||
+    prefixedLabel("occupancy_group", ":", () => "occupancy group") ||
+    prefixedLabel("occupancy_group", ".", () => "occupancy group") ||
     prefixedLabel("__lock_hold__", ":", (n) => `lock hold for ${n}`) ||
     prefixedLabel("__lock_hold__", ".", (n) => `lock hold for ${n}`) ||
     (raw.startsWith("linked:")

@@ -10625,6 +10625,8 @@ export class HtLocationInspector extends LitElement {
     }
 
     const sourceId = partial.source_id || this._sourceKey(entityId, signalKey);
+    const onTimeout = partial.on_timeout;
+    const offEvent = onTimeout === null ? "clear" : partial.off_event || "none";
 
     return {
       entity_id: entityId,
@@ -10632,8 +10634,8 @@ export class HtLocationInspector extends LitElement {
       signal_key: signalKey,
       mode: (partial.mode || "any_change") as "any_change" | "specific_states",
       on_event: (partial.on_event || "trigger") as "trigger" | "none",
-      on_timeout: partial.on_timeout,
-      off_event: (partial.off_event || "none") as "clear" | "none",
+      on_timeout: onTimeout,
+      off_event: offEvent as "clear" | "none",
       off_trailing: partial.off_trailing ?? 0,
     };
   }

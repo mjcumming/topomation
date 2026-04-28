@@ -413,6 +413,49 @@ async def test_light_power_clear_with_zero_trailing_sets_authoritative_vacant(
     assert power_clear.payload.get("authoritative_vacant") is True
 
 
+async def test_state_held_source_clears_on_off_even_with_legacy_no_change(
+    event_bridge: EventBridge,
+    event_bus: Mock,
+    location_manager: Mock,
+) -> None:
+    """Legacy on_timeout=None/off_event=none means held until the source turns off."""
+    location_manager.get_module_config.return_value = {
+        "enabled": True,
+        "default_timeout": 300,
+        "occupancy_sources": [
+            {
+                "entity_id": "binary_sensor.hot_tub_spa_in_use",
+                "mode": "specific_states",
+                "on_event": "trigger",
+                "on_timeout": None,
+                "off_event": "none",
+                "off_trailing": 0,
+            },
+        ],
+    }
+
+    old_state = State("binary_sensor.hot_tub_spa_in_use", STATE_ON)
+    new_state = State("binary_sensor.hot_tub_spa_in_use", STATE_OFF)
+    ha_event = Mock()
+    ha_event.data = {
+        "entity_id": "binary_sensor.hot_tub_spa_in_use",
+        "old_state": old_state,
+        "new_state": new_state,
+    }
+
+    event_bridge._state_changed_listener(ha_event)
+
+    clear_events = [
+        call.args[0]
+        for call in event_bus.publish.call_args_list
+        if call.args[0].payload.get("event_type") == "clear"
+    ]
+    assert len(clear_events) == 1
+    assert clear_events[0].payload["source_id"] == "binary_sensor.hot_tub_spa_in_use"
+    assert clear_events[0].payload["timeout"] == 0
+    assert clear_events[0].payload["authoritative_vacant"] is True
+
+
 async def test_state_change_publishes_adjacency_handoff_events(
     event_bridge: EventBridge,
     event_bus: Mock,

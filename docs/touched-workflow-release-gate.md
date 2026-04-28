@@ -274,6 +274,15 @@ Validation:
   ht-location-inspector.test.ts` — **PASS** (97 passed; 2026-04-28)
 - `cd custom_components/topomation/frontend && npm run build` — **PASS**
   (rebuilt `topomation-panel.js`; 2026-04-28)
+- `./scripts/test-comprehensive.sh` — **PASS** (version sync, Ruff, Mypy,
+  backend pytest `314 passed, 15 skipped`, frontend Vitest `263 passed`,
+  Web Test Runner `203 passed`, Playwright `34 passed`; 2026-04-28)
+- `make test-release-live` — **PARTIAL PASS / live handoff failure**: local
+  comprehensive matrix passed, but the default local HA endpoint
+  `http://localhost:8123` was offline before live tests started.
+- `TOPOMATION_PREFER_LOCAL_HA=0 make test-release-live` — **PASS** (local
+  comprehensive matrix, live HA managed-action contract `2 passed`, live HA
+  browser workflows `6 passed`; 2026-04-28)
 - `./scripts/test-comprehensive.sh` — **PASS** (version sync `0.2.77`,
   Ruff, Mypy, backend pytest, Vitest, Web Test Runner, frontend build, and
   Playwright workflow suites; 2026-04-28)
@@ -300,3 +309,48 @@ Notes:
   configured dev HA instance and passed.
 - After push to `main`, confirm CI and **Auto Release** are green for the
   release commit before considering `0.2.77` complete.
+
+## Gate Record: 2026-04-28 — Occupancy rollup/source-release hotfix (`0.2.79`)
+
+Commit under test: **release-candidate worktree for Topomation `0.2.79`**
+
+Touched workflows:
+- **Occupancy projection states**: nested child occupancy now rolls through
+  ordinary area parents as well as structural hosts, replacing stale direct
+  vacancy evidence with child-rollup evidence.
+- **HA state-to-occupancy source bridge**: state-held sources with
+  `on_timeout: null` clear on OFF even when older saved configs still have
+  `off_event: none`.
+- **Occupancy source editor**: future indefinite source saves normalize to
+  `off_event: clear`.
+- **Occupancy reason rendering**: raw synthetic occupancy-group IDs are hidden
+  from user-facing header/popup text.
+- **Release metadata**: version sync across `manifest.json`, `const.py`, and
+  `pyproject.toml`; changelog section for `0.2.79`; rebuilt frontend runtime
+  bundle.
+
+Validation:
+- `cd custom_components/topomation/frontend && npm test -- occupancy-reason.test.ts`
+  — **PASS** (13 passed; 2026-04-28)
+- `pytest --no-cov -q
+  tests/test_event_bridge.py::test_state_held_source_clears_on_off_even_with_legacy_no_change
+  tests/test_event_bridge.py::test_light_power_clear_with_zero_trailing_sets_authoritative_vacant
+  tests/test_websocket_contract.py::test_occupancy_projection_rolls_area_children_into_parent_area`
+  — **PASS** (3 passed; 2026-04-28)
+- `cd custom_components/topomation/frontend && npm run build` — **PASS**
+  (rebuilt `topomation-panel.js`; 2026-04-28)
+
+Outcome:
+- Nested area ancestor occupancy invariant: **PASS**
+- Legacy state-held OFF release semantics: **PASS**
+- Indefinite source editor normalization: **PASS**
+- Occupancy reason ID hiding: **PASS**
+- Frontend bundle rebuilt: **PASS**
+- Live HA managed-action contract: **PASS**
+- Live HA browser workflows: **PASS**
+
+Notes:
+- The first `make test-release-live` failure was not a product failure; it
+  stopped before live tests because the default local HA endpoint was offline.
+  The release gate was rerun with `TOPOMATION_PREFER_LOCAL_HA=0` against the
+  configured dev HA instance and passed.

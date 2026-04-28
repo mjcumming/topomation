@@ -784,7 +784,8 @@ class EventBridge:
                 timeout = source.get("on_timeout") if timeout_set else None
                 event_type = "trigger"
             elif signal_type == "clear":
-                if source.get("off_event", "none") != "clear":
+                state_held_until_clear = source.get("on_timeout") is None
+                if source.get("off_event", "none") != "clear" and not state_held_until_clear:
                     continue
                 off_trailing = source.get("off_trailing", 0)
                 try:

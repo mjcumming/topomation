@@ -2373,7 +2373,7 @@ function ua(s, t, e) {
     return `${nt(l, e)} is occupied through the group`;
   }
   const r = n("linked:");
-  return r ? `${nt(r, e)} is linked as occupied` : t.endsWith(" is occupied") ? t : `${t} is active`;
+  return r ? `${nt(r, e)} is linked as occupied` : i.startsWith("occupancy_group:") || i.startsWith("occupancy_group.") ? "the occupancy group is occupied" : t.endsWith(" is occupied") ? t : `${t} is active`;
 }
 function Re(s, t, e) {
   const i = ha(s, e);
@@ -2398,7 +2398,7 @@ function ha(s, t) {
     if (c)
       return a(nt(c, t));
   };
-  return pa(e, t) || i("__child__", ":", (n) => `${n} is occupied`) || i("__child__", ".", (n) => `${n} is occupied`) || i("__follow_parent__", ":", (n) => `linked to ${n}`) || i("__follow_parent__", ".", (n) => `linked to ${n}`) || i("__follow__", ":", (n) => `linked to ${n}`) || i("__follow__", ".", (n) => `linked to ${n}`) || i("__group_member__", ".", (n) => `group member ${n}`) || i("__lock_hold__", ":", (n) => `lock hold for ${n}`) || i("__lock_hold__", ".", (n) => `lock hold for ${n}`) || (e.startsWith("linked:") ? `linked from ${nt(e.slice(7).trim(), t)}` : void 0);
+  return pa(e, t) || i("__child__", ":", (n) => `${n} is occupied`) || i("__child__", ".", (n) => `${n} is occupied`) || i("__follow_parent__", ":", (n) => `linked to ${n}`) || i("__follow_parent__", ".", (n) => `linked to ${n}`) || i("__follow__", ":", (n) => `linked to ${n}`) || i("__follow__", ".", (n) => `linked to ${n}`) || i("__group_member__", ".", (n) => `group member ${n}`) || i("occupancy_group", ":", () => "occupancy group") || i("occupancy_group", ".", () => "occupancy group") || i("__lock_hold__", ":", (n) => `lock hold for ${n}`) || i("__lock_hold__", ".", (n) => `lock hold for ${n}`) || (e.startsWith("linked:") ? `linked from ${nt(e.slice(7).trim(), t)}` : void 0);
 }
 function pa(s, t) {
   const e = Ti(s);
@@ -9015,19 +9015,19 @@ const De = class De extends _t {
   _resetSourceDraftState() {
   }
   _normalizeSource(t, e) {
-    var d;
-    const i = this._isMediaEntity(t), n = this._isDimmableEntity(t), o = this._isColorCapableEntity(t), a = (d = e.source_id) != null && d.includes("::") ? e.source_id.split("::")[1] : void 0, r = this._defaultSignalKeyForEntity(t), c = e.signal_key || a || r;
+    var _;
+    const i = this._isMediaEntity(t), n = this._isDimmableEntity(t), o = this._isColorCapableEntity(t), a = (_ = e.source_id) != null && _.includes("::") ? e.source_id.split("::")[1] : void 0, r = this._defaultSignalKeyForEntity(t), c = e.signal_key || a || r;
     let l;
     (i && (c === "playback" || c === "volume" || c === "mute") || (n || o) && (c === "power" || c === "level" || c === "color")) && (l = c);
-    const u = e.source_id || this._sourceKey(t, l);
+    const u = e.source_id || this._sourceKey(t, l), d = e.on_timeout, h = d === null ? "clear" : e.off_event || "none";
     return {
       entity_id: t,
       source_id: u,
       signal_key: l,
       mode: e.mode || "any_change",
       on_event: e.on_event || "trigger",
-      on_timeout: e.on_timeout,
-      off_event: e.off_event || "none",
+      on_timeout: d,
+      off_event: h,
       off_trailing: e.off_trailing ?? 0
     };
   }

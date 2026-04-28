@@ -230,6 +230,41 @@ describe("buildOccupancyReasonLine", () => {
     );
   });
 
+  it("keeps raw occupancy group ids out of occupied summaries", () => {
+    const basement = makeLocation({
+      id: "floor_basement",
+      name: "Basement",
+      modules: { _meta: { type: "floor" } },
+    });
+
+    const explanation = buildOccupancyExplanation({
+      location: basement,
+      locations: [basement],
+      hass: makeHass(),
+      occupancyStates: { floor_basement: true },
+      occupancyTransitions: {},
+      occupancyRuntimeStates: {
+        floor_basement: runtimeState("floor_basement", "on", tMinus(16), {
+          contributions: [
+            {
+              source_id: "occupancy_group:floor_basement_group_mnx5tasf_41hvss",
+              state: "active",
+              expires_at: null,
+              updated_at: tMinus(16),
+            },
+          ],
+        }),
+      },
+      status: "occupied",
+      nowMs: NOW,
+    });
+
+    expect(explanation.summary).to.equal("Occupied because the occupancy group is occupied.");
+    expect(explanation.reasonLine).to.include("occupancy group");
+    expect(explanation.summary).not.to.include("Mnx5tasf");
+    expect(explanation.summary).not.to.include(":Floor");
+  });
+
   it("renders linked occupancy as 'linked from <name>'", () => {
     const kitchen = makeLocation({
       id: "kitchen",

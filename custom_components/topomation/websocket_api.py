@@ -632,16 +632,65 @@ def build_occupancy_projection_states(
         own_payload = raw_states.get(_location_id(location))
         return dict(own_payload) if isinstance(own_payload, dict) else {}
 
-    def projected_occupied(location: object, effective_id: str, payload: dict[str, Any]) -> bool:
+    def first_occupied_descendant_id(location_id: str) -> str | None:
+        for child_id in descendant_ids(location_id):
+            child_location = locations_by_id.get(child_id)
+            if child_location is not None and _is_managed_shadow_area(child_location):
+                continue
+            child_payload = raw_states.get(child_id)
+            child_occupied = child_payload.get("occupied") if isinstance(child_payload, dict) else None
+            if child_occupied is True:
+                return child_id
+        return None
+
+    def child_rollup_payload(
+        payload: dict[str, Any],
+        *,
+        child_id: str,
+    ) -> dict[str, Any]:
+        """Replace stale direct-vacancy evidence with descendant rollup evidence."""
+        child_location = locations_by_id.get(child_id)
+        child_name = str(getattr(child_location, "name", child_id) or child_id)
+        next_payload = dict(payload)
+        contribution = {
+            "source_id": f"__child__:{child_id}",
+            "state": "active",
+            "origin_location_id": child_id,
+            "origin_source_id": f"__child__:{child_id}",
+            "expires_at": None,
+        }
+        next_payload["contributions"] = [contribution]
+        next_payload["explanation"] = {
+            "version": 1,
+            "basis": "child_rollup",
+            "projected_from": {
+                "kind": "child_rollup",
+                "location_id": child_id,
+                "location_name": child_name,
+            },
+            "held_by": [contribution],
+        }
+        next_payload["reason"] = "event:inherit"
+        return next_payload
+
+    def projected_occupied(
+        location: object,
+        effective_id: str,
+        payload: dict[str, Any],
+    ) -> tuple[bool, str | None]:
         own = payload.get("occupied")
         if own is True:
-            return True
+            return True, None
         if own is not False and own is not True:
             # The occupancy engine may not allocate a runtime record until the
             # first signal/lock touches a location. That does not make the
             # location unknowable: Topomation occupancy is binary, and the HA
             # entity surface initializes absence of active evidence as vacant.
             own = False
+
+        occupied_child_id = first_occupied_descendant_id(_location_id(location))
+        if occupied_child_id:
+            return True, occupied_child_id
 
         if _is_shadow_host_location(location) or bool(getattr(location, "is_explicit_root", False)):
             child_states: list[bool] = []
@@ -651,16 +700,14 @@ def build_occupancy_projection_states(
                     continue
                 child_payload = raw_states.get(child_id)
                 child_occupied = child_payload.get("occupied") if isinstance(child_payload, dict) else None
-                if child_occupied is True:
-                    return True
                 if child_occupied is False:
                     child_states.append(False)
             if own is False:
-                return False
+                return False, None
             if child_states and all(state is False for state in child_states):
-                return False
+                return False, None
 
-        return own if isinstance(own, bool) else False
+        return own if isinstance(own, bool) else False, None
 
     projections: list[dict[str, Any]] = []
     now = datetime.now(UTC)
@@ -687,7 +734,9 @@ def build_occupancy_projection_states(
             projection_kind = "direct"
 
         payload = effective_payload(location, effective_id)
-        occupied = projected_occupied(location, effective_id, payload)
+        occupied, occupied_child_id = projected_occupied(location, effective_id, payload)
+        if occupied is True and occupied_child_id:
+            payload = child_rollup_payload(payload, child_id=occupied_child_id)
         payload["occupied"] = occupied
 
         ha_state = _ha_occupancy_state_for_location(hass, effective_id)
