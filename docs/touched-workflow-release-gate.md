@@ -83,7 +83,7 @@ Run the rows that match the touched workflow.
 
 ### 2026-04-28 - v0.2.78 structural occupancy projection
 
-1. Commit under test: 3c162be.
+1. Commit under test: 438abef.
 2. Frontend bundle rebuilt from that commit: no, backend projection only.
 3. Touched workflow list:
    - Structural occupancy projection for floor/building/grounds/property hosts.
