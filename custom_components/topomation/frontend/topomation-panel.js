@@ -7089,7 +7089,9 @@ const De = class De extends _t {
         />
         <span class="choice-pill-content">
           <span>${i}</span>
-          ${r ? g`<span class="choice-pill-meta">${r}</span>` : ""}
+          ${r ? g`<span class=${`choice-pill-meta ${this._entityStateBadgeTone(e)}`}>
+                ${r}
+              </span>` : ""}
         </span>
       </label>
     `;
@@ -8223,7 +8225,9 @@ const De = class De extends _t {
                 <div class="dusk-light-entity-meta">
                   <span class="dusk-light-entity-title">
                     <span>${this._entityName(l)}</span>
-                    <span class="entity-state-badge">${this._entityStateLabel(l)}</span>
+                    <span class=${`entity-state-badge ${this._entityStateBadgeTone(l)}`}>
+                      ${this._entityStateLabel(l)}
+                    </span>
                   </span>
                   <code>${l}</code>
                 </div>
@@ -9687,22 +9691,30 @@ const De = class De extends _t {
     const e = (i = this.hass.states[t]) == null ? void 0 : i.state;
     return e || "unknown";
   }
+  _entityStateBadgeTone(t) {
+    var i, n, o;
+    const e = String(((o = (n = (i = this.hass) == null ? void 0 : i.states) == null ? void 0 : n[t]) == null ? void 0 : o.state) || "unknown").trim();
+    return e === "unknown" || e === "unavailable" ? "state-unavailable" : ["off", "idle", "standby", "paused", "closed", "locked"].includes(e) ? "state-off" : "state-active";
+  }
+  _formatEntityStateText(t) {
+    return t.replace(/_/g, " ").replace(/\b\w/g, (e) => e.toUpperCase());
+  }
   _entityStateLabel(t) {
     var a, r;
-    const e = (r = (a = this.hass) == null ? void 0 : a.states) == null ? void 0 : r[t], i = String((e == null ? void 0 : e.state) || "unknown").trim(), n = i.replace(/_/g, " "), o = (e == null ? void 0 : e.attributes) || {};
+    const e = (r = (a = this.hass) == null ? void 0 : a.states) == null ? void 0 : r[t], i = String((e == null ? void 0 : e.state) || "unknown").trim(), n = this._formatEntityStateText(i), o = (e == null ? void 0 : e.attributes) || {};
     if (i === "unknown" || i === "unavailable") return n;
     if (t.startsWith("light.")) {
       if (i !== "on") return n;
       const c = Number(o.brightness);
-      return Number.isFinite(c) && c > 0 ? `on ${Math.round(c / 255 * 100)}%` : "on";
+      return Number.isFinite(c) && c > 0 ? `On at ${Math.round(c / 255 * 100)}%` : "On";
     }
     if (t.startsWith("media_player.")) {
       const c = Number(o.volume_level);
-      return Number.isFinite(c) ? `${n} ${Math.round(c * 100)}%` : n;
+      return Number.isFinite(c) ? `${n} at ${Math.round(c * 100)}%` : n;
     }
     if (t.startsWith("fan.")) {
       const c = Number(o.percentage);
-      return Number.isFinite(c) && i === "on" ? `on ${Math.round(c)}%` : n;
+      return Number.isFinite(c) && i === "on" ? `On at ${Math.round(c)}%` : n;
     }
     if (t.startsWith("climate.")) {
       const c = o.current_temperature ?? o.temperature;
@@ -10068,13 +10080,11 @@ De.properties = {
       }
 
       .header-reason-panel {
-        position: absolute;
-        z-index: 40;
-        top: calc(100% + 8px);
-        left: 0;
-        width: min(560px, calc(100vw - 64px));
-        max-height: min(360px, calc(100vh - 180px));
+        box-sizing: border-box;
+        width: 100%;
+        max-height: min(360px, calc(100vh - 220px));
         overflow: auto;
+        margin-top: 8px;
         padding: 14px;
         border: 1px solid rgba(var(--rgb-primary-color), 0.2);
         border-radius: 8px;
@@ -10147,7 +10157,6 @@ De.properties = {
         }
 
         .header-reason-panel {
-          width: min(520px, calc(100vw - 48px));
           max-height: min(320px, calc(100vh - 160px));
         }
       }
@@ -10276,18 +10285,32 @@ De.properties = {
 
       .entity-state-badge,
       .choice-pill-meta {
-        color: var(--text-secondary-color);
-        font-size: 11px;
+        display: inline-flex;
+        align-items: center;
+        width: max-content;
+        padding: 2px 7px;
+        border: 1px solid var(--divider-color);
+        border-radius: 999px;
+        background: var(--secondary-background-color);
+        color: var(--secondary-text-color);
+        font-size: 12px;
         font-weight: 600;
         line-height: 1.2;
         white-space: nowrap;
       }
 
-      .entity-state-badge {
-        padding: 1px 6px;
-        border: 1px solid var(--divider-color);
-        border-radius: 999px;
-        background: rgba(var(--rgb-primary-color), 0.06);
+      .entity-state-badge.state-active,
+      .choice-pill-meta.state-active {
+        border-color: rgba(var(--rgb-primary-color), 0.42);
+        background: rgba(var(--rgb-primary-color), 0.12);
+        color: var(--primary-color);
+      }
+
+      .entity-state-badge.state-unavailable,
+      .choice-pill-meta.state-unavailable {
+        border-color: var(--error-color);
+        background: var(--card-background-color);
+        color: var(--error-color);
       }
 
       .dusk-light-action-grid input[type="color"] {

@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.77] - 2026-04-28
+
+### Fixed
+
+- **Action target state badges**: live state indicators in action target rows
+  are larger, use clearer labels such as `On at 40%`, and color active/error
+  states so device status is easier to scan while editing rules.
+- **Occupancy reason disclosure layout**: expanding header `Details` now grows
+  the inspector header inline instead of floating over the tab bar and form
+  controls, keeping occupancy evidence readable without obscuring settings.
+
 ## [0.2.76] - 2026-04-28
 
 ### Changed

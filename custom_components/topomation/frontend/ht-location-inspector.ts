@@ -395,13 +395,11 @@ export class HtLocationInspector extends LitElement {
       }
 
       .header-reason-panel {
-        position: absolute;
-        z-index: 40;
-        top: calc(100% + 8px);
-        left: 0;
-        width: min(560px, calc(100vw - 64px));
-        max-height: min(360px, calc(100vh - 180px));
+        box-sizing: border-box;
+        width: 100%;
+        max-height: min(360px, calc(100vh - 220px));
         overflow: auto;
+        margin-top: 8px;
         padding: 14px;
         border: 1px solid rgba(var(--rgb-primary-color), 0.2);
         border-radius: 8px;
@@ -474,7 +472,6 @@ export class HtLocationInspector extends LitElement {
         }
 
         .header-reason-panel {
-          width: min(520px, calc(100vw - 48px));
           max-height: min(320px, calc(100vh - 160px));
         }
       }
@@ -603,18 +600,32 @@ export class HtLocationInspector extends LitElement {
 
       .entity-state-badge,
       .choice-pill-meta {
-        color: var(--text-secondary-color);
-        font-size: 11px;
+        display: inline-flex;
+        align-items: center;
+        width: max-content;
+        padding: 2px 7px;
+        border: 1px solid var(--divider-color);
+        border-radius: 999px;
+        background: var(--secondary-background-color);
+        color: var(--secondary-text-color);
+        font-size: 12px;
         font-weight: 600;
         line-height: 1.2;
         white-space: nowrap;
       }
 
-      .entity-state-badge {
-        padding: 1px 6px;
-        border: 1px solid var(--divider-color);
-        border-radius: 999px;
-        background: rgba(var(--rgb-primary-color), 0.06);
+      .entity-state-badge.state-active,
+      .choice-pill-meta.state-active {
+        border-color: rgba(var(--rgb-primary-color), 0.42);
+        background: rgba(var(--rgb-primary-color), 0.12);
+        color: var(--primary-color);
+      }
+
+      .entity-state-badge.state-unavailable,
+      .choice-pill-meta.state-unavailable {
+        border-color: var(--error-color);
+        background: var(--card-background-color);
+        color: var(--error-color);
       }
 
       .dusk-light-action-grid input[type="color"] {
@@ -7633,7 +7644,11 @@ export class HtLocationInspector extends LitElement {
         />
         <span class="choice-pill-content">
           <span>${label}</span>
-          ${meta ? html`<span class="choice-pill-meta">${meta}</span>` : ""}
+          ${meta
+            ? html`<span class=${`choice-pill-meta ${this._entityStateBadgeTone(value)}`}>
+                ${meta}
+              </span>`
+            : ""}
         </span>
       </label>
     `;
@@ -9560,7 +9575,9 @@ export class HtLocationInspector extends LitElement {
                 <div class="dusk-light-entity-meta">
                   <span class="dusk-light-entity-title">
                     <span>${this._entityName(entityId)}</span>
-                    <span class="entity-state-badge">${this._entityStateLabel(entityId)}</span>
+                    <span class=${`entity-state-badge ${this._entityStateBadgeTone(entityId)}`}>
+                      ${this._entityStateLabel(entityId)}
+                    </span>
                   </span>
                   <code>${entityId}</code>
                 </div>
@@ -11865,10 +11882,25 @@ export class HtLocationInspector extends LitElement {
     return state;
   }
 
+  private _entityStateBadgeTone(entityId: string): string {
+    const rawState = String(this.hass?.states?.[entityId]?.state || "unknown").trim();
+    if (rawState === "unknown" || rawState === "unavailable") return "state-unavailable";
+    if (["off", "idle", "standby", "paused", "closed", "locked"].includes(rawState)) {
+      return "state-off";
+    }
+    return "state-active";
+  }
+
+  private _formatEntityStateText(rawState: string): string {
+    return rawState
+      .replace(/_/g, " ")
+      .replace(/\b\w/g, (char) => char.toUpperCase());
+  }
+
   private _entityStateLabel(entityId: string): string {
     const stateObj = this.hass?.states?.[entityId];
     const rawState = String(stateObj?.state || "unknown").trim();
-    const state = rawState.replace(/_/g, " ");
+    const state = this._formatEntityStateText(rawState);
     const attrs = stateObj?.attributes || {};
     if (rawState === "unknown" || rawState === "unavailable") return state;
 
@@ -11876,15 +11908,15 @@ export class HtLocationInspector extends LitElement {
       if (rawState !== "on") return state;
       const brightness = Number(attrs.brightness);
       if (Number.isFinite(brightness) && brightness > 0) {
-        return `on ${Math.round((brightness / 255) * 100)}%`;
+        return `On at ${Math.round((brightness / 255) * 100)}%`;
       }
-      return "on";
+      return "On";
     }
 
     if (entityId.startsWith("media_player.")) {
       const volume = Number(attrs.volume_level);
       if (Number.isFinite(volume)) {
-        return `${state} ${Math.round(volume * 100)}%`;
+        return `${state} at ${Math.round(volume * 100)}%`;
       }
       return state;
     }
@@ -11892,7 +11924,7 @@ export class HtLocationInspector extends LitElement {
     if (entityId.startsWith("fan.")) {
       const percentage = Number(attrs.percentage);
       if (Number.isFinite(percentage) && rawState === "on") {
-        return `on ${Math.round(percentage)}%`;
+        return `On at ${Math.round(percentage)}%`;
       }
       return state;
     }

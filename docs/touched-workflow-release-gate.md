@@ -231,3 +231,52 @@ Notes:
   warning.
 - After push to `main`, confirm CI and **Auto Release** are green for the
   release commit before considering the release complete.
+
+## Gate Record: 2026-04-28 — Action state badge readability + occupancy details layout (`0.2.77`)
+
+Commit under test: **release-candidate worktree for Topomation `0.2.77`**
+
+Touched workflows:
+- **Managed action editor target rows**: Lighting inline action rows plus Media,
+  HVAC, Appliances, and Vacuum target choice pills show live HA state badges.
+- **Inspector header occupancy reason disclosure**: header `Details` expands
+  inline rather than overlaying the tab bar/form controls.
+- **Release metadata**: version sync across `manifest.json`, `const.py`, and
+  `pyproject.toml`; changelog section for `0.2.77`; rebuilt frontend runtime
+  bundle.
+
+Validation:
+- `python scripts/verify-version-sync.py` — **PASS** (version sync `0.2.77`;
+  2026-04-28)
+- `cd custom_components/topomation/frontend && npm test -- --files
+  ht-location-inspector.test.ts` — **PASS** (97 passed; 2026-04-28)
+- `cd custom_components/topomation/frontend && npm run test:unit --
+  ht-location-inspector.test.ts` — **PASS** (97 passed; 2026-04-28)
+- `cd custom_components/topomation/frontend && npm run build` — **PASS**
+  (rebuilt `topomation-panel.js`; 2026-04-28)
+- `./scripts/test-comprehensive.sh` — **PASS** (version sync `0.2.77`,
+  Ruff, Mypy, backend pytest, Vitest, Web Test Runner, frontend build, and
+  Playwright workflow suites; 2026-04-28)
+- `make test-release-live` — **FAIL / environment** (default local dev HA
+  override selected `http://localhost:8123`, which was not running; 2026-04-28)
+- `TOPOMATION_PREFER_LOCAL_HA=0 make test-release-live` — **PASS** (remote dev
+  HA target: comprehensive matrix, 2 live managed-action contract tests, and
+  6 live browser workflow tests; 2026-04-28)
+
+Outcome:
+- Action target live-state badge readability: **PASS**
+- Media/HVAC/Appliances/Vacuum target choice badge styling: **PASS**
+- Occupancy details inline disclosure layout: **PASS**
+- Frontend bundle parity: **PASS**
+- Release metadata/version sync: **PASS**
+- Local comprehensive gate: **PASS**
+- Live HA managed-action contract: **PASS**
+- Live HA browser workflows: **PASS**
+
+Notes:
+- The first `make test-release-live` failure was not a product failure; it
+  stopped before live tests because the default local HA endpoint was offline.
+  The release gate was rerun with `TOPOMATION_PREFER_LOCAL_HA=0` against the
+  configured dev HA instance and passed.
+- After push to `main`, confirm CI and **Auto Release** are green for the
+  release commit before considering `0.2.77` complete.
