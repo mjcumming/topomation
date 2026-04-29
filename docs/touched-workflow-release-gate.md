@@ -83,7 +83,8 @@ Run the rows that match the touched workflow.
 
 ### 2026-04-29 - v0.2.82 occupancy reason details
 
-1. Commit under test: e8f6cfd.
+1. Commit under test: cafdaea (release code/bundle/version commit; followed
+   only by this release-gate record correction).
 2. Frontend bundle rebuilt from that commit: yes.
 3. Touched workflow list:
    - Inspector header occupancy reason details for grouped/relationship
