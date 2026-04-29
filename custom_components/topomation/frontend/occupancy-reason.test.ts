@@ -265,41 +265,6 @@ describe("buildOccupancyReasonLine", () => {
     expect(explanation.summary).not.to.include(":Floor");
   });
 
-  it("renders linked occupancy as 'linked from <name>'", () => {
-    const kitchen = makeLocation({
-      id: "kitchen",
-      modules: {
-        _meta: { type: "area" },
-        occupancy: { enabled: true, default_timeout: 300, occupancy_sources: [] },
-      },
-    });
-    const dining = makeLocation({ id: "dining_room", name: "Dining Room" });
-
-    const line = buildOccupancyReasonLine({
-      location: kitchen,
-      locations: [kitchen, dining],
-      hass: makeHass(),
-      occupancyStates: { kitchen: true, dining_room: true },
-      occupancyTransitions: {},
-      occupancyRuntimeStates: {
-        kitchen: runtimeState("kitchen", "on", tMinus(480), {
-          contributions: [
-            {
-              source_id: "linked:dining_room",
-              state: "active",
-              updated_at: tMinus(480),
-            },
-          ],
-        }),
-      },
-      status: "occupied",
-      nowMs: NOW,
-    });
-
-    expect(line).to.include("Occupied");
-    expect(line).to.include("linked from Dining Room");
-  });
-
   it("describes vacancy timeouts", () => {
     const location = makeLocation({ id: "kitchen" });
     const line = buildOccupancyReasonLine({

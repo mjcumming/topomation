@@ -8,8 +8,6 @@ from custom_components.topomation import _setup_default_configs
 from custom_components.topomation.const import (
     AMBIENT_BRIGHT_THRESHOLD_DEFAULT,
     AMBIENT_DARK_THRESHOLD_DEFAULT,
-    AMBIENT_LUX_DEFAULTS_MIGRATION_KEY,
-    AMBIENT_LUX_DEFAULTS_MIGRATION_VALUE,
 )
 
 
@@ -80,20 +78,12 @@ def test_setup_default_configs_forces_ambient_auto_discover_off() -> None:
 
     assert isinstance(existing_ambient, dict)
     assert existing_ambient.get("auto_discover") is False
-    assert existing_ambient.get("dark_threshold") == AMBIENT_DARK_THRESHOLD_DEFAULT
-    assert existing_ambient.get("bright_threshold") == AMBIENT_BRIGHT_THRESHOLD_DEFAULT
-    assert (
-        existing_ambient.get(AMBIENT_LUX_DEFAULTS_MIGRATION_KEY)
-        == AMBIENT_LUX_DEFAULTS_MIGRATION_VALUE
-    )
+    assert existing_ambient.get("dark_threshold") == 50.0
+    assert existing_ambient.get("bright_threshold") == 500.0
     assert isinstance(new_ambient, dict)
     assert new_ambient.get("auto_discover") is False
     assert new_ambient.get("dark_threshold") == AMBIENT_DARK_THRESHOLD_DEFAULT
     assert new_ambient.get("bright_threshold") == AMBIENT_BRIGHT_THRESHOLD_DEFAULT
-    assert (
-        new_ambient.get(AMBIENT_LUX_DEFAULTS_MIGRATION_KEY)
-        == AMBIENT_LUX_DEFAULTS_MIGRATION_VALUE
-    )
     assert any(
         location_id == "area_existing"
         and module_id == "ambient"
@@ -120,7 +110,7 @@ def test_setup_default_configs_forces_ambient_auto_discover_off() -> None:
 
 
 def test_setup_default_configs_preserves_custom_ambient_thresholds() -> None:
-    """One-shot ambient migration should not overwrite explicit calibration."""
+    """Ambient defaults should not overwrite explicit calibration."""
     location = Mock()
     location.id = "area_custom"
     existing_configs: dict[tuple[str, str], dict | None] = {
@@ -155,7 +145,3 @@ def test_setup_default_configs_preserves_custom_ambient_thresholds() -> None:
     assert isinstance(ambient, dict)
     assert ambient.get("dark_threshold") == 300.0
     assert ambient.get("bright_threshold") == 900.0
-    assert (
-        ambient.get(AMBIENT_LUX_DEFAULTS_MIGRATION_KEY)
-        == AMBIENT_LUX_DEFAULTS_MIGRATION_VALUE
-    )

@@ -24,17 +24,12 @@ export interface TopomationActionRule {
   trigger_types?: ActionTriggerType[];
   rule_uuid?: string;
   actions?: TopomationRuleAction[];
-  action_entity_id?: string;
-  action_service?: string;
-  action_data?: Record<string, unknown>;
   ambient_condition?: ActionAmbientCondition;
   must_be_occupied?: boolean;
   time_condition_enabled?: boolean;
   start_time?: string;
   end_time?: string;
   run_on_startup?: boolean;
-  // Compatibility field retained for payload normalization.
-  require_dark?: boolean;
   enabled: boolean;
 }
 
@@ -94,10 +89,6 @@ function normalizeTriggerType(raw: unknown): ActionTriggerType | null {
   const normalized = String(raw || "")
     .trim()
     .toLowerCase();
-  if (normalized === "occupied") return "on_occupied";
-  if (normalized === "vacant") return "on_vacant";
-  if (normalized === "dark") return "on_dark";
-  if (normalized === "bright") return "on_bright";
   if (normalized === "on_occupied" || normalized === "on_vacant" || normalized === "on_dark" || normalized === "on_bright") {
     return normalized;
   }
@@ -135,8 +126,7 @@ function defaultAmbientCondition(triggerTypes: ActionTriggerType[]): ActionAmbie
 
 function normalizeAmbientCondition(
   triggerTypes: ActionTriggerType[],
-  rawAmbientCondition: unknown,
-  requireDark: boolean
+  rawAmbientCondition: unknown
 ): ActionAmbientCondition {
   const normalized = String(rawAmbientCondition || "")
     .trim()
@@ -144,7 +134,6 @@ function normalizeAmbientCondition(
   if (normalized === "any" || normalized === "dark" || normalized === "bright") {
     return normalized;
   }
-  if (requireDark) return "dark";
   return defaultAmbientCondition(triggerTypes);
 }
 
@@ -201,19 +190,7 @@ function normalizeRuleActionsFromPayload(
   if (normalizedActions.length > 0) {
     return normalizedActions;
   }
-
-  const fallbackEntityId = String(rule.action_entity_id || "").trim();
-  if (!fallbackEntityId) return [];
-  const fallbackServiceRaw = String(rule.action_service || "").trim();
-  const fallbackService =
-    fallbackServiceRaw || defaultActionServiceForTrigger(fallbackEntityId, fallbackTriggerType);
-  return [
-    {
-      entity_id: fallbackEntityId,
-      service: fallbackService,
-      ...(normalizeActionData(rule.action_data) ? { data: normalizeActionData(rule.action_data) } : {}),
-    },
-  ];
+  return [];
 }
 
 function readErrorMessage(err: unknown): string {
@@ -246,14 +223,11 @@ export async function listTopomationActionRules(
           const triggerTypes = normalizeTriggerTypes(rule.trigger_types, singleTriggerType || undefined);
           if (triggerTypes.length === 0) return null;
           const triggerType = primaryTriggerType(triggerTypes);
-          const requireDark = Boolean(rule.require_dark);
           const ambientCondition = normalizeAmbientCondition(
             triggerTypes,
-            rule.ambient_condition,
-            requireDark
+            rule.ambient_condition
           );
           const actions = normalizeRuleActionsFromPayload(rule, triggerType);
-          const primaryAction = actions[0];
           return {
             ...rule,
             trigger_type: triggerType,
@@ -272,10 +246,6 @@ export async function listTopomationActionRules(
                 : undefined,
             run_on_startup:
               typeof rule.run_on_startup === "boolean" ? rule.run_on_startup : undefined,
-            require_dark: requireDark || ambientCondition === "dark",
-            action_entity_id: primaryAction?.entity_id,
-            action_service: primaryAction?.service,
-            action_data: primaryAction?.data,
           } satisfies TopomationActionRule;
         })
         .filter((rule): rule is TopomationActionRule => !!rule)
@@ -299,16 +269,12 @@ export async function createTopomationActionRule(
     trigger_type: ActionTriggerType;
     trigger_types?: ActionTriggerType[];
     actions?: TopomationRuleAction[];
-    action_entity_id?: string;
-    action_service?: string;
-    action_data?: Record<string, unknown>;
     ambient_condition?: ActionAmbientCondition;
     must_be_occupied?: boolean;
     time_condition_enabled?: boolean;
     start_time?: string;
     end_time?: string;
     run_on_startup?: boolean;
-    require_dark?: boolean;
     automation_id?: string;
     rule_uuid?: string;
     user_named?: boolean;
@@ -319,12 +285,7 @@ export async function createTopomationActionRule(
   const normalizedTriggerTypes = normalizeTriggerTypes(args.trigger_types, args.trigger_type);
   const primaryTrigger = primaryTriggerType(normalizedTriggerTypes);
   const normalizedActions = normalizeRuleActionsFromPayload(
-    {
-      actions: args.actions,
-      action_entity_id: args.action_entity_id,
-      action_service: args.action_service,
-      action_data: args.action_data,
-    },
+    { actions: args.actions },
     primaryTrigger
   );
   const primaryAction = normalizedActions[0];
@@ -341,9 +302,6 @@ export async function createTopomationActionRule(
       name: args.name,
       trigger_type: primaryTrigger,
       trigger_types: normalizedTriggerTypes,
-      action_entity_id: primaryAction.entity_id,
-      action_service: primaryAction.service,
-      action_data: primaryAction.data,
       actions: normalizedActions,
       ambient_condition: args.ambient_condition,
       ...(typeof args.must_be_occupied === "boolean"
@@ -355,7 +313,6 @@ export async function createTopomationActionRule(
       ...(typeof runOnStartup === "boolean" ? { run_on_startup: runOnStartup } : {}),
       ...(typeof args.user_named === "boolean" ? { user_named: args.user_named } : {}),
       ...(args.daily_gating_enabled ? { daily_gating_enabled: true } : {}),
-      require_dark: Boolean(args.require_dark),
       ...(args.automation_id ? { automation_id: args.automation_id } : {}),
       ...(args.rule_uuid ? { rule_uuid: args.rule_uuid } : {}),
       ...(entryId ? { entry_id: entryId } : {}),
@@ -367,14 +324,11 @@ export async function createTopomationActionRule(
         normalizeTriggerType(response.rule.trigger_type) || primaryTrigger
       );
       const normalizedTrigger = primaryTriggerType(normalizedTriggerTypes);
-      const requireDark = Boolean(response.rule.require_dark);
       const ambientCondition = normalizeAmbientCondition(
         normalizedTriggerTypes,
-        response.rule.ambient_condition,
-        requireDark
+        response.rule.ambient_condition
       );
       const actions = normalizeRuleActionsFromPayload(response.rule, normalizedTrigger);
-      const responsePrimaryAction = actions[0] || primaryAction;
       return {
         ...response.rule,
         trigger_type: normalizedTrigger,
@@ -385,9 +339,6 @@ export async function createTopomationActionRule(
             : args.rule_uuid,
         actions,
         ambient_condition: ambientCondition,
-        action_entity_id: responsePrimaryAction?.entity_id,
-        action_service: responsePrimaryAction?.service,
-        action_data: responsePrimaryAction?.data,
         must_be_occupied: normalizeMustBeOccupied(response.rule.must_be_occupied),
         time_condition_enabled: Boolean(response.rule.time_condition_enabled),
         start_time:
@@ -402,7 +353,6 @@ export async function createTopomationActionRule(
           typeof response.rule.run_on_startup === "boolean"
             ? response.rule.run_on_startup
             : runOnStartup,
-        require_dark: requireDark || ambientCondition === "dark",
       };
     }
   } catch (err) {

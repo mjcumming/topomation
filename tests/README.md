@@ -6,7 +6,7 @@ Comprehensive test suite for the Topomation Home Assistant integration.
 
 ### Unit Tests
 
-- **`test_managed_action_config_build_matrix.py`** - Parametrized triggers/conditions/`require_dark` normalization for managed HA automations (see `OCCUPANCY-LIGHTING-MATRIX.md`)
+- **`test_managed_action_config_build_matrix.py`** - Parametrized triggers and conditions for managed HA automations (see `OCCUPANCY-LIGHTING-MATRIX.md`)
 - **`test_managed_lighting_automation_runtime.py`** - Mock-HA execution: compiled managed rules fire (`on_occupied` / `on_vacant` / sun / lux / time), `only_if_off`, grouped vacancy turning off per-room lights (see matrix §4)
 - **`test_lock_services_integration.py`** - Real-kernel `topomation.lock` / `unlock` / `unlock_all` → occupancy `binary_sensor` attributes
 - **`test_init.py`** - Integration setup/teardown lifecycle tests

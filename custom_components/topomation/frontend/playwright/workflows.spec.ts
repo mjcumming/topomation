@@ -269,8 +269,8 @@ test("lighting media and appliances tabs each save managed rules", async ({ page
       const rules = await kitchenManagedRules(page);
       return rules.some(
         (rule) =>
-          typeof rule?.action_entity_id === "string" &&
-          rule.action_entity_id.startsWith("light.")
+          Array.isArray(rule?.actions) &&
+          rule.actions.some((action: any) => String(action?.entity_id || "").startsWith("light."))
       );
     })
     .toBe(true);
@@ -289,8 +289,12 @@ test("lighting media and appliances tabs each save managed rules", async ({ page
       const rules = await kitchenManagedRules(page);
       return rules.some(
         (rule) =>
-          rule?.action_entity_id === "media_player.kitchen_speaker" &&
-          rule?.action_service === "media_pause"
+          Array.isArray(rule?.actions) &&
+          rule.actions.some(
+            (action: any) =>
+              action?.entity_id === "media_player.kitchen_speaker" &&
+              action?.service === "media_pause"
+          )
       );
     })
     .toBe(true);
@@ -309,8 +313,12 @@ test("lighting media and appliances tabs each save managed rules", async ({ page
       const rules = await kitchenManagedRules(page);
       return rules.some(
         (rule) =>
-          rule?.action_entity_id === "fan.kitchen_bathroom_exhaust" &&
-          rule?.action_service === "turn_on"
+          Array.isArray(rule?.actions) &&
+          rule.actions.some(
+            (action: any) =>
+              action?.entity_id === "fan.kitchen_bathroom_exhaust" &&
+              action?.service === "turn_on"
+          )
       );
     })
     .toBe(true);

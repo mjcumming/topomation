@@ -357,11 +357,6 @@ function contributorSentence(
     return `${displayNameForLocationOrAreaId(locationId, ctx)} is occupied through the group`;
   }
 
-  const linkedId = locationIdAfterMarker("linked:");
-  if (linkedId) {
-    return `${displayNameForLocationOrAreaId(linkedId, ctx)} is linked as occupied`;
-  }
-
   if (raw.startsWith("occupancy_group:") || raw.startsWith("occupancy_group.")) {
     return "the occupancy group is occupied";
   }
@@ -422,10 +417,7 @@ function structuralSourceLabel(
     prefixedLabel("occupancy_group", ":", () => "occupancy group") ||
     prefixedLabel("occupancy_group", ".", () => "occupancy group") ||
     prefixedLabel("__lock_hold__", ":", (n) => `lock hold for ${n}`) ||
-    prefixedLabel("__lock_hold__", ".", (n) => `lock hold for ${n}`) ||
-    (raw.startsWith("linked:")
-      ? `linked from ${displayNameForLocationOrAreaId(raw.slice("linked:".length).trim(), ctx)}`
-      : undefined)
+    prefixedLabel("__lock_hold__", ".", (n) => `lock hold for ${n}`)
   );
 }
 

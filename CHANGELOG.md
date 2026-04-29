@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.81] - 2026-04-29
+
+### Removed
+
+- **Legacy linked-room occupancy mesh**: removed the old `linked_locations`
+  runtime propagation path now that area grouping is handled by
+  `occupancy_group_id` in `home-topology`. The inspector no longer normalizes
+  or emits the legacy field, and restore no longer carries any linked-room
+  cleanup branch.
+
 ## [0.2.80] - 2026-04-29
 
 ### Fixed

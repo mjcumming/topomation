@@ -3027,8 +3027,7 @@ export class HtLocationInspector extends LitElement {
           rule.trigger_types,
           this._normalizeActionTriggerType(rule.trigger_type)
         ),
-        action_entity_id: String(rule.action_entity_id || ""),
-        action_service: String(rule.action_service || ""),
+        actions: this._actionTargetsForRule(rule),
         ambient_condition: String(rule.ambient_condition || ""),
         must_be_occupied:
           typeof rule.must_be_occupied === "boolean" ? rule.must_be_occupied : null,
@@ -3049,17 +3048,13 @@ export class HtLocationInspector extends LitElement {
       default_trailing_timeout: 120,
       occupancy_group_id: null,
       occupancy_sources: [],
-      linked_locations: [],
       wiab: {
         preset: "off",
       },
     };
   }
 
-  private _sanitizeOccupancyConfig(
-    config: OccupancyConfig,
-    selfLocationId: string | undefined = this.location?.id
-  ): OccupancyConfig {
+  private _sanitizeOccupancyConfig(config: OccupancyConfig): OccupancyConfig {
     const defaults = this._occupancyDefaults();
     const sourceCandidates = Array.isArray(config.occupancy_sources) ? config.occupancy_sources : [];
     const occupancySources = sourceCandidates
@@ -3084,7 +3079,6 @@ export class HtLocationInspector extends LitElement {
           ? config.occupancy_group_id.trim()
           : null,
       occupancy_sources: occupancySources,
-      linked_locations: this._normalizeLinkedLocationIds(config.linked_locations, undefined, selfLocationId),
     };
     sanitized.wiab = this._getWiabConfig(sanitized);
     return sanitized;
@@ -3092,12 +3086,12 @@ export class HtLocationInspector extends LitElement {
 
   private _persistedOccupancyConfig(): OccupancyConfig {
     const raw = ((this.location?.modules?.occupancy || {}) as OccupancyConfig) || {};
-    return this._sanitizeOccupancyConfig(raw, this.location?.id);
+    return this._sanitizeOccupancyConfig(raw);
   }
 
   private _persistedOccupancyConfigForLocation(location: Location): OccupancyConfig {
     const raw = ((location.modules?.occupancy || {}) as OccupancyConfig) || {};
-    return this._sanitizeOccupancyConfig(raw, location.id);
+    return this._sanitizeOccupancyConfig(raw);
   }
 
   private _detectionTabLabel(): string {
@@ -3173,7 +3167,7 @@ export class HtLocationInspector extends LitElement {
   }
 
   private _setOccupancyDraft(config: OccupancyConfig): void {
-    this._occupancyDraft = this._sanitizeOccupancyConfig(config, this.location?.id);
+    this._occupancyDraft = this._sanitizeOccupancyConfig(config);
     this._occupancyDraftDirty = true;
     this._occupancySaveError = undefined;
     this._detectionDraftHint = "Changes are staged locally. Click Save changes to apply them.";
@@ -3183,14 +3177,14 @@ export class HtLocationInspector extends LitElement {
   private _occupancyConfigForLocation(location: Location): OccupancyConfig {
     const pending = this._pendingOccupancyByLocation[location.id];
     if (pending) {
-      return this._sanitizeOccupancyConfig(pending, location.id);
+      return this._sanitizeOccupancyConfig(pending);
     }
     const raw = ((location.modules?.occupancy || {}) as OccupancyConfig) || {};
-    return this._sanitizeOccupancyConfig(raw, location.id);
+    return this._sanitizeOccupancyConfig(raw);
   }
 
   private _setPendingOccupancyForLocation(locationId: string, config: OccupancyConfig): void {
-    const sanitized = this._sanitizeOccupancyConfig(config, locationId);
+    const sanitized = this._sanitizeOccupancyConfig(config);
     this._pendingOccupancyByLocation = {
       ...this._pendingOccupancyByLocation,
       [locationId]: sanitized,
@@ -3256,17 +3250,14 @@ export class HtLocationInspector extends LitElement {
   private async _saveDetectionDraft(): Promise<void> {
     if (!this.location || !this.hass) return;
     const sourceLocationId = this.location.id;
-    const sourceConfig = this._sanitizeOccupancyConfig(
-      this._occupancyDraft || this._persistedOccupancyConfig(),
-      sourceLocationId
-    );
+    const sourceConfig = this._sanitizeOccupancyConfig(this._occupancyDraft || this._persistedOccupancyConfig());
     const updates: Array<{ locationId: string; config: OccupancyConfig }> = [
       { locationId: sourceLocationId, config: sourceConfig },
       ...Object.entries(this._pendingOccupancyByLocation)
         .filter(([locationId]) => locationId !== sourceLocationId)
         .map(([locationId, config]) => ({
           locationId,
-          config: this._sanitizeOccupancyConfig(config, locationId),
+          config: this._sanitizeOccupancyConfig(config),
         })),
     ];
 
@@ -4854,32 +4845,6 @@ export class HtLocationInspector extends LitElement {
     `;
   }
 
-  private _linkedLocationFloorParentId(): string | null {
-    if (!this.location) return null;
-    if (getLocationType(this.location) !== "area") return null;
-    const parentId = this.location.parent_id ?? null;
-    if (!parentId) return null;
-    const parent = (this.allLocations || []).find((loc) => loc.id === parentId);
-    if (!parent || getLocationType(parent) !== "floor") {
-      return null;
-    }
-    return parentId;
-  }
-
-  private _linkedLocationCandidates(): Location[] {
-    if (!this.location) return [];
-    const floorParentId = this._linkedLocationFloorParentId();
-    if (!floorParentId) return [];
-    const managedShadowIds = this._managedShadowLocationIds();
-
-    return (this.allLocations || [])
-      .filter((loc) => loc.id !== this.location!.id)
-      .filter((loc) => (loc.parent_id ?? null) === floorParentId)
-      .filter((loc) => getLocationType(loc) === "area")
-      .filter((loc) => !this._isManagedShadowLocation(loc, managedShadowIds))
-      .sort((left, right) => left.name.localeCompare(right.name));
-  }
-
   private _locationById(locationId: string | null | undefined): Location | undefined {
     if (!locationId) return undefined;
     return (this.allLocations || []).find((candidate) => candidate.id === locationId);
@@ -4894,48 +4859,6 @@ export class HtLocationInspector extends LitElement {
 
   private _managedShadowLocationIds(): Set<string> {
     return managedShadowLocationIdSet(this.allLocations || []);
-  }
-
-  private _normalizeLinkedLocationIds(
-    raw: unknown,
-    allowedCandidates?: Set<string>,
-    excludedLocationId?: string
-  ): string[] {
-    if (!Array.isArray(raw)) {
-      return [];
-    }
-
-    const seen = new Set<string>();
-    const linked: string[] = [];
-    for (const item of raw) {
-      if (typeof item !== "string") continue;
-      const locationId = item.trim();
-      if (!locationId || seen.has(locationId)) continue;
-      if (excludedLocationId && locationId === excludedLocationId) continue;
-      if (allowedCandidates && !allowedCandidates.has(locationId)) continue;
-      seen.add(locationId);
-      linked.push(locationId);
-    }
-    return linked;
-  }
-
-  private _linkedLocationIds(config: OccupancyConfig): string[] {
-    if (!this.location) {
-      return [];
-    }
-
-    const allowedCandidates = new Set(this._linkedLocationCandidates().map((candidate) => candidate.id));
-    if (allowedCandidates.size === 0) {
-      return [];
-    }
-
-    const raw = config.linked_locations;
-    return this._normalizeLinkedLocationIds(raw, allowedCandidates, this.location.id);
-  }
-
-  private _candidateLinkedLocationIds(candidate: Location): string[] {
-    const raw = this._occupancyConfigForLocation(candidate).linked_locations;
-    return this._normalizeLinkedLocationIds(raw, undefined, candidate.id);
   }
 
   private _candidateOccupancyGroupId(candidate: Location): string | null {
@@ -4992,63 +4915,6 @@ export class HtLocationInspector extends LitElement {
     const floorId = this.location?.id || "floor";
     const random = Math.random().toString(36).slice(2, 8);
     return `${floorId}_group_${Date.now().toString(36)}_${random}`;
-  }
-
-  private _isTwoWayLinked(candidate: Location, linkedSet: Set<string>): boolean {
-    if (!this.location) return false;
-    if (!linkedSet.has(candidate.id)) return false;
-    return this._candidateLinkedLocationIds(candidate).includes(this.location.id);
-  }
-
-  private _toggleLinkedLocation(linkedLocationId: string, enabled: boolean): void {
-    const config = this._getOccupancyConfig();
-    const next = new Set(this._linkedLocationIds(config));
-    if (enabled) {
-      next.add(linkedLocationId);
-    } else {
-      next.delete(linkedLocationId);
-    }
-
-    const nextLinked = [...next].sort((left, right) =>
-      this._locationName(left).localeCompare(this._locationName(right))
-    );
-    this._setOccupancyDraft({
-      ...config,
-      linked_locations: nextLinked,
-    });
-  }
-
-  private _toggleTwoWayLinkedLocation(candidate: Location, enabled: boolean): void {
-    if (!this.location) return;
-    const sourceConfig = this._getOccupancyConfig();
-    const sourceLinkedSet = new Set(this._linkedLocationIds(sourceConfig));
-    let nextSourceLinked = [...sourceLinkedSet].sort((left, right) =>
-      this._locationName(left).localeCompare(this._locationName(right))
-    );
-    if (enabled && !sourceLinkedSet.has(candidate.id)) {
-      sourceLinkedSet.add(candidate.id);
-      nextSourceLinked = [...sourceLinkedSet].sort((left, right) =>
-        this._locationName(left).localeCompare(this._locationName(right))
-      );
-    }
-
-    const candidateLinked = new Set(this._candidateLinkedLocationIds(candidate));
-    if (enabled) {
-      candidateLinked.add(this.location.id);
-    } else {
-      candidateLinked.delete(this.location.id);
-    }
-    const nextCandidateLinked = [...candidateLinked].sort((left, right) =>
-      this._locationName(left).localeCompare(this._locationName(right))
-    );
-    this._setOccupancyDraft({
-      ...sourceConfig,
-      linked_locations: nextSourceLinked,
-    });
-    this._setPendingOccupancyForLocation(candidate.id, {
-      ...this._occupancyConfigForLocation(candidate),
-      linked_locations: nextCandidateLinked,
-    });
   }
 
   private _renderAreaOccupancyGroupSection(config: OccupancyConfig) {
@@ -5389,84 +5255,6 @@ export class HtLocationInspector extends LitElement {
                         </button>
                       </div>
                     `}
-              </div>
-            `}
-      </div>
-    `;
-  }
-
-  private _renderLinkedLocationsSection(config: OccupancyConfig) {
-    if (!this.location) return "";
-    const eligible = !!this._linkedLocationFloorParentId();
-    if (!eligible) {
-      return html`
-        <div class="card-section">
-          <div class="section-title">
-            <ha-icon .icon=${"mdi:link-variant"}></ha-icon>
-            Directional Contributors
-          </div>
-          <div class="subsection-help">
-            Directional contributors are available only for area locations directly under a floor.
-          </div>
-        </div>
-      `;
-    }
-
-    const candidates = this._linkedLocationCandidates();
-    const linked = this._linkedLocationIds(config);
-    const linkedSet = new Set(linked);
-    const linkedLabel = linked.length
-      ? linked.map((locationId) => this._locationName(locationId)).join(", ")
-      : "None";
-
-    return html`
-      <div class="card-section">
-        <div class="section-title">
-          <ha-icon .icon=${"mdi:link-variant"}></ha-icon>
-          Directional Contributors
-        </div>
-        <div class="subsection-help">
-          Advanced: select locations that can contribute occupancy to this location directionally.
-          Configure reverse direction from the other location if needed.
-        </div>
-        <div class="linked-location-meta">Contributors: ${linkedLabel}</div>
-        ${candidates.length === 0
-          ? html`<div class="adjacency-empty">No sibling area candidates available on this floor.</div>`
-          : html`
-              <div class="linked-location-list">
-                ${candidates.map((candidate) => {
-                  const checked = linkedSet.has(candidate.id);
-                  const twoWayChecked = this._isTwoWayLinked(candidate, linkedSet);
-                  return html`
-                    <div class="linked-location-row">
-                      <label class="linked-location-left">
-                        <input
-                          type="checkbox"
-                          data-testid=${`linked-location-${candidate.id}`}
-                          .checked=${checked}
-                          @change=${(event: Event) => {
-                            const target = event.target as HTMLInputElement;
-                            this._toggleLinkedLocation(candidate.id, target.checked);
-                          }}
-                        />
-                        <span class="linked-location-name">${candidate.name}</span>
-                      </label>
-                      <label class="linked-location-right">
-                        <input
-                          type="checkbox"
-                          data-testid=${`linked-location-two-way-${candidate.id}`}
-                          .checked=${twoWayChecked}
-                          ?disabled=${!checked}
-                          @change=${(event: Event) => {
-                            const target = event.target as HTMLInputElement;
-                            this._toggleTwoWayLinkedLocation(candidate, target.checked);
-                          }}
-                        />
-                        <span class="linked-location-two-way-label">2-way</span>
-                      </label>
-                    </div>
-                  `;
-                })}
               </div>
             `}
       </div>
@@ -7712,7 +7500,7 @@ export class HtLocationInspector extends LitElement {
 
     const targets = this._actionTargetsForRule(rule);
     const primaryAction = targets[0];
-    const entityId = String(primaryAction?.entity_id || rule.action_entity_id || "").trim();
+    const entityId = String(primaryAction?.entity_id || "").trim();
     if (!entityId) {
       return `${prefix} (${index + 1})`;
     }
@@ -7817,35 +7605,19 @@ export class HtLocationInspector extends LitElement {
     if (normalizedTargets.length > 0) {
       return normalizedTargets;
     }
-
-    const entityId = String(rule.action_entity_id || "").trim();
-    if (!entityId) return [];
-    const serviceRaw = String(rule.action_service || "").trim();
-    const service = serviceRaw || this._defaultActionServiceForTrigger(entityId, triggerType);
-    const data = this._normalizeActionDataForRule(rule.action_data, entityId, service);
-    return [
-      {
-        entity_id: entityId,
-        service,
-        ...(data ? { data } : {}),
-      },
-    ];
+    return [];
   }
 
   private _setActionTargetsForRule(
     rule: Partial<TopomationActionRule>,
     nextTargetsRaw: RuleActionTarget[]
-  ): Pick<TopomationActionRule, "actions" | "action_entity_id" | "action_service" | "action_data"> {
+  ): Pick<TopomationActionRule, "actions"> {
     const triggerType = this._primaryActionTriggerType(
       this._normalizeActionTriggerTypes(rule.trigger_types, rule.trigger_type)
     );
     const nextTargets = this._normalizeActionTargets(nextTargetsRaw, triggerType);
-    const primary = nextTargets[0];
     return {
       actions: nextTargets,
-      action_entity_id: primary?.entity_id,
-      action_service: primary?.service,
-      action_data: primary?.data,
     };
   }
 
@@ -7928,7 +7700,7 @@ export class HtLocationInspector extends LitElement {
   }
 
   private _ruleTabForEditing(rule: Partial<TopomationActionRule>): DeviceAutomationTab | undefined {
-    const actionEntityId = String(rule.action_entity_id || "").trim();
+    const actionEntityId = String(this._actionTargetsForRule(rule)[0]?.entity_id || "").trim();
     if (actionEntityId) {
       return this._tabForActionEntity(actionEntityId);
     }
@@ -8297,10 +8069,6 @@ export class HtLocationInspector extends LitElement {
         : `action_rule_${index + 1}`;
     const explicitTargets = this._actionTargetsForRule(rule);
     const actions = explicitTargets;
-    const primaryAction = actions[0];
-    const actionEntityId = primaryAction?.entity_id;
-    const actionService = primaryAction?.service;
-    const actionData = primaryAction?.data;
     const ruleUuid = this._normalizeRuleUuid(rule.rule_uuid, id);
     const runOnStartup =
       typeof rule.run_on_startup === "boolean"
@@ -8320,9 +8088,6 @@ export class HtLocationInspector extends LitElement {
       trigger_type: triggerType,
       trigger_types: triggerTypes,
       actions,
-      action_entity_id: actionEntityId || undefined,
-      action_service: actionService || undefined,
-      action_data: actionData,
       ambient_condition: this._normalizeActionAmbientCondition(
         rule.ambient_condition,
         triggerTypes
@@ -8336,15 +8101,12 @@ export class HtLocationInspector extends LitElement {
       daily_gating_enabled:
         typeof rule.daily_gating_enabled === "boolean" ? rule.daily_gating_enabled : false,
       enabled: rule.enabled !== false,
-      require_dark: this._normalizeActionAmbientCondition(rule.ambient_condition, triggerTypes) === "dark",
     };
   }
 
   private _isLightingActionRule(rule: Partial<TopomationActionRule>): boolean {
     const targets = this._actionTargetsForRule(rule);
-    const primaryEntityId = String(
-      targets[0]?.entity_id || rule.action_entity_id || ""
-    ).trim();
+    const primaryEntityId = String(targets[0]?.entity_id || "").trim();
     return primaryEntityId.startsWith("light.");
   }
 
@@ -8356,7 +8118,7 @@ export class HtLocationInspector extends LitElement {
   private _rulesForDeviceAutomationTab(tab: DeviceAutomationTab): TopomationActionRule[] {
     const rules = this._workingActionRules();
     return rules.filter((rule) => {
-      const actionEntityId = String(rule.action_entity_id || "").trim();
+      const actionEntityId = String(this._actionTargetsForRule(rule)[0]?.entity_id || "").trim();
       if (!actionEntityId) {
         return this._actionRuleTabById[String(rule.id || "")] === tab;
       }
@@ -8378,7 +8140,7 @@ export class HtLocationInspector extends LitElement {
     this._actionRuleTabById = {};
     for (const rule of normalizedRules) {
       const ruleId = String(rule.id || "");
-      const tab = this._tabForActionEntity(String(rule.action_entity_id || "").trim());
+      const tab = this._tabForActionEntity(String(this._actionTargetsForRule(rule)[0]?.entity_id || "").trim());
       if (ruleId && tab) {
         this._actionRuleTabById[ruleId] = tab;
       }
@@ -8396,7 +8158,7 @@ export class HtLocationInspector extends LitElement {
     }
     for (const rule of normalizedRules) {
       const ruleId = String(rule.id || "");
-      const entityTab = this._tabForActionEntity(String(rule.action_entity_id || "").trim());
+      const entityTab = this._tabForActionEntity(String(this._actionTargetsForRule(rule)[0]?.entity_id || "").trim());
       if (ruleId && entityTab) {
         nextTabById[ruleId] = entityTab;
       }
@@ -8640,8 +8402,6 @@ export class HtLocationInspector extends LitElement {
               },
             ]
           : [],
-        action_entity_id: actionEntityId || undefined,
-        action_service: this._defaultActionServiceForTrigger(actionEntityId, triggerType),
         ambient_condition: "any",
         must_be_occupied:
           tab === "lighting"
@@ -8707,7 +8467,6 @@ export class HtLocationInspector extends LitElement {
               : this._normalizeActionAmbientCondition(merged.ambient_condition, triggerTypes);
         }
         if (
-          !Object.prototype.hasOwnProperty.call(patch, "action_service") &&
           !Object.prototype.hasOwnProperty.call(patch, "actions")
         ) {
           mergedTargets = mergedTargets.map((target) => {
@@ -8733,100 +8492,8 @@ export class HtLocationInspector extends LitElement {
           )
         );
       }
-      if (Object.prototype.hasOwnProperty.call(patch, "action_entity_id")) {
-        const entityId = String(patch.action_entity_id || "").trim();
-        if (!entityId) {
-          mergedTargets = [];
-        } else if (mergedTargets.length === 0) {
-          const nextService = this._defaultActionServiceForTrigger(
-            entityId,
-            this._primaryActionTriggerType(
-              this._normalizeActionTriggerTypes(merged.trigger_types, merged.trigger_type)
-            )
-          );
-          mergedTargets = [{ entity_id: entityId, service: nextService }];
-        } else {
-          const firstTarget = { ...mergedTargets[0], entity_id: entityId };
-          if (!Object.prototype.hasOwnProperty.call(patch, "action_service")) {
-            firstTarget.service = this._defaultActionServiceForTrigger(
-              entityId,
-              this._primaryActionTriggerType(
-                this._normalizeActionTriggerTypes(merged.trigger_types, merged.trigger_type)
-              )
-            );
-          }
-          firstTarget.data = this._normalizeActionDataForRule(
-            firstTarget.data,
-            firstTarget.entity_id,
-            firstTarget.service
-          );
-          mergedTargets = [
-            {
-              entity_id: firstTarget.entity_id,
-              service: firstTarget.service,
-              ...(firstTarget.data ? { data: firstTarget.data } : {}),
-            },
-            ...mergedTargets.slice(1),
-          ];
-        }
-      }
-      if (Object.prototype.hasOwnProperty.call(patch, "action_service")) {
-        const nextService = String(patch.action_service || "").trim();
-        if (mergedTargets.length === 0) {
-          const currentEntityId = String(merged.action_entity_id || "").trim();
-          if (currentEntityId && nextService) {
-            mergedTargets = [
-              {
-                entity_id: currentEntityId,
-                service: nextService,
-              },
-            ];
-          }
-        } else {
-          const firstTarget = mergedTargets[0];
-          const normalizedData = this._normalizeActionDataForRule(
-            Object.prototype.hasOwnProperty.call(patch, "action_data")
-              ? patch.action_data
-              : firstTarget.data,
-            firstTarget.entity_id,
-            nextService
-          );
-          mergedTargets = [
-            {
-              entity_id: firstTarget.entity_id,
-              service: nextService,
-              ...(normalizedData ? { data: normalizedData } : {}),
-            },
-            ...mergedTargets.slice(1),
-          ];
-        }
-      }
-      if (
-        Object.prototype.hasOwnProperty.call(patch, "action_data") &&
-        !Object.prototype.hasOwnProperty.call(patch, "action_service")
-      ) {
-        if (mergedTargets.length > 0) {
-          const firstTarget = mergedTargets[0];
-          const normalizedData = this._normalizeActionDataForRule(
-            patch.action_data,
-            firstTarget.entity_id,
-            firstTarget.service
-          );
-          mergedTargets = [
-            {
-              entity_id: firstTarget.entity_id,
-              service: firstTarget.service,
-              ...(normalizedData ? { data: normalizedData } : {}),
-            },
-            ...mergedTargets.slice(1),
-          ];
-        }
-      }
       const targetFields = this._setActionTargetsForRule(merged, mergedTargets);
       merged.actions = targetFields.actions;
-      merged.action_entity_id = targetFields.action_entity_id;
-      merged.action_service = targetFields.action_service;
-      merged.action_data = targetFields.action_data;
       this._maybeSyncActionRuleNameFromStructure(
         rule,
         merged as TopomationActionRule,
@@ -9000,16 +8667,12 @@ export class HtLocationInspector extends LitElement {
             trigger_type: triggers.trigger_type,
             trigger_types: triggers.trigger_types,
             actions: ruleTargets,
-            action_entity_id: primaryAction.entity_id,
-            action_service: primaryAction.service,
-            action_data: primaryAction.data,
             ambient_condition: ambientCondition,
             must_be_occupied: normalizedRule.must_be_occupied,
             time_condition_enabled: Boolean(normalizedRule.time_condition_enabled),
             start_time: normalizedRule.start_time,
             end_time: normalizedRule.end_time,
             user_named: Boolean(normalizedRule.user_named),
-            require_dark: ambientCondition === "dark",
           },
           this.entryId
         );
@@ -9104,9 +8767,6 @@ export class HtLocationInspector extends LitElement {
           trigger_type: triggers.trigger_type,
           trigger_types: triggers.trigger_types,
           actions: ruleTargets,
-          action_entity_id: primaryAction.entity_id,
-          action_service: primaryAction.service,
-          action_data: primaryAction.data,
           ambient_condition: ambientCondition,
           must_be_occupied: rule.must_be_occupied,
           time_condition_enabled: Boolean(rule.time_condition_enabled),
@@ -9115,7 +8775,6 @@ export class HtLocationInspector extends LitElement {
           run_on_startup: ruleTab === "lighting" ? Boolean(rule.run_on_startup) : false,
           user_named: Boolean(rule.user_named),
           daily_gating_enabled: Boolean(rule.daily_gating_enabled),
-          require_dark: ambientCondition === "dark",
         },
         this.entryId
       );
@@ -9849,15 +9508,16 @@ export class HtLocationInspector extends LitElement {
   ) {
     const triggerTypes = this._normalizeActionTriggerTypes(rule.trigger_types, rule.trigger_type);
     const triggerType = this._primaryActionTriggerType(triggerTypes);
-    const selectedActionEntityId = String(rule.action_entity_id || "").trim();
+    const selectedAction = this._actionTargetsForRule(rule)[0];
+    const selectedActionEntityId = String(selectedAction?.entity_id || "").trim();
     const normalizedActionData = this._normalizeActionDataForRule(
-      rule.action_data,
+      selectedAction?.data,
       selectedActionEntityId,
-      String(rule.action_service || "")
+      String(selectedAction?.service || "")
     );
     const serviceOptions = this._actionServiceOptionsForRule(selectedActionEntityId, triggerType);
     const selectedServiceOptionValue = this._actionServiceOptionValue(
-      rule.action_service,
+      selectedAction?.service,
       normalizedActionData
     );
     const showMediaVolumeRow =
@@ -9885,9 +9545,7 @@ export class HtLocationInspector extends LitElement {
                           if (selectedActionEntityId === entityId) return;
                           const nextService = this._defaultActionServiceForTrigger(entityId, triggerType);
                           this._updateActionRule(ruleId, {
-                            action_entity_id: entityId,
-                            action_service: nextService,
-                            action_data: {},
+                            actions: [{ entity_id: entityId, service: nextService }],
                           });
                         },
                         this._entityStateLabel(entityId)
@@ -9919,8 +9577,13 @@ export class HtLocationInspector extends LitElement {
                             triggerType
                           );
                           this._updateActionRule(ruleId, {
-                            action_service: nextAction.service,
-                            action_data: nextAction.data || {},
+                            actions: [
+                              {
+                                entity_id: selectedActionEntityId,
+                                service: nextAction.service,
+                                ...(nextAction.data ? { data: nextAction.data } : {}),
+                              },
+                            ],
                           });
                         }
                       )
@@ -9948,7 +9611,13 @@ export class HtLocationInspector extends LitElement {
                           30
                         );
                         this._updateActionRule(ruleId, {
-                          action_data: { volume_level: percent / 100 },
+                          actions: [
+                            {
+                              entity_id: selectedActionEntityId,
+                              service: String(selectedAction?.service || "volume_set"),
+                              data: { volume_level: percent / 100 },
+                            },
+                          ],
                         });
                       }}
                     />
@@ -9974,15 +9643,16 @@ export class HtLocationInspector extends LitElement {
   ) {
     const triggerTypes = this._normalizeActionTriggerTypes(rule.trigger_types, rule.trigger_type);
     const triggerType = this._primaryActionTriggerType(triggerTypes);
-    const selectedActionEntityId = String(rule.action_entity_id || "").trim();
+    const selectedAction = this._actionTargetsForRule(rule)[0];
+    const selectedActionEntityId = String(selectedAction?.entity_id || "").trim();
     const normalizedActionData = this._normalizeActionDataForRule(
-      rule.action_data,
+      selectedAction?.data,
       selectedActionEntityId,
-      String(rule.action_service || "")
+      String(selectedAction?.service || "")
     );
     const serviceOptions = this._actionServiceOptionsForRule(selectedActionEntityId, triggerType);
     const selectedServiceOptionValue = this._actionServiceOptionValue(
-      rule.action_service,
+      selectedAction?.service,
       normalizedActionData
     );
     const showFanSpeedRow =
@@ -10043,9 +9713,7 @@ export class HtLocationInspector extends LitElement {
                           if (selectedActionEntityId === entityId) return;
                           const nextService = this._defaultActionServiceForTrigger(entityId, triggerType);
                           this._updateActionRule(ruleId, {
-                            action_entity_id: entityId,
-                            action_service: nextService,
-                            action_data: {},
+                            actions: [{ entity_id: entityId, service: nextService }],
                           });
                         },
                         this._entityStateLabel(entityId)
@@ -10077,8 +9745,13 @@ export class HtLocationInspector extends LitElement {
                             triggerType
                           );
                           this._updateActionRule(ruleId, {
-                            action_service: nextAction.service,
-                            action_data: nextAction.data || {},
+                            actions: [
+                              {
+                                entity_id: selectedActionEntityId,
+                                service: nextAction.service,
+                                ...(nextAction.data ? { data: nextAction.data } : {}),
+                              },
+                            ],
                           });
                         }
                       )
@@ -10106,7 +9779,13 @@ export class HtLocationInspector extends LitElement {
                           30
                         );
                         this._updateActionRule(ruleId, {
-                          action_data: { percentage: percent },
+                          actions: [
+                            {
+                              entity_id: selectedActionEntityId,
+                              service: String(selectedAction?.service || "set_percentage"),
+                              data: { percentage: percent },
+                            },
+                          ],
                         });
                       }}
                     />
@@ -11536,9 +11215,6 @@ export class HtLocationInspector extends LitElement {
       prefixedLocationLabel("__follow__", ":", "Parent location") ||
       prefixedLocationLabel("__follow__", ".", "Parent location") ||
       groupMemberLabel() ||
-      (raw.startsWith("linked:")
-        ? `Linked location: ${this._locationName(raw.slice("linked:".length).trim())}`
-        : undefined) ||
       this._knownLocationLabel(raw)
     );
   }

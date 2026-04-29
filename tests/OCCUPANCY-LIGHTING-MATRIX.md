@@ -64,7 +64,7 @@ Implementation: `TopomationManagedActions._build_trigger_definitions`, `_build_c
 | Condition: `must_be_occupied` true / false / omitted | `test_managed_action_condition_build_matrix` |
 | Condition: time window enabled (same-day + overnight **payload shape**) | `test_managed_action_condition_build_matrix` |
 | Occupancy condition without entity id → error | `test_managed_action_condition_requires_entity_for_occupancy_guard` |
-| `require_dark` / `ambient_condition` normalization | `test_normalize_ambient_condition_matrix` |
+| `ambient_condition` normalization | `test_normalize_ambient_condition_matrix` |
 
 **Note**: These tests assert **YAML-shaped dicts** Topomation generates. They do not assert that HA evaluates overnight `time` conditions the way a user expects; that remains HA’s contract.
 

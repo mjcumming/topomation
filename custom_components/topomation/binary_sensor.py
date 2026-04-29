@@ -28,9 +28,9 @@ _LOGGER = logging.getLogger(__name__)
 
 def _location_ha_area_id(location: object) -> str | None:
     """Resolve canonical HA area linkage for a location-like object."""
-    linked = getattr(location, "ha_area_id", None)
-    if linked:
-        return str(linked)
+    ha_area_id = getattr(location, "ha_area_id", None)
+    if ha_area_id:
+        return str(ha_area_id)
 
     modules = getattr(location, "modules", {}) or {}
     if not isinstance(modules, dict):
@@ -78,18 +78,6 @@ async def async_setup_entry(
     bus = kernel["event_bus"]
     modules = kernel["modules"]
     occupancy_module = modules.get("occupancy")
-
-    # Shadow hosts (floor / building / grounds / property) each have a managed shadow
-    # HA area location; occupancy is exposed only for that area-like node, not twice.
-    for location in loc_mgr.all_locations():
-        if _is_shadow_host(location):
-            removed = _remove_occupancy_entity_for_location(hass, entry, location.id)
-            if removed:
-                _LOGGER.debug(
-                    "Removed legacy host occupancy entity %s for shadow host %s",
-                    removed,
-                    location.id,
-                )
 
     # Create occupancy sensor for each non-host location (areas, subareas, explicit roots, …)
     entities: list[OccupancyBinarySensor] = []

@@ -163,7 +163,7 @@ Top-to-bottom layout order:
 
 1. Lighting rules follow HA-canonical managed automation ownership.
 2. Stable metadata identity (`rule_uuid`) is required for create/update tracking.
-3. The active Lighting editor ignores legacy `modules.dusk_dawn` payloads.
+3. The active Lighting editor ignores inactive `modules.dusk_dawn` payloads.
 
 ## 9. Home Assistant UX Alignment Rule
 

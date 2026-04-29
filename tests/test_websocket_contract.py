@@ -641,17 +641,17 @@ async def test_locations_create_rejects_explicit_root_as_parent(
 
     loc_mgr = hass.data[DOMAIN][entry.entry_id]["location_manager"]
     loc_mgr.create_location(
-        id="legacy_explicit",
-        name="Legacy explicit",
+        id="protected_explicit",
+        name="Protected explicit",
         parent_id=None,
         is_explicit_root=True,
     )
     loc_mgr.set_module_config(
-        "legacy_explicit",
+        "protected_explicit",
         "_meta",
         {"type": "area", "sync_source": "topology"},
     )
-    explicit_root = loc_mgr.get_location("legacy_explicit")
+    explicit_root = loc_mgr.get_location("protected_explicit")
     assert explicit_root is not None
 
     connection = _fake_connection()
@@ -912,17 +912,17 @@ async def test_locations_delete_rejects_explicit_root(hass: HomeAssistant) -> No
 
     loc_mgr = hass.data[DOMAIN][entry.entry_id]["location_manager"]
     loc_mgr.create_location(
-        id="legacy_explicit_del",
-        name="Legacy explicit del",
+        id="protected_explicit_del",
+        name="Protected explicit del",
         parent_id=None,
         is_explicit_root=True,
     )
     loc_mgr.set_module_config(
-        "legacy_explicit_del",
+        "protected_explicit_del",
         "_meta",
         {"type": "area", "sync_source": "topology"},
     )
-    explicit_root = loc_mgr.get_location("legacy_explicit_del")
+    explicit_root = loc_mgr.get_location("protected_explicit_del")
     assert explicit_root is not None
 
     connection = _fake_connection()
@@ -1958,98 +1958,6 @@ async def test_set_module_config_rejects_manual_shadow_metadata_writes(hass: Hom
 
 
 @pytest.mark.asyncio
-async def test_set_module_config_rejects_linked_rooms_for_non_area_floor_rooted_targets(
-    hass: HomeAssistant,
-) -> None:
-    """Linked rooms are not allowed on non-area or non-floor-rooted targets."""
-    entry = MockConfigEntry(domain=DOMAIN, data={}, entry_id="test_entry")
-    entry.add_to_hass(hass)
-
-    with patch("custom_components.topomation.async_register_panel", AsyncMock()):
-        assert await hass.config_entries.async_setup(entry.entry_id)
-        await hass.async_block_till_done()
-
-    loc_mgr = hass.data[DOMAIN][entry.entry_id]["location_manager"]
-    loc_mgr.set_module_config("building_main", "_meta", {"type": "building"})
-    loc_mgr.create_location(id="floor_main", name="Main Floor", parent_id="building_main")
-    loc_mgr.set_module_config("floor_main", "_meta", {"type": "floor"})
-    loc_mgr.create_location(id="area_kitchen", name="Kitchen", parent_id="floor_main")
-    loc_mgr.set_module_config("area_kitchen", "_meta", {"type": "area"})
-
-    connection = _fake_connection()
-    handle_locations_set_module_config(
-        hass,
-        connection,
-        {
-            "id": 31,
-            "type": WS_TYPE_LOCATIONS_SET_MODULE_CONFIG,
-            "location_id": "building_main",
-            "module_id": "occupancy",
-            "config": {
-                "enabled": True,
-                "occupancy_sources": [],
-                "linked_locations": ["area_kitchen"],
-            },
-            "entry_id": entry.entry_id,
-        },
-    )
-
-    assert connection.send_result.call_count == 0
-    connection.send_error.assert_called_once()
-    err_args = connection.send_error.call_args[0]
-    assert err_args[1] == "invalid_config"
-
-
-@pytest.mark.asyncio
-async def test_set_module_config_rejects_linked_rooms_outside_same_floor_siblings(
-    hass: HomeAssistant,
-) -> None:
-    """Linked rooms must be immediate sibling areas under the same floor parent."""
-    entry = MockConfigEntry(domain=DOMAIN, data={}, entry_id="test_entry")
-    entry.add_to_hass(hass)
-
-    with patch("custom_components.topomation.async_register_panel", AsyncMock()):
-        assert await hass.config_entries.async_setup(entry.entry_id)
-        await hass.async_block_till_done()
-
-    loc_mgr = hass.data[DOMAIN][entry.entry_id]["location_manager"]
-    loc_mgr.set_module_config("building_main", "_meta", {"type": "building"})
-    loc_mgr.create_location(id="floor_main", name="Main Floor", parent_id="building_main")
-    loc_mgr.set_module_config("floor_main", "_meta", {"type": "floor"})
-    loc_mgr.create_location(id="floor_second", name="Second Floor", parent_id="building_main")
-    loc_mgr.set_module_config("floor_second", "_meta", {"type": "floor"})
-    loc_mgr.create_location(id="area_kitchen", name="Kitchen", parent_id="floor_main")
-    loc_mgr.set_module_config("area_kitchen", "_meta", {"type": "area"})
-    loc_mgr.create_location(id="area_family_room", name="Family Room", parent_id="floor_main")
-    loc_mgr.set_module_config("area_family_room", "_meta", {"type": "area"})
-    loc_mgr.create_location(id="area_guest_bedroom", name="Guest Bedroom", parent_id="floor_second")
-    loc_mgr.set_module_config("area_guest_bedroom", "_meta", {"type": "area"})
-
-    connection = _fake_connection()
-    handle_locations_set_module_config(
-        hass,
-        connection,
-        {
-            "id": 32,
-            "type": WS_TYPE_LOCATIONS_SET_MODULE_CONFIG,
-            "location_id": "area_kitchen",
-            "module_id": "occupancy",
-            "config": {
-                "enabled": True,
-                "occupancy_sources": [],
-                "linked_locations": ["area_guest_bedroom"],
-            },
-            "entry_id": entry.entry_id,
-        },
-    )
-
-    assert connection.send_result.call_count == 0
-    connection.send_error.assert_called_once()
-    err_args = connection.send_error.call_args[0]
-    assert err_args[1] == "invalid_config"
-
-
-@pytest.mark.asyncio
 async def test_set_module_config_accepts_occupancy_group_id_for_building_child_areas(
     hass: HomeAssistant,
 ) -> None:
@@ -2887,10 +2795,10 @@ async def test_sync_status_reports_canonical_linkage(hass: HomeAssistant) -> Non
 
 
 @pytest.mark.asyncio
-async def test_sync_status_reports_custom_and_legacy_normalized_types(
+async def test_sync_status_reports_custom_location_types(
     hass: HomeAssistant,
 ) -> None:
-    """sync/status should expose custom types and normalize legacy room->area."""
+    """sync/status should expose current custom location types."""
     store = Store(hass, STORAGE_VERSION, STORAGE_KEY_CONFIG)
     await store.async_save({"locations": []})
 
@@ -2910,13 +2818,6 @@ async def test_sync_status_reports_custom_and_legacy_normalized_types(
         {"type": "building", "sync_source": "topology", "sync_enabled": True},
     )
 
-    loc_mgr.create_location(id="legacy_room", name="Legacy Room", parent_id=None)
-    loc_mgr.set_module_config(
-        "legacy_room",
-        "_meta",
-        {"type": "room", "sync_source": "topology", "sync_enabled": True},
-    )
-
     building_conn = _fake_connection()
     handle_sync_status(
         hass,
@@ -2930,19 +2831,6 @@ async def test_sync_status_reports_custom_and_legacy_normalized_types(
     assert building_conn.send_error.call_count == 0
     assert building_conn.send_result.call_args[0][1]["type"] == "building"
 
-    legacy_conn = _fake_connection()
-    handle_sync_status(
-        hass,
-        legacy_conn,
-        {
-            "id": 61,
-            "type": WS_TYPE_SYNC_STATUS,
-            "location_id": "legacy_room",
-        },
-    )
-    assert legacy_conn.send_error.call_count == 0
-    assert legacy_conn.send_result.call_args[0][1]["type"] == "area"
-
 
 @pytest.mark.asyncio
 async def test_action_rules_list_uses_managed_runtime(hass: HomeAssistant) -> None:
@@ -2952,10 +2840,8 @@ async def test_action_rules_list_uses_managed_runtime(hass: HomeAssistant) -> No
             "id": "rule_1",
             "entity_id": "automation.rule_1",
             "name": "Bathroom Vacant: Bathroom Light (turn off)",
-            "trigger_type": "vacant",
-            "action_entity_id": "light.bathroom",
-            "action_service": "turn_off",
-            "require_dark": False,
+            "trigger_type": "on_vacant",
+            "actions": [{"entity_id": "light.bathroom", "service": "turn_off"}],
             "enabled": True,
         }
     ]
@@ -2994,10 +2880,8 @@ async def test_action_rules_list_resolves_by_location_with_multiple_entries(
             "id": "rule_1",
             "entity_id": "automation.rule_1",
             "name": "Interior Vacant: Garage (turn off)",
-            "trigger_type": "vacant",
-            "action_entity_id": "light.garage",
-            "action_service": "turn_off",
-            "require_dark": False,
+            "trigger_type": "on_vacant",
+            "actions": [{"entity_id": "light.garage", "service": "turn_off"}],
             "enabled": True,
         }
     ]
@@ -3104,10 +2988,8 @@ async def test_action_rules_list_ignores_non_kernel_domain_metadata(
             "id": "rule_1",
             "entity_id": "automation.rule_1",
             "name": "Interior Vacant: Garage (turn off)",
-            "trigger_type": "vacant",
-            "action_entity_id": "light.garage",
-            "action_service": "turn_off",
-            "require_dark": False,
+            "trigger_type": "on_vacant",
+            "actions": [{"entity_id": "light.garage", "service": "turn_off"}],
             "enabled": True,
         }
     ]
@@ -3231,14 +3113,12 @@ async def test_action_rules_create_uses_managed_runtime(hass: HomeAssistant) -> 
         "entity_id": "automation.topomation_bathroom_vacant_1",
         "name": "Bathroom Vacant: Bathroom Light (turn off)",
         "trigger_type": "on_vacant",
-        "action_entity_id": "light.bathroom",
-        "action_service": "turn_off",
+        "actions": [{"entity_id": "light.bathroom", "service": "turn_off"}],
         "ambient_condition": "dark",
         "must_be_occupied": None,
         "time_condition_enabled": False,
         "start_time": "18:00",
         "end_time": "23:59",
-        "require_dark": True,
         "enabled": True,
     }
     managed_action_rules = AsyncMock()
@@ -3260,10 +3140,9 @@ async def test_action_rules_create_uses_managed_runtime(hass: HomeAssistant) -> 
             "type": WS_TYPE_ACTION_RULES_CREATE,
             "location_id": "bathroom",
             "name": "Bathroom Vacant: Bathroom Light (turn off)",
-            "trigger_type": "vacant",
-            "action_entity_id": "light.bathroom",
-            "action_service": "turn_off",
-            "require_dark": True,
+            "trigger_type": "on_vacant",
+            "actions": [{"entity_id": "light.bathroom", "service": "turn_off"}],
+            "ambient_condition": "dark",
         },
     )
     await hass.async_block_till_done()
@@ -3274,16 +3153,12 @@ async def test_action_rules_create_uses_managed_runtime(hass: HomeAssistant) -> 
         name="Bathroom Vacant: Bathroom Light (turn off)",
         trigger_type="on_vacant",
         trigger_types=["on_vacant"],
-        action_entity_id="light.bathroom",
-        action_service="turn_off",
         actions=[{"entity_id": "light.bathroom", "service": "turn_off"}],
-        require_dark=True,
-        ambient_condition=None,
+        ambient_condition="dark",
         must_be_occupied=None,
         time_condition_enabled=False,
         start_time=None,
         end_time=None,
-        action_data=None,
         automation_id=None,
         rule_uuid=None,
         run_on_startup=None,
@@ -3308,8 +3183,7 @@ async def test_action_rules_create_forwards_rule_conditions(hass: HomeAssistant)
             "entity_id": "automation.topomation_kitchen_on_dark_1",
             "name": "Kitchen dark safety",
             "trigger_type": "on_dark",
-            "action_entity_id": "fan.kitchen_fan",
-            "action_service": "turn_on",
+            "actions": [{"entity_id": "fan.kitchen_fan", "service": "turn_on"}],
             "ambient_condition": "dark",
             "must_be_occupied": True,
             "time_condition_enabled": True,
@@ -3335,8 +3209,7 @@ async def test_action_rules_create_forwards_rule_conditions(hass: HomeAssistant)
             "location_id": "kitchen",
             "name": "Kitchen dark safety",
             "trigger_type": "on_dark",
-            "action_entity_id": "fan.kitchen_fan",
-            "action_service": "turn_on",
+            "actions": [{"entity_id": "fan.kitchen_fan", "service": "turn_on"}],
             "ambient_condition": "dark",
             "must_be_occupied": True,
             "time_condition_enabled": True,
@@ -3354,17 +3227,13 @@ async def test_action_rules_create_forwards_rule_conditions(hass: HomeAssistant)
         name="Kitchen dark safety",
         trigger_type="on_dark",
         trigger_types=["on_dark"],
-        action_entity_id="fan.kitchen_fan",
-        action_service="turn_on",
         actions=[{"entity_id": "fan.kitchen_fan", "service": "turn_on"}],
-        require_dark=False,
         ambient_condition="dark",
         must_be_occupied=True,
         time_condition_enabled=True,
         start_time="22:00",
         end_time="05:30",
         run_on_startup=True,
-        action_data=None,
         automation_id="topomation_kitchen_on_dark_fan_kitchen_hood_rule_abc123",
         rule_uuid="rule_abc123",
         user_named=False,
@@ -3375,10 +3244,10 @@ async def test_action_rules_create_forwards_rule_conditions(hass: HomeAssistant)
 
 
 @pytest.mark.asyncio
-async def test_action_rules_create_forwards_action_data_and_normalizes_brightness(
+async def test_action_rules_create_forwards_action_payload_data_and_normalizes_brightness(
     hass: HomeAssistant,
 ) -> None:
-    """actions/rules/create forwards normalized action_data to managed runtime."""
+    """actions/rules/create forwards normalized action payload data to managed runtime."""
     location = type("Location", (), {"id": "kitchen", "name": "Kitchen"})()
     loc_mgr = Mock()
     loc_mgr.get_location.return_value = location
@@ -3389,9 +3258,13 @@ async def test_action_rules_create_forwards_action_data_and_normalizes_brightnes
             "entity_id": "automation.topomation_kitchen_occupied_1",
             "name": "Kitchen Occupied: Ceiling on",
             "trigger_type": "on_occupied",
-            "action_entity_id": "light.kitchen_ceiling",
-            "action_service": "turn_on",
-            "action_data": {"brightness_pct": 55, "transition": 1},
+            "actions": [
+                {
+                    "entity_id": "light.kitchen_ceiling",
+                    "service": "turn_on",
+                    "data": {"brightness_pct": 55, "transition": 1},
+                }
+            ],
             "ambient_condition": None,
             "must_be_occupied": False,
             "time_condition_enabled": False,
@@ -3416,15 +3289,19 @@ async def test_action_rules_create_forwards_action_data_and_normalizes_brightnes
             "type": WS_TYPE_ACTION_RULES_CREATE,
             "location_id": "kitchen",
             "name": "Kitchen Occupied: Ceiling on",
-            "trigger_type": "occupied",
-            "action_entity_id": "light.kitchen_ceiling",
-            "action_service": "turn_on",
-            "action_data": {
-                "brightness_pct": "55",
-                "transition": 1,
-                "entity_id": "light.should_be_ignored",
-                "drop_none": None,
-            },
+            "trigger_type": "on_occupied",
+            "actions": [
+                {
+                    "entity_id": "light.kitchen_ceiling",
+                    "service": "turn_on",
+                    "data": {
+                        "brightness_pct": "55",
+                        "transition": 1,
+                        "entity_id": "light.should_be_ignored",
+                        "drop_none": None,
+                    },
+                }
+            ],
         },
     )
     await hass.async_block_till_done()
@@ -3434,8 +3311,6 @@ async def test_action_rules_create_forwards_action_data_and_normalizes_brightnes
         name="Kitchen Occupied: Ceiling on",
         trigger_type="on_occupied",
         trigger_types=["on_occupied"],
-        action_entity_id="light.kitchen_ceiling",
-        action_service="turn_on",
         actions=[
             {
                 "entity_id": "light.kitchen_ceiling",
@@ -3443,13 +3318,11 @@ async def test_action_rules_create_forwards_action_data_and_normalizes_brightnes
                 "data": {"brightness_pct": 55, "transition": 1},
             }
         ],
-        require_dark=False,
         ambient_condition=None,
         must_be_occupied=None,
         time_condition_enabled=False,
         start_time=None,
         end_time=None,
-        action_data={"brightness_pct": 55, "transition": 1},
         automation_id=None,
         rule_uuid=None,
         run_on_startup=None,
@@ -3483,9 +3356,6 @@ async def test_action_rules_create_forwards_multi_actions_payload(
                 },
                 {"entity_id": "light.kitchen_pendants", "service": "turn_off"},
             ],
-            "action_entity_id": "light.kitchen_island",
-            "action_service": "turn_on",
-            "action_data": {"brightness_pct": 45},
             "ambient_condition": "dark",
             "must_be_occupied": False,
             "time_condition_enabled": False,
@@ -3526,8 +3396,6 @@ async def test_action_rules_create_forwards_multi_actions_payload(
         name="Kitchen dark multi",
         trigger_type="on_dark",
         trigger_types=["on_dark"],
-        action_entity_id=None,
-        action_service=None,
         actions=[
             {
                 "entity_id": "light.kitchen_island",
@@ -3536,13 +3404,11 @@ async def test_action_rules_create_forwards_multi_actions_payload(
             },
             {"entity_id": "light.kitchen_pendants", "service": "turn_off"},
         ],
-        require_dark=False,
         ambient_condition=None,
         must_be_occupied=None,
         time_condition_enabled=False,
         start_time=None,
         end_time=None,
-        action_data=None,
         automation_id=None,
         rule_uuid=None,
         run_on_startup=None,
@@ -3589,8 +3455,7 @@ async def test_action_rules_create_returns_create_failed_on_registration_timeout
             "location_id": "kitchen",
             "name": "Kitchen dark safety",
             "trigger_type": "on_dark",
-            "action_entity_id": "light.kitchen_ceiling",
-            "action_service": "turn_on",
+            "actions": [{"entity_id": "light.kitchen_ceiling", "service": "turn_on"}],
         },
     )
     await hass.async_block_till_done()

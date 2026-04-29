@@ -23,7 +23,7 @@ async def test_save_and_restore_topology_configuration(hass: HomeAssistant) -> N
         order=3,
     )
     source_mgr.add_entity_to_location("light.office", "office")
-    source_mgr.set_module_config("office", "_meta", {"type": "room", "sync_source": "topology"})
+    source_mgr.set_module_config("office", "_meta", {"type": "area", "sync_source": "topology"})
     source_mgr.set_module_config("office", "occupancy", {"enabled": True, "timeout": 120})
 
     occupancy = Mock()
@@ -54,44 +54,6 @@ async def test_invalid_saved_configuration_is_ignored(hass: HomeAssistant) -> No
 
     # Load did not crash and no locations were introduced from invalid data.
     assert loc_mgr.all_locations() == []
-
-
-async def test_legacy_house_root_is_migrated_to_rootless(hass: HomeAssistant) -> None:
-    """Legacy synthetic house root should be dropped during restore."""
-    store = Store(hass, STORAGE_VERSION, STORAGE_KEY_CONFIG)
-    await store.async_save(
-        {
-            "locations": [
-                {
-                    "id": "house",
-                    "name": "House",
-                    "parent_id": None,
-                    "is_explicit_root": True,
-                    "order": 0,
-                    "entity_ids": [],
-                    "modules": {},
-                },
-                {
-                    "id": "office",
-                    "name": "Office",
-                    "parent_id": "house",
-                    "is_explicit_root": False,
-                    "order": 1,
-                    "entity_ids": ["light.office"],
-                    "modules": {"_meta": {"type": "area"}},
-                },
-            ]
-        }
-    )
-
-    loc_mgr = LocationManager()
-    await _load_configuration(hass, loc_mgr)
-
-    assert loc_mgr.get_location("house") is None
-    office = loc_mgr.get_location("office")
-    assert office is not None
-    assert office.parent_id is None
-    assert "light.office" in office.entity_ids
 
 
 async def test_custom_structural_types_round_trip_in_persistence(

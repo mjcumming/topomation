@@ -448,18 +448,16 @@ def test_managed_action_condition_requires_entity_for_occupancy_guard(
 
 
 @pytest.mark.parametrize(
-    ("require_dark", "ambient_condition", "trigger_types", "expected"),
+    ("ambient_condition", "trigger_types", "expected"),
     [
-        pytest.param(True, None, ("on_occupied",), "dark", id="require_dark_forces_dark"),
-        pytest.param(False, None, ("on_occupied",), "any", id="on_occupied_default_any"),
-        pytest.param(False, "bright", ("on_occupied",), "bright", id="explicit_bright"),
-        pytest.param(False, None, ("on_dark",), "dark", id="on_dark_default_dark"),
-        pytest.param(False, None, ("on_bright",), "bright", id="on_bright_default_bright"),
+        pytest.param(None, ("on_occupied",), "any", id="on_occupied_default_any"),
+        pytest.param("bright", ("on_occupied",), "bright", id="explicit_bright"),
+        pytest.param(None, ("on_dark",), "dark", id="on_dark_default_dark"),
+        pytest.param(None, ("on_bright",), "bright", id="on_bright_default_bright"),
     ],
 )
 def test_normalize_ambient_condition_matrix(
     build_manager: TopomationManagedActions,
-    require_dark: bool,
     ambient_condition: str | None,
     trigger_types: tuple[str, ...],
     expected: str,
@@ -467,6 +465,5 @@ def test_normalize_ambient_condition_matrix(
     result = build_manager._normalize_ambient_condition(  # noqa: SLF001
         ambient_condition=ambient_condition,
         trigger_types=trigger_types,  # type: ignore[arg-type]
-        require_dark=require_dark,
     )
     assert result == expected

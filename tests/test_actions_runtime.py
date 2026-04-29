@@ -86,11 +86,11 @@ async def test_occupancy_transition_emits_summary_event(hass: HomeAssistant) -> 
         entities=[
             _AutomationEntity(
                 entity_id="automation.kitchen_on_occupied",
-                raw_config={"description": _metadata_line(location_id, "occupied")},
+                raw_config={"description": _metadata_line(location_id, "on_occupied")},
             ),
             _AutomationEntity(
                 entity_id="automation.kitchen_on_vacant",
-                raw_config={"description": _metadata_line(location_id, "vacant")},
+                raw_config={"description": _metadata_line(location_id, "on_vacant")},
             ),
         ]
     )
@@ -153,7 +153,7 @@ async def test_startup_reapply_reports_failures(hass: HomeAssistant) -> None:
                 raw_config={
                     "description": _metadata_line(
                         location_id,
-                        "occupied",
+                        "on_occupied",
                         run_on_startup=True,
                     )
                 },
@@ -163,7 +163,7 @@ async def test_startup_reapply_reports_failures(hass: HomeAssistant) -> None:
                 raw_config={
                     "description": _metadata_line(
                         location_id,
-                        "occupied",
+                        "on_occupied",
                         run_on_startup=True,
                     )
                 },
@@ -418,7 +418,7 @@ async def test_startup_reapply_honors_per_rule_run_on_startup_without_global_fla
             ),
             _AutomationEntity(
                 entity_id="automation.kitchen_occupied",
-                raw_config={"description": _metadata_line(location_id, "occupied")},
+                raw_config={"description": _metadata_line(location_id, "on_occupied")},
             ),
         ]
     )

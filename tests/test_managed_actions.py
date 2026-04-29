@@ -34,10 +34,10 @@ def test_automation_api_bases_include_loopback_fallback(
 
 
 @pytest.mark.asyncio
-async def test_async_list_rules_filters_to_location_and_extracts_summary(
+async def test_async_list_rules_filters_to_location_and_extracts_actions(
     hass: HomeAssistant,
 ) -> None:
-    """List endpoint returns only matching location rules with action summary."""
+    """List endpoint returns only matching location rules with action payloads."""
     manager = TopomationManagedActions(hass)
     metadata = {
         "version": 3,
@@ -69,7 +69,7 @@ async def test_async_list_rules_filters_to_location_and_extracts_summary(
         "description": (
             "Managed by Topomation.\n"
             f"{TOPOMATION_AUTOMATION_METADATA_PREFIX} "
-            '{"version":2,"location_id":"kitchen","trigger_type":"vacant","require_dark":false}'
+            '{"version":3,"location_id":"kitchen","trigger_type":"on_vacant","ambient_condition":"any"}'
         ),
         "actions": [
             {
@@ -104,13 +104,10 @@ async def test_async_list_rules_filters_to_location_and_extracts_summary(
     assert rule["entity_id"] == "automation.bathroom_vacant"
     assert rule["trigger_type"] == "on_vacant"
     assert rule["actions"] == [{"entity_id": "light.bathroom", "service": "turn_off"}]
-    assert rule["action_entity_id"] == "light.bathroom"
-    assert rule["action_service"] == "turn_off"
     assert rule["ambient_condition"] == "dark"
     assert rule["must_be_occupied"] is False
     assert rule["time_condition_enabled"] is False
     assert rule["run_on_startup"] is True
-    assert rule["require_dark"] is True
     assert rule["enabled"] is False
 
 
@@ -532,8 +529,7 @@ async def test_async_create_rule_rolls_back_when_registration_does_not_converge(
             location=location,
             name="Kitchen dark safety",
             trigger_type="on_dark",
-            action_entity_id="light.kitchen_ceiling",
-            action_service="turn_on",
+            actions=[{"entity_id": "light.kitchen_ceiling", "service": "turn_on"}],
             run_on_startup=True,
         )
 

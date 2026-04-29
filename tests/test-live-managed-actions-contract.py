@@ -267,7 +267,7 @@ async def test_managed_action_rule_registers_and_enumerates_in_live_ha(
         if action_target is None:
             pytest.skip("No light/switch/fan entity available for action target")
 
-        action_entity_id = action_target["entity_id"]
+        action_target_entity_id = action_target["entity_id"]
         ws_url = _ws_url_from_http(ha_url)
         occupancy_state = occupancy_candidates[0]
         occupancy_entity_id = str(occupancy_state.get("entity_id", ""))
@@ -376,10 +376,8 @@ async def test_managed_action_rule_registers_and_enumerates_in_live_ha(
                 "type": "topomation/actions/rules/create",
                 "location_id": location_id,
                 "name": f"Topomation Live Contract ({location_id}) {nonce}",
-                "trigger_type": "occupied",
-                "action_entity_id": action_entity_id,
-                "action_service": "turn_on",
-                "require_dark": False,
+                "trigger_type": "on_occupied",
+                "actions": [{"entity_id": action_target_entity_id, "service": "turn_on"}],
                 "entry_id": entry_id,
             },
             msg_id=10,
@@ -580,8 +578,7 @@ async def test_lighting_rule_uuid_upsert_and_delete_in_live_ha(
                     "name": f"Topomation Live ISSUE-058 ({location_id}) {nonce}",
                     "trigger_type": "on_dark",
                     "ambient_condition": "dark",
-                    "action_entity_id": light_entity_id,
-                    "action_service": "turn_on",
+                    "actions": [{"entity_id": light_entity_id, "service": "turn_on"}],
                     "rule_uuid": rule_uuid,
                     "entry_id": entry_id,
                 },
@@ -616,8 +613,7 @@ async def test_lighting_rule_uuid_upsert_and_delete_in_live_ha(
                     "name": f"Topomation Live ISSUE-058 ({location_id}) {nonce}",
                     "trigger_type": "on_bright",
                     "ambient_condition": "bright",
-                    "action_entity_id": light_entity_id,
-                    "action_service": "turn_off",
+                    "actions": [{"entity_id": light_entity_id, "service": "turn_off"}],
                     "entry_id": entry_id,
                 },
                 msg_id=911,
@@ -662,8 +658,11 @@ async def test_lighting_rule_uuid_upsert_and_delete_in_live_ha(
             assert listed_item is not None
             assert str(listed_item.get("rule_uuid", "")) == rule_uuid
             assert str(listed_item.get("trigger_type", "")) == "on_bright"
-            assert str(listed_item.get("action_service", "")) == "turn_off"
-            assert str(listed_item.get("action_entity_id", "")) == light_entity_id
+            listed_actions = listed_item.get("actions")
+            assert isinstance(listed_actions, list)
+            assert listed_actions
+            assert str(listed_actions[0].get("service", "")) == "turn_off"
+            assert str(listed_actions[0].get("entity_id", "")) == light_entity_id
 
             config_response = await _ws_command(
                 session,

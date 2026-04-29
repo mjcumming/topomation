@@ -125,7 +125,6 @@ export interface OccupancyConfig extends ModuleConfig {
   default_trailing_timeout?: number;
   occupancy_sources?: OccupancySource[];
   occupancy_group_id?: string | null;
-  linked_locations?: string[];
   wiab?: WaspInBoxConfig;
 }
 
@@ -194,9 +193,6 @@ export interface TopomationActionRule {
     data?: Record<string, unknown>;
     only_if_off?: boolean;
   }>;
-  action_entity_id?: string;
-  action_service?: string;
-  action_data?: Record<string, unknown>;
   ambient_condition?: "any" | "dark" | "bright";
   must_be_occupied?: boolean;
   time_condition_enabled?: boolean;
@@ -206,8 +202,6 @@ export interface TopomationActionRule {
   user_named?: boolean;
   /** ADR-HA-091: opt-in "Run at most once per day" toggle on Vacuum rules. */
   daily_gating_enabled?: boolean;
-  // Legacy compatibility (older backend/frontend payloads)
-  require_dark?: boolean;
   enabled: boolean;
 }
 

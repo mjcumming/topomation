@@ -125,7 +125,7 @@ Additional save points:
 ## C-008 Managed action dark-guard contract
 
 - Managed action rows support an optional `Only when dark` guard on **On Occupied** only.
-- **On Vacant** rules do not expose dark guard UI and always persist with `require_dark: false`.
+- **On Vacant** rules do not expose dark guard UI and persist with `ambient_condition: any`.
 - When enabled, created automation config must include:
   - `condition: state`
   - `entity_id: sun.sun`
@@ -292,17 +292,9 @@ Additional save points:
 - No new Home Assistant entity is created for an occupancy group in v1; member
   rooms remain the public occupancy entities.
 - Borrowed coverage belongs in `Add Source`, not in shared-space membership.
-- Directional linked contributors remain supported in stored config key
-  `linked_locations: string[]`, but are hidden from the active Occupancy UI
-  until that workflow is revalidated.
-- Hidden directional contributor runtime remains source-scoped:
-  - if location `A` config includes `linked_locations: ["B"]`, occupancy of `B`
-    contributes to `A`
-  - occupied on source -> `occupancy.trigger(target, source_id="linked:<source>", timeout=None)`
-  - vacant on source -> `occupancy.clear(target, source_id="linked:<source>", trailing_timeout=0)`
-  - reciprocal links must not self-latch; runtime suppresses feedback when a
-    source location is currently occupied by the target's linked contribution
-    (`linked:<target>`).
+- Legacy directional linked contributors (`linked_locations` / `linked:<id>`)
+  are removed from the active contract. Shared occupancy between areas is
+  represented only by `occupancy_group_id`.
 - Adjacency handoff controls are non-primary UX:
   - Occupancy renders `Adjacent Locations` and `Handoff Trace` behind an explicit
     advanced disclosure toggle.
@@ -461,9 +453,8 @@ Additional save points:
   - `Ignore local lux while lights are on` toggle and a diagnostic note when the
     local lux sensor is skipped because local lights are on.
 - Topomation ambient defaults are `dark_threshold: 800` and
-  `bright_threshold: 1200`; a temporary startup migration updates legacy
-  default-looking configs (`50`/`500`) once while preserving explicit custom
-  calibration.
+  `bright_threshold: 1200`; existing explicit threshold values are preserved
+  as authored.
 
 ## C-016 Re-entrant Occupancy Callback Safety Contract
 
@@ -570,8 +561,8 @@ Additional save points:
     - `on_occupied` + `on_vacant`
     - `on_dark` + `on_bright`
   - persistence writes all selected triggers into the managed HA automation.
-  - compatibility payloads may still expose a primary `trigger_type`, but the
-    canonical Lighting trigger surface is the full trigger set.
+  - payloads expose canonical `trigger_type` and `trigger_types`; old short
+    trigger aliases are invalid.
 - Lighting condition contract:
   - Lighting renders exactly two explicit trigger-family rows:
     occupancy change and ambient light change.
@@ -593,9 +584,7 @@ Additional save points:
   - individual `light.turn_on` targets may carry `only_if_off=true`, which
     persists as a per-action guard and skips only that light when it is already
     on.
-  - response/list payloads include full action target list (`actions[]`) plus
-    first-action summary fields for compatibility (`action_entity_id`,
-    `action_service`, `action_data`).
+  - response/list payloads include the full action target list (`actions[]`).
 - Dev-mode no-legacy rule:
   - the active automation editor/runtime does not import legacy
     `modules.dusk_dawn` payloads into Lighting rules.
@@ -800,8 +789,4 @@ Additional save points:
   the member is occupied.
 - HA occupancy binary sensors remain the public Home Assistant entity surface,
   but they are not the panel's primary runtime-state transport once C-023 is
-  implemented. They remain a compatibility/fallback surface and a user-visible
-  HA API.
-- The existing frontend group-normalization fallback is temporary hardening. It
-  may remain only as defensive compatibility while the backend projection is
-  rolled out, and should be removed or reduced once the panel consumes C-023.
+  implemented.

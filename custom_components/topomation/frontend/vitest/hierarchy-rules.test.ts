@@ -203,14 +203,4 @@ describe("hierarchy-rules", () => {
     ).toBe(false);
   });
 
-  it("treats legacy room type as area for hierarchy checks", () => {
-    const locations = [
-      loc({ id: "legacy_room", name: "Legacy Room", parent_id: null, modules: { _meta: { type: "room" } as any } }),
-      loc({ id: "area", name: "Area", parent_id: null, modules: { _meta: { type: "area" } } }),
-    ];
-
-    expect(
-      canMoveLocation({ locations, locationId: "legacy_room", newParentId: "area" })
-    ).toBe(true);
-  });
 });

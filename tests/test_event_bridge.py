@@ -413,12 +413,12 @@ async def test_light_power_clear_with_zero_trailing_sets_authoritative_vacant(
     assert power_clear.payload.get("authoritative_vacant") is True
 
 
-async def test_state_held_source_clears_on_off_even_with_legacy_no_change(
+async def test_state_held_source_clears_when_source_turns_off(
     event_bridge: EventBridge,
     event_bus: Mock,
     location_manager: Mock,
 ) -> None:
-    """Legacy on_timeout=None/off_event=none means held until the source turns off."""
+    """on_timeout=None/off_event=none means held until the source turns off."""
     location_manager.get_module_config.return_value = {
         "enabled": True,
         "default_timeout": 300,

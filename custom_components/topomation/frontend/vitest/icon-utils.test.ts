@@ -9,7 +9,7 @@ function loc(overrides: Partial<Location>): Location {
     parent_id: null,
     is_explicit_root: false,
     entity_ids: [],
-    modules: { _meta: { type: "room" } },
+    modules: { _meta: { type: "area" } },
     ...overrides,
   };
 }
@@ -18,7 +18,7 @@ describe("icon-utils", () => {
   it("prefers explicit _meta.icon", () => {
     const kitchen = loc({
       name: "Kitchen",
-      modules: { _meta: { type: "room", icon: "mdi:silverware-fork-knife" } },
+      modules: { _meta: { type: "area", icon: "mdi:silverware-fork-knife" } },
     });
     expect(getLocationIcon(kitchen)).toBe("mdi:silverware-fork-knife");
   });
@@ -47,4 +47,3 @@ describe("icon-utils", () => {
     expect(getLocationIcon(building)).toBe("mdi:office-building");
   });
 });
-

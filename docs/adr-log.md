@@ -2568,9 +2568,7 @@ This caused UI ambiguity and behavior drift from agreed workflow.
 1. Lighting rules support multiple action targets per rule.
    - Frontend sends ordered `actions[]` payload for each rule.
    - Backend persists those as ordered HA automation action steps.
-2. Compatibility fields remain for existing clients/tests:
-   - `action_entity_id` / `action_service` / `action_data` mirror the first
-     action target.
+2. Managed-action API payloads use ordered `actions[]` only.
 3. Trigger-derived conditions are locked and rendered read-only:
    - `on_dark` -> ambient `dark` (derived)
    - `on_bright` -> ambient `bright` (derived)

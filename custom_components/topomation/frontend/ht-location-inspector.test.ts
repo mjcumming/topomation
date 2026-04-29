@@ -1276,7 +1276,7 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(tabLabels).to.include("HVAC");
   });
 
-  it("groups legacy light power source with level source in one card", async () => {
+  it("groups light power source with level source in one card", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>) => {
         if (request.type === "config/entity_registry/list") return [] as T;
@@ -1913,87 +1913,6 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(dialogText).to.include("Sibling areas on this floor are available, plus all compatible entities in this area.");
   });
 
-  it("does not render linked-room contributor controls in the active inspector UI", async () => {
-    const hass: HomeAssistant = {
-      callWS: async <T>(request: Record<string, any>) => {
-        if (request.type === "config/entity_registry/list") return [] as T;
-        if (request.type === "config/device_registry/list") return [] as T;
-        return {} as T;
-      },
-      connection: {},
-      states: {},
-      areas: {},
-      floors: {},
-      localize: (key: string) => key,
-    };
-
-    const location = structuredClone(baseLocation);
-    location.id = "area_kitchen";
-    location.name = "Kitchen";
-    location.parent_id = "floor_main";
-    location.modules._meta = { type: "area" };
-    location.modules.occupancy = {
-      enabled: true,
-      default_timeout: 300,
-      default_trailing_timeout: 120,
-      occupancy_sources: [],
-      linked_locations: [],
-    };
-
-    const allLocations: Location[] = [
-      location,
-      {
-        ...structuredClone(baseLocation),
-        id: "area_family_room",
-        name: "Family Room",
-        parent_id: "floor_main",
-        modules: {
-          _meta: { type: "area" },
-          occupancy: {
-            enabled: true,
-            default_timeout: 300,
-            default_trailing_timeout: 120,
-            occupancy_sources: [],
-            linked_locations: [],
-          },
-        },
-      },
-      {
-        ...structuredClone(baseLocation),
-        id: "area_dining_room",
-        name: "Dining Room",
-        parent_id: "floor_main",
-        modules: { _meta: { type: "area" } },
-      },
-      {
-        ...structuredClone(baseLocation),
-        id: "floor_main",
-        name: "Main Floor",
-        parent_id: "building_main",
-        modules: { _meta: { type: "floor" } },
-      },
-      {
-        ...structuredClone(baseLocation),
-        id: "building_main",
-        name: "Main Building",
-        parent_id: null,
-        modules: { _meta: { type: "building" } },
-      },
-    ];
-
-    const element = await fixture<HtLocationInspector>(html`
-      <ht-location-inspector
-        .hass=${hass}
-        .location=${location}
-        .allLocations=${allLocations}
-      ></ht-location-inspector>
-    `);
-    await element.updateComplete;
-
-    expect(element.shadowRoot?.querySelector('[data-testid="linked-location-area_family_room"]')).to.equal(null);
-    expect(element.shadowRoot?.querySelector('[data-testid="linked-location-area_dining_room"]')).to.equal(null);
-  });
-
   it("floor occupancy groups write shared occupancy_group_id updates", async () => {
     const callWsRequests: Array<Record<string, any>> = [];
     const hass: HomeAssistant = {
@@ -2023,7 +1942,6 @@ describe("HtLocationInspector occupancy source composer", () => {
       default_timeout: 300,
       default_trailing_timeout: 120,
       occupancy_sources: [],
-      linked_locations: [],
       occupancy_group_id: null,
     };
 
@@ -2041,7 +1959,6 @@ describe("HtLocationInspector occupancy source composer", () => {
             default_trailing_timeout: 120,
             occupancy_sources: [],
             occupancy_group_id: null,
-            linked_locations: [],
           },
         },
       },
@@ -2058,7 +1975,6 @@ describe("HtLocationInspector occupancy source composer", () => {
             default_trailing_timeout: 120,
             occupancy_sources: [],
             occupancy_group_id: null,
-            linked_locations: [],
           },
         },
       },
@@ -2182,7 +2098,6 @@ describe("HtLocationInspector occupancy source composer", () => {
       default_trailing_timeout: 120,
       occupancy_sources: [],
       occupancy_group_id: null,
-      linked_locations: [],
     };
 
     const allLocations: Location[] = [
@@ -2200,7 +2115,6 @@ describe("HtLocationInspector occupancy source composer", () => {
             default_trailing_timeout: 120,
             occupancy_sources: [],
             occupancy_group_id: null,
-            linked_locations: [],
           },
         },
       },
@@ -2258,7 +2172,6 @@ describe("HtLocationInspector occupancy source composer", () => {
       default_trailing_timeout: 120,
       occupancy_sources: [],
       occupancy_group_id: "main_open_area",
-      linked_locations: [],
     };
 
     const allLocations: Location[] = [
@@ -2276,7 +2189,6 @@ describe("HtLocationInspector occupancy source composer", () => {
             default_trailing_timeout: 120,
             occupancy_sources: [],
             occupancy_group_id: "main_open_area",
-            linked_locations: [],
           },
         },
       },
@@ -2342,7 +2254,6 @@ describe("HtLocationInspector occupancy source composer", () => {
       default_trailing_timeout: 120,
       occupancy_sources: [],
       occupancy_group_id: null,
-      linked_locations: [],
     };
 
     const allLocations: Location[] = [
@@ -2359,7 +2270,6 @@ describe("HtLocationInspector occupancy source composer", () => {
             default_trailing_timeout: 120,
             occupancy_sources: [],
             occupancy_group_id: "main_open_area",
-            linked_locations: [],
           },
         },
       },
@@ -2376,7 +2286,6 @@ describe("HtLocationInspector occupancy source composer", () => {
             default_trailing_timeout: 120,
             occupancy_sources: [],
             occupancy_group_id: "main_open_area",
-            linked_locations: [],
           },
         },
       },
@@ -2393,7 +2302,6 @@ describe("HtLocationInspector occupancy source composer", () => {
             default_trailing_timeout: 120,
             occupancy_sources: [],
             occupancy_group_id: null,
-            linked_locations: [],
           },
         },
       },
@@ -2478,7 +2386,6 @@ describe("HtLocationInspector occupancy source composer", () => {
       default_timeout: 300,
       default_trailing_timeout: 120,
       occupancy_sources: [],
-      linked_locations: [],
       occupancy_group_id: null,
     };
 
@@ -2496,7 +2403,6 @@ describe("HtLocationInspector occupancy source composer", () => {
             default_timeout: 300,
             default_trailing_timeout: 120,
             occupancy_sources: [],
-            linked_locations: [],
             occupancy_group_id: null,
           },
         },
@@ -2513,7 +2419,6 @@ describe("HtLocationInspector occupancy source composer", () => {
             default_timeout: 300,
             default_trailing_timeout: 120,
             occupancy_sources: [],
-            linked_locations: [],
             occupancy_group_id: null,
           },
         },
@@ -2584,7 +2489,6 @@ describe("HtLocationInspector occupancy source composer", () => {
       default_timeout: 300,
       default_trailing_timeout: 120,
       occupancy_sources: [],
-      linked_locations: [],
       occupancy_group_id: null,
     };
 
@@ -2601,7 +2505,6 @@ describe("HtLocationInspector occupancy source composer", () => {
             default_timeout: 300,
             default_trailing_timeout: 120,
             occupancy_sources: [],
-            linked_locations: [],
             occupancy_group_id: null,
           },
         },
@@ -2618,7 +2521,6 @@ describe("HtLocationInspector occupancy source composer", () => {
             default_timeout: 300,
             default_trailing_timeout: 120,
             occupancy_sources: [],
-            linked_locations: [],
             occupancy_group_id: null,
           },
         },
@@ -2639,7 +2541,6 @@ describe("HtLocationInspector occupancy source composer", () => {
             default_timeout: 300,
             default_trailing_timeout: 120,
             occupancy_sources: [],
-            linked_locations: [],
             occupancy_group_id: null,
           },
         },
@@ -2698,7 +2599,6 @@ describe("HtLocationInspector occupancy source composer", () => {
       default_timeout: 300,
       default_trailing_timeout: 120,
       occupancy_sources: [],
-      linked_locations: [],
       occupancy_group_id: null,
     };
 
@@ -2716,7 +2616,6 @@ describe("HtLocationInspector occupancy source composer", () => {
             default_timeout: 300,
             default_trailing_timeout: 120,
             occupancy_sources: [],
-            linked_locations: [],
             occupancy_group_id: null,
           },
         },
@@ -2733,7 +2632,6 @@ describe("HtLocationInspector occupancy source composer", () => {
             default_timeout: 300,
             default_trailing_timeout: 120,
             occupancy_sources: [],
-            linked_locations: [],
             occupancy_group_id: null,
           },
         },
@@ -2757,7 +2655,6 @@ describe("HtLocationInspector occupancy source composer", () => {
             default_timeout: 300,
             default_trailing_timeout: 120,
             occupancy_sources: [],
-            linked_locations: [],
             occupancy_group_id: null,
           },
         },
@@ -2835,7 +2732,6 @@ describe("HtLocationInspector occupancy source composer", () => {
             default_timeout: 300,
             default_trailing_timeout: 120,
             occupancy_sources: [],
-            linked_locations: [],
             occupancy_group_id: "main_open_area",
           },
         },
@@ -2852,7 +2748,6 @@ describe("HtLocationInspector occupancy source composer", () => {
             default_timeout: 300,
             default_trailing_timeout: 120,
             occupancy_sources: [],
-            linked_locations: [],
             occupancy_group_id: "main_open_area",
           },
         },
@@ -2869,7 +2764,6 @@ describe("HtLocationInspector occupancy source composer", () => {
             default_timeout: 300,
             default_trailing_timeout: 120,
             occupancy_sources: [],
-            linked_locations: [],
             occupancy_group_id: null,
           },
         },
@@ -2902,82 +2796,7 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(emptyState).to.include("Only one ungrouped area remains");
   });
 
-  it("does not render two-way linked-room toggles in the active inspector UI", async () => {
-    const hass: HomeAssistant = {
-      callWS: async <T>(request: Record<string, any>) => {
-        if (request.type === "config/entity_registry/list") return [] as T;
-        if (request.type === "config/device_registry/list") return [] as T;
-        return {} as T;
-      },
-      connection: {},
-      states: {},
-      areas: {},
-      floors: {},
-      localize: (key: string) => key,
-    };
-
-    const location = structuredClone(baseLocation);
-    location.id = "area_kitchen";
-    location.name = "Kitchen";
-    location.parent_id = "floor_main";
-    location.modules._meta = { type: "area" };
-    location.modules.occupancy = {
-      enabled: true,
-      default_timeout: 300,
-      default_trailing_timeout: 120,
-      occupancy_sources: [],
-      linked_locations: [],
-    };
-
-    const allLocations: Location[] = [
-      location,
-      {
-        ...structuredClone(baseLocation),
-        id: "area_family_room",
-        name: "Family Room",
-        parent_id: "floor_main",
-        modules: {
-          _meta: { type: "area" },
-          occupancy: {
-            enabled: true,
-            default_timeout: 300,
-            default_trailing_timeout: 120,
-            occupancy_sources: [],
-            linked_locations: [],
-          },
-        },
-      },
-      {
-        ...structuredClone(baseLocation),
-        id: "floor_main",
-        name: "Main Floor",
-        parent_id: "building_main",
-        modules: { _meta: { type: "floor" } },
-      },
-      {
-        ...structuredClone(baseLocation),
-        id: "building_main",
-        name: "Main Building",
-        parent_id: null,
-        modules: { _meta: { type: "building" } },
-      },
-    ];
-
-    const element = await fixture<HtLocationInspector>(html`
-      <ht-location-inspector
-        .hass=${hass}
-        .location=${location}
-        .allLocations=${allLocations}
-      ></ht-location-inspector>
-    `);
-    await element.updateComplete;
-
-    expect(element.shadowRoot?.querySelector('[data-testid="linked-location-two-way-area_family_room"]')).to.equal(
-      null
-    );
-  });
-
-  it("does not offer linked room checkboxes for non-area floor-rooted locations", async () => {
+  it("keeps advanced-only sections hidden for structural locations", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>) => {
         if (request.type === "config/entity_registry/list") return [] as T;
@@ -3001,7 +2820,6 @@ describe("HtLocationInspector occupancy source composer", () => {
       default_timeout: 300,
       default_trailing_timeout: 120,
       occupancy_sources: [],
-      linked_locations: ["area_kitchen"],
     };
 
     const allLocations: Location[] = [
@@ -3032,8 +2850,6 @@ describe("HtLocationInspector occupancy source composer", () => {
     await element.updateComplete;
     await switchTopTab(element, "Advanced");
 
-    const linkedRows = element.shadowRoot!.querySelectorAll('[data-testid^="linked-location-"]');
-    expect(linkedRows.length).to.equal(0);
     expect(element.shadowRoot!.textContent || "").to.not.include("Wasp In A Box");
     expect(element.shadowRoot!.textContent || "").to.not.include("Managed System Area");
   });
@@ -3883,12 +3699,12 @@ describe("HtLocationInspector occupancy source composer", () => {
               device_id: "dev_bath",
             },
             {
-              entity_id: "switch.legacy_fan_hidden",
+              entity_id: "switch.hidden_fan",
               device_id: "dev_bath",
               hidden_by: "user",
             },
             {
-              entity_id: "switch.legacy_fan_disabled",
+              entity_id: "switch.disabled_fan",
               device_id: "dev_bath",
               disabled_by: "user",
             },
@@ -3909,16 +3725,16 @@ describe("HtLocationInspector occupancy source composer", () => {
             area_id: "kitchen",
           },
         },
-        "switch.legacy_fan_hidden": {
-          entity_id: "switch.legacy_fan_hidden",
+        "switch.hidden_fan": {
+          entity_id: "switch.hidden_fan",
           state: "off",
           attributes: {
             friendly_name: "Bathroom Fan (old switch)",
             area_id: "kitchen",
           },
         },
-        "switch.legacy_fan_disabled": {
-          entity_id: "switch.legacy_fan_disabled",
+        "switch.disabled_fan": {
+          entity_id: "switch.disabled_fan",
           state: "unavailable",
           attributes: {
             friendly_name: "Bathroom Fan (disabled)",
@@ -3935,7 +3751,7 @@ describe("HtLocationInspector occupancy source composer", () => {
     location.id = "area_kitchen";
     location.ha_area_id = "kitchen";
     location.modules._meta = { type: "area" };
-    location.entity_ids = ["fan.bathroom_fan", "switch.legacy_fan_hidden", "switch.legacy_fan_disabled"];
+    location.entity_ids = ["fan.bathroom_fan", "switch.hidden_fan", "switch.disabled_fan"];
 
     const element = await fixture<HtLocationInspector>(html`
       <ht-location-inspector .hass=${hass} .location=${location} .forcedTab=${"appliances"}></ht-location-inspector>
@@ -3958,8 +3774,8 @@ describe("HtLocationInspector occupancy source composer", () => {
         ).map((r) => (r as HTMLInputElement).value);
         return (
           values.includes("fan.bathroom_fan") &&
-          !values.includes("switch.legacy_fan_hidden") &&
-          !values.includes("switch.legacy_fan_disabled")
+          !values.includes("switch.hidden_fan") &&
+          !values.includes("switch.disabled_fan")
         );
       },
       "hidden/disabled location entities should not appear as appliance targets"
@@ -4155,8 +3971,7 @@ describe("HtLocationInspector occupancy source composer", () => {
                 entity_id: "automation.rule_existing",
                 name: "Existing",
                 trigger_type: "on_occupied",
-                action_entity_id: "fan.kitchen_hood",
-                action_service: "turn_on",
+                actions: [{ entity_id: "fan.kitchen_hood", service: "turn_on" }],
                 ambient_condition: "any",
                 must_be_occupied: false,
                 time_condition_enabled: false,
@@ -4184,8 +3999,7 @@ describe("HtLocationInspector occupancy source composer", () => {
               name: request.name,
               rule_uuid: request.rule_uuid,
               trigger_type: request.trigger_type,
-              action_entity_id: request.action_entity_id,
-              action_service: request.action_service,
+              actions: request.actions,
               ambient_condition: request.ambient_condition,
               must_be_occupied: request.must_be_occupied,
               time_condition_enabled: request.time_condition_enabled,
@@ -4304,9 +4118,10 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(payload.start_time).to.equal("19:15");
     expect(payload.end_time).to.equal("23:30");
     expect(payload.run_on_startup).to.equal(false);
-    expect(payload.action_entity_id).to.equal("fan.kitchen_hood");
-    expect(payload.action_service).to.equal("turn_off");
-    expect(payload.require_dark).to.equal(false);
+    expect(payload.actions?.[0]).to.deep.include({
+      entity_id: "fan.kitchen_hood",
+      service: "turn_off",
+    });
   });
 
   it("shows media actions without ambient and includes mute controls", async () => {
@@ -4524,8 +4339,7 @@ describe("HtLocationInspector occupancy source composer", () => {
                   entity_id: "automation.rule_existing",
                   name: "Existing",
                   trigger_type: "on_occupied",
-                  action_entity_id: "fan.kitchen_hood",
-                  action_service: "turn_on",
+                  actions: [{ entity_id: "fan.kitchen_hood", service: "turn_on" }],
                   ambient_condition: "any",
                   must_be_occupied: false,
                   time_condition_enabled: false,
@@ -5129,7 +4943,6 @@ describe("HtLocationInspector WIAB configuration", () => {
       default_timeout: 300,
       default_trailing_timeout: 120,
       occupancy_sources: [],
-      linked_locations: [],
       occupancy_group_id: null,
       wiab: {
         preset: "off",
@@ -5761,7 +5574,7 @@ describe("HtLocationInspector WIAB configuration", () => {
     expect(saveButton?.disabled).to.equal(false);
   });
 
-  it("ignores legacy dusk/dawn payloads in the active lighting editor", async () => {
+  it("ignores inactive dusk/dawn payloads in the active lighting editor", async () => {
     const createCalls: Array<Record<string, any>> = [];
     const setConfigCalls: Array<Record<string, any>> = [];
 
@@ -5779,8 +5592,7 @@ describe("HtLocationInspector WIAB configuration", () => {
             name: request.name,
             trigger_type: request.trigger_type,
             rule_uuid: request.rule_uuid,
-            action_entity_id: request.action_entity_id,
-            action_service: request.action_service,
+            actions: request.actions,
             ambient_condition: request.ambient_condition,
             must_be_occupied: request.must_be_occupied,
             time_condition_enabled: request.time_condition_enabled,
@@ -5918,8 +5730,10 @@ describe("HtLocationInspector WIAB configuration", () => {
     expect(payload.trigger_types).to.deep.equal(["on_occupied"]);
     expect(Array.isArray(payload.actions)).to.equal(true);
     expect(payload.actions.length).to.equal(1);
-    expect(payload.action_entity_id).to.equal("light.kitchen_ceiling");
-    expect(payload.action_service).to.equal("turn_on");
+    expect(payload.actions[0]).to.deep.include({
+      entity_id: "light.kitchen_ceiling",
+      service: "turn_on",
+    });
     expect(payload.ambient_condition).to.equal("any");
     expect(payload.must_be_occupied).to.equal(undefined);
     expect(typeof payload.rule_uuid).to.equal("string");
@@ -5948,9 +5762,6 @@ describe("HtLocationInspector WIAB configuration", () => {
             trigger_type: request.trigger_type,
             rule_uuid: request.rule_uuid,
             actions: request.actions,
-            action_entity_id: request.action_entity_id,
-            action_service: request.action_service,
-            action_data: request.action_data,
             ambient_condition: request.ambient_condition,
             must_be_occupied: request.must_be_occupied,
             time_condition_enabled: request.time_condition_enabled,
@@ -6091,8 +5902,7 @@ describe("HtLocationInspector WIAB configuration", () => {
         name: "Existing",
         trigger_type: "on_dark",
         rule_uuid: "rule_existing_uuid",
-        action_entity_id: "light.kitchen_ceiling",
-        action_service: "turn_on",
+        actions: [{ entity_id: "light.kitchen_ceiling", service: "turn_on" }],
         ambient_condition: "dark",
         must_be_occupied: false,
         time_condition_enabled: false,
@@ -6254,8 +6064,6 @@ describe("HtLocationInspector WIAB configuration", () => {
         trigger_types: ["on_dark"],
         rule_uuid: "rule_existing_uuid",
         actions: [{ entity_id: "light.kitchen_ceiling", service: "turn_on" }],
-        action_entity_id: "light.kitchen_ceiling",
-        action_service: "turn_on",
         ambient_condition: "dark",
         must_be_occupied: undefined,
         time_condition_enabled: false,
@@ -6360,8 +6168,6 @@ describe("HtLocationInspector WIAB configuration", () => {
         trigger_types: ["on_dark"],
         rule_uuid: "rule_existing_uuid",
         actions: [{ entity_id: "light.kitchen_ceiling", service: "turn_on" }],
-        action_entity_id: "light.kitchen_ceiling",
-        action_service: "turn_on",
         ambient_condition: "dark",
         time_condition_enabled: false,
         start_time: "18:00",
@@ -6446,8 +6252,6 @@ describe("HtLocationInspector WIAB configuration", () => {
         trigger_types: ["on_vacant"],
         rule_uuid: "rule_existing_uuid",
         actions: [{ entity_id: "light.kitchen_island", service: "turn_off" }],
-        action_entity_id: "light.kitchen_island",
-        action_service: "turn_off",
         ambient_condition: "any",
         must_be_occupied: false,
         time_condition_enabled: false,
@@ -6556,8 +6360,6 @@ describe("HtLocationInspector WIAB configuration", () => {
           { entity_id: "light.kitchen_ceiling", service: "turn_off" },
           { entity_id: "light.kitchen_island", service: "turn_on", data: { brightness_pct: 42 } },
         ],
-        action_entity_id: "light.kitchen_ceiling",
-        action_service: "turn_off",
         ambient_condition: "any",
         must_be_occupied: false,
         time_condition_enabled: false,
@@ -6652,8 +6454,6 @@ describe("HtLocationInspector WIAB configuration", () => {
         trigger_types: ["on_vacant"],
         rule_uuid: "rule_media_uuid",
         actions: [{ entity_id: "media_player.kitchen_speaker", service: "media_pause" }],
-        action_entity_id: "media_player.kitchen_speaker",
-        action_service: "media_pause",
         ambient_condition: "any",
         must_be_occupied: false,
         time_condition_enabled: false,
@@ -6791,8 +6591,7 @@ describe("HtLocationInspector WIAB configuration", () => {
                 trigger_type: "on_occupied",
                 trigger_types: ["on_occupied", "on_dark"],
                 rule_uuid: "rule_existing_uuid",
-                action_entity_id: "light.storage_light",
-                action_service: "turn_on",
+                actions: [{ entity_id: "light.storage_light", service: "turn_on" }],
                 ambient_condition: "dark",
                 must_be_occupied: true,
                 time_condition_enabled: false,
@@ -6879,7 +6678,7 @@ describe("HtLocationInspector WIAB configuration", () => {
     expect(brightRequirementInput?.checked).to.equal(true);
   });
 
-  it("hydrates lighting situations from a loaded legacy trigger payload", async () => {
+  it("hydrates lighting situations from a loaded canonical trigger payload", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>): Promise<T> => {
         if (request.type === "topomation/actions/rules/list") {
@@ -6889,10 +6688,9 @@ describe("HtLocationInspector WIAB configuration", () => {
                 id: "rule_existing",
                 entity_id: "automation.rule_existing",
                 name: "Existing",
-                trigger_type: "occupied",
+                trigger_type: "on_occupied",
                 rule_uuid: "rule_existing_uuid",
-                action_entity_id: "light.office_status_light",
-                action_service: "turn_on",
+                actions: [{ entity_id: "light.office_status_light", service: "turn_on" }],
                 ambient_condition: "any",
                 must_be_occupied: true,
                 time_condition_enabled: false,

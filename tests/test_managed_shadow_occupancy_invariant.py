@@ -58,7 +58,6 @@ def _build_floor_shadow_room_topology() -> tuple[EventBus, LocationManager]:
             "default_timeout": 300,
             "default_trailing_timeout": 120,
             "occupancy_group_id": None,
-            "linked_locations": [],
         },
     )
 
@@ -79,7 +78,6 @@ def _build_floor_shadow_room_topology() -> tuple[EventBus, LocationManager]:
             "default_timeout": 300,
             "default_trailing_timeout": 120,
             "occupancy_group_id": None,
-            "linked_locations": [],
         },
     )
 
@@ -117,7 +115,6 @@ def test_independent_managed_shadow_diverges_when_only_child_triggers() -> None:
             "default_timeout": 300,
             "default_trailing_timeout": 120,
             "occupancy_group_id": None,
-            "linked_locations": [],
         },
     )
 

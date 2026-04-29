@@ -26,10 +26,6 @@ from .actions_runtime import (
 from .const import (
     AMBIENT_BRIGHT_THRESHOLD_DEFAULT,
     AMBIENT_DARK_THRESHOLD_DEFAULT,
-    AMBIENT_LEGACY_BRIGHT_THRESHOLD_DEFAULT,
-    AMBIENT_LEGACY_DARK_THRESHOLD_DEFAULT,
-    AMBIENT_LUX_DEFAULTS_MIGRATION_KEY,
-    AMBIENT_LUX_DEFAULTS_MIGRATION_VALUE,
     AUTOSAVE_DEBOUNCE_SECONDS,
     DOMAIN,
     EVENT_TOPOMATION_HANDOFF_TRACE,
@@ -52,11 +48,8 @@ if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
-_LINKED_LOCATION_SOURCE_PREFIX = "linked:"
-_OCCUPANCY_LINKED_LOCATIONS_KEY = "linked_locations"
 _META_ROLE_KEY = "role"
 _MANAGED_SHADOW_ROLE = "managed_shadow"
-_MAX_PROPAGATION_EVENTS_PER_DRAIN = 4096
 _MAX_OCCUPANCY_EXPLAINABILITY_EVENTS = 20
 # Drop stayed-occupied explainability rows when another occupied state row was
 # logged moments ago (motion + lights + propagation bursts).
@@ -419,7 +412,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # 2. Load saved configuration
     has_saved_configuration = await _load_configuration(hass, loc_mgr)
-    topology_migrated = _migrate_topology_property_model(loc_mgr)
 
     # 3. Initialize modules
     platform_adapter = HAPlatformAdapter(hass)
@@ -559,121 +551,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
 
     bus.subscribe(_record_occupancy_signal, EventFilter(event_type="occupancy.signal"))
-
-    @callback
-    def _apply_linked_location_contributors(event: Event) -> None:
-        """Propagate directional linked-location occupancy contributors."""
-        nonlocal linked_propagation_active
-
-        linked_event_queue.append(event)
-        if linked_propagation_active:
-            return
-
-        linked_propagation_active = True
-        if occupancy_module is None:
-            linked_event_queue.clear()
-            linked_propagation_active = False
-            return
-
-        try:
-            drained = 0
-            while linked_event_queue:
-                drained += 1
-                if drained > _MAX_PROPAGATION_EVENTS_PER_DRAIN:
-                    _LOGGER.error(
-                        "Linked-room propagation exceeded %d queued events in one drain;"
-                        " dropping remaining events to avoid recursive startup failure",
-                        _MAX_PROPAGATION_EVENTS_PER_DRAIN,
-                    )
-                    linked_event_queue.clear()
-                    break
-
-                queued_event = linked_event_queue.popleft()
-                payload = (
-                    queued_event.payload
-                    if isinstance(queued_event.payload, Mapping)
-                    else {}
-                )
-                source_location_id = queued_event.location_id
-                occupied = payload.get("occupied")
-                if not isinstance(source_location_id, str) or not source_location_id:
-                    continue
-                if not isinstance(occupied, bool):
-                    continue
-
-                linked_targets = _linked_target_location_ids(loc_mgr, source_location_id)
-                if not linked_targets:
-                    continue
-
-                source_contributions = _contribution_source_ids(payload)
-                source_link_id = _linked_location_source_id(source_location_id)
-
-                for target_location_id in linked_targets:
-                    target_state = _occupancy_state_for_location(
-                        occupancy_module,
-                        target_location_id,
-                    )
-                    if target_state is None:
-                        continue
-
-                    target_contributions = _contribution_source_ids(target_state)
-                    reverse_link_id = _linked_location_source_id(target_location_id)
-
-                    if occupied:
-                        # Feedback guard for reciprocal links: if source currently depends on
-                        # target's linked contribution, do not back-propagate.
-                        if reverse_link_id in source_contributions:
-                            continue
-                        if source_link_id in target_contributions:
-                            continue
-                        # Mirror the source's remaining hold so the linked contribution on
-                        # siblings expires alongside the origin. Passing ``None`` would
-                        # create an indefinite contribution that cannot clear once the
-                        # occupancy-group mesh mirrors it across members.
-                        now = datetime.now(UTC)
-                        source_timeout_at = occupancy_module.get_effective_timeout(
-                            source_location_id, now
-                        )
-                        if source_timeout_at is None:
-                            propagated_timeout: int | None = None
-                        else:
-                            propagated_timeout = max(
-                                0, int((source_timeout_at - now).total_seconds())
-                            )
-                        try:
-                            occupancy_module.trigger(
-                                target_location_id, source_link_id, propagated_timeout
-                            )
-                        except Exception as err:  # noqa: BLE001
-                            _LOGGER.error(
-                                "Failed linked-room trigger %s -> %s: %s",
-                                source_location_id,
-                                target_location_id,
-                                err,
-                                exc_info=True,
-                            )
-                    else:
-                        if source_link_id not in target_contributions:
-                            continue
-                        try:
-                            occupancy_module.clear(target_location_id, source_link_id, 0)
-                        except Exception as err:  # noqa: BLE001
-                            _LOGGER.error(
-                                "Failed linked-room clear %s -> %s: %s",
-                                source_location_id,
-                                target_location_id,
-                                err,
-                                exc_info=True,
-                            )
-        finally:
-            linked_propagation_active = False
-
-    linked_event_queue: deque[Event] = deque()
-    linked_propagation_active = False
-    bus.subscribe(
-        _apply_linked_location_contributors,
-        EventFilter(event_type="occupancy.changed"),
-    )
 
     @callback
     def _forward_handoff_trace(event: Event) -> None:
@@ -827,9 +704,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Persist topology migration updates for existing installs as soon as possible.
     if should_bootstrap_structure and has_saved_configuration:
         _schedule_persist("upgrade/ensure_home_root")
-    if topology_migrated and has_saved_configuration:
-        _schedule_persist("upgrade/property_topology")
-
     # 12. Store kernel in hass.data
     hass.data[DOMAIN][entry.entry_id] = {
         "entry": entry,
@@ -921,37 +795,13 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 # which handles initial import and live bidirectional sync
 
 
-def _ambient_threshold_matches(value: Any, expected: float) -> bool:
-    """Return true when a stored ambient threshold is absent or matches a default."""
-    if value is None:
-        return True
-    try:
-        return float(value) == expected
-    except (TypeError, ValueError):
-        return True
-
-
 def _apply_topomation_ambient_defaults(config: Mapping[str, Any]) -> dict[str, Any]:
-    """Apply Topomation ambient defaults and the temporary one-shot lux migration."""
+    """Apply Topomation ambient defaults."""
     updated = dict(config)
     updated["auto_discover"] = False
     updated.setdefault("ignore_local_lux_when_lights_on", False)
-
-    if updated.get(AMBIENT_LUX_DEFAULTS_MIGRATION_KEY) == AMBIENT_LUX_DEFAULTS_MIGRATION_VALUE:
-        return updated
-
-    has_legacy_default_thresholds = _ambient_threshold_matches(
-        updated.get("dark_threshold"),
-        AMBIENT_LEGACY_DARK_THRESHOLD_DEFAULT,
-    ) and _ambient_threshold_matches(
-        updated.get("bright_threshold"),
-        AMBIENT_LEGACY_BRIGHT_THRESHOLD_DEFAULT,
-    )
-    if has_legacy_default_thresholds:
-        updated["dark_threshold"] = AMBIENT_DARK_THRESHOLD_DEFAULT
-        updated["bright_threshold"] = AMBIENT_BRIGHT_THRESHOLD_DEFAULT
-
-    updated[AMBIENT_LUX_DEFAULTS_MIGRATION_KEY] = AMBIENT_LUX_DEFAULTS_MIGRATION_VALUE
+    updated.setdefault("dark_threshold", AMBIENT_DARK_THRESHOLD_DEFAULT)
+    updated.setdefault("bright_threshold", AMBIENT_BRIGHT_THRESHOLD_DEFAULT)
     return updated
 
 
@@ -977,8 +827,6 @@ def _setup_default_configs(loc_mgr: LocationManager, modules: dict[str, Any]) ->
             # Get default config from module
             default_config = module.default_config()
             default_config["version"] = module.CURRENT_CONFIG_VERSION
-            if module_id == "occupancy":
-                default_config.setdefault(_OCCUPANCY_LINKED_LOCATIONS_KEY, [])
             if module_id == "ambient":
                 default_config = _apply_topomation_ambient_defaults(default_config)
 
@@ -1015,67 +863,6 @@ def _is_managed_shadow_area(location: Any) -> bool:
     return str(meta.get(_META_ROLE_KEY, "")).strip().lower() == _MANAGED_SHADOW_ROLE
 
 
-def _topology_anchor_location_ids(loc_mgr: LocationManager) -> list[str]:
-    """Return ids of locations tagged as the primary topology anchor(s)."""
-    anchors: list[str] = []
-    for loc in loc_mgr.all_locations():
-        meta = _location_meta(loc)
-        if meta.get(META_TOPOLOGY_ANCHOR_KEY) is True:
-            anchors.append(str(getattr(loc, "id", "") or ""))
-    return [aid for aid in anchors if aid]
-
-
-def _migrate_topology_property_model(loc_mgr: LocationManager) -> bool:
-    """Upgrade legacy hidden Home root to visible property + reparent wrappers.
-
-    Returns True when persisted topology likely changed and should be autosaved.
-    """
-    changed = False
-    home = loc_mgr.get_location("home")
-    if home is not None:
-        meta = dict(_location_meta(home))
-        was_explicit = bool(getattr(home, "is_explicit_root", False))
-        old_type = str(meta.get("type", "")).strip().lower()
-        if was_explicit or (home.id == "home" and old_type == "building"):
-            if was_explicit:
-                try:
-                    loc_mgr.update_location(home.id, is_explicit_root=False)
-                    changed = True
-                except (KeyError, ValueError, TypeError) as err:
-                    _LOGGER.warning("Failed clearing explicit root on 'home': %s", err)
-            meta["type"] = "property"
-            meta.setdefault("sync_source", "topology")
-            meta.setdefault("sync_enabled", True)
-            meta[META_TOPOLOGY_ANCHOR_KEY] = True
-            loc_mgr.set_module_config(home.id, "_meta", meta)
-            changed = True
-            _LOGGER.info("Migrated 'home' location to visible property topology")
-
-    anchors = _topology_anchor_location_ids(loc_mgr)
-    if len(anchors) != 1:
-        return changed
-
-    anchor = anchors[0]
-    for loc in list(loc_mgr.all_locations()):
-        if str(getattr(loc, "id", "") or "") == anchor:
-            continue
-        if bool(getattr(loc, "is_explicit_root", False)):
-            continue
-        if _location_type(loc) not in {"building", "grounds"}:
-            continue
-        parent_id = getattr(loc, "parent_id", None)
-        if parent_id not in (None, ""):
-            continue
-        try:
-            loc_mgr.update_location(loc.id, parent_id=anchor)
-            changed = True
-            _LOGGER.info("Reparented '%s' under topology anchor '%s'", loc.id, anchor)
-        except (KeyError, ValueError, TypeError) as err:
-            _LOGGER.warning("Failed reparenting '%s' under '%s': %s", loc.id, anchor, err)
-
-    return changed
-
-
 def _supports_adjacency_restore(loc_mgr: LocationManager) -> bool:
     """Return True when the location manager exposes adjacency restore APIs."""
     create_method = getattr(loc_mgr.__class__, "create_adjacency_edge", None)
@@ -1106,17 +893,6 @@ async def _load_configuration(hass: HomeAssistant, loc_mgr: LocationManager) -> 
         _LOGGER.warning("Invalid saved configuration format; expected locations list")
         return True
 
-    # Legacy migration: older versions persisted a synthetic explicit root location
-    # ("house"). The current model does not use a synthetic root.
-    legacy_root_ids = {
-        str(item.get("id"))
-        for item in locations
-        if isinstance(item, Mapping)
-        and item.get("id")
-        and item.get("is_explicit_root") is True
-        and str(item.get("id")) == "house"
-    }
-
     # Create locations in parent-first order where possible.
     pending: dict[str, dict[str, Any]] = {}
     for item in locations:
@@ -1125,13 +901,7 @@ async def _load_configuration(hass: HomeAssistant, loc_mgr: LocationManager) -> 
         location_id = item.get("id")
         if not isinstance(location_id, str) or not location_id:
             continue
-        if location_id in legacy_root_ids:
-            continue
-
         normalized = dict(item)
-        parent_id = normalized.get("parent_id")
-        if parent_id in legacy_root_ids or parent_id == "house":
-            normalized["parent_id"] = None
         pending[location_id] = normalized
 
     def _pending_restore_key(location_id: str, item: Mapping[str, Any]) -> tuple[str, int, str, str]:
@@ -1199,7 +969,6 @@ async def _load_configuration(hass: HomeAssistant, loc_mgr: LocationManager) -> 
         location_id = item.get("id")
         if (
             not isinstance(location_id, str)
-            or location_id in legacy_root_ids
             or loc_mgr.get_location(location_id) is None
         ):
             continue
@@ -1452,206 +1221,7 @@ def _allowed_occupancy_source_ids_for_location(loc_mgr: LocationManager, locatio
         else:
             allowed.add(entity_id)
 
-    for linked_location_id in _effective_linked_locations_for_target(loc_mgr, location_id, config):
-        allowed.add(_linked_location_source_id(linked_location_id))
-
     return allowed
-
-
-def _linked_location_source_id(location_id: str) -> str:
-    """Return synthetic occupancy source ID used for linked room contributions."""
-    return f"{_LINKED_LOCATION_SOURCE_PREFIX}{location_id}"
-
-
-def _linked_locations_from_config(config: object) -> list[str]:
-    """Return normalized directional linked-location contributor IDs."""
-    if not isinstance(config, dict):
-        return []
-
-    raw_linked = config.get(_OCCUPANCY_LINKED_LOCATIONS_KEY)
-    if not isinstance(raw_linked, list):
-        return []
-
-    linked: list[str] = []
-    seen: set[str] = set()
-    for item in raw_linked:
-        if not isinstance(item, str):
-            continue
-        location_id = item.strip()
-        if not location_id or location_id in seen:
-            continue
-        seen.add(location_id)
-        linked.append(location_id)
-    return linked
-
-
-def _allowed_linked_room_neighbors_for_target(
-    loc_mgr: LocationManager,
-    target_location_id: str,
-) -> set[str]:
-    """Return valid linked-room neighbor IDs for one target location."""
-    target = loc_mgr.get_location(target_location_id)
-    if (
-        target is None
-        or _location_type(target) != "area"
-        or _is_managed_shadow_area(target)
-    ):
-        return set()
-
-    parent_id = getattr(target, "parent_id", None)
-    if not isinstance(parent_id, str) or not parent_id:
-        return set()
-
-    parent = loc_mgr.get_location(parent_id)
-    if parent is None or _location_type(parent) != "floor":
-        return set()
-
-    allowed: set[str] = set()
-    for candidate in loc_mgr.all_locations():
-        candidate_id = getattr(candidate, "id", None)
-        if not isinstance(candidate_id, str) or not candidate_id:
-            continue
-        if candidate_id == target_location_id:
-            continue
-        if getattr(candidate, "parent_id", None) != parent_id:
-            continue
-        if _location_type(candidate) != "area":
-            continue
-        if _is_managed_shadow_area(candidate):
-            continue
-        allowed.add(candidate_id)
-    return allowed
-
-
-def _effective_linked_locations_for_target(
-    loc_mgr: LocationManager,
-    target_location_id: str,
-    config: object,
-) -> list[str]:
-    """Return linked locations filtered by current linked-room topology policy."""
-    linked = _linked_locations_from_config(config)
-    if not linked:
-        return []
-
-    allowed = _allowed_linked_room_neighbors_for_target(loc_mgr, target_location_id)
-    if not allowed:
-        return []
-
-    return [location_id for location_id in linked if location_id in allowed]
-
-
-def _linked_target_location_ids(loc_mgr: LocationManager, source_location_id: str) -> list[str]:
-    """Return locations configured to consume source occupancy via linked rooms."""
-    targets: list[str] = []
-    seen: set[str] = set()
-
-    for location in loc_mgr.all_locations():
-        target_location_id = getattr(location, "id", None)
-        if not isinstance(target_location_id, str) or not target_location_id:
-            continue
-        if target_location_id == source_location_id:
-            continue
-        if target_location_id in seen:
-            continue
-
-        config = loc_mgr.get_module_config(target_location_id, "occupancy")
-        linked = _effective_linked_locations_for_target(loc_mgr, target_location_id, config)
-        if source_location_id not in linked:
-            continue
-
-        seen.add(target_location_id)
-        targets.append(target_location_id)
-
-    return targets
-
-
-def _occupancy_state_for_location(
-    occupancy_module: object,
-    location_id: str,
-) -> Mapping[str, Any] | None:
-    """Read occupancy state payload for one location when available."""
-    get_state = getattr(occupancy_module, "get_location_state", None)
-    if not callable(get_state):
-        return None
-    try:
-        state = get_state(location_id)
-    except Exception:  # noqa: BLE001
-        return None
-    if isinstance(state, Mapping):
-        return state
-    return None
-
-
-def _contribution_source_ids(payload: Mapping[str, Any]) -> set[str]:
-    """Extract normalized contribution source IDs from an occupancy payload.
-
-    Also surfaces ``origin_source_id``: when a location is in an occupancy group,
-    home_topology's group mesh wraps every contribution as
-    ``__group_member__:<origin>::<origin_source_id>``, so the raw form (e.g.
-    ``linked:area_kitchen``) is only reachable via ``origin_source_id``. Without
-    this, the linked-room feedback guard never matches in grouped rooms and
-    propagation recurses until the 4096-event circuit breaker trips.
-    """
-    contributions = payload.get("contributions")
-    if not isinstance(contributions, list):
-        return set()
-
-    source_ids: set[str] = set()
-    for contribution in contributions:
-        if not isinstance(contribution, Mapping):
-            continue
-        for key in ("source_id", "origin_source_id"):
-            value = contribution.get(key)
-            if not isinstance(value, str):
-                continue
-            normalized = value.strip()
-            if not normalized:
-                continue
-            source_ids.add(normalized)
-    return source_ids
-
-
-def _normalize_utc_datetime(value: object) -> datetime:
-    """Normalize an arbitrary datetime-like value into UTC."""
-    if isinstance(value, datetime):
-        if value.tzinfo is None:
-            return value.replace(tzinfo=UTC)
-        return value.astimezone(UTC)
-    return datetime.now(UTC)
-
-
-def _parse_iso_datetime(value: object) -> datetime | None:
-    """Parse an ISO datetime string into UTC, returning None when missing/invalid."""
-    if not isinstance(value, str):
-        return None
-    raw = value.strip()
-    if not raw:
-        return None
-    try:
-        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    return _normalize_utc_datetime(parsed)
-
-
-def _contribution_expiration_by_source_id(payload: Mapping[str, Any]) -> dict[str, datetime | None]:
-    """Return contribution expirations keyed by source ID."""
-    contributions = payload.get("contributions")
-    if not isinstance(contributions, list):
-        return {}
-
-    mapped: dict[str, datetime | None] = {}
-    for contribution in contributions:
-        if not isinstance(contribution, Mapping):
-            continue
-        source_id = contribution.get("source_id")
-        if not isinstance(source_id, str):
-            continue
-        normalized = source_id.strip()
-        if not normalized:
-            continue
-        mapped[normalized] = _parse_iso_datetime(contribution.get("expires_at"))
-    return mapped
 
 
 def _sanitize_occupancy_state_for_restore(
@@ -1687,13 +1257,6 @@ def _sanitize_occupancy_state_for_restore(
                 if source_id.startswith("__child__:") or source_id.startswith("__follow__:"):
                     filtered.append(item)
                     continue
-                if source_id.startswith(_LINKED_LOCATION_SOURCE_PREFIX):
-                    if source_id not in allowed_source_ids:
-                        dropped += 1
-                        continue
-                    filtered.append(item)
-                    continue
-
                 if source_id.startswith("sync:"):
                     dropped += 1
                     continue

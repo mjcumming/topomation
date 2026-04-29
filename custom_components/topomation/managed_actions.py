@@ -104,9 +104,6 @@ class _RecentRuleSnapshot:
     rule_uuid: str
     user_named: bool
     actions: list[dict[str, Any]]
-    action_entity_id: str | None
-    action_service: str | None
-    action_data: dict[str, Any] | None
     daily_gating_enabled: bool = False
 
 
@@ -114,14 +111,7 @@ class TopomationManagedActions:
     """Create/list/update/delete Topomation managed automations via HA's config REST API."""
 
     def __init__(self, hass: HomeAssistant, loc_mgr: Any = None) -> None:
-        """Initialize managed automation helper.
-
-        ``loc_mgr`` is optional only for backward compatibility with older
-        construction sites and tests; production code should pass it so that
-        occupancy lookup on shadow-host locations (floor / building / grounds /
-        property) can resolve the underlying managed-shadow location whose
-        binary_sensor actually carries the occupancy state (ADR-HA-077).
-        """
+        """Initialize managed automation helper."""
         self.hass = hass
         self._loc_mgr = loc_mgr
         self._token_lock = asyncio.Lock()
@@ -261,13 +251,6 @@ class TopomationManagedActions:
                         "trigger_type": recent_snapshot.trigger_type,
                         "trigger_types": list(recent_snapshot.trigger_types),
                         "actions": [dict(action) for action in recent_snapshot.actions],
-                        "action_entity_id": recent_snapshot.action_entity_id,
-                        "action_service": recent_snapshot.action_service,
-                        "action_data": (
-                            dict(recent_snapshot.action_data)
-                            if isinstance(recent_snapshot.action_data, Mapping)
-                            else None
-                        ),
                         "ambient_condition": recent_snapshot.ambient_condition,
                         "must_be_occupied": recent_snapshot.must_be_occupied,
                         "time_condition_enabled": recent_snapshot.time_condition_enabled,
@@ -277,8 +260,6 @@ class TopomationManagedActions:
                         "rule_uuid": recent_snapshot.rule_uuid,
                         "user_named": recent_snapshot.user_named,
                         "daily_gating_enabled": recent_snapshot.daily_gating_enabled,
-                        # Legacy compatibility for older frontends.
-                        "require_dark": recent_snapshot.ambient_condition == "dark",
                         "enabled": enabled,
                     }
                 )
@@ -334,10 +315,6 @@ class TopomationManagedActions:
             actions = self._extract_actions(effective_config)
             if not actions:
                 actions = self._extract_actions(raw_config)
-            first_action = actions[0] if actions else None
-            action_entity_id = first_action.get("entity_id") if first_action else None
-            action_service = first_action.get("service") if first_action else None
-            action_data = first_action.get("data") if first_action else None
             enabled = self._is_automation_enabled(entity_id)
 
             rules.append(
@@ -348,9 +325,6 @@ class TopomationManagedActions:
                     "trigger_type": metadata.trigger_type,
                     "trigger_types": list(metadata.trigger_types),
                     "actions": actions,
-                    "action_entity_id": action_entity_id,
-                    "action_service": action_service,
-                    "action_data": action_data,
                     "ambient_condition": metadata.ambient_condition,
                     "must_be_occupied": metadata.must_be_occupied,
                     "time_condition_enabled": metadata.time_condition_enabled,
@@ -360,8 +334,6 @@ class TopomationManagedActions:
                     "rule_uuid": metadata.rule_uuid or self._rule_uuid_from_automation_id(automation_id or entity_id),
                     "user_named": metadata.user_named,
                     "daily_gating_enabled": metadata.daily_gating_enabled,
-                    # Legacy compatibility for older frontends.
-                    "require_dark": metadata.ambient_condition == "dark",
                     "enabled": enabled,
                 }
             )
@@ -376,11 +348,7 @@ class TopomationManagedActions:
         name: str,
         trigger_type: str,
         trigger_types: list[str] | tuple[str, ...] | None = None,
-        action_entity_id: str | None = None,
-        action_service: str | None = None,
         actions: list[Mapping[str, Any]] | None = None,
-        action_data: Mapping[str, Any] | None = None,
-        require_dark: bool = False,
         ambient_condition: str | None = None,
         must_be_occupied: bool | None = None,
         time_condition_enabled: bool = False,
@@ -405,25 +373,17 @@ class TopomationManagedActions:
         normalized_ambient_condition = self._normalize_ambient_condition(
             ambient_condition=ambient_condition,
             trigger_types=normalized_trigger_types,
-            require_dark=require_dark,
         )
         normalized_start_time = self._normalize_time_hhmm(start_time, "18:00")
         normalized_end_time = self._normalize_time_hhmm(end_time, "23:59")
         normalized_actions = self._normalize_rule_actions(
             actions=actions,
             trigger_type=normalized_trigger,
-            fallback_entity_id=action_entity_id,
-            fallback_service=action_service,
-            fallback_data=action_data,
         )
         if not normalized_actions:
             raise ValueError("At least one action target is required")
         primary_action = normalized_actions[0]
         primary_action_entity_id = str(primary_action["entity_id"])
-        primary_action_service = str(primary_action["service"])
-        primary_action_data = (
-            dict(primary_action["data"]) if isinstance(primary_action.get("data"), Mapping) else None
-        )
 
         occupancy_entity_id: str | None = None
         requires_occupancy_entity = (
@@ -595,9 +555,6 @@ class TopomationManagedActions:
             run_on_startup=run_on_startup if isinstance(run_on_startup, bool) else None,
             rule_uuid=normalized_rule_uuid,
             actions=normalized_actions,
-            action_entity_id=primary_action_entity_id,
-            action_service=primary_action_service,
-            action_data=primary_action_data,
             user_named=bool(user_named),
             daily_gating_enabled=bool(daily_gating_enabled),
         )
@@ -659,9 +616,6 @@ class TopomationManagedActions:
             "trigger_type": normalized_trigger,
             "trigger_types": list(normalized_trigger_types),
             "actions": normalized_actions,
-            "action_entity_id": primary_action_entity_id,
-            "action_service": primary_action_service,
-            "action_data": primary_action_data,
             "ambient_condition": normalized_ambient_condition,
             "must_be_occupied": must_be_occupied,
             "time_condition_enabled": bool(time_condition_enabled),
@@ -669,8 +623,6 @@ class TopomationManagedActions:
             "end_time": normalized_end_time,
             "run_on_startup": run_on_startup if isinstance(run_on_startup, bool) else None,
             "rule_uuid": normalized_rule_uuid,
-            # Legacy compatibility for older frontends.
-            "require_dark": normalized_ambient_condition == "dark",
             "enabled": True,
         }
 
@@ -803,12 +755,8 @@ class TopomationManagedActions:
         return None
 
     def _normalize_trigger_type(self, trigger_type: str) -> ActionTriggerType:
-        """Normalize legacy/new trigger aliases to the canonical trigger set."""
+        """Validate a managed action trigger type."""
         normalized = str(trigger_type or "").strip().lower()
-        if normalized == "occupied":
-            normalized = "on_occupied"
-        elif normalized == "vacant":
-            normalized = "on_vacant"
         if normalized not in _VALID_TRIGGER_TYPES:
             raise ValueError(f"Invalid trigger_type '{trigger_type}'")
         return cast(ActionTriggerType, normalized)
@@ -892,9 +840,6 @@ class TopomationManagedActions:
         run_on_startup: bool | None,
         rule_uuid: str,
         actions: list[dict[str, Any]],
-        action_entity_id: str | None,
-        action_service: str | None,
-        action_data: Mapping[str, Any] | None,
         user_named: bool,
         daily_gating_enabled: bool = False,
     ) -> None:
@@ -932,9 +877,6 @@ class TopomationManagedActions:
             rule_uuid=rule_uuid,
             user_named=bool(user_named),
             actions=normalized_actions,
-            action_entity_id=action_entity_id,
-            action_service=action_service,
-            action_data=(dict(action_data) if isinstance(action_data, Mapping) else None),
             daily_gating_enabled=bool(daily_gating_enabled),
         )
         self._recent_rule_snapshots[automation_id] = snapshot
@@ -954,14 +896,11 @@ class TopomationManagedActions:
         *,
         ambient_condition: str | None,
         trigger_types: tuple[ActionTriggerType, ...],
-        require_dark: bool,
     ) -> ActionAmbientCondition:
         if isinstance(ambient_condition, str):
             normalized = ambient_condition.strip().lower()
             if normalized in _VALID_AMBIENT_CONDITIONS:
                 return normalized  # type: ignore[return-value]
-        if require_dark:
-            return "dark"
         return self._default_ambient_condition_for_trigger(trigger_types)
 
     def _normalize_time_hhmm(self, value: str | None, fallback: str) -> str:
@@ -1426,7 +1365,6 @@ class TopomationManagedActions:
                     else None
                 ),
                 trigger_types=trigger_types,
-                require_dark=bool(parsed.get("require_dark", False)),
             )
             raw_must_be_occupied = (
                 parsed.get("must_be_occupied") if isinstance(parsed, Mapping) else None
@@ -1602,9 +1540,6 @@ class TopomationManagedActions:
         *,
         actions: list[Mapping[str, Any]] | None,
         trigger_type: ActionTriggerType,
-        fallback_entity_id: str | None,
-        fallback_service: str | None,
-        fallback_data: Mapping[str, Any] | None,
     ) -> list[dict[str, Any]]:
         """Normalize multi-target action payload."""
         normalized: list[dict[str, Any]] = []
@@ -1632,21 +1567,6 @@ class TopomationManagedActions:
                 }
             )
             seen_entity_ids.add(entity_id)
-
-        fallback_entity = str(fallback_entity_id or "").strip()
-        if fallback_entity and fallback_entity not in seen_entity_ids:
-            fallback_service_name = str(fallback_service or "").strip() or self._default_action_service_for_trigger(
-                fallback_entity, trigger_type
-            )
-            fallback_data_normalized = self._normalize_action_data(fallback_data)
-            normalized.insert(
-                0,
-                {
-                    "entity_id": fallback_entity,
-                    "service": fallback_service_name,
-                    **({"data": fallback_data_normalized} if fallback_data_normalized else {}),
-                },
-            )
 
         return normalized
 

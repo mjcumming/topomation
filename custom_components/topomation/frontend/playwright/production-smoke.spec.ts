@@ -134,8 +134,12 @@ test("automation tabs omit startup controls and media add-rule survives reactive
         const rules = await kitchenActionRules(page);
         return rules.some(
           (rule) =>
-            rule?.action_entity_id === "media_player.kitchen_speaker" &&
-            rule?.action_service === "media_pause"
+            Array.isArray(rule?.actions) &&
+            rule.actions.some(
+              (action: any) =>
+                action?.entity_id === "media_player.kitchen_speaker" &&
+                action?.service === "media_pause"
+            )
         );
       })
       .toBe(true);

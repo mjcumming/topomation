@@ -508,7 +508,6 @@ function parseTopomationMetadata(
   start_time?: string;
   end_time?: string;
   run_on_startup?: boolean;
-  require_dark?: boolean;
 } | null {
   if (typeof description !== "string" || !description.includes(TOPOMATION_METADATA_PREFIX)) {
     return null;
@@ -530,16 +529,10 @@ function parseTopomationMetadata(
         start_time?: unknown;
         end_time?: unknown;
         run_on_startup?: unknown;
-        require_dark?: unknown;
       };
       const rawTriggerType =
         typeof parsed.trigger_type === "string" ? parsed.trigger_type.trim().toLowerCase() : "";
-      const normalizedTriggerType =
-        rawTriggerType === "occupied"
-          ? "on_occupied"
-          : rawTriggerType === "vacant"
-            ? "on_vacant"
-            : rawTriggerType;
+      const normalizedTriggerType = rawTriggerType;
       const rawAmbientCondition =
         typeof parsed.ambient_condition === "string"
           ? parsed.ambient_condition.trim().toLowerCase()
@@ -574,8 +567,6 @@ function parseTopomationMetadata(
             typeof parsed.run_on_startup === "boolean"
               ? parsed.run_on_startup
               : undefined,
-          require_dark:
-            typeof parsed.require_dark === "boolean" ? parsed.require_dark : undefined,
         };
       }
     } catch {
@@ -586,44 +577,23 @@ function parseTopomationMetadata(
   return null;
 }
 
-function extractActionSummary(config: Record<string, any>): {
-  action_entity_id?: string;
-  action_service?: string;
-} {
+function extractRuleActions(config: Record<string, any>): Array<Record<string, any>> {
   const actionBlock = config?.actions ?? config?.action;
-  const firstAction = Array.isArray(actionBlock) ? actionBlock[0] : actionBlock;
-  if (!firstAction || typeof firstAction !== "object") return {};
-
-  const rawService = typeof firstAction.action === "string" ? firstAction.action : "";
-  const actionService = rawService.includes(".") ? rawService.split(".").slice(1).join(".") : rawService;
-  const targetEntityId = firstAction?.target?.entity_id;
-  if (typeof targetEntityId === "string") {
-    return {
-      action_entity_id: targetEntityId,
-      action_service: actionService || undefined,
-    };
-  }
-  return { action_service: actionService || undefined };
-}
-
-function hasDarkCondition(config: Record<string, any>): boolean {
-  const conditions = config?.conditions ?? config?.condition;
-  const stack = Array.isArray(conditions) ? [...conditions] : conditions ? [conditions] : [];
-  while (stack.length > 0) {
-    const condition = stack.pop();
-    if (!condition || typeof condition !== "object") continue;
-    if (
-      condition.condition === "state" &&
-      condition.entity_id === "sun.sun" &&
-      condition.state === "below_horizon"
-    ) {
-      return true;
-    }
-    if (Array.isArray(condition.conditions)) {
-      stack.push(...condition.conditions);
-    }
-  }
-  return false;
+  const actionItems = Array.isArray(actionBlock) ? actionBlock : actionBlock ? [actionBlock] : [];
+  return actionItems
+    .map((action) => {
+      if (!action || typeof action !== "object") return undefined;
+      const rawService = typeof action.action === "string" ? action.action : "";
+      const actionService = rawService.includes(".") ? rawService.split(".").slice(1).join(".") : rawService;
+      const targetEntityId = action?.target?.entity_id;
+      if (typeof targetEntityId !== "string" || !targetEntityId) return undefined;
+      return {
+        entity_id: targetEntityId,
+        service: actionService || "turn_on",
+        ...(action.data && typeof action.data === "object" ? { data: action.data } : {}),
+      };
+    })
+    .filter(Boolean) as Array<Record<string, any>>;
 }
 
 type EventualConsistencyOptions = {
@@ -801,7 +771,7 @@ export function createMockHass(options: any = {}): any {
         const metadata = parseTopomationMetadata(config.description);
         if (!metadata || metadata.location_id !== locationId) return undefined;
 
-        const summary = extractActionSummary(config);
+        const actions = extractRuleActions(config);
         const stateObj = states[entry.entity_id];
         const enabled = stateObj ? stateObj.state !== "off" : true;
 
@@ -810,15 +780,8 @@ export function createMockHass(options: any = {}): any {
           entity_id: entry.entity_id,
           name: String(config.alias || entry.entity_id),
           trigger_type: metadata.trigger_type,
-          action_entity_id: summary.action_entity_id,
-          action_service: summary.action_service,
-          ambient_condition:
-            metadata.ambient_condition ||
-            (typeof metadata.require_dark === "boolean"
-              ? metadata.require_dark
-                ? "dark"
-                : "any"
-              : "any"),
+          actions,
+          ambient_condition: metadata.ambient_condition || "any",
           must_be_occupied: Boolean(metadata.must_be_occupied),
           time_condition_enabled: Boolean(metadata.time_condition_enabled),
           start_time: metadata.start_time,
@@ -827,10 +790,6 @@ export function createMockHass(options: any = {}): any {
             typeof metadata.run_on_startup === "boolean"
               ? metadata.run_on_startup
               : undefined,
-          require_dark:
-            typeof metadata.require_dark === "boolean"
-              ? metadata.require_dark
-              : hasDarkCondition(config),
           enabled,
         };
       })
@@ -914,23 +873,31 @@ export function createMockHass(options: any = {}): any {
         .trim()
         .toLowerCase();
       const triggerType =
-        rawTriggerType === "occupied"
-          ? "on_occupied"
-          : rawTriggerType === "vacant"
-            ? "on_vacant"
-            : rawTriggerType === "on_occupied" ||
+        rawTriggerType === "on_occupied" ||
                 rawTriggerType === "on_vacant" ||
                 rawTriggerType === "on_dark" ||
                 rawTriggerType === "on_bright"
               ? rawTriggerType
               : "on_occupied";
-      const actionEntityId = String(request.action_entity_id || "").trim();
-      const actionService = String(request.action_service || "").trim() || "turn_off";
+      const requestActions = Array.isArray(request.actions) ? request.actions : [];
+      const normalizedActions = requestActions
+        .map((action) => {
+          if (!action || typeof action !== "object") return undefined;
+          const entityId = String(action.entity_id || "").trim();
+          if (!entityId) return undefined;
+          return {
+            entity_id: entityId,
+            service: String(action.service || "").trim() || "turn_on",
+            ...(action.data && typeof action.data === "object" ? { data: action.data } : {}),
+          };
+        })
+        .filter(Boolean) as Array<Record<string, any>>;
+      const primaryAction = normalizedActions[0];
       const alias = String(request.name || "Topomation managed rule").trim() || "Topomation managed rule";
       const providedAutomationId = String(request.automation_id || "").trim();
       const providedRuleUuid = String(request.rule_uuid || "").trim().toLowerCase();
-      if (!locationId || !actionEntityId) {
-        throw new Error("invalid_payload: location_id and action_entity_id are required");
+      if (!locationId || !primaryAction) {
+        throw new Error("invalid_payload: location_id and actions are required");
       }
 
       const occupancyEntityId = Object.keys(states).find((entityId) => {
@@ -954,18 +921,15 @@ export function createMockHass(options: any = {}): any {
       const configId =
         providedAutomationId ||
         `${TOPOMATION_AUTOMATION_ID_PREFIX}${slugify(locationId)}_${triggerType}_${slugify(
-          actionEntityId
+          String(primaryAction.entity_id)
         )}_${slugify(normalizedRuleUuid).slice(-24)}`;
       const ambientConditionRaw = String(request.ambient_condition || "")
         .trim()
         .toLowerCase();
-      const requireDark = Boolean(request.require_dark);
       const ambientCondition =
         ambientConditionRaw === "any" || ambientConditionRaw === "dark" || ambientConditionRaw === "bright"
           ? ambientConditionRaw
-          : requireDark
-            ? "dark"
-            : triggerType === "on_dark"
+          : triggerType === "on_dark"
               ? "dark"
               : triggerType === "on_bright"
                 ? "bright"
@@ -975,7 +939,6 @@ export function createMockHass(options: any = {}): any {
       const endTime = String(request.end_time || "23:59").trim() || "23:59";
       const runOnStartup =
         typeof request.run_on_startup === "boolean" ? request.run_on_startup : undefined;
-      const actionDomain = actionEntityId.includes(".") ? actionEntityId.split(".", 1)[0] : "homeassistant";
       const triggers: Array<Record<string, any>> =
         triggerType === "on_occupied" || triggerType === "on_vacant"
           ? [
@@ -1037,18 +1000,18 @@ export function createMockHass(options: any = {}): any {
             end_time: endTime,
             ...(typeof runOnStartup === "boolean" ? { run_on_startup: runOnStartup } : {}),
             rule_uuid: normalizedRuleUuid,
-            require_dark: ambientCondition === "dark",
           })}`,
         triggers,
         conditions,
-        actions: [
-          {
-            action: `${actionDomain}.${actionService}`,
-            target: {
-              entity_id: actionEntityId,
-            },
-          },
-        ],
+        actions: normalizedActions.map((action) => {
+          const entityId = String(action.entity_id);
+          const actionDomain = entityId.includes(".") ? entityId.split(".", 1)[0] : "homeassistant";
+          return {
+            action: `${actionDomain}.${String(action.service)}`,
+            target: { entity_id: entityId },
+            ...(action.data ? { data: action.data } : {}),
+          };
+        }),
         mode: "single",
       };
       automationConfigsById[configId] = configPayload;
@@ -1087,15 +1050,13 @@ export function createMockHass(options: any = {}): any {
           name: alias,
           rule_uuid: normalizedRuleUuid,
           trigger_type: triggerType,
-          action_entity_id: actionEntityId,
-          action_service: actionService,
+          actions: normalizedActions,
           ambient_condition: ambientCondition,
           must_be_occupied: mustBeOccupied,
           time_condition_enabled: timeConditionEnabled,
           start_time: startTime,
           end_time: endTime,
           run_on_startup: runOnStartup,
-          require_dark: ambientCondition === "dark",
           enabled: true,
         },
       };

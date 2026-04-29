@@ -17,9 +17,6 @@ describe("ha-automation-rules websocket path", () => {
         trigger_type: "on_occupied",
         trigger_types: ["on_occupied"],
         actions: [{ entity_id: "light.kitchen", service: "turn_on" }],
-        action_entity_id: "light.kitchen",
-        action_service: "turn_on",
-        action_data: undefined,
         ambient_condition: "any",
         must_be_occupied: false,
         time_condition_enabled: false,
@@ -27,7 +24,6 @@ describe("ha-automation-rules websocket path", () => {
         end_time: undefined,
         run_on_startup: undefined,
         user_named: false,
-        require_dark: false,
         enabled: true,
       },
     ];
@@ -73,7 +69,7 @@ describe("ha-automation-rules websocket path", () => {
     );
   });
 
-  it("normalizes legacy trigger values from backend list payloads", async () => {
+  it("keeps canonical trigger values from backend list payloads", async () => {
     const callWS = vi.fn(async (request: Record<string, unknown>) => {
       if (request.type === "topomation/actions/rules/list") {
         return {
@@ -82,9 +78,7 @@ describe("ha-automation-rules websocket path", () => {
               id: "rule_occ",
               entity_id: "automation.rule_occ",
               name: "Occupied Rule",
-              trigger_type: "occupied",
-              action_entity_id: "light.kitchen",
-              action_service: "turn_on",
+              trigger_type: "on_occupied",
               ambient_condition: "any",
               must_be_occupied: true,
               enabled: true,
@@ -93,9 +87,7 @@ describe("ha-automation-rules websocket path", () => {
               id: "rule_bright",
               entity_id: "automation.rule_bright",
               name: "Bright Rule",
-              trigger_type: "bright",
-              action_entity_id: "light.kitchen",
-              action_service: "turn_off",
+              trigger_type: "on_bright",
               ambient_condition: "bright",
               enabled: true,
             },
@@ -123,9 +115,6 @@ describe("ha-automation-rules websocket path", () => {
       trigger_type: "on_occupied",
       trigger_types: ["on_occupied"],
       actions: [{ entity_id: "light.kitchen", service: "turn_on" }],
-      action_entity_id: "light.kitchen",
-      action_service: "turn_on",
-      action_data: undefined,
       ambient_condition: "dark",
       must_be_occupied: true,
       time_condition_enabled: false,
@@ -133,7 +122,6 @@ describe("ha-automation-rules websocket path", () => {
       end_time: undefined,
       run_on_startup: undefined,
       user_named: false,
-      require_dark: true,
       enabled: true,
     };
 
@@ -157,8 +145,7 @@ describe("ha-automation-rules websocket path", () => {
       } as any,
       name: createdRule.name,
       trigger_type: "on_occupied",
-      action_entity_id: "light.kitchen",
-      action_service: "turn_on",
+      actions: [{ entity_id: "light.kitchen", service: "turn_on" }],
       ambient_condition: "dark",
       must_be_occupied: true,
     });
@@ -170,16 +157,12 @@ describe("ha-automation-rules websocket path", () => {
       name: createdRule.name,
       trigger_type: "on_occupied",
       trigger_types: ["on_occupied"],
-      action_entity_id: "light.kitchen",
-      action_service: "turn_on",
       actions: [{ entity_id: "light.kitchen", service: "turn_on" }],
-      action_data: undefined,
       ambient_condition: "dark",
       must_be_occupied: true,
       time_condition_enabled: false,
       start_time: undefined,
       end_time: undefined,
-      require_dark: false,
     });
     expect(callApi).not.toHaveBeenCalled();
   });
@@ -192,16 +175,12 @@ describe("ha-automation-rules websocket path", () => {
       rule_uuid: "rule_abc123",
       trigger_type: "on_dark",
       trigger_types: ["on_dark"],
-      action_entity_id: "fan.kitchen_hood",
-      action_service: "turn_on",
       actions: [{ entity_id: "fan.kitchen_hood", service: "turn_on" }],
-      action_data: undefined,
       ambient_condition: "dark",
       must_be_occupied: true,
       time_condition_enabled: true,
       start_time: "22:00",
       end_time: "05:30",
-      require_dark: true,
       enabled: true,
     };
 
@@ -224,8 +203,6 @@ describe("ha-automation-rules websocket path", () => {
       } as any,
       name: createdRule.name,
       trigger_type: "on_dark",
-      action_entity_id: "fan.kitchen_hood",
-      action_service: "turn_on",
       actions: [{ entity_id: "fan.kitchen_hood", service: "turn_on" }],
       ambient_condition: "dark",
       must_be_occupied: true,
@@ -242,16 +219,12 @@ describe("ha-automation-rules websocket path", () => {
       name: createdRule.name,
       trigger_type: "on_dark",
       trigger_types: ["on_dark"],
-      action_entity_id: "fan.kitchen_hood",
-      action_service: "turn_on",
       actions: [{ entity_id: "fan.kitchen_hood", service: "turn_on" }],
-      action_data: undefined,
       ambient_condition: "dark",
       must_be_occupied: true,
       time_condition_enabled: true,
       start_time: "22:00",
       end_time: "05:30",
-      require_dark: false,
       automation_id: "topomation_kitchen_on_dark_fan_kitchen_hood_rule_abc123",
       rule_uuid: "rule_abc123",
     });
@@ -280,7 +253,6 @@ describe("ha-automation-rules websocket path", () => {
           ambient_condition: "any",
           must_be_occupied: false,
           time_condition_enabled: false,
-          require_dark: false,
           enabled: true,
         },
         false
@@ -316,8 +288,7 @@ describe("ha-automation-rules websocket path", () => {
         } as any,
         name: "Kitchen Occupied: Kitchen Light (turn on)",
         trigger_type: "on_occupied",
-        action_entity_id: "light.kitchen",
-        action_service: "turn_on",
+        actions: [{ entity_id: "light.kitchen", service: "turn_on" }],
         ambient_condition: "dark",
         must_be_occupied: true,
       })
@@ -349,8 +320,7 @@ describe("ha-automation-rules websocket path", () => {
         } as any,
         name: "Kitchen Occupied: Kitchen Light (turn on)",
         trigger_type: "on_occupied",
-        action_entity_id: "light.kitchen",
-        action_service: "turn_on",
+        actions: [{ entity_id: "light.kitchen", service: "turn_on" }],
         ambient_condition: "dark",
         must_be_occupied: true,
       })
@@ -381,8 +351,7 @@ describe("ha-automation-rules websocket path", () => {
         } as any,
         name: "Kitchen Occupied: Kitchen Light (turn on)",
         trigger_type: "on_occupied",
-        action_entity_id: "light.kitchen",
-        action_service: "turn_on",
+        actions: [{ entity_id: "light.kitchen", service: "turn_on" }],
         ambient_condition: "dark",
         must_be_occupied: true,
       })

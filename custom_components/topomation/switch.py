@@ -26,9 +26,9 @@ LOCK_SWITCH_SOURCE_ID = "switch_entity"
 
 def _location_ha_area_id(location: object) -> str | None:
     """Resolve canonical HA area linkage for a location-like object."""
-    linked = getattr(location, "ha_area_id", None)
-    if linked:
-        return str(linked)
+    ha_area_id = getattr(location, "ha_area_id", None)
+    if ha_area_id:
+        return str(ha_area_id)
 
     modules = getattr(location, "modules", {}) or {}
     if not isinstance(modules, dict):
@@ -76,18 +76,6 @@ async def async_setup_entry(
     bus = kernel["event_bus"]
     modules = kernel["modules"]
     occupancy_module = modules.get("occupancy")
-
-    # Shadow hosts (floor / building / grounds / property) get their lock switch via the
-    # managed shadow area instead, mirroring the binary_sensor pattern.
-    for location in loc_mgr.all_locations():
-        if _is_shadow_host(location):
-            removed = _remove_lock_switch_entity_for_location(hass, entry, location.id)
-            if removed:
-                _LOGGER.debug(
-                    "Removed legacy host lock switch entity %s for shadow host %s",
-                    removed,
-                    location.id,
-                )
 
     entities: list[LocationLockSwitch] = []
     switches_by_location_id: dict[str, LocationLockSwitch] = {}

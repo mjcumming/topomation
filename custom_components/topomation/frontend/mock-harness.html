@@ -605,7 +605,7 @@
           () =>
             mock.connection.fireEvent("topomation_actions_summary", {
               location_id: "kitchen",
-              trigger_type: "occupied",
+              trigger_type: "on_occupied",
               succeeded: 2,
               failed: 0,
             }),
@@ -613,7 +613,7 @@
           () =>
             mock.connection.fireEvent("topomation_actions_summary", {
               location_id: "kitchen",
-              trigger_type: "vacant",
+              trigger_type: "on_vacant",
               succeeded: 2,
               failed: 0,
             }),

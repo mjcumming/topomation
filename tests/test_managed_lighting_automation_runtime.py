@@ -588,7 +588,7 @@ async def test_on_dark_lux_numeric_trigger_with_must_be_occupied(hass: HomeAssis
 
 @pytest.mark.asyncio
 async def test_ambient_dark_condition_blocks_when_sun_up(hass: HomeAssistant) -> None:
-    """ambient_condition=dark adds sun-below condition for on_occupied (require_dark-style)."""
+    """ambient_condition=dark adds sun-below condition for on_occupied."""
     occ = "binary_sensor.rt_occ_dark_guard"
     light_a, _b, manager = await _base_runtime_setup(hass)
     hass.states.async_set(occ, STATE_OFF)

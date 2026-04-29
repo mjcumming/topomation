@@ -56,7 +56,6 @@ export function getTypeFallbackIcon(type: LocationType): string {
 
 function normalizeLocationType(rawType: unknown): LocationType {
   const normalized = String(rawType ?? "area").trim().toLowerCase();
-  if (normalized === "room") return "area";
   if (normalized === "floor") return "floor";
   if (normalized === "area") return "area";
   if (normalized === "building") return "building";
@@ -80,4 +79,3 @@ export function getLocationIcon(location: Location): string {
   const type = normalizeLocationType(meta?.type);
   return getTypeFallbackIcon(type);
 }
-

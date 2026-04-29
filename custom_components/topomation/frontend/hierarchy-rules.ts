@@ -2,22 +2,17 @@ import type { Location, LocationType } from "./types";
 
 export type ParentType = LocationType | "root";
 
-const LEGACY_LOCATION_TYPE_MAP: Record<string, LocationType> = {
-  room: "area",
-};
-
 function normalizeLocationType(rawType: unknown): LocationType {
   const normalized = String(rawType ?? "area").trim().toLowerCase();
-  const mapped = LEGACY_LOCATION_TYPE_MAP[normalized] ?? normalized;
   if (
-    mapped === "floor" ||
-    mapped === "area" ||
-    mapped === "building" ||
-    mapped === "grounds" ||
-    mapped === "subarea" ||
-    mapped === "property"
+    normalized === "floor" ||
+    normalized === "area" ||
+    normalized === "building" ||
+    normalized === "grounds" ||
+    normalized === "subarea" ||
+    normalized === "property"
   ) {
-    return mapped;
+    return normalized;
   }
   return "area";
 }

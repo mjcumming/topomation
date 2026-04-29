@@ -636,10 +636,6 @@ class TopomationActionsRuntime:
             if not isinstance(location_id, str) or not location_id:
                 return None
             normalized_trigger_type = str(trigger_type or "").strip().lower()
-            if normalized_trigger_type == "occupied":
-                normalized_trigger_type = "on_occupied"
-            elif normalized_trigger_type == "vacant":
-                normalized_trigger_type = "on_vacant"
             if normalized_trigger_type not in (
                 "on_occupied",
                 "on_vacant",

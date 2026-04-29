@@ -62,7 +62,7 @@ async function kitchenTopomationActionSummaries(page: any): Promise<
     trigger_to: string | null;
     ambient_condition: string;
     action: string | null;
-    action_entity_id: string | null;
+    target_entity_id: string | null;
     has_dark_condition: boolean;
     time_after: string | null;
     time_before: string | null;
@@ -119,7 +119,7 @@ async function kitchenTopomationActionSummaries(page: any): Promise<
         trigger_to: config?.triggers?.[0]?.to ?? null,
         ambient_condition: metadata.ambient_condition || "any",
         action: config?.actions?.[0]?.action ?? null,
-        action_entity_id: config?.actions?.[0]?.target?.entity_id ?? null,
+        target_entity_id: config?.actions?.[0]?.target?.entity_id ?? null,
         has_dark_condition: hasDarkCondition,
         time_after: timeCondition?.after ?? null,
         time_before: timeCondition?.before ?? null,
@@ -380,7 +380,7 @@ test("actions rule add/save/delete persists managed automations", async ({ page 
           summary.trigger_type === "on_occupied" &&
           summary.trigger_to === "on" &&
           summary.action === "media_player.media_pause" &&
-          summary.action_entity_id === "media_player.kitchen_speaker"
+          summary.target_entity_id === "media_player.kitchen_speaker"
       );
     })
     .toBe(true);
