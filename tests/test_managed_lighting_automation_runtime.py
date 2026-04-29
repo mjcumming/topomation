@@ -252,9 +252,6 @@ async def test_on_occupied_turn_on_runs(hass: HomeAssistant) -> None:
     normalized = manager._normalize_rule_actions(
         actions=[{"entity_id": light_a, "service": "turn_on"}],
         trigger_type="on_occupied",
-        fallback_entity_id=None,
-        fallback_service=None,
-        fallback_data=None,
     )
     await _compile_and_load(
         hass,
@@ -287,9 +284,6 @@ async def test_on_occupied_only_if_off_skips_when_light_already_on(hass: HomeAss
     normalized = manager._normalize_rule_actions(
         actions=[{"entity_id": light_a, "service": "turn_on", "only_if_off": True}],
         trigger_type="on_occupied",
-        fallback_entity_id=None,
-        fallback_service=None,
-        fallback_data=None,
     )
     await _compile_and_load(
         hass,
@@ -322,9 +316,6 @@ async def test_on_vacant_turn_off_runs(hass: HomeAssistant) -> None:
     normalized = manager._normalize_rule_actions(
         actions=[{"entity_id": light_a, "service": "turn_off"}],
         trigger_type="on_vacant",
-        fallback_entity_id=None,
-        fallback_service=None,
-        fallback_data=None,
     )
     await _compile_and_load(
         hass,
@@ -363,9 +354,6 @@ async def test_on_dark_sun_trigger_turns_on(hass: HomeAssistant) -> None:
     normalized = manager._normalize_rule_actions(
         actions=[{"entity_id": light_a, "service": "turn_on"}],
         trigger_type="on_dark",
-        fallback_entity_id=None,
-        fallback_service=None,
-        fallback_data=None,
     )
     await _compile_and_load(
         hass,
@@ -423,9 +411,6 @@ async def test_on_bright_sun_trigger_turns_off(hass: HomeAssistant) -> None:
     normalized = manager._normalize_rule_actions(
         actions=[{"entity_id": light_a, "service": "turn_off"}],
         trigger_type="on_bright",
-        fallback_entity_id=None,
-        fallback_service=None,
-        fallback_data=None,
     )
     await _compile_and_load(
         hass,
@@ -474,9 +459,6 @@ async def test_time_condition_allows_inside_window(hass: HomeAssistant, freezer)
     normalized = manager._normalize_rule_actions(
         actions=[{"entity_id": light_a, "service": "turn_on"}],
         trigger_type="on_occupied",
-        fallback_entity_id=None,
-        fallback_service=None,
-        fallback_data=None,
     )
     await _compile_and_load(
         hass,
@@ -512,9 +494,6 @@ async def test_time_condition_blocks_outside_window(hass: HomeAssistant, freezer
     normalized = manager._normalize_rule_actions(
         actions=[{"entity_id": light_a, "service": "turn_on"}],
         trigger_type="on_occupied",
-        fallback_entity_id=None,
-        fallback_service=None,
-        fallback_data=None,
     )
     await _compile_and_load(
         hass,
@@ -555,9 +534,6 @@ async def test_on_dark_lux_numeric_trigger_with_must_be_occupied(hass: HomeAssis
     normalized = manager._normalize_rule_actions(
         actions=[{"entity_id": light_b, "service": "turn_on"}],
         trigger_type="on_dark",
-        fallback_entity_id=None,
-        fallback_service=None,
-        fallback_data=None,
     )
     await _compile_and_load(
         hass,
@@ -608,9 +584,6 @@ async def test_ambient_dark_condition_blocks_when_sun_up(hass: HomeAssistant) ->
     normalized = manager._normalize_rule_actions(
         actions=[{"entity_id": light_a, "service": "turn_on"}],
         trigger_type="on_occupied",
-        fallback_entity_id=None,
-        fallback_service=None,
-        fallback_data=None,
     )
     await _compile_and_load(
         hass,
@@ -707,9 +680,6 @@ async def test_grouped_occupancy_vacant_turns_off_each_room_light(hass: HomeAssi
         normalized = manager._normalize_rule_actions(
             actions=[{"entity_id": lt_eid, "service": "turn_off"}],
             trigger_type="on_vacant",
-            fallback_entity_id=None,
-            fallback_service=None,
-            fallback_data=None,
         )
         validated_automations.append(
             await _validated_rule_dict(
