@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.80] - 2026-04-29
+
+### Fixed
+
+- **Occupancy trigger latency regression** (introduced 0.2.74 with
+  `home-topology==1.0.5`): the occupancy publish path was building a
+  structured `explanation` object on every transition — sorted iteration of
+  contributions, suspended holds, lock detail, holder kind classification —
+  and doing it once per member for occupancy-grouped (linked-room) areas.
+  This added measurable latency between motion arriving and the occupancy
+  binary_sensor flipping, so downstream lighting automations conditioned on
+  the lux gate took noticeably longer to fire when dark.
+  - Pinned `home-topology==1.0.6`, which moves explanation building off the
+    publish hot path and into lazy `get_location_state` reads. Inspector /
+    panel behavior is unchanged because they already fetch state on demand.
+
 ## [0.2.79] - 2026-04-28
 
 ### Fixed
