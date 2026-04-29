@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.82] - 2026-04-29
+
+### Changed
+
+- **Occupancy reason details**: expanded header details now show relationship
+  context for occupancy-group evidence, hide raw legacy `linked:<id>` source
+  IDs from user-facing copy, show all active sources instead of capping the
+  list, and render recent transition copy as a polished "Recent event" row.
+
 ## [0.2.81] - 2026-04-29
 
 ### Removed

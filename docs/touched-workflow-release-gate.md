@@ -81,6 +81,31 @@ Run the rows that match the touched workflow.
 
 ## 6. Release Records
 
+### 2026-04-29 - v0.2.82 occupancy reason details
+
+1. Commit under test: e8f6cfd.
+2. Frontend bundle rebuilt from that commit: yes.
+3. Touched workflow list:
+   - Inspector header occupancy reason details for grouped/relationship
+     evidence.
+   - Expanded active-source evidence rendering in the Details panel.
+   - Recent occupancy transition copy in the Details panel.
+   - Release metadata/version synchronization for Topomation `0.2.82`.
+4. Commands run:
+   - `npm run test:unit -- occupancy-reason.test.ts`
+   - `npm run test:unit -- ht-location-inspector.test.ts`
+   - `npm run build`
+   - `TOPOMATION_PREFER_LOCAL_HA=1 HA_TARGET=dev make test-release-live`
+     with local Home Assistant kept alive in a foreground session.
+5. Outcome:
+   - Focused frontend explanation tests passed.
+   - Location inspector component coverage for complete active-source details
+     passed.
+   - Version sync (`0.2.82`), Ruff, Mypy, backend pytest, Vitest, bundle
+     parity, Web Test Runner, and mock Playwright suites passed.
+   - Live HA managed-action contract passed.
+   - Live HA browser workflow passed: 6 tests.
+
 ### 2026-04-28 - v0.2.78 structural occupancy projection
 
 1. Commit under test: 438abef.

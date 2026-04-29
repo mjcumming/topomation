@@ -224,10 +224,57 @@ describe("buildOccupancyReasonLine", () => {
     });
 
     expect(explanation.summary).to.equal("Occupied because Kitchen Motion in Kitchen is active.");
+    expect(explanation.detailSections[0].title).to.equal("Relationship");
+    expect(explanation.detailSections[0].items?.[0]).to.equal(
+      "Front Entry is occupied because Kitchen is in the same occupancy group."
+    );
     expect(explanation.details.join(" ")).to.include("Active holder: Kitchen Motion in Kitchen");
     expect(explanation.details.join(" ")).to.include(
-      "Latest event: Kitchen Motion in Kitchen reported activity"
+      "Recent event: Kitchen Motion in Kitchen reported activity"
     );
+  });
+
+  it("shows legacy linked contributors as relationship context", () => {
+    const familyRoom = makeLocation({
+      id: "area_family_room",
+      name: "Family Room",
+      modules: { _meta: { type: "area" } },
+    });
+    const kitchen = makeLocation({
+      id: "area_kitchen",
+      name: "Kitchen",
+      modules: { _meta: { type: "area" } },
+    });
+
+    const explanation = buildOccupancyExplanation({
+      location: familyRoom,
+      locations: [familyRoom, kitchen],
+      hass: makeHass(),
+      occupancyStates: { area_family_room: true, area_kitchen: true },
+      occupancyTransitions: {},
+      occupancyRuntimeStates: {
+        area_family_room: runtimeState("area_family_room", "on", tMinus(32), {
+          contributions: [
+            {
+              source_id: "linked:area_kitchen",
+              state: "active",
+              updated_at: tMinus(32),
+            },
+          ],
+        }),
+      },
+      status: "occupied",
+      nowMs: NOW,
+    });
+
+    expect(explanation.summary).to.equal(
+      "Occupied because Kitchen is in the same occupancy group."
+    );
+    expect(explanation.detailSections[0].title).to.equal("Relationship");
+    expect(explanation.detailSections[0].items?.[0]).to.equal(
+      "Family Room is occupied because Kitchen is in the same occupancy group."
+    );
+    expect(explanation.details.join(" ")).not.to.include("linked:area_kitchen");
   });
 
   it("keeps raw occupancy group ids out of occupied summaries", () => {
@@ -410,7 +457,7 @@ describe("buildOccupancyReasonLine", () => {
     expect(explanation.detailSections[1].title).to.equal("Next change");
   });
 
-  it("keeps crowded active source details structured and capped", () => {
+  it("keeps crowded active source details structured without hiding rows", () => {
     const location = makeLocation({ id: "family_room" });
     const sourceIds = Array.from(
       { length: 6 },
@@ -448,10 +495,9 @@ describe("buildOccupancyReasonLine", () => {
       nowMs: NOW,
     });
 
-    expect(explanation.details.join(" ")).to.include("+2 more");
     expect(explanation.detailSections[0].title).to.equal("Active sources");
-    expect(explanation.detailSections[0].items).to.have.length(4);
-    expect(explanation.detailSections[0].note).to.equal("+2 more active sources");
+    expect(explanation.detailSections[0].items).to.have.length(6);
+    expect(explanation.detailSections[0].note).to.equal(undefined);
   });
 
   it("builds a human vacancy summary", () => {

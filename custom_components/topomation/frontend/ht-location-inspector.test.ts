@@ -1499,7 +1499,7 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(reason!.textContent || "").to.include("No active occupancy sources");
   });
 
-  it("renders crowded occupancy reason details as a compact evidence list", async () => {
+  it("renders crowded occupancy reason details as a complete evidence list", async () => {
     const sourceIds = Array.from(
       { length: 6 },
       (_, index) => `binary_sensor.family_room_source_${index + 1}`
@@ -1562,12 +1562,12 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(panel).to.exist;
     expect(panel!.textContent || "").to.include("Why occupied?");
     expect(panel!.textContent || "").to.include("Active sources");
-    expect(panel!.textContent || "").to.include("+2 more active sources");
     const activeItems = Array.from(
       element.shadowRoot!.querySelectorAll(".header-reason-item")
     ) as HTMLElement[];
-    expect(activeItems).to.have.length(4);
+    expect(activeItems).to.have.length(6);
     expect(activeItems[0].textContent || "").to.include("Family Room Source 1");
+    expect(activeItems[5].textContent || "").to.include("Family Room Source 6");
   });
 
   it("shows vacant status and explains event-driven vacancy in the header", async () => {
