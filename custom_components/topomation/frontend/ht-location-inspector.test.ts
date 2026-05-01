@@ -6444,6 +6444,103 @@ describe("HtLocationInspector WIAB configuration", () => {
     expect(serviceCalls[1]?.data?.brightness_pct).to.equal(42);
   });
 
+  it("honors only-if-off locally when Run rule is clicked", async () => {
+    const serviceCalls: Array<{ domain: string; service: string; data?: Record<string, unknown> }> = [];
+    const persistedRules = [
+      {
+        id: "rule_only_if_off",
+        entity_id: "automation.rule_only_if_off",
+        name: "Dusk",
+        trigger_type: "on_dark",
+        trigger_types: ["on_dark"],
+        rule_uuid: "rule_only_if_off_uuid",
+        actions: [
+          {
+            entity_id: "light.garage_exterior",
+            service: "turn_on",
+            data: { brightness_pct: 100 },
+            only_if_off: true,
+          },
+        ],
+        ambient_condition: "any",
+        time_condition_enabled: false,
+        start_time: "00:00",
+        end_time: "23:59",
+        run_on_startup: true,
+        enabled: true,
+      },
+    ];
+
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>): Promise<T> => {
+        if (request.type === "topomation/actions/rules/list") {
+          return { rules: persistedRules } as T;
+        }
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        return {} as T;
+      },
+      callService: async (domain, service, data) => {
+        serviceCalls.push({ domain, service, data });
+      },
+      connection: {},
+      states: {
+        "light.garage_exterior": {
+          entity_id: "light.garage_exterior",
+          state: "off",
+          attributes: {
+            friendly_name: "Garage Exterior",
+            supported_color_modes: ["brightness"],
+          },
+        },
+      },
+      areas: {
+        driveway: { area_id: "driveway", name: "Driveway" },
+      },
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_driveway";
+    location.name = "Driveway";
+    location.ha_area_id = "driveway";
+    location.entity_ids = ["light.garage_exterior"];
+    location.modules._meta = { type: "area" };
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${location}
+        .forcedTab=${"lighting"}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    await waitUntil(
+      () => !!element.shadowRoot?.querySelector('[data-testid="action-rule-rule_only_if_off-run"]'),
+      "expected run button"
+    );
+
+    const runBtn = element.shadowRoot?.querySelector(
+      '[data-testid="action-rule-rule_only_if_off-run"]'
+    ) as HTMLButtonElement | null;
+    runBtn!.click();
+    await waitUntil(() => serviceCalls.length === 1, "expected one callService invocation");
+
+    expect(serviceCalls[0]?.domain).to.equal("light");
+    expect(serviceCalls[0]?.service).to.equal("turn_on");
+    expect(serviceCalls[0]?.data).to.deep.equal({
+      entity_id: "light.garage_exterior",
+      brightness_pct: 100,
+    });
+
+    hass.states["light.garage_exterior"].state = "on";
+    runBtn!.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(serviceCalls.length).to.equal(1);
+  });
+
   it("renders the Run rule button on saved media rules", async () => {
     const persistedRules = [
       {

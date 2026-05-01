@@ -81,6 +81,26 @@ Run the rows that match the touched workflow.
 
 ## 6. Release Records
 
+### 2026-05-01 - v0.3.0 production-shaped HA dev gate
+
+1. Commit under test: v0.3.0 release commit.
+2. Frontend bundle rebuilt from that commit: yes.
+3. Touched workflow list:
+   - Required process-managed Home Assistant dev-container release gate.
+   - Isolated HA dev topology, entity fixtures, bootstrap, and API/websocket
+     e2e coverage.
+   - Real Home Assistant-served Topomation panel Playwright coverage.
+   - Manual Run Rule service payload sanitization.
+   - Release metadata/version synchronization for Topomation `0.3.0`.
+4. Commands run:
+   - `make test-production-shaped`
+5. Outcome:
+   - Version sync (`0.3.0`), Ruff, Mypy, backend pytest, Vitest, bundle
+     parity, Web Test Runner, and mock Playwright suites passed.
+   - Isolated HA dev runtime started from `tests/ha-dev-runtime`.
+   - HA dev backend/API e2e passed: 7 tests.
+   - HA-served panel Playwright e2e passed: 4 tests.
+
 ### 2026-04-29 - v0.2.82 occupancy reason details
 
 1. Commit under test: cafdaea (release code/bundle/version commit; followed

@@ -17,7 +17,12 @@ Use this as the canonical workflow for running and restarting Home Assistant whi
 
 - Repo root (integration code): `/workspaces/topomation`
 - Default dev HA config directory: `/workspaces/core/config`
-- Optional isolated test HA config directory: `/workspaces/topomation/tests/test-ha-config`
+- Required release-gate isolated HA config template:
+  `/workspaces/topomation/tests/ha-dev-template`
+- Generated release-gate HA runtime:
+  `/workspaces/topomation/tests/ha-dev-runtime`
+- Legacy optional isolated test HA config directory:
+  `/workspaces/topomation/tests/test-ha-config`
 - Mounted integration source: `/workspaces/topomation/custom_components/topomation`
 
 ## Standard Daily Workflow (TL;DR)
@@ -38,6 +43,35 @@ make test-ha-check
 - End of session: `make test-ha-down`
 
 This workflow is the canonical path for local dev validation in this repo.
+
+## Production-Shaped Dev E2E Gate
+
+Use this for release confidence. It is WiiM-style controlled live testing:
+real Home Assistant, deterministic test config, current workspace integration,
+and no dependency on a personal/home instance.
+
+```bash
+cd /workspaces/topomation
+make test-production-shaped
+```
+
+For just the HA-dev e2e slice:
+
+```bash
+make test-ha-dev-e2e
+```
+
+Debug mode:
+
+```bash
+KEEP_HA=1 make test-ha-dev-e2e
+make test-ha-dev-down
+```
+
+The gate uses `hass -c tests/ha-dev-runtime`, generated from
+`tests/ha-dev-template`. It symlinks the current `custom_components/topomation`,
+rebuilds `topomation-panel.js`, bootstraps deterministic HA areas/entities, then
+runs backend e2e tests and Playwright against `/topomation`.
 
 ## One-Time Setup
 
@@ -108,9 +142,10 @@ make test-ha-status
 make test-ha-check
 ```
 
-## Optional: Isolated Test Config Runtime
+## Optional: Manual Isolated Test Config Runtime
 
-Use this only when you explicitly want a clean/simulated setup:
+Use this only when you explicitly want a clean/simulated setup by hand. The
+automated release-gate path above should be preferred for test evidence.
 
 ```bash
 mkdir -p /workspaces/topomation/tests/test-ha-config/custom_components
@@ -120,6 +155,9 @@ hass -c /workspaces/topomation/tests/test-ha-config --debug
 ```
 
 ## Live Test Setup
+
+This section is now for optional production-smoke or legacy live testing. The
+required release confidence gate is `make test-production-shaped`.
 
 ```bash
 cd /workspaces/topomation

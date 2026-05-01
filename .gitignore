@@ -41,6 +41,9 @@ htmlcov/
 .tox/
 .nox/
 tests/artifacts/
+tests/ha-dev-runtime/
+tests/ha-dev-runtime*/
+tests/ha-dev-artifacts/
 
 # Node (for frontend build)
 node_modules/

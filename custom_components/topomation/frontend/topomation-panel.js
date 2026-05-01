@@ -7692,8 +7692,13 @@ const Ee = class Ee extends ft {
     }
   }
   _serviceCallPayloadForActionTarget(t) {
-    const e = String(t.service || "").trim() || "turn_on", n = { ...this._normalizeActionDataForRule(t.data, t.entity_id, e) || {}, entity_id: t.entity_id };
-    return this._actionSupportsOnlyIfOff(t.entity_id, e) && typeof t.only_if_off == "boolean" && (n.only_if_off = t.only_if_off), n;
+    const e = String(t.service || "").trim() || "turn_on";
+    return { ...this._normalizeActionDataForRule(t.data, t.entity_id, e) || {}, entity_id: t.entity_id };
+  }
+  _shouldSkipManualActionTarget(t) {
+    var i, n, o;
+    const e = String(t.service || "").trim() || "turn_on";
+    return !this._actionSupportsOnlyIfOff(t.entity_id, e) || t.only_if_off !== !0 ? !1 : ((o = (n = (i = this.hass) == null ? void 0 : i.states) == null ? void 0 : n[t.entity_id]) == null ? void 0 : o.state) === "on";
   }
   async _runActionRule(t) {
     if (!this.hass || this._runningActionRuleId || this._savingActionRules)
@@ -7714,7 +7719,7 @@ const Ee = class Ee extends ft {
     try {
       for (const a of o) {
         const r = String(a.entity_id || "").split(".", 1)[0], c = String(a.service || "").trim();
-        !r || !c || await this.hass.callService(
+        !r || !c || this._shouldSkipManualActionTarget(a) || await this.hass.callService(
           r,
           c,
           this._serviceCallPayloadForActionTarget(a)

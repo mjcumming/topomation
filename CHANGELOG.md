@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-01
+
+### Added
+
+- **Production-shaped HA dev release gate**: added `make test-production-shaped`
+  as the required release gate. It runs the comprehensive local suite, rebuilds
+  the frontend bundle, starts an isolated process-managed Home Assistant dev
+  runtime, bootstraps a deterministic simulated house, runs real HA API /
+  websocket e2e checks, and runs Playwright against the HA-served
+  `/topomation` panel.
+- **Isolated HA dev e2e harness**: added `tests/ha-dev-template/`,
+  generated `tests/ha-dev-runtime/`, `scripts/ha-dev-*.sh`, and
+  `tests/ha_dev_e2e/` so release validation no longer depends on a personal
+  production Home Assistant instance.
+- **Real-panel regression coverage**: added HA-dev Playwright coverage for
+  topology, occupancy, ambient, and managed automation workflows, including
+  the outdoor-dark-lighting and Run Rule payload regression paths.
+
+### Fixed
+
+- **Run Rule service payloads**: manual rule execution now strips
+  Topomation-only metadata such as `only_if_off` before calling Home Assistant
+  services, while preserving the automation guard used by saved rules.
+
 ## [0.2.82] - 2026-04-29
 
 ### Changed

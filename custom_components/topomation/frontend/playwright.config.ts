@@ -2,7 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./playwright",
-  testIgnore: ["**/live-*.spec.ts"],
+  testIgnore: ["**/live-*.spec.ts", "**/ha-dev-*.spec.ts"],
   timeout: 30_000,
   expect: {
     timeout: 10_000,

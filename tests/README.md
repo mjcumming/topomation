@@ -93,8 +93,10 @@ pytest tests/ --cov=custom_components.topomation --cov-report=html
 ```
 
 CI note: `.github/workflows/frontend-tests.yml` now includes a `Comprehensive gate` job that runs `./scripts/test-comprehensive.sh` and blocks release when this matrix fails.
-Release note: use `make test-release-live` before version/tag cut. This runs the
-comprehensive matrix plus a real HA managed-action contract test (no mocks).
+Release note: use `make test-production-shaped` before version/tag cut. This
+runs the comprehensive local matrix plus the isolated dev-container Home
+Assistant e2e suite. `make test-release-live` is retained as a legacy/optional
+production-smoke path and must not be the only release confidence signal.
 
 #### Dependency Update Smoke Test (Recommended)
 
@@ -106,7 +108,29 @@ pytest -q --no-cov tests/test_init.py tests/test_event_bridge.py tests/test_serv
 
 Why `--no-cov`: the repo enforces a global coverage threshold, so focused test subsets can fail coverage even when behavior is correct.
 
-#### Live HA Tests (Real Integration)
+#### HA Dev E2E Tests (Production-Shaped Dev Runtime)
+
+These tests run against an isolated process-managed Home Assistant config under
+`tests/ha-dev-runtime/`. They do not use your house or `/workspaces/core/config`.
+
+```bash
+# Required release-style gate
+make test-production-shaped
+
+# E2E slice only
+make test-ha-dev-e2e
+
+# Debug the HA runtime after a failure
+KEEP_HA=1 make test-ha-dev-e2e
+make test-ha-dev-down
+```
+
+The runner copies `tests/ha-dev-template/`, symlinks the current workspace
+integration, rebuilds the frontend bundle, starts `hass`, bootstraps HA areas
+and entity assignments, then runs backend API/websocket checks and Playwright
+against the real `/topomation` panel.
+
+#### Prod Smoke Tests (Optional Real Instance)
 
 ```bash
 # Quick setup
@@ -125,7 +149,7 @@ HA_URL="${HA_URL_LOCAL:-http://localhost:8123}" \
 HA_TOKEN="${HA_TOKEN_LOCAL:-$HA_TOKEN}" \
 pytest tests/test-live-managed-actions-contract.py -v --live-ha --no-cov
 
-# Release gate (local matrix + real HA contract)
+# Legacy live/prod smoke gate
 HA_URL_DEV="$HA_URL_LOCAL" HA_TOKEN_DEV="$HA_TOKEN_LOCAL" make test-release-live
 
 # Or pytest directly
@@ -135,7 +159,7 @@ HA_TOKEN="${HA_TOKEN_LOCAL:-$HA_TOKEN}" \
 pytest tests/test-realworld.py -v --live-ha
 ```
 
-**See**: `QUICK-START-LIVE.md` for 5-minute setup guide!
+**See**: `QUICK-START-LIVE.md` for legacy/prod smoke setup.
 **Dev container**: `DEV-CONTAINER-HA.md` is the canonical HA run/restart reference.
 `tests/ha-config.env` is gitignored and is the canonical local token file.
 
@@ -154,7 +178,7 @@ pytest tests/test-realworld.py -v --live-ha
 
 **Files**: `test_init.py`, `test_coordinator.py`, `test_event_bridge.py`
 
-### 2. Real-World Integration Tests
+### 2. HA Runtime Tests
 
 **Purpose**: Test complete data flows with realistic scenarios
 
@@ -180,6 +204,19 @@ Current status:
 4. **End-to-End Scenarios** - Complete user workflows
 
 ## Test Configuration
+
+### 3. HA Dev E2E Tests
+
+**Purpose**: prove Topomation works in a running Home Assistant runtime with the
+current workspace integration and HA-served frontend bundle.
+
+**Characteristics**:
+
+- process-managed `hass` in the dev container
+- isolated deterministic config
+- real HA REST/websocket/service validation
+- real `/topomation` browser workflows
+- release-gate representative coverage plus recent regression buckets
 
 ### Short Timeouts for Testing
 

@@ -1,0 +1,202 @@
+# Production-shaped Topomation HA dev e2e fixture.
+#
+# This config is copied into tests/ha-dev-runtime by scripts/ha-dev-reset.sh.
+# Keep it deterministic and hardware-free: tests may assign these entities to
+# HA areas and then let Topomation import them like a real install.
+
+default_config:
+
+homeassistant:
+  auth_providers:
+    - type: trusted_networks
+      trusted_networks:
+        - 127.0.0.1
+        - ::1
+      allow_bypass_login: true
+    - type: homeassistant
+
+http:
+  server_port: !env_var HA_DEV_PORT 8123
+
+automation: !include automations.yaml
+script: !include scripts.yaml
+scene: !include scenes.yaml
+
+logger:
+  default: warning
+  logs:
+    custom_components.topomation: info
+
+input_boolean:
+  sim_driveway_motion:
+    name: "SIM Driveway Motion"
+  sim_front_porch_motion:
+    name: "SIM Front Porch Motion"
+  sim_kitchen_motion:
+    name: "SIM Kitchen Motion"
+  sim_living_room_motion:
+    name: "SIM Living Room Motion"
+  sim_main_bedroom_presence:
+    name: "SIM Main Bedroom Presence"
+  sim_hottub_motion:
+    name: "SIM Hottub Motion"
+  sim_driveway_test_light:
+    name: "SIM Driveway Test Light"
+  sim_front_porch_test_light:
+    name: "SIM Front Porch Test Light"
+  sim_kitchen_test_light:
+    name: "SIM Kitchen Test Light"
+  sim_living_room_test_light:
+    name: "SIM Living Room Test Light"
+  sim_back_deck_switch:
+    name: "SIM Back Deck Switch"
+  sim_hvac_linked_fan:
+    name: "SIM HVAC Linked Fan"
+
+input_number:
+  sim_driveway_lux:
+    name: "SIM Driveway Lux"
+    min: 0
+    max: 2000
+    step: 1
+    mode: box
+    initial: 5
+  sim_front_porch_lux:
+    name: "SIM Front Porch Lux"
+    min: 0
+    max: 2000
+    step: 1
+    mode: box
+    initial: 5
+  sim_kitchen_lux:
+    name: "SIM Kitchen Lux"
+    min: 0
+    max: 2000
+    step: 1
+    mode: box
+    initial: 250
+  sim_living_room_lux:
+    name: "SIM Living Room Lux"
+    min: 0
+    max: 2000
+    step: 1
+    mode: box
+    initial: 120
+
+template:
+  - binary_sensor:
+      - name: "Driveway Motion"
+        unique_id: topomation_dev_driveway_motion
+        device_class: motion
+        state: "{{ is_state('input_boolean.sim_driveway_motion', 'on') }}"
+      - name: "Front Porch Motion"
+        unique_id: topomation_dev_front_porch_motion
+        device_class: motion
+        state: "{{ is_state('input_boolean.sim_front_porch_motion', 'on') }}"
+      - name: "Kitchen Motion"
+        unique_id: topomation_dev_kitchen_motion
+        device_class: motion
+        state: "{{ is_state('input_boolean.sim_kitchen_motion', 'on') }}"
+      - name: "Living Room Motion"
+        unique_id: topomation_dev_living_room_motion
+        device_class: motion
+        state: "{{ is_state('input_boolean.sim_living_room_motion', 'on') }}"
+      - name: "Main Bedroom Presence"
+        unique_id: topomation_dev_main_bedroom_presence
+        device_class: presence
+        state: "{{ is_state('input_boolean.sim_main_bedroom_presence', 'on') }}"
+      - name: "Hottub Motion"
+        unique_id: topomation_dev_hottub_motion
+        device_class: motion
+        state: "{{ is_state('input_boolean.sim_hottub_motion', 'on') }}"
+  - sensor:
+      - name: "Driveway Lux"
+        unique_id: topomation_dev_driveway_lux
+        unit_of_measurement: "lx"
+        device_class: illuminance
+        state_class: measurement
+        state: "{{ states('input_number.sim_driveway_lux') | int(5) }}"
+      - name: "Front Porch Lux"
+        unique_id: topomation_dev_front_porch_lux
+        unit_of_measurement: "lx"
+        device_class: illuminance
+        state_class: measurement
+        state: "{{ states('input_number.sim_front_porch_lux') | int(5) }}"
+      - name: "Kitchen Lux"
+        unique_id: topomation_dev_kitchen_lux
+        unit_of_measurement: "lx"
+        device_class: illuminance
+        state_class: measurement
+        state: "{{ states('input_number.sim_kitchen_lux') | int(250) }}"
+      - name: "Living Room Lux"
+        unique_id: topomation_dev_living_room_lux
+        unit_of_measurement: "lx"
+        device_class: illuminance
+        state_class: measurement
+        state: "{{ states('input_number.sim_living_room_lux') | int(120) }}"
+
+light:
+  - platform: template
+    lights:
+      driveway_test_light:
+        friendly_name: "Driveway Test Light"
+        value_template: "{{ is_state('input_boolean.sim_driveway_test_light', 'on') }}"
+        turn_on:
+          service: input_boolean.turn_on
+          target:
+            entity_id: input_boolean.sim_driveway_test_light
+        turn_off:
+          service: input_boolean.turn_off
+          target:
+            entity_id: input_boolean.sim_driveway_test_light
+      front_porch_test_light:
+        friendly_name: "Front Porch Test Light"
+        value_template: "{{ is_state('input_boolean.sim_front_porch_test_light', 'on') }}"
+        turn_on:
+          service: input_boolean.turn_on
+          target:
+            entity_id: input_boolean.sim_front_porch_test_light
+        turn_off:
+          service: input_boolean.turn_off
+          target:
+            entity_id: input_boolean.sim_front_porch_test_light
+      kitchen_test_light:
+        friendly_name: "Kitchen Test Light"
+        value_template: "{{ is_state('input_boolean.sim_kitchen_test_light', 'on') }}"
+        turn_on:
+          service: input_boolean.turn_on
+          target:
+            entity_id: input_boolean.sim_kitchen_test_light
+        turn_off:
+          service: input_boolean.turn_off
+          target:
+            entity_id: input_boolean.sim_kitchen_test_light
+      living_room_test_light:
+        friendly_name: "Living Room Test Light"
+        value_template: "{{ is_state('input_boolean.sim_living_room_test_light', 'on') }}"
+        turn_on:
+          service: input_boolean.turn_on
+          target:
+            entity_id: input_boolean.sim_living_room_test_light
+        turn_off:
+          service: input_boolean.turn_off
+          target:
+            entity_id: input_boolean.sim_living_room_test_light
+
+switch:
+  - platform: template
+    switches:
+      back_deck_test_switch:
+        friendly_name: "Back Deck Test Switch"
+        value_template: "{{ is_state('input_boolean.sim_back_deck_switch', 'on') }}"
+        turn_on:
+          service: input_boolean.turn_on
+          target:
+            entity_id: input_boolean.sim_back_deck_switch
+        turn_off:
+          service: input_boolean.turn_off
+          target:
+            entity_id: input_boolean.sim_back_deck_switch
+
+# Demo supplies representative fan/media/vacuum/climate entities without hardware.
+demo:

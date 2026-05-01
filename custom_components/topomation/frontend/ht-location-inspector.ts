@@ -8793,14 +8793,15 @@ export class HtLocationInspector extends LitElement {
     const service = String(target.service || "").trim() || "turn_on";
     const normalizedData =
       this._normalizeActionDataForRule(target.data, target.entity_id, service) || {};
-    const payload: Record<string, unknown> = { ...normalizedData, entity_id: target.entity_id };
-    if (
-      this._actionSupportsOnlyIfOff(target.entity_id, service) &&
-      typeof target.only_if_off === "boolean"
-    ) {
-      payload.only_if_off = target.only_if_off;
+    return { ...normalizedData, entity_id: target.entity_id };
+  }
+
+  private _shouldSkipManualActionTarget(target: RuleActionTarget): boolean {
+    const service = String(target.service || "").trim() || "turn_on";
+    if (!this._actionSupportsOnlyIfOff(target.entity_id, service) || target.only_if_off !== true) {
+      return false;
     }
-    return payload;
+    return this.hass?.states?.[target.entity_id]?.state === "on";
   }
 
   private async _runActionRule(ruleId: string): Promise<void> {
@@ -8830,6 +8831,9 @@ export class HtLocationInspector extends LitElement {
         const domain = String(target.entity_id || "").split(".", 1)[0];
         const service = String(target.service || "").trim();
         if (!domain || !service) {
+          continue;
+        }
+        if (this._shouldSkipManualActionTarget(target)) {
           continue;
         }
         await this.hass.callService!(

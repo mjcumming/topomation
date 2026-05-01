@@ -1,4 +1,4 @@
-.PHONY: help install dev-install test test-cov lint format typecheck check clean test-ha-up test-ha-down test-ha-logs test-ha-status test-ha-check test-ha-restart
+.PHONY: help install dev-install test test-cov lint format typecheck check clean test-ha-up test-ha-down test-ha-logs test-ha-status test-ha-check test-ha-restart test-ha-dev-reset test-ha-dev-up test-ha-dev-down test-ha-dev-e2e test-production-shaped
 
 HA_DEV_BIN ?= /home/vscode/.local/ha-venv/bin/hass
 HA_DEV_CONFIG ?= /workspaces/core/config
@@ -14,6 +14,11 @@ help:
 	@echo "  make test         Run tests"
 	@echo "  make test-comprehensive  Run backend + frontend unit/component/e2e suites"
 	@echo "  make test-release-live   Run release gate (comprehensive + live HA contract/browser)"
+	@echo "  make test-production-shaped  Run required dev-container HA production-shaped gate"
+	@echo "  make test-ha-dev-reset  Prepare isolated tests/ha-dev-runtime"
+	@echo "  make test-ha-dev-up     Start isolated HA dev runtime"
+	@echo "  make test-ha-dev-down   Stop isolated HA dev runtime"
+	@echo "  make test-ha-dev-e2e    Run isolated HA dev backend/browser e2e"
 	@echo "  make frontend-test-smoke Run production-like frontend smoke profile"
 	@echo "  make test-ha-up       Start local HA via hass -c /workspaces/core/config --debug"
 	@echo "  make test-ha-status   Show HA process + HTTP reachability status"
@@ -204,6 +209,18 @@ test-ha-restart:
 	@$(MAKE) test-ha-up
 	@$(MAKE) test-ha-status
 
+test-ha-dev-reset:
+	./scripts/ha-dev-reset.sh
+
+test-ha-dev-up:
+	./scripts/ha-dev-up.sh
+
+test-ha-dev-down:
+	./scripts/ha-dev-down.sh
+
+test-ha-dev-e2e:
+	./scripts/run-ha-dev-e2e.sh
+
 lint:
 	ruff check custom_components/ tests/
 
@@ -274,3 +291,7 @@ test-comprehensive:
 
 test-release-live:
 	./scripts/test-release-live.sh
+
+test-production-shaped:
+	./scripts/test-comprehensive.sh
+	./scripts/run-ha-dev-e2e.sh
