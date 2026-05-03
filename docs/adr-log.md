@@ -5103,6 +5103,108 @@ and another chance for drift.
 
 ---
 
+### ADR-HA-094: Generated Ambient Rules Use One Selected Source (2026-05-03)
+
+**Status**: ✅ APPROVED
+
+**Context**:
+
+Managed Lighting rules previously encoded ambient source fallback directly into
+Home Assistant automation YAML. A rule could watch a local lux sensor, an
+inherited parent lux sensor, and `sun.sun`, then use OR conditions such as
+`local lux OR parent lux OR sun`.
+
+That made the HA automation editor hard to understand and changed the meaning
+of "fallback." Sun and parent sensors were not true backups; they were parallel
+authorities that could pass a dark/bright condition even while the local lux
+sensor was online and disagreed. Attempting a true "use parent only when local
+is offline" model inside each HA rule would require template arbitration,
+offline/stale detection, state-change triggers for unavailable sensors, and
+freshness timers. That is ambient runtime logic, not a good fit for every
+generated automation.
+
+**Decision**:
+
+Generated managed Lighting automations bind to exactly one ambient source at
+save/rebuild time:
+
+1. Use the location's assigned local lux sensor when one is configured.
+2. Otherwise use the inherited ancestor lux sensor when inheritance resolves one.
+3. Otherwise use `sun.sun` only when no lux source exists and sun fallback is
+   enabled.
+4. Do not generate local/inherited/sun OR fallback chains.
+5. If a dark/bright condition has no lux source and sun fallback is disabled,
+   generate a fail-closed condition rather than running the rule unguarded.
+6. Bump managed automation metadata to version 5 and rebuild older managed
+   rules once on the next release startup so existing HA automations converge to
+   the new contract.
+
+Ambient readings and diagnostics may still show richer source priority and
+fallback behavior for the inspector. This ADR narrows generated HA automation
+YAML only.
+
+**Rationale**:
+
+1. HA automations are edge-triggered; ambient source selection is state
+   arbitration. Encoding arbitration in every rule creates race-prone YAML.
+2. "Fallback" should not mean "alternate source may override a valid local
+   source." One selected source is easier to explain and debug.
+3. Local/offline/stale fallback requires source health tracking. Building that
+   without a dedicated ambient runtime would spread timing logic across many
+   rules.
+4. The simpler rule shape matches the user workflow: a location defines bright
+   and dark thresholds using either its own lux sensor or inherited ambient
+   configuration.
+5. A metadata-version rebuild gives existing installations the new behavior
+   without requiring users to manually recreate rules.
+
+**Consequences**:
+
+- ✅ Generated HA rules become shorter and easier to inspect.
+- ✅ Parent lux is still useful for rooms that choose to inherit rather than
+  configure a local lux sensor.
+- ✅ Sun fallback no longer competes with a valid lux source.
+- ✅ Existing managed rules can be rewritten in place during the next release.
+- ⚠️ If a local lux sensor goes offline, generated rules do not dynamically
+  switch to parent lux. The user must remove the local assignment or wait for
+  the sensor to recover.
+- ⚠️ True dynamic fallback remains deferred until there is enough evidence that
+  sensor-offline behavior is a common pain point.
+
+**How Dynamic Fallback Could Return**:
+
+Dynamic local-to-parent fallback should come back only as a Topomation-owned
+ambient runtime/projection, not as template logic inside every generated rule.
+The likely shape:
+
+1. Topomation tracks lux source health (`numeric`, `unknown`, `unavailable`,
+   `stale`) and source freshness timers.
+2. Topomation computes one effective ambient state per location:
+   local fresh lux → inherited fresh lux → sun/error policy.
+3. Topomation publishes effective ambient HA entities or a backend projection
+   that generated rules can trigger from.
+4. Rules watch that effective state, not raw local/parent/sun sources.
+
+Reconsider this only if live usage shows meaningful pain from local lux sensors
+going unavailable or stale, or if Topomation needs a canonical ambient state
+entity for other features.
+
+**Alternatives Considered**:
+
+- Keep local/inherited/sun OR chains: rejected because fallback sources become
+  parallel truth and confuse both HA editor output and runtime semantics.
+- Encode fallback with HA templates in each rule: rejected because it requires
+  duplicated offline/stale arbitration and extra triggers to handle source
+  changes that are not lux threshold crossings.
+- Add ambient projection entities immediately: rejected for now as more
+  complexity than the current product needs; reserved as the right future path
+  if dynamic fallback becomes important.
+- Remove inherited ambient entirely: rejected because inherited parent lux is
+  still valuable as a deliberate configuration choice for rooms without local
+  lux sensors.
+
+---
+
 ## How to Use This Log
 
 ### When to Create an ADR

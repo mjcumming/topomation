@@ -296,6 +296,7 @@ def test_private_helpers_parse_and_mutate_config() -> None:
     assert parsed.ambient_condition == "any"
     assert parsed.must_be_occupied is False
     assert parsed.run_on_startup is True
+    assert parsed.version == 2
     assert manager._parse_metadata("Managed by Topomation") is None  # noqa: SLF001
     assert parsed.rule_uuid == ""
     # Older metadata without the field defaults to False (ADR-HA-091).
@@ -322,6 +323,7 @@ def test_metadata_round_trip_preserves_daily_gating_enabled() -> None:
     )
     parsed = manager._parse_metadata(f"Managed by Topomation.\n{line}")  # noqa: SLF001
     assert parsed is not None
+    assert parsed.version == 4
     assert parsed.daily_gating_enabled is True
 
 
@@ -803,8 +805,8 @@ def test_ambient_condition_ignores_local_lux_while_local_lights_are_on() -> None
     ]
 
 
-def test_ambient_condition_can_use_inherited_lux_when_local_lux_is_ignored() -> None:
-    """Inherited lux remains usable when local light state contaminates the room sensor."""
+def test_ambient_condition_uses_local_lux_when_local_sensor_is_configured() -> None:
+    """Managed rules choose one ambient source and do not emit inherited fallback chains."""
     manager = TopomationManagedActions(cast(HomeAssistant, SimpleNamespace()))
 
     conditions = manager._build_condition_definitions(  # noqa: SLF001
@@ -827,31 +829,115 @@ def test_ambient_condition_can_use_inherited_lux_when_local_lux_is_ignored() -> 
 
     assert conditions == [
         {
-            "condition": "or",
+            "condition": "and",
             "conditions": [
                 {
-                    "condition": "and",
-                    "conditions": [
-                        {
-                            "condition": "state",
-                            "entity_id": "light.room_ceiling",
-                            "state": "off",
-                        },
-                        {
-                            "condition": "numeric_state",
-                            "entity_id": "sensor.room_lux",
-                            "below": 800.0,
-                        },
-                    ],
+                    "condition": "state",
+                    "entity_id": "light.room_ceiling",
+                    "state": "off",
                 },
                 {
                     "condition": "numeric_state",
-                    "entity_id": "sensor.outdoor_lux",
+                    "entity_id": "sensor.room_lux",
                     "below": 800.0,
                 },
             ],
         }
     ]
+
+
+def test_ambient_condition_uses_inherited_lux_when_no_local_sensor_is_configured() -> None:
+    """A location without local lux can use its inherited parent lux source."""
+    manager = TopomationManagedActions(cast(HomeAssistant, SimpleNamespace()))
+
+    conditions = manager._build_condition_definitions(  # noqa: SLF001
+        ambient_condition="dark",
+        must_be_occupied=None,
+        occupancy_entity_id=None,
+        time_condition_enabled=False,
+        start_time="00:00",
+        end_time="23:59",
+        ambient_config={
+            "lux_sensor": None,
+            "inherited_lux_sensor": "sensor.outdoor_lux",
+            "dark_threshold": 800,
+            "bright_threshold": 1200,
+            "fallback_to_sun": True,
+            "ignore_local_lux_when_lights_on": True,
+            "local_light_entity_ids": ["light.room_ceiling"],
+        },
+    )
+
+    assert conditions == [
+        {
+            "condition": "numeric_state",
+            "entity_id": "sensor.outdoor_lux",
+            "below": 800.0,
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_rebuild_rules_before_metadata_version_rewrites_only_old_rules(
+    hass: HomeAssistant,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Versioned rebuild rewrites old managed rules and preserves disabled state."""
+    location = SimpleNamespace(id="kitchen", name="Kitchen", modules={})
+    loc_mgr = SimpleNamespace(all_locations=lambda: [location])
+    manager = TopomationManagedActions(hass, loc_mgr)
+    created: list[dict[str, object]] = []
+    enabled_updates: list[tuple[str, bool]] = []
+
+    async def _fake_list_rules(location_id: str) -> list[dict[str, object]]:
+        assert location_id == "kitchen"
+        return [
+            {
+                "id": "topomation_kitchen_old",
+                "entity_id": "automation.topomation_kitchen_old",
+                "name": "Kitchen old",
+                "metadata_version": 4,
+                "trigger_type": "on_dark",
+                "trigger_types": ["on_dark"],
+                "actions": [{"entity_id": "light.kitchen", "service": "turn_on"}],
+                "ambient_condition": "dark",
+                "must_be_occupied": True,
+                "time_condition_enabled": False,
+                "start_time": "18:00",
+                "end_time": "23:59",
+                "run_on_startup": True,
+                "rule_uuid": "rule-old-001",
+                "user_named": True,
+                "enabled": False,
+            },
+            {
+                "id": "topomation_kitchen_new",
+                "metadata_version": 5,
+                "trigger_type": "on_dark",
+                "actions": [{"entity_id": "light.kitchen", "service": "turn_on"}],
+            },
+        ]
+
+    async def _fake_create_rule(**kwargs: object) -> dict[str, object]:
+        created.append(kwargs)
+        return {"entity_id": "automation.topomation_kitchen_old"}
+
+    async def _fake_set_enabled(*, entity_id: str, enabled: bool) -> None:
+        enabled_updates.append((entity_id, enabled))
+
+    monkeypatch.setattr(manager, "async_list_rules", _fake_list_rules)
+    monkeypatch.setattr(manager, "async_create_rule", _fake_create_rule)
+    monkeypatch.setattr(manager, "async_set_rule_enabled", _fake_set_enabled)
+
+    summary = await manager.async_rebuild_rules_before_metadata_version()
+
+    assert summary == {"checked": 2, "rebuilt": 1, "failed": 0}
+    assert len(created) == 1
+    assert created[0]["location"] is location
+    assert created[0]["automation_id"] == "topomation_kitchen_old"
+    assert created[0]["trigger_types"] == ["on_dark"]
+    assert created[0]["ambient_condition"] == "dark"
+    assert enabled_updates == [("automation.topomation_kitchen_old", False)]
 
 
 def test_daily_gating_condition_emitted_for_vacuum_target_with_paused_carveout() -> None:

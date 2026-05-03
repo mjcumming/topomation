@@ -81,6 +81,52 @@ Run the rows that match the touched workflow.
 
 ## 6. Release Records
 
+### 2026-05-03 - v0.3.1 ambient rule source simplification
+
+1. Commit under test: release-candidate worktree for Topomation `0.3.1`.
+2. Frontend bundle rebuilt from that commit: yes; release gate rebuilt the
+   runtime bundle and produced no committed bundle diff.
+3. Touched workflow list:
+   - Managed Lighting ambient trigger/condition generation.
+   - Existing managed-rule one-shot rebuild from metadata versions `< 5`.
+   - HA dev live-gate fixture topology for browser-managed action workflows.
+   - Ambient lighting contract/ADR documentation.
+   - Release metadata/version synchronization for Topomation `0.3.1`.
+4. Commands run:
+   - `python scripts/verify-version-sync.py` — **PASS** (version sync
+     `0.3.1`; 2026-05-03)
+   - `scripts/check-docs-consistency.sh` — **PASS** (2026-05-03)
+   - `./scripts/test-comprehensive.sh` — **PASS** (version sync `0.3.1`,
+     Ruff, Mypy, backend pytest `307 passed, 22 skipped`, frontend Vitest
+     `261 passed`, production bundle rebuild, Web Test Runner `202 passed`,
+     Playwright workflow suites `34 passed`; 2026-05-03)
+   - `make test-release-live` — **FAIL / environment**: local HA override
+     selected `http://localhost:8123`, which was not running; 2026-05-03.
+   - `./scripts/ha-dev-up.sh` — **PASS** (local HA dev runtime started at
+     `http://127.0.0.1:8123`; 2026-05-03)
+   - `make test-release-live` — **FAIL / fixture precondition**: local/live
+     comprehensive matrix and live managed-action contract passed, but live
+     browser tests stopped because the HA dev topology had no imported location
+     with two lights and no floor with two eligible child areas; 2026-05-03.
+   - `./scripts/ha-dev-down.sh && ./scripts/ha-dev-reset.sh &&
+     ./scripts/ha-dev-up.sh` — **PASS** (restarted isolated HA dev runtime with
+     updated deterministic fixture; 2026-05-03)
+   - `python tests/ha_dev_e2e/bootstrap.py` — **PASS** (bootstrapped 18
+     locations; Front Porch imported two registry-backed lights; Main Floor
+     imported multiple child areas; 2026-05-03)
+   - `make test-release-live` — **PASS** (local comprehensive matrix, live HA
+     managed-action contract `2 passed`, live HA browser workflow `6 passed`;
+     2026-05-03)
+5. Outcome:
+   - Managed Lighting ambient source selection: **PASS**
+   - Existing managed-rule metadata rebuild path: **PASS**
+   - HA dev live-gate fixture topology: **PASS**
+   - Ambient lighting contract/ADR documentation: **PASS**
+   - Release metadata/version sync: **PASS**
+   - Local comprehensive gate: **PASS**
+   - Live HA managed-action contract: **PASS**
+   - Live HA browser workflows: **PASS**
+
 ### 2026-05-01 - v0.3.0 production-shaped HA dev gate
 
 1. Commit under test: v0.3.0 release commit.

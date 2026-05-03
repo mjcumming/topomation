@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict, deque
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from inspect import isawaitable
 from typing import TYPE_CHECKING, Any
@@ -621,6 +621,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     actions_runtime = TopomationActionsRuntime(hass, loc_mgr, bus)
     await actions_runtime.async_setup()
     managed_action_rules = TopomationManagedActions(hass, loc_mgr)
+    managed_rule_rebuild_unsub: Callable[[], None] | None = None
+
+    @callback
+    def _schedule_managed_rule_contract_rebuild(_: Any) -> None:
+        """One-shot rewrite for managed automations created by older contracts."""
+        hass.async_create_task(
+            managed_action_rules.async_rebuild_rules_before_metadata_version()
+        )
+
+    managed_rule_rebuild_unsub = async_call_later(
+        hass,
+        30,
+        _schedule_managed_rule_contract_rebuild,
+    )
+
+    def _cancel_managed_rule_contract_rebuild() -> None:
+        if managed_rule_rebuild_unsub is not None:
+            managed_rule_rebuild_unsub()
+
+    entry.async_on_unload(_cancel_managed_rule_contract_rebuild)
 
     @callback
     def _cleanup_managed_entities_on_location_deleted(event: Event) -> None:

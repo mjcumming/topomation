@@ -59,8 +59,8 @@ Implementation: `TopomationManagedActions._build_trigger_definitions`, `_build_c
 | Dimension | Covered by |
 | --- | --- |
 | Trigger: `on_occupied` / `on_vacant` | `test_managed_action_trigger_build_matrix` |
-| Trigger: `on_dark` / `on_bright` (lux only, sun only, lux + sun) | `test_managed_action_trigger_build_matrix` |
-| Condition: ambient `any` / `dark` / `bright` (sun vs lux OR) | `test_managed_action_condition_build_matrix` |
+| Trigger: `on_dark` / `on_bright` (one selected lux source, or sun only when no lux source exists) | `test_managed_action_trigger_build_matrix` |
+| Condition: ambient `any` / `dark` / `bright` (one selected lux source, or sun only when no lux source exists) | `test_managed_action_condition_build_matrix` |
 | Condition: `must_be_occupied` true / false / omitted | `test_managed_action_condition_build_matrix` |
 | Condition: time window enabled (same-day + overnight **payload shape**) | `test_managed_action_condition_build_matrix` |
 | Occupancy condition without entity id → error | `test_managed_action_condition_requires_entity_for_occupancy_guard` |

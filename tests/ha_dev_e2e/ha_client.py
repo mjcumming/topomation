@@ -156,6 +156,19 @@ DEV_AREAS = {
     "hottub": "Hottub",
 }
 
+DEV_FLOORS = {
+    "main": "Main Floor",
+}
+
+AREA_FLOOR_MAP = {
+    "front_porch": "main",
+    "kitchen": "main",
+    "living_room": "main",
+    "hallway": "main",
+    "main_bedroom": "main",
+    "guest_bedroom": "main",
+}
+
 AREA_ENTITY_MAP = {
     "driveway": [
         "binary_sensor.driveway_motion",
@@ -166,6 +179,12 @@ AREA_ENTITY_MAP = {
         "binary_sensor.front_porch_motion",
         "sensor.front_porch_lux",
         "light.front_porch_test_light",
+        "light.front_porch_accent_light",
+        # HA's template light platform does not register every light entity in
+        # all supported dev-runtime builds. Assign two registry-backed demo
+        # lights so live browser tests can exercise multi-light rule authoring.
+        "light.bed_light",
+        "light.ceiling_lights",
     ],
     "kitchen": [
         "binary_sensor.kitchen_motion",
@@ -196,6 +215,19 @@ async def ensure_area(client: HADevClient, name: str) -> str:
     return str(created["area_id"])
 
 
+async def ensure_floor(client: HADevClient, name: str) -> str:
+    """Ensure an HA floor exists and return its floor_id."""
+    floors = await client.ws({"type": "config/floor_registry/list"}, msg_id=102)
+    for floor in floors or []:
+        if isinstance(floor, dict) and floor.get("name") == name:
+            return str(floor["floor_id"])
+    created = await client.ws(
+        {"type": "config/floor_registry/create", "name": name},
+        msg_id=103,
+    )
+    return str(created["floor_id"])
+
+
 async def ensure_topomation_config_entry(client: HADevClient) -> str:
     """Ensure Topomation has a loaded config entry and return entry_id."""
     entries = await client.ws({"type": "config_entries/get"}, msg_id=110)
@@ -223,14 +255,29 @@ async def bootstrap_dev_ha(client: HADevClient) -> dict[str, Any]:
     for entity_id in [
         "light.driveway_test_light",
         "light.front_porch_test_light",
+        "light.front_porch_accent_light",
         "binary_sensor.driveway_motion",
         "sensor.driveway_lux",
     ]:
         await client.wait_for_entity(entity_id, timeout=30)
 
+    floor_ids: dict[str, str] = {}
+    for slug, name in DEV_FLOORS.items():
+        floor_ids[slug] = await ensure_floor(client, name)
+
     area_ids: dict[str, str] = {}
     for slug, name in DEV_AREAS.items():
         area_ids[slug] = await ensure_area(client, name)
+        floor_slug = AREA_FLOOR_MAP.get(slug)
+        if floor_slug:
+            await client.ws(
+                {
+                    "type": "config/area_registry/update",
+                    "area_id": area_ids[slug],
+                    "floor_id": floor_ids[floor_slug],
+                },
+                msg_id=104,
+            )
 
     for slug, entity_ids in AREA_ENTITY_MAP.items():
         area_id = area_ids[slug]
@@ -259,4 +306,9 @@ async def bootstrap_dev_ha(client: HADevClient) -> dict[str, Any]:
         pass
 
     locations = await client.wait_for_topomation(timeout=30)
-    return {"entry_id": entry_id, "area_ids": area_ids, "locations": locations}
+    return {
+        "entry_id": entry_id,
+        "area_ids": area_ids,
+        "floor_ids": floor_ids,
+        "locations": locations,
+    }

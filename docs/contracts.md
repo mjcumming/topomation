@@ -433,12 +433,22 @@ Additional save points:
     `building`, `grounds`): the host’s managed shadow wrapper’s `ha_area_id` and
     that shadow location’s `entity_ids` (ADR-HA-087)
 - Ambient module configs must persist with `auto_discover: false` in integration defaults.
-- Ambient source priority:
+- Ambient reading source priority:
   1. assigned location lux sensor, unless the location enables
      `ignore_local_lux_when_lights_on` and one of its local `light.*` entities
      is currently `on`
   2. inherited ancestor lux sensor (when enabled)
   3. sun fallback (`sun.sun`) when lux input is unavailable and fallback is enabled
+- Per ADR-HA-094, generated managed Lighting rules intentionally bind to one ambient source at
+  save/rebuild time:
+  1. assigned location lux sensor
+  2. inherited ancestor lux sensor, only when no local lux sensor is assigned
+  3. sun fallback, only when no lux source is available and fallback is enabled
+- Generated rules must not encode local/inherited/sun fallback chains or OR
+  source arbitration. Dynamic source fallback belongs to Topomation ambient
+  readings/diagnostics, not HA automation YAML.
+- If a dark/bright condition cannot resolve any lux source and sun fallback is
+  disabled, the generated condition must fail closed rather than run unguarded.
 - `ignore_local_lux_when_lights_on` applies only to the configured location's
   local lux source. It does not suppress inherited/ancestor lux sources and does
   not scan descendant locations.
@@ -576,8 +586,9 @@ Additional save points:
     users retain explicit control of those condition rows.
   - When Ambient config enables `ignore_local_lux_when_lights_on`, managed
     Lighting dark/bright conditions may only trust the local lux sensor while
-    the location's local `light.*` entities are `off`; inherited lux and sun
-    fallback remain valid condition sources.
+    the location's local `light.*` entities are `off`. Inherited lux is used
+    only for generated rules without a local lux sensor; sun is used only when
+    no lux source is available.
 - Lighting multi-action contract:
   - one Lighting rule may include multiple action targets.
   - persistence writes those targets as ordered HA automation action steps.

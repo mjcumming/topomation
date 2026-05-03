@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-05-03
+
+### Changed
+
+- **Ambient rule source selection**: managed Lighting rules now generate a
+  single ambient source instead of local/inherited/sun fallback chains. Rules
+  use local lux when configured, otherwise inherited parent lux, otherwise
+  `sun.sun` only when no lux source is available and sun fallback is enabled.
+- **Managed rule rebuild**: bumped Topomation automation metadata to version 5
+  and added a one-shot startup rebuild so existing managed rules are rewritten
+  in place to the new ambient-source contract.
+
+### Fixed
+
+- **Ambient guard safety**: dark/bright conditions with no lux source and sun
+  fallback disabled now fail closed instead of running unguarded.
+
 ## [0.3.0] - 2026-05-01
 
 ### Added

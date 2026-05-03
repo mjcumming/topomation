@@ -64,6 +64,7 @@ _VALID_AMBIENT_CONDITIONS = frozenset({"any", "dark", "bright"})
 _AUTOMATION_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_]+$")
 _RULE_UUID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{7,63}$")
 _RECENT_RULE_SNAPSHOT_TTL_SECONDS = 30.0
+_AUTOMATION_METADATA_VERSION = 5
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -72,6 +73,7 @@ _LOGGER = logging.getLogger(__name__)
 class _TopomationMetadata:
     """Metadata embedded in Topomation-managed automation descriptions."""
 
+    version: int
     location_id: str
     trigger_type: ActionTriggerType
     trigger_types: tuple[ActionTriggerType, ...]
@@ -91,6 +93,7 @@ class _RecentRuleSnapshot:
     """Short-lived snapshot for upsert/list consistency after API writes."""
 
     saved_at_monotonic: float
+    metadata_version: int
     location_id: str
     name: str
     trigger_type: ActionTriggerType
@@ -248,6 +251,7 @@ class TopomationManagedActions:
                         "id": automation_id or entity_id,
                         "entity_id": entity_id,
                         "name": recent_snapshot.name,
+                        "metadata_version": recent_snapshot.metadata_version,
                         "trigger_type": recent_snapshot.trigger_type,
                         "trigger_types": list(recent_snapshot.trigger_types),
                         "actions": [dict(action) for action in recent_snapshot.actions],
@@ -322,6 +326,7 @@ class TopomationManagedActions:
                     "id": automation_id or entity_id,
                     "entity_id": entity_id,
                     "name": name,
+                    "metadata_version": metadata.version,
                     "trigger_type": metadata.trigger_type,
                     "trigger_types": list(metadata.trigger_types),
                     "actions": actions,
@@ -448,7 +453,7 @@ class TopomationManagedActions:
         )
 
         metadata_payload = {
-            "version": 4,
+            "version": _AUTOMATION_METADATA_VERSION,
             "location_id": location_id,
             "trigger_type": normalized_trigger,
             "trigger_types": list(normalized_trigger_types),
@@ -706,6 +711,123 @@ class TopomationManagedActions:
 
         return deleted_automation_ids
 
+    async def async_rebuild_rules_before_metadata_version(
+        self,
+        *,
+        min_version: int = _AUTOMATION_METADATA_VERSION,
+    ) -> dict[str, int]:
+        """Rewrite older managed rules so generated HA YAML matches current contracts."""
+        if self._loc_mgr is None:
+            return {"checked": 0, "rebuilt": 0, "failed": 0}
+
+        checked = 0
+        rebuilt = 0
+        failed = 0
+        try:
+            locations = list(self._loc_mgr.all_locations())
+        except Exception:
+            _LOGGER.debug("Unable to enumerate locations for managed rule rebuild", exc_info=True)
+            return {"checked": 0, "rebuilt": 0, "failed": 0}
+
+        for location in locations:
+            location_id = str(getattr(location, "id", "") or "").strip()
+            if not location_id:
+                continue
+            try:
+                rules = await self.async_list_rules(location_id)
+            except Exception:
+                failed += 1
+                _LOGGER.warning(
+                    "Failed to list managed rules during rebuild for location %s",
+                    location_id,
+                    exc_info=True,
+                )
+                continue
+
+            for rule in rules:
+                checked += 1
+                raw_version = rule.get("metadata_version")
+                metadata_version = raw_version if isinstance(raw_version, int) else 0
+                if metadata_version >= min_version:
+                    continue
+                try:
+                    rebuilt_rule = await self.async_create_rule(
+                        location=location,
+                        name=str(rule.get("name", "") or "Topomation rule"),
+                        trigger_type=str(rule.get("trigger_type", "") or "on_occupied"),
+                        trigger_types=(
+                            rule.get("trigger_types")
+                            if isinstance(rule.get("trigger_types"), list)
+                            else None
+                        ),
+                        actions=(
+                            rule.get("actions")
+                            if isinstance(rule.get("actions"), list)
+                            else None
+                        ),
+                        ambient_condition=(
+                            str(rule.get("ambient_condition"))
+                            if isinstance(rule.get("ambient_condition"), str)
+                            else None
+                        ),
+                        must_be_occupied=(
+                            rule.get("must_be_occupied")
+                            if isinstance(rule.get("must_be_occupied"), bool)
+                            else None
+                        ),
+                        time_condition_enabled=bool(rule.get("time_condition_enabled", False)),
+                        start_time=(
+                            str(rule.get("start_time"))
+                            if isinstance(rule.get("start_time"), str)
+                            else None
+                        ),
+                        end_time=(
+                            str(rule.get("end_time"))
+                            if isinstance(rule.get("end_time"), str)
+                            else None
+                        ),
+                        run_on_startup=(
+                            rule.get("run_on_startup")
+                            if isinstance(rule.get("run_on_startup"), bool)
+                            else None
+                        ),
+                        automation_id=(
+                            str(rule.get("id"))
+                            if isinstance(rule.get("id"), str)
+                            else None
+                        ),
+                        rule_uuid=(
+                            str(rule.get("rule_uuid"))
+                            if isinstance(rule.get("rule_uuid"), str)
+                            else None
+                        ),
+                        user_named=bool(rule.get("user_named", False)),
+                        daily_gating_enabled=bool(rule.get("daily_gating_enabled", False)),
+                    )
+                    if rule.get("enabled") is False:
+                        entity_id = rebuilt_rule.get("entity_id")
+                        if isinstance(entity_id, str) and entity_id:
+                            await self.async_set_rule_enabled(entity_id=entity_id, enabled=False)
+                    rebuilt += 1
+                except Exception:
+                    failed += 1
+                    _LOGGER.warning(
+                        "Failed to rebuild managed rule %s for location %s",
+                        rule.get("id"),
+                        location_id,
+                        exc_info=True,
+                    )
+
+        if checked:
+            _LOGGER.info(
+                "Managed rule metadata rebuild checked=%d rebuilt=%d failed=%d target_version=%d",
+                checked,
+                rebuilt,
+                failed,
+                min_version,
+            )
+        return {"checked": checked, "rebuilt": rebuilt, "failed": failed}
+
     def _snapshot_automation_entities(self, component: Any) -> list[Any]:
         """Return a stable list of automation entities from HA's automation component."""
         if component is None:
@@ -864,6 +986,7 @@ class TopomationManagedActions:
 
         snapshot = _RecentRuleSnapshot(
             saved_at_monotonic=monotonic(),
+            metadata_version=_AUTOMATION_METADATA_VERSION,
             location_id=location_id,
             name=name,
             trigger_type=trigger_type,
@@ -1003,7 +1126,7 @@ class TopomationManagedActions:
                 )
                 continue
 
-            lux_sensor = ambient_config.get("lux_sensor")
+            lux_sensor = self._effective_ambient_lux_sensor(ambient_config)
             if isinstance(lux_sensor, str) and lux_sensor:
                 if trigger_type == "on_dark":
                     triggers.append(
@@ -1032,37 +1155,8 @@ class TopomationManagedActions:
                         }
                     )
 
-            inherited_lux_sensor = ambient_config.get("inherited_lux_sensor")
-            if isinstance(inherited_lux_sensor, str) and inherited_lux_sensor:
-                if trigger_type == "on_dark":
-                    triggers.append(
-                        {
-                            "trigger": "numeric_state",
-                            "entity_id": inherited_lux_sensor,
-                            "below": float(
-                                ambient_config.get(
-                                    "dark_threshold",
-                                    AMBIENT_DARK_THRESHOLD_DEFAULT,
-                                )
-                            ),
-                        }
-                    )
-                elif trigger_type == "on_bright":
-                    triggers.append(
-                        {
-                            "trigger": "numeric_state",
-                            "entity_id": inherited_lux_sensor,
-                            "above": float(
-                                ambient_config.get(
-                                    "bright_threshold",
-                                    AMBIENT_BRIGHT_THRESHOLD_DEFAULT,
-                                )
-                            ),
-                        }
-                    )
-
             fallback_to_sun = bool(ambient_config.get("fallback_to_sun", True))
-            if fallback_to_sun or not isinstance(lux_sensor, str) or not lux_sensor:
+            if fallback_to_sun and (not isinstance(lux_sensor, str) or not lux_sensor):
                 triggers.append(
                     {
                         "trigger": "state",
@@ -1071,6 +1165,23 @@ class TopomationManagedActions:
                     }
                 )
         return triggers
+
+    @staticmethod
+    def _effective_ambient_lux_sensor(ambient_config: Mapping[str, Any]) -> str | None:
+        """Return the single lux source generated HA rules should watch.
+
+        Managed rules intentionally do not encode runtime fallback chains. A
+        location with a local sensor uses that sensor. A location without a
+        local sensor may inherit the first configured ancestor sensor. Sun is
+        only generated when no lux source is available.
+        """
+        lux_sensor = ambient_config.get("lux_sensor")
+        if isinstance(lux_sensor, str) and lux_sensor:
+            return lux_sensor
+        inherited_lux_sensor = ambient_config.get("inherited_lux_sensor")
+        if isinstance(inherited_lux_sensor, str) and inherited_lux_sensor:
+            return inherited_lux_sensor
+        return None
 
     def _ambient_condition_clause(
         self,
@@ -1082,10 +1193,9 @@ class TopomationManagedActions:
         if ambient_condition == "any":
             return None
 
-        lux_sensor = ambient_config.get("lux_sensor")
+        lux_sensor = self._effective_ambient_lux_sensor(ambient_config)
         fallback_to_sun = bool(ambient_config.get("fallback_to_sun", True))
         dark_state = ambient_condition == "dark"
-        clauses: list[dict[str, Any]] = []
 
         if isinstance(lux_sensor, str) and lux_sensor:
             threshold_key = "dark_threshold" if dark_state else "bright_threshold"
@@ -1097,19 +1207,23 @@ class TopomationManagedActions:
                     else AMBIENT_BRIGHT_THRESHOLD_DEFAULT,
                 )
             )
-            local_lux_clause: dict[str, Any] = {
+            lux_clause: dict[str, Any] = {
                 "condition": "numeric_state",
                 "entity_id": lux_sensor,
                 "below" if dark_state else "above": threshold,
             }
-            if bool(ambient_config.get("ignore_local_lux_when_lights_on", False)):
+            local_lux_sensor = ambient_config.get("lux_sensor")
+            if (
+                lux_sensor == local_lux_sensor
+                and bool(ambient_config.get("ignore_local_lux_when_lights_on", False))
+            ):
                 local_light_entity_ids = [
                     entity_id
                     for entity_id in ambient_config.get("local_light_entity_ids", [])
                     if isinstance(entity_id, str) and entity_id.startswith("light.")
                 ]
                 if local_light_entity_ids:
-                    local_lux_clause = {
+                    lux_clause = {
                         "condition": "and",
                         "conditions": [
                             {
@@ -1119,43 +1233,18 @@ class TopomationManagedActions:
                             }
                             for entity_id in local_light_entity_ids
                         ]
-                        + [local_lux_clause],
+                        + [lux_clause],
                     }
-            clauses.append(local_lux_clause)
+            return lux_clause
 
-        inherited_lux_sensor = ambient_config.get("inherited_lux_sensor")
-        if isinstance(inherited_lux_sensor, str) and inherited_lux_sensor:
-            threshold_key = "dark_threshold" if dark_state else "bright_threshold"
-            threshold = float(
-                ambient_config.get(
-                    threshold_key,
-                    AMBIENT_DARK_THRESHOLD_DEFAULT
-                    if dark_state
-                    else AMBIENT_BRIGHT_THRESHOLD_DEFAULT,
-                )
-            )
-            clauses.append(
-                {
-                    "condition": "numeric_state",
-                    "entity_id": inherited_lux_sensor,
-                    "below" if dark_state else "above": threshold,
-                }
-            )
-        if fallback_to_sun or not clauses:
-            clauses.append(
-                {
-                    "condition": "state",
-                    "entity_id": "sun.sun",
-                    "state": "below_horizon" if dark_state else "above_horizon",
-                }
-            )
+        if fallback_to_sun:
+            return {
+                "condition": "state",
+                "entity_id": "sun.sun",
+                "state": "below_horizon" if dark_state else "above_horizon",
+            }
 
-        if len(clauses) == 1:
-            return clauses[0]
-        return {
-            "condition": "or",
-            "conditions": clauses,
-        }
+        return {"condition": "template", "value_template": "{{ false }}"}
 
     def _build_condition_definitions(
         self,
@@ -1346,6 +1435,8 @@ class TopomationManagedActions:
             location_id = parsed.get("location_id")
             if not isinstance(location_id, str) or not location_id:
                 return None
+            raw_version = parsed.get("version") if isinstance(parsed, Mapping) else None
+            version = raw_version if isinstance(raw_version, int) else 0
 
             raw_trigger_type = parsed.get("trigger_type")
             raw_trigger_types = parsed.get("trigger_types")
@@ -1403,6 +1494,7 @@ class TopomationManagedActions:
                 parsed.get("daily_gating_enabled") if isinstance(parsed, Mapping) else None
             )
             return _TopomationMetadata(
+                version=version,
                 location_id=location_id,
                 trigger_type=trigger_type,
                 trigger_types=trigger_types,

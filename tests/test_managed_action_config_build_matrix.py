@@ -101,13 +101,26 @@ def build_manager(hass: HomeAssistant) -> TopomationManagedActions:
                     "entity_id": "sensor.living_lux",
                     "below": 42.0,
                 },
+            ],
+            id="on_dark_lux_ignores_sun_fallback",
+        ),
+        pytest.param(
+            ("on_dark",),
+            {
+                "lux_sensor": None,
+                "inherited_lux_sensor": "sensor.parent_lux",
+                "dark_threshold": 42.0,
+                "bright_threshold": 400.0,
+                "fallback_to_sun": True,
+            },
+            [
                 {
-                    "trigger": "state",
-                    "entity_id": "sun.sun",
-                    "to": "below_horizon",
+                    "trigger": "numeric_state",
+                    "entity_id": "sensor.parent_lux",
+                    "below": 42.0,
                 },
             ],
-            id="on_dark_lux_and_sun",
+            id="on_dark_inherited_lux_ignores_sun_fallback",
         ),
         pytest.param(
             ("on_dark",),
@@ -275,22 +288,34 @@ def test_managed_action_trigger_occupancy_required(build_manager: TopomationMana
             },
             [
                 {
-                    "condition": "or",
-                    "conditions": [
-                        {
-                            "condition": "numeric_state",
-                            "entity_id": "sensor.lux1",
-                            "below": 55.0,
-                        },
-                        {
-                            "condition": "state",
-                            "entity_id": "sun.sun",
-                            "state": "below_horizon",
-                        },
-                    ],
+                    "condition": "numeric_state",
+                    "entity_id": "sensor.lux1",
+                    "below": 55.0,
                 }
             ],
-            id="ambient_dark_lux_or_sun",
+            id="ambient_dark_lux_ignores_sun_fallback",
+        ),
+        pytest.param(
+            "dark",
+            None,
+            False,
+            "09:00",
+            "17:00",
+            {
+                "lux_sensor": None,
+                "inherited_lux_sensor": "sensor.parent_lux",
+                "dark_threshold": 55.0,
+                "bright_threshold": 600.0,
+                "fallback_to_sun": True,
+            },
+            [
+                {
+                    "condition": "numeric_state",
+                    "entity_id": "sensor.parent_lux",
+                    "below": 55.0,
+                }
+            ],
+            id="ambient_dark_inherited_lux_ignores_sun_fallback",
         ),
         pytest.param(
             "bright",
@@ -312,6 +337,21 @@ def test_managed_action_trigger_occupancy_required(build_manager: TopomationMana
                 }
             ],
             id="ambient_bright_lux_only",
+        ),
+        pytest.param(
+            "dark",
+            None,
+            False,
+            "09:00",
+            "17:00",
+            {
+                "lux_sensor": None,
+                "dark_threshold": 55.0,
+                "bright_threshold": 600.0,
+                "fallback_to_sun": False,
+            },
+            [{"condition": "template", "value_template": "{{ false }}"}],
+            id="ambient_dark_no_source_fails_closed",
         ),
         pytest.param(
             "any",

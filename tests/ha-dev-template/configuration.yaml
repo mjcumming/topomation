@@ -44,6 +44,8 @@ input_boolean:
     name: "SIM Driveway Test Light"
   sim_front_porch_test_light:
     name: "SIM Front Porch Test Light"
+  sim_front_porch_accent_light:
+    name: "SIM Front Porch Accent Light"
   sim_kitchen_test_light:
     name: "SIM Kitchen Test Light"
   sim_living_room_test_light:
@@ -160,6 +162,17 @@ light:
           service: input_boolean.turn_off
           target:
             entity_id: input_boolean.sim_front_porch_test_light
+      front_porch_accent_light:
+        friendly_name: "Front Porch Accent Light"
+        value_template: "{{ is_state('input_boolean.sim_front_porch_accent_light', 'on') }}"
+        turn_on:
+          service: input_boolean.turn_on
+          target:
+            entity_id: input_boolean.sim_front_porch_accent_light
+        turn_off:
+          service: input_boolean.turn_off
+          target:
+            entity_id: input_boolean.sim_front_porch_accent_light
       kitchen_test_light:
         friendly_name: "Kitchen Test Light"
         value_template: "{{ is_state('input_boolean.sim_kitchen_test_light', 'on') }}"
