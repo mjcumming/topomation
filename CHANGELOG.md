@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-05-03
+
+### Changed
+
+- **Managed automation grouping**: Topomation-managed automations now use a
+  single `Topomation` label plus the `Topomation` automation category in Home
+  Assistant, leaving trigger semantics in the automation title and embedded
+  metadata instead of extra trigger-specific labels.
+- **Startup grouping cleanup**: added a temporary first-run cleanup pass that
+  reapplies the current grouping contract to existing managed automations and
+  removes older `Topomation - On ...` labels.
+
 ## [0.3.1] - 2026-05-03
 
 ### Changed

@@ -652,13 +652,13 @@ def test_apply_topomation_grouping_uses_topomation_labels_and_category(
     hass: HomeAssistant,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Grouping writes TopoMation labels/category while preserving existing metadata."""
+    """Grouping writes one Topomation label/category and removes old rule labels."""
     manager = TopomationManagedActions(hass)
     captured: dict[str, object] = {}
     requested_label_names: list[str] = []
 
     registry_entry = SimpleNamespace(
-        labels=("existing_label",),
+        labels=("existing_label", "label_occupied"),
         categories={"diagnostic": "category_existing"},
     )
 
@@ -676,14 +676,13 @@ def test_apply_topomation_grouping_uses_topomation_labels_and_category(
 
     def _ensure_label(name: str) -> str:
         requested_label_names.append(name)
-        if name == "TopoMation":
+        if name == "Topomation":
             return "label_topomation"
-        if name == "TopoMation - On Occupied":
-            return "label_occupied"
         return "label_unknown"
 
     monkeypatch.setattr("custom_components.topomation.managed_actions.er.async_get", lambda _: fake_registry)
     monkeypatch.setattr(manager, "_ensure_label", _ensure_label)
+    monkeypatch.setattr(manager, "_label_ids_by_name", lambda _: {"label_occupied"})
     monkeypatch.setattr(manager, "_ensure_automation_category", lambda _: "category_topomation")
 
     manager._apply_topomation_grouping(  # noqa: SLF001
@@ -692,12 +691,11 @@ def test_apply_topomation_grouping_uses_topomation_labels_and_category(
         area_id="area_kitchen",
     )
 
-    assert requested_label_names == ["TopoMation", "TopoMation - On Occupied"]
+    assert requested_label_names == ["Topomation"]
     assert captured["entity_id"] == "automation.kitchen_occupied"
     assert set(cast(set[str], captured["labels"])) == {
         "existing_label",
         "label_topomation",
-        "label_occupied",
     }
     assert cast(dict[str, str], captured["categories"]) == {
         "diagnostic": "category_existing",
@@ -715,7 +713,7 @@ def test_apply_topomation_grouping_skips_registry_write_when_metadata_is_unchang
     update_calls: list[dict[str, object]] = []
 
     registry_entry = SimpleNamespace(
-        labels=("existing_label", "label_topomation", "label_occupied"),
+        labels=("existing_label", "label_topomation"),
         categories={"diagnostic": "category_existing", "automation": "category_topomation"},
         area_id="area_kitchen",
     )
@@ -732,14 +730,13 @@ def test_apply_topomation_grouping_skips_registry_write_when_metadata_is_unchang
     fake_registry = _FakeRegistry()
 
     def _ensure_label(name: str) -> str:
-        if name == "TopoMation":
+        if name == "Topomation":
             return "label_topomation"
-        if name == "TopoMation - On Occupied":
-            return "label_occupied"
         return "label_unknown"
 
     monkeypatch.setattr("custom_components.topomation.managed_actions.er.async_get", lambda _: fake_registry)
     monkeypatch.setattr(manager, "_ensure_label", _ensure_label)
+    monkeypatch.setattr(manager, "_label_ids_by_name", lambda _: {"label_occupied"})
     monkeypatch.setattr(manager, "_ensure_automation_category", lambda _: "category_topomation")
 
     manager._apply_topomation_grouping(  # noqa: SLF001
@@ -938,6 +935,53 @@ async def test_rebuild_rules_before_metadata_version_rewrites_only_old_rules(
     assert created[0]["trigger_types"] == ["on_dark"]
     assert created[0]["ambient_condition"] == "dark"
     assert enabled_updates == [("automation.topomation_kitchen_old", False)]
+
+
+@pytest.mark.asyncio
+async def test_cleanup_legacy_grouping_reapplies_grouping_to_existing_rules(
+    hass: HomeAssistant,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Startup grouping cleanup re-tags existing managed automations."""
+    locations = [
+        SimpleNamespace(id="kitchen", name="Kitchen", modules={}),
+        SimpleNamespace(id="hall", name="Hall", modules={}),
+    ]
+    loc_mgr = SimpleNamespace(all_locations=lambda: locations)
+    manager = TopomationManagedActions(hass, loc_mgr)
+    grouped: list[tuple[str, str]] = []
+
+    async def _fake_list_rules(location_id: str) -> list[dict[str, object]]:
+        if location_id == "kitchen":
+            return [
+                {
+                    "entity_id": "automation.topomation_kitchen_dark",
+                    "trigger_type": "on_dark",
+                },
+                {
+                    "entity_id": "automation.topomation_kitchen_vacant",
+                    "trigger_type": "on_vacant",
+                },
+            ]
+        if location_id == "hall":
+            return [{"entity_id": "automation.topomation_hall_bright"}]
+        return []
+
+    def _fake_apply(entity_id: str, trigger_type: str, **_: object) -> bool:
+        grouped.append((entity_id, trigger_type))
+        return entity_id != "automation.topomation_kitchen_vacant"
+
+    monkeypatch.setattr(manager, "async_list_rules", _fake_list_rules)
+    monkeypatch.setattr(manager, "_apply_topomation_grouping", _fake_apply)
+
+    summary = await manager.async_cleanup_legacy_grouping()
+
+    assert summary == {"checked": 3, "updated": 2, "failed": 0}
+    assert grouped == [
+        ("automation.topomation_kitchen_dark", "on_dark"),
+        ("automation.topomation_kitchen_vacant", "on_vacant"),
+        ("automation.topomation_hall_bright", "on_occupied"),
+    ]
 
 
 def test_daily_gating_condition_emitted_for_vacuum_target_with_paused_carveout() -> None:

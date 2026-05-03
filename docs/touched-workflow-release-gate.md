@@ -81,6 +81,46 @@ Run the rows that match the touched workflow.
 
 ## 6. Release Records
 
+### 2026-05-03 - v0.3.2 managed automation grouping cleanup
+
+1. Commit under test: release-candidate worktree for Topomation `0.3.2`.
+2. Frontend bundle rebuilt from that commit: yes; release gate rebuilt the
+   runtime bundle and produced no committed bundle diff.
+3. Touched workflow list:
+   - Managed automation HA label/category grouping.
+   - Existing managed-rule startup grouping cleanup.
+   - Release metadata/version synchronization for Topomation `0.3.2`.
+4. Commands run:
+   - `python scripts/verify-version-sync.py` — **PASS** (version sync
+     `0.3.2`; 2026-05-03)
+   - `scripts/check-docs-consistency.sh` — **PASS** (2026-05-03)
+   - `pytest --no-cov -q tests/test_managed_actions.py` — **PASS**
+     (`24 passed`; 2026-05-03)
+   - `pytest --no-cov -q tests/test_init.py` — **PASS** (`17 passed`;
+     2026-05-03)
+   - `ruff check custom_components/topomation/managed_actions.py
+     custom_components/topomation/__init__.py tests/test_managed_actions.py`
+     — **PASS** (2026-05-03)
+   - `mypy custom_components/topomation` — **PASS** (2026-05-03)
+   - `./scripts/test-comprehensive.sh` — **PASS** (version sync `0.3.2`,
+     Ruff, Mypy, backend pytest `308 passed, 22 skipped`, frontend Vitest
+     `261 passed`, production bundle rebuild, Web Test Runner `202 passed`,
+     Playwright workflow suites `34 passed`; 2026-05-03)
+   - `./scripts/ha-dev-up.sh` — **PASS** (local HA dev runtime ready at
+     `http://127.0.0.1:8123`; 2026-05-03)
+   - `python tests/ha_dev_e2e/bootstrap.py` — **PASS** (bootstrapped 18
+     locations; 2026-05-03)
+   - `make test-release-live` — **PASS** (local comprehensive matrix, live HA
+     managed-action contract `2 passed`, live HA browser workflow `6 passed`;
+     2026-05-03)
+5. Outcome:
+   - Managed automation HA label/category grouping: **PASS**
+   - Existing managed-rule startup grouping cleanup: **PASS**
+   - Release metadata/version sync: **PASS**
+   - Local comprehensive gate: **PASS**
+   - Live HA managed-action contract: **PASS**
+   - Live HA browser workflows: **PASS**
+
 ### 2026-05-03 - v0.3.1 ambient rule source simplification
 
 1. Commit under test: release-candidate worktree for Topomation `0.3.1`.

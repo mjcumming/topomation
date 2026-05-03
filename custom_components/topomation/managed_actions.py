@@ -43,12 +43,20 @@ ActionTriggerType = Literal["on_occupied", "on_vacant", "on_dark", "on_bright"]
 ActionAmbientCondition = Literal["any", "dark", "bright"]
 
 _TOPOMATION_AUTOMATION_ID_PREFIX = "topomation_"
-_TOPOMATION_LABEL_NAME = "TopoMation"
-_TOPOMATION_OCCUPIED_LABEL_NAME = "TopoMation - On Occupied"
-_TOPOMATION_VACANT_LABEL_NAME = "TopoMation - On Vacant"
-_TOPOMATION_DARK_LABEL_NAME = "TopoMation - On Dark"
-_TOPOMATION_BRIGHT_LABEL_NAME = "TopoMation - On Bright"
-_TOPOMATION_CATEGORY_NAME = "TopoMation"
+_TOPOMATION_LABEL_NAME = "Topomation"
+_TOPOMATION_CATEGORY_NAME = "Topomation"
+_LEGACY_TOPOMATION_RULE_LABEL_NAMES = frozenset(
+    {
+        "TopoMation - On Occupied",
+        "TopoMation - On Vacant",
+        "TopoMation - On Dark",
+        "TopoMation - On Bright",
+        "Topomation - On Occupied",
+        "Topomation - On Vacant",
+        "Topomation - On Dark",
+        "Topomation - On Bright",
+    }
+)
 _TOPOMATION_SYSTEM_USER_NAME = "Topomation"
 _AUTOMATION_API_REFRESH_TOKEN_KEY = "_automation_api_refresh_token"  # noqa: S105
 _ENTITY_RESOLVE_MAX_ATTEMPTS = 20
@@ -827,6 +835,74 @@ class TopomationManagedActions:
                 min_version,
             )
         return {"checked": checked, "rebuilt": rebuilt, "failed": failed}
+
+    async def async_cleanup_legacy_grouping(self) -> dict[str, int]:
+        """Reapply current HA grouping to existing managed rules.
+
+        This is intentionally a startup one-shot migration path for the older
+        trigger-specific Topomation labels. It can be removed after existing
+        installs have had a release window to converge.
+        """
+        if self._loc_mgr is None:
+            return {"checked": 0, "updated": 0, "failed": 0}
+
+        checked = 0
+        updated = 0
+        failed = 0
+        try:
+            locations = list(self._loc_mgr.all_locations())
+        except Exception:
+            _LOGGER.debug("Unable to enumerate locations for grouping cleanup", exc_info=True)
+            return {"checked": 0, "updated": 0, "failed": 0}
+
+        for location in locations:
+            location_id = str(getattr(location, "id", "") or "").strip()
+            if not location_id:
+                continue
+            try:
+                rules = await self.async_list_rules(location_id)
+            except Exception:
+                failed += 1
+                _LOGGER.warning(
+                    "Failed to list managed rules during grouping cleanup for location %s",
+                    location_id,
+                    exc_info=True,
+                )
+                continue
+
+            for rule in rules:
+                entity_id = rule.get("entity_id")
+                if not isinstance(entity_id, str) or not entity_id:
+                    continue
+                checked += 1
+                try:
+                    raw_trigger_type = str(rule.get("trigger_type") or "on_occupied")
+                    trigger_type = (
+                        raw_trigger_type
+                        if raw_trigger_type in _VALID_TRIGGER_TYPES
+                        else "on_occupied"
+                    )
+                    if self._apply_topomation_grouping(
+                        entity_id,
+                        cast(ActionTriggerType, trigger_type),
+                    ):
+                        updated += 1
+                except Exception:
+                    failed += 1
+                    _LOGGER.warning(
+                        "Failed to clean managed grouping for %s",
+                        entity_id,
+                        exc_info=True,
+                    )
+
+        if checked:
+            _LOGGER.info(
+                "Managed grouping cleanup checked=%d updated=%d failed=%d",
+                checked,
+                updated,
+                failed,
+            )
+        return {"checked": checked, "updated": updated, "failed": failed}
 
     def _snapshot_automation_entities(self, component: Any) -> list[Any]:
         """Return a stable list of automation entities from HA's automation component."""
@@ -1791,29 +1867,19 @@ class TopomationManagedActions:
         trigger_type: ActionTriggerType,
         *,
         area_id: str | None = None,
-    ) -> None:
+    ) -> bool:
         """Apply area, label, and category to an automation entity (matches UI Save dialog)."""
+        _ = trigger_type
         entity_registry = er.async_get(self.hass)
         entry = entity_registry.async_get(entity_id)
         if entry is None:
-            return
+            return False
         labels = set(entry.labels or ())
+        legacy_rule_label_ids = self._label_ids_by_name(_LEGACY_TOPOMATION_RULE_LABEL_NAMES)
+        labels.difference_update(legacy_rule_label_ids)
         primary_label = self._ensure_label(_TOPOMATION_LABEL_NAME)
-        if trigger_type == "on_occupied":
-            trigger_label_name = _TOPOMATION_OCCUPIED_LABEL_NAME
-        elif trigger_type == "on_vacant":
-            trigger_label_name = _TOPOMATION_VACANT_LABEL_NAME
-        elif trigger_type == "on_dark":
-            trigger_label_name = _TOPOMATION_DARK_LABEL_NAME
-        else:
-            trigger_label_name = _TOPOMATION_BRIGHT_LABEL_NAME
-        trigger_label = self._ensure_label(
-            trigger_label_name
-        )
         if primary_label:
             labels.add(primary_label)
-        if trigger_label:
-            labels.add(trigger_label)
         categories = dict(entry.categories or {})
         category_id = self._ensure_automation_category(_TOPOMATION_CATEGORY_NAME)
         if category_id is not None:
@@ -1832,21 +1898,38 @@ class TopomationManagedActions:
             and existing_categories == cast(dict[str, Any], update_kwargs["categories"])
             and (area_id is None or existing_area_id == area_id)
         ):
-            return
+            return False
         try:
             entity_registry.async_update_entity(entity_id, **update_kwargs)
+            return True
         except Exception:
             _LOGGER.debug(
                 "Failed to apply Topomation area/labels/categories for %s",
                 entity_id,
                 exc_info=True,
             )
+            return False
+
+    def _label_ids_by_name(self, names: frozenset[str]) -> set[str]:
+        """Return existing label ids for the given display names without creating labels."""
+        label_registry = lr.async_get(self.hass)
+        label_ids: set[str] = set()
+        for name in names:
+            existing = label_registry.async_get_label_by_name(name)
+            if existing is not None:
+                label_ids.add(existing.label_id)
+        return label_ids
 
     def _ensure_label(self, name: str) -> str | None:
         """Create label if needed and return label_id."""
         label_registry = lr.async_get(self.hass)
         existing = label_registry.async_get_label_by_name(name)
         if existing is not None:
+            if existing.name != name:
+                try:
+                    existing = label_registry.async_update(existing.label_id, name=name)
+                except Exception:
+                    _LOGGER.debug("Failed to rename label %s", existing.label_id, exc_info=True)
             return existing.label_id
         try:
             created = label_registry.async_create(name=name)
@@ -1864,6 +1947,22 @@ class TopomationManagedActions:
         for entry in category_registry.async_list_categories(scope="automation"):
             if entry.name == name:
                 return entry.category_id
+            if entry.name.lower() == name.lower():
+                try:
+                    updated = category_registry.async_update(
+                        scope="automation",
+                        category_id=entry.category_id,
+                        name=name,
+                        icon="mdi:home-automation",
+                    )
+                    return updated.category_id
+                except Exception:
+                    _LOGGER.debug(
+                        "Failed to rename automation category %s",
+                        entry.category_id,
+                        exc_info=True,
+                    )
+                    return entry.category_id
         try:
             created = category_registry.async_create(
                 scope="automation", name=name, icon="mdi:home-automation"

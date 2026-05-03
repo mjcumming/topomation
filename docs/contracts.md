@@ -184,9 +184,10 @@ Additional save points:
 - **Created rule metadata (match UI Save dialog)**: When creating a managed-action automation,
   the integration sets: **name** (alias in config), **description** (metadata + Topomation
   marker), **area** (entity registry area_id from location’s `ha_area_id` when present),
-  **category** (Topomation), and **labels** (Topomation, Topomation - On Occupied / On Vacant).
-  This matches the Settings → Automations & scenes → Save dialog options so rules appear
-  correctly in the UI and by area/category/labels.
+  **category** (Topomation), and exactly one **label** (Topomation). Trigger semantics belong
+  in the automation title and embedded metadata, not in trigger-specific HA labels. This matches
+  the Settings → Automations & scenes → Save dialog options so rules appear correctly in the UI
+  and by area/category/label.
 - Managed action occupancy conditions are tri-state:
   - `true` => must be occupied
   - `false` => must be vacant

@@ -626,9 +626,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     @callback
     def _schedule_managed_rule_contract_rebuild(_: Any) -> None:
         """One-shot rewrite for managed automations created by older contracts."""
-        hass.async_create_task(
-            managed_action_rules.async_rebuild_rules_before_metadata_version()
-        )
+        async def _run_managed_rule_startup_cleanup() -> None:
+            await managed_action_rules.async_rebuild_rules_before_metadata_version()
+            await managed_action_rules.async_cleanup_legacy_grouping()
+
+        hass.async_create_task(_run_managed_rule_startup_cleanup())
 
     managed_rule_rebuild_unsub = async_call_later(
         hass,
