@@ -83,7 +83,7 @@ Run the rows that match the touched workflow.
 
 ### 2026-05-07 - v0.3.3 managed rule compiler contract
 
-1. Commit under test: `5eab98b` (release code/tests/version commit for
+1. Commit under test: `0d55f10` (release code/tests/version commit for
    Topomation `0.3.3`).
 2. Frontend bundle rebuilt from that commit: yes; release gate rebuilt the
    runtime bundle and produced no committed bundle diff.
