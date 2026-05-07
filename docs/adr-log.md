@@ -13,6 +13,9 @@
    explicit lifecycle note such as "superseded by ...") wins.
 3. Current enforceable behavior remains `docs/contracts.md` and
    `docs/architecture.md`, with ADRs providing the decision rationale/history.
+4. This file is an index plus legacy inline history. Do not load the whole file
+   for routine work. Read the active contracts first, then open only the
+   specific ADRs linked from relevant index entries.
 
 ---
 
@@ -5205,7 +5208,39 @@ entity for other features.
 
 ---
 
+### ADR-HA-095: Managed Rule Compilation, HA Metadata, and Presentation Invariants (2026-05-07)
+
+**Status**: ✅ APPROVED  
+**Full text**: `docs/adr/ADR-HA-095-managed-rule-compilation-ha-metadata-presentation.md`
+
+**Decision summary**:
+
+Managed rules compile through a normalized backend-owned model before HA
+automation config is generated. Trigger/condition contradictions are invalid;
+same-family self-guards are stripped by default; cross-family guards remain
+valid. Non-light tabs remain occupancy-edge only. Every managed automation must
+resolve HA area ownership, keep Topomation category/label metadata, and receive
+a generated icon when HA/runtime support allows it. Metadata versioning must
+rebuild existing managed rules into this contract.
+
+---
+
 ## How to Use This Log
+
+This file is no longer the preferred home for long ADR bodies. Treat it as:
+
+1. an index for all ADRs
+2. a legacy archive for older inline ADRs
+3. a short decision-summary surface for current work
+
+Reading rule: do not load the whole file by default. Read active contracts
+first, find the relevant ADR entry here, then open only the linked ADR file or
+specific inline section needed for the behavior being changed.
+
+Writing rule: new ADRs go in `docs/adr/ADR-HA-XXX-short-title.md` and get a
+compact entry in this file. Split old inline ADRs only when they are relevant to
+current work, frequently cited, large/noisy, or being amended/superseded. Do not
+migrate the full history for neatness alone.
 
 ### When to Create an ADR
 
@@ -5223,29 +5258,45 @@ entity for other features.
 
 ### ADR Template
 
+For new ADRs, create the full text in `docs/adr/` and add this index entry here:
+
 ```markdown
 ### ADR-HA-XXX: Title (YYYY-MM-DD)
 
+**Status**: 🟡 PROPOSED | ✅ APPROVED | ❌ REJECTED  
+**Full text**: `docs/adr/ADR-HA-XXX-short-kebab-title.md`
+
+**Decision summary**:
+
+One short paragraph with the decision and the behavior surface it affects.
+```
+
+Full ADR files use this structure:
+
+```markdown
+# ADR-HA-XXX: Title
+
+**Date**: YYYY-MM-DD  
 **Status**: 🟡 PROPOSED | ✅ APPROVED | ❌ REJECTED
 
-**Context**:
+## Context
 What's the situation? What problem are we solving?
 
-**Decision**:
+## Decision
 What did we decide to do?
 
-**Rationale**:
+## Rationale
 
 1. Reason 1
 2. Reason 2
 
-**Consequences**:
+## Consequences
 
 - ✅ Positive outcomes
 - ⚠️ Risks or downsides
 - ℹ️ Neutral facts
 
-**Alternatives Considered**:
+## Alternatives Considered
 
 - Option A: Why not?
 - Option B: Why not?
@@ -5255,4 +5306,5 @@ What did we decide to do?
 
 **Maintainer**: Mike
 **Review Frequency**: As decisions are made
-**Location**: `/docs/adr-log.md`
+**Index Location**: `/docs/adr-log.md`  
+**Full ADR Location**: `/docs/adr/`

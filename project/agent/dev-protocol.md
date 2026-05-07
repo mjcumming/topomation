@@ -10,7 +10,8 @@
 
 - [ ] Read the issue file completely
 - [ ] Read the parent epic
-- [ ] Review relevant ADRs in `/docs/adr-log.md`
+- [ ] Use `/docs/adr-log.md` as an index and review only the relevant ADR
+      entries/files
 - [ ] Check `/docs/coding-standards.md` for conventions
 
 ### 2. Generate a Plan
@@ -164,9 +165,8 @@ Before finishing, verify:
 ### Update These Files When
 - Behavior changes → `/docs/work-tracking.md`
 - New patterns introduced → `/docs/coding-standards.md`
-- Architecture decisions → `/docs/adr-log.md`
+- Architecture decisions → ADR files indexed from `/docs/adr-log.md`
 
 ---
 
 **Last Updated**: 2025-12-10
-

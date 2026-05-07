@@ -5,7 +5,7 @@
 
 Use this file as the quick contract surface. Keep it synchronized with:
 - `docs/architecture.md`
-- `docs/adr-log.md`
+- relevant ADR entries/files indexed by `docs/adr-log.md`
 - implementation under `custom_components/topomation/`
 
 ## C-001 Lock immutability
@@ -616,7 +616,7 @@ Additional save points:
   - error and recovery messaging.
 - Deviation from HA-native patterns is allowed when integration constraints or
   workflow clarity require it, but the rationale must be explicit in:
-  - ADR notes (`docs/adr-log.md`) and
+  - ADR notes indexed by `docs/adr-log.md` and
   - active UX contract docs (`docs/automation-ui-guide.md` and/or this file).
 
 ## C-019 Ambiguity Escalation Contract

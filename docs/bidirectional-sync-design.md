@@ -31,7 +31,7 @@ This is a **contract + process** document, not a speculative future design.
 
 References:
 - `docs/architecture.md`
-- `docs/adr-log.md` (ADR-HA-017+)
+- relevant ADR entries/files indexed by `docs/adr-log.md` (ADR-HA-017+)
 - `project/issues/issue-050-ha-integration-contract-hardening.md`
 - `project/issues/issue-051-floor-area-sync-validation.md`
 
@@ -57,7 +57,8 @@ References:
 
 Run this checklist before editing sync-related code or docs:
 
-1. Did I read `docs/architecture.md`, `docs/adr-log.md`, ISSUE-050, and ISSUE-051?
+1. Did I read `docs/architecture.md`, the relevant ADR-HA-017+ entries/files
+   indexed by `docs/adr-log.md`, ISSUE-050, and ISSUE-051?
 2. Am I proposing behavior that conflicts with wrapper ownership and HA metadata canonicality?
 3. Am I accidentally bypassing guardrails for linked HA wrappers or managed shadows?
 4. Am I preserving the rootless model (no `house` root assumptions)?

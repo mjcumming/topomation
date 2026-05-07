@@ -19,7 +19,8 @@ cd /workspaces/topomation
 2. `docs/current-work.md` (active branch/session context for parallel work)
 3. `docs/contracts.md` (hard behavior and API/UI contracts)
 4. `docs/architecture.md` (detailed architecture and flow)
-5. `docs/adr-log.md` (decision history for tradeoffs and rationale)
+5. `docs/adr-log.md` as an index; open only relevant ADR entries/files for
+   tradeoffs and rationale
 
 ## 3) High-signal repo map
 
@@ -102,7 +103,8 @@ curl -X POST -H "Authorization: Bearer $HA_TOKEN" \
 
 - If behavior or invariants changed: update `docs/contracts.md` in the same change.
 - If architecture flow changed: update `docs/architecture.md` in the same change.
-- If the change is a meaningful long-lived decision: add/update ADR in `docs/adr-log.md`.
+- If the change is a meaningful long-lived decision: add/update an ADR and index
+  it from `docs/adr-log.md`.
 - If work is in progress or handed off: update `docs/current-work.md`.
 - If you discover a recurring environment/workflow prerequisite while fixing something
   (example: browser path/tooling prereq), automate it where possible and document it

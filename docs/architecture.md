@@ -794,7 +794,8 @@ loc_mgr.set_module_config(
 ### HA Integration Docs
 
 - `docs/coding-standards.md` - Python + TypeScript standards
-- `docs/adr-log.md` - Integration decisions
+- `docs/adr-log.md` - ADR index and legacy inline integration decisions
+- `docs/adr/` - Split-out full ADR bodies
 - `docs/frontend-dev-workflow.md` - Frontend workflow
 - `docs/index.md` - Active vs archived documentation map
 - `docs/bidirectional-sync-design.md` - Sync contract + WTF pre-change checks

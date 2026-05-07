@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **ADR documentation workflow**: new ADRs now live as split files under
+  `docs/adr/` with compact entries in `docs/adr-log.md`, and active agent/docs
+  guidance now treats the ADR log as an index plus legacy archive instead of a
+  file to read wholesale.
+
 ## [0.3.3] - 2026-05-07
 
 ### Changed

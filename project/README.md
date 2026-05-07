@@ -13,7 +13,7 @@ Architecture and policy authority live in `docs/`, not `project/`.
 
 ## Operating Rules
 
-1. For architecture or contract decisions, follow `docs/architecture.md`, `docs/bidirectional-sync-design.md`, and `docs/adr-log.md`.
+1. For architecture or contract decisions, follow `docs/architecture.md`, `docs/bidirectional-sync-design.md`, and the relevant ADR entries/files indexed by `docs/adr-log.md`.
 2. Keep issue files as the source of truth for implementation-level scope and acceptance criteria.
 3. Keep `docs/work-tracking.md` as the source of truth for current sprint execution status.
 4. Keep `project/roadmap.md` strategic; avoid detailed task or percent-complete duplication.
@@ -22,7 +22,7 @@ Architecture and policy authority live in `docs/`, not `project/`.
 ## Minimal Workflow
 
 1. Choose or create an issue in `project/issues/`.
-2. Confirm dependencies and constraints from epics/ADRs.
+2. Confirm dependencies and constraints from epics and only the relevant ADRs.
 3. Implement and validate changes.
 4. Update issue status and `docs/work-tracking.md` if sprint status changed.
 5. Archive transient planning docs when no longer active.

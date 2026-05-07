@@ -8,7 +8,8 @@ This file is intentionally lightweight. Capture the thought, why it might
 matter, what could go wrong, and what would prove it. When an idea becomes
 real work, promote it to one of:
 
-- `docs/adr-log.md` for a durable architecture/product decision
+- ADR files indexed from `docs/adr-log.md` for durable architecture/product
+  decisions
 - `docs/contracts.md` for runtime/UI behavior that must not regress
 - `project/issues/` for scoped implementation with acceptance criteria
 - `docs/current-work.md` when it becomes active handoff/status context
@@ -129,4 +130,3 @@ Possible rule:
 - Neutral time window controls should default to disabled/all-day.
 - If a default time is required, use current time rounded to a clean boundary or
   a domain-specific preset that is visibly named.
-

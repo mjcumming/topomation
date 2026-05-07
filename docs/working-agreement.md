@@ -46,6 +46,9 @@ For behavior-changing work, use this order and stop at the first explicit rule:
 
 Supplemental rules:
 
+- `docs/adr-log.md` is an index and historical rationale record. Do not load the
+  whole file for routine work; open only the relevant ADR entries/files after
+  checking the active contracts.
 - `docs/bidirectional-sync-design.md` is sync-specific and does not override
   the chain above outside sync behavior.
 - Operational docs, issue checklists, and old release notes do not override the

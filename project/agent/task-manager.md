@@ -44,7 +44,7 @@ Before starting, verify:
 
 1. Load the selected issue
 2. Load the parent epic
-3. Load relevant ADRs from `/docs/adr-log.md`
+3. Use `/docs/adr-log.md` as an index and load only relevant ADR entries/files
 4. Generate a plan
 5. Ask for approval **only if**:
    - Architecture changes are needed
@@ -102,4 +102,3 @@ If a task is more complex than expected:
 ---
 
 **Last Updated**: 2025-12-10
-

@@ -15,7 +15,8 @@ If a file is not listed as active below, treat it as reference-only.
 | `docs/working-agreement.md` | Active repo operating contract (dev mode, ambiguity stop rule, validation honesty) | Active (Operational) |
 | `docs/touched-workflow-release-gate.md` | Required release/live-validation gate tied to exact touched workflows | Active (Operational) |
 | `docs/bidirectional-sync-design.md` | Sync contract + mandatory pre-change checks | Active |
-| `docs/adr-log.md` | Architectural decisions and policy record | Active |
+| `docs/adr-log.md` | ADR index plus legacy inline decision history; open only relevant ADR entries/files | Active (Reference) |
+| `docs/adr/` | Split-out full ADR bodies referenced from `docs/adr-log.md` | Active (Reference) |
 | `docs/agent-quickstart.md` | Fast startup guide for contributors and AI agents | Active (Operational) |
 | `docs/coding-standards.md` | Coding conventions for backend/frontend | Active |
 | `docs/frontend-dev-workflow.md` | Current frontend/mock workflow | Active |
@@ -65,6 +66,9 @@ For behavior-changing work, use this order and stop at the first explicit rule:
 
 Supplemental notes:
 
+- `docs/adr-log.md` is an index and historical rationale record. Do not read
+  the whole file by default; find the relevant ADR entry, then open only the
+  linked ADR file or inline section needed for the touched behavior.
 - `docs/bidirectional-sync-design.md` is sync-specific only and does not
   override the chain above outside sync behavior.
 - Operational docs, issue checklists, and release notes do not override the
