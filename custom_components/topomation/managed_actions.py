@@ -26,6 +26,7 @@ from homeassistant.components.automation import (
 from homeassistant.components.automation.config import async_validate_config_item
 from homeassistant.const import CONF_ID
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import category_registry as cr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import label_registry as lr
@@ -72,7 +73,7 @@ _VALID_AMBIENT_CONDITIONS = frozenset({"any", "dark", "bright"})
 _AUTOMATION_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_]+$")
 _RULE_UUID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{7,63}$")
 _RECENT_RULE_SNAPSHOT_TTL_SECONDS = 30.0
-_AUTOMATION_METADATA_VERSION = 5
+_AUTOMATION_METADATA_VERSION = 6
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -116,6 +117,19 @@ class _RecentRuleSnapshot:
     user_named: bool
     actions: list[dict[str, Any]]
     daily_gating_enabled: bool = False
+
+
+@dataclass(slots=True)
+class _CompiledManagedRule:
+    """Normalized rule contract used before HA automation YAML is generated."""
+
+    trigger_type: ActionTriggerType
+    trigger_types: tuple[ActionTriggerType, ...]
+    ambient_condition: ActionAmbientCondition
+    must_be_occupied: bool | None
+    actions: list[dict[str, Any]]
+    icon: str
+    ha_area_id: str
 
 
 class TopomationManagedActions:
@@ -344,7 +358,8 @@ class TopomationManagedActions:
                     "start_time": metadata.start_time,
                     "end_time": metadata.end_time,
                     "run_on_startup": metadata.run_on_startup,
-                    "rule_uuid": metadata.rule_uuid or self._rule_uuid_from_automation_id(automation_id or entity_id),
+                    "rule_uuid": metadata.rule_uuid
+                    or self._rule_uuid_from_automation_id(automation_id or entity_id),
                     "user_named": metadata.user_named,
                     "daily_gating_enabled": metadata.daily_gating_enabled,
                     "enabled": enabled,
@@ -382,30 +397,34 @@ class TopomationManagedActions:
         normalized_trigger_types = self._normalize_trigger_types(
             trigger_types, fallback_trigger_type=trigger_type
         )
-        normalized_trigger = normalized_trigger_types[0]
-        normalized_ambient_condition = self._normalize_ambient_condition(
-            ambient_condition=ambient_condition,
-            trigger_types=normalized_trigger_types,
-        )
         normalized_start_time = self._normalize_time_hhmm(start_time, "18:00")
         normalized_end_time = self._normalize_time_hhmm(end_time, "23:59")
         normalized_actions = self._normalize_rule_actions(
             actions=actions,
-            trigger_type=normalized_trigger,
+            trigger_type=normalized_trigger_types[0],
         )
         if not normalized_actions:
             raise ValueError("At least one action target is required")
+        compiled_rule = self._compile_managed_rule(
+            location=location,
+            trigger_types=normalized_trigger_types,
+            actions=normalized_actions,
+            ambient_condition=ambient_condition,
+            must_be_occupied=must_be_occupied,
+        )
+        normalized_trigger = compiled_rule.trigger_type
+        normalized_trigger_types = compiled_rule.trigger_types
+        normalized_ambient_condition = compiled_rule.ambient_condition
+        must_be_occupied = compiled_rule.must_be_occupied
+        normalized_actions = compiled_rule.actions
         primary_action = normalized_actions[0]
         primary_action_entity_id = str(primary_action["entity_id"])
 
         occupancy_entity_id: str | None = None
-        requires_occupancy_entity = (
-            any(
-                current_trigger in {"on_occupied", "on_vacant"}
-                for current_trigger in normalized_trigger_types
-            )
-            or isinstance(must_be_occupied, bool)
-        )
+        requires_occupancy_entity = any(
+            current_trigger in {"on_occupied", "on_vacant"}
+            for current_trigger in normalized_trigger_types
+        ) or isinstance(must_be_occupied, bool)
         if requires_occupancy_entity:
             occupancy_entity_id = self._find_occupancy_entity_id(location_id)
             if occupancy_entity_id is None:
@@ -442,8 +461,7 @@ class TopomationManagedActions:
         gating_carveout_entity_id = (
             primary_action_entity_id
             if (
-                bool(daily_gating_enabled)
-                and primary_action_entity_id.split(".", 1)[0] == "vacuum"
+                bool(daily_gating_enabled) and primary_action_entity_id.split(".", 1)[0] == "vacuum"
             )
             else None
         )
@@ -467,25 +485,19 @@ class TopomationManagedActions:
             "trigger_types": list(normalized_trigger_types),
             "ambient_condition": normalized_ambient_condition,
             **(
-                {"must_be_occupied": must_be_occupied}
-                if isinstance(must_be_occupied, bool)
-                else {}
+                {"must_be_occupied": must_be_occupied} if isinstance(must_be_occupied, bool) else {}
             ),
             "time_condition_enabled": bool(time_condition_enabled),
             "start_time": normalized_start_time,
             "end_time": normalized_end_time,
             **(
-                {"run_on_startup": bool(run_on_startup)}
-                if isinstance(run_on_startup, bool)
-                else {}
+                {"run_on_startup": bool(run_on_startup)} if isinstance(run_on_startup, bool) else {}
             ),
             "rule_uuid": normalized_rule_uuid,
             "user_named": bool(user_named),
-            **(
-                {"daily_gating_enabled": True}
-                if bool(daily_gating_enabled)
-                else {}
-            ),
+            "ha_area_id": compiled_rule.ha_area_id,
+            "icon": compiled_rule.icon,
+            **({"daily_gating_enabled": True} if bool(daily_gating_enabled) else {}),
         }
         description = "Managed by Topomation.\n" + self._metadata_line(metadata_payload)
         config_actions: list[dict[str, Any]] = []
@@ -493,9 +505,7 @@ class TopomationManagedActions:
             action_entity = str(action_target["entity_id"])
             action_service_name = str(action_target["service"])
             action_domain = (
-                action_entity.split(".", 1)[0]
-                if "." in action_entity
-                else "homeassistant"
+                action_entity.split(".", 1)[0] if "." in action_entity else "homeassistant"
             )
             action_step: dict[str, Any] = {
                 "action": f"{action_domain}.{action_service_name}",
@@ -544,9 +554,7 @@ class TopomationManagedActions:
             automation_id,
             location_id,
         )
-        validated = await async_validate_config_item(
-            self.hass, automation_id, config_payload
-        )
+        validated = await async_validate_config_item(self.hass, automation_id, config_payload)
         if validated is None:
             _LOGGER.error(
                 "[managed_actions] Validation returned None for automation_id=%s",
@@ -583,13 +591,11 @@ class TopomationManagedActions:
                 automation_id,
                 entity_id,
             )
-            ha_area_id = getattr(location, "ha_area_id", None) or (
-                (getattr(location, "modules", None) or {})
-                .get("_meta", {})
-                .get("ha_area_id")
-            )
             self._apply_topomation_grouping(
-                entity_id, normalized_trigger, area_id=ha_area_id
+                entity_id,
+                normalized_trigger,
+                area_id=compiled_rule.ha_area_id,
+                icon=compiled_rule.icon,
             )
         else:
             timeout_seconds = _ENTITY_RESOLVE_MAX_ATTEMPTS * _ENTITY_RESOLVE_WAIT_SECONDS
@@ -636,6 +642,8 @@ class TopomationManagedActions:
             "end_time": normalized_end_time,
             "run_on_startup": run_on_startup if isinstance(run_on_startup, bool) else None,
             "rule_uuid": normalized_rule_uuid,
+            "ha_area_id": compiled_rule.ha_area_id,
+            "icon": compiled_rule.icon,
             "enabled": True,
         }
 
@@ -769,9 +777,7 @@ class TopomationManagedActions:
                             else None
                         ),
                         actions=(
-                            rule.get("actions")
-                            if isinstance(rule.get("actions"), list)
-                            else None
+                            rule.get("actions") if isinstance(rule.get("actions"), list) else None
                         ),
                         ambient_condition=(
                             str(rule.get("ambient_condition"))
@@ -800,9 +806,7 @@ class TopomationManagedActions:
                             else None
                         ),
                         automation_id=(
-                            str(rule.get("id"))
-                            if isinstance(rule.get("id"), str)
-                            else None
+                            str(rule.get("id")) if isinstance(rule.get("id"), str) else None
                         ),
                         rule_uuid=(
                             str(rule.get("rule_uuid"))
@@ -992,6 +996,176 @@ class TopomationManagedActions:
             raise ValueError("Lighting rules cannot include both on_dark and on_bright")
         return tuple(ordered)
 
+    def _compile_managed_rule(
+        self,
+        *,
+        location: Any,
+        trigger_types: tuple[ActionTriggerType, ...],
+        actions: list[dict[str, Any]],
+        ambient_condition: str | None,
+        must_be_occupied: bool | None,
+    ) -> _CompiledManagedRule:
+        """Normalize the product-level managed rule before HA config generation."""
+        if not actions:
+            raise ValueError("At least one action target is required")
+
+        primary_action = actions[0]
+        primary_entity_id = str(primary_action.get("entity_id", "")).strip()
+        target_domain = primary_entity_id.split(".", 1)[0] if "." in primary_entity_id else ""
+        lighting_rule = target_domain == "light"
+        has_ambient_trigger = any(
+            trigger_type in {"on_dark", "on_bright"} for trigger_type in trigger_types
+        )
+
+        if has_ambient_trigger and not lighting_rule:
+            raise ValueError("Ambient triggers are only supported for Lighting rules")
+
+        normalized_ambient_condition = self._normalize_ambient_condition(
+            ambient_condition=ambient_condition,
+            trigger_types=trigger_types,
+        )
+        normalized_must_be_occupied = must_be_occupied
+
+        if not lighting_rule and normalized_ambient_condition != "any":
+            normalized_ambient_condition = "any"
+
+        if "on_bright" in trigger_types:
+            if normalized_ambient_condition == "dark":
+                raise ValueError("on_bright rules cannot require dark ambient state")
+            if normalized_ambient_condition == "bright":
+                normalized_ambient_condition = "any"
+        if "on_dark" in trigger_types:
+            if normalized_ambient_condition == "bright":
+                raise ValueError("on_dark rules cannot require bright ambient state")
+            if normalized_ambient_condition == "dark":
+                normalized_ambient_condition = "any"
+
+        if "on_occupied" in trigger_types:
+            if normalized_must_be_occupied is False:
+                raise ValueError("on_occupied rules cannot require vacancy")
+            if normalized_must_be_occupied is True:
+                normalized_must_be_occupied = None
+        if "on_vacant" in trigger_types:
+            if normalized_must_be_occupied is True:
+                raise ValueError("on_vacant rules cannot require occupancy")
+            if normalized_must_be_occupied is False:
+                normalized_must_be_occupied = None
+
+        return _CompiledManagedRule(
+            trigger_type=trigger_types[0],
+            trigger_types=trigger_types,
+            ambient_condition=normalized_ambient_condition,
+            must_be_occupied=normalized_must_be_occupied,
+            actions=actions,
+            icon=self._select_generated_icon(actions),
+            ha_area_id=self._resolve_managed_rule_ha_area_id(location),
+        )
+
+    def _resolve_managed_rule_ha_area_id(self, location: Any) -> str:
+        """Resolve the mandatory HA area that should own a managed automation."""
+        location_id = str(getattr(location, "id", "") or "").strip()
+        location_name = str(getattr(location, "name", location_id or "Location") or "").strip()
+        location_type = self._location_type(location)
+
+        if location_type in {"area", "subarea"}:
+            ha_area_id = self._location_ha_area_id(location)
+            if ha_area_id and self._ha_area_exists(ha_area_id):
+                return ha_area_id
+            raise ValueError(
+                f'No valid HA area found for location "{location_name}" ({location_id})'
+            )
+
+        if location_type in {"property", "building", "grounds", "floor"}:
+            shadow_location = self._managed_shadow_location_for_host(location_id)
+            shadow_area_id = self._location_ha_area_id(shadow_location) if shadow_location else None
+            if shadow_area_id and self._ha_area_exists(shadow_area_id):
+                return shadow_area_id
+            raise ValueError(
+                f'No valid managed-shadow HA area found for location "{location_name}" ({location_id})'
+            )
+
+        ha_area_id = self._location_ha_area_id(location)
+        if ha_area_id and self._ha_area_exists(ha_area_id):
+            return ha_area_id
+        raise ValueError(f'No valid HA area found for location "{location_name}" ({location_id})')
+
+    def _managed_shadow_location_for_host(self, host_location_id: str) -> Any | None:
+        """Return the managed-shadow location object for a structural host."""
+        if self._loc_mgr is None or not host_location_id:
+            return None
+        try:
+            locations = list(self._loc_mgr.all_locations())
+        except Exception:  # pragma: no cover - defensive
+            return None
+        for location in locations:
+            meta = self._location_meta(location)
+            if str(meta.get("role", "")).strip().lower() != "managed_shadow":
+                continue
+            if meta.get("shadow_for_location_id") == host_location_id:
+                return location
+        return None
+
+    def _ha_area_exists(self, ha_area_id: str) -> bool:
+        """Return True when HA's area registry contains the given area id."""
+        try:
+            return ar.async_get(self.hass).async_get_area(ha_area_id) is not None
+        except Exception:  # pragma: no cover - test doubles may omit registries
+            return False
+
+    @staticmethod
+    def _location_meta(location: Any) -> Mapping[str, Any]:
+        modules = getattr(location, "modules", {}) or {}
+        meta = modules.get("_meta", {}) if isinstance(modules, Mapping) else {}
+        return meta if isinstance(meta, Mapping) else {}
+
+    def _location_type(self, location: Any) -> str:
+        raw_type = str(self._location_meta(location).get("type", "") or "").strip().lower()
+        return raw_type or "area"
+
+    def _location_ha_area_id(self, location: Any) -> str | None:
+        if location is None:
+            return None
+        raw_area_id = getattr(location, "ha_area_id", None)
+        if isinstance(raw_area_id, str) and raw_area_id.strip():
+            return raw_area_id.strip()
+        meta_area_id = self._location_meta(location).get("ha_area_id")
+        if isinstance(meta_area_id, str) and meta_area_id.strip():
+            return meta_area_id.strip()
+        return None
+
+    def _select_generated_icon(self, actions: list[Mapping[str, Any]]) -> str:
+        """Select the Topomation-owned generated automation icon."""
+        primary_action = actions[0] if actions else {}
+        entity_id = str(primary_action.get("entity_id", "") or "").strip()
+        service = str(primary_action.get("service", "") or "").strip()
+        domain = entity_id.split(".", 1)[0] if "." in entity_id else ""
+
+        if domain == "light":
+            return "mdi:lightbulb-off" if service == "turn_off" else "mdi:lightbulb-group"
+        if domain == "fan":
+            return "mdi:fan"
+        if domain == "switch":
+            return "mdi:power-plug"
+        if domain == "media_player":
+            if service in {"media_play", "turn_on"}:
+                return "mdi:play"
+            if service in {"media_pause", "media_stop"}:
+                return "mdi:pause"
+            if service in {"volume_mute", "mute_volume"}:
+                return "mdi:volume-mute"
+            if service.startswith("volume"):
+                return "mdi:volume-high"
+            return "mdi:speaker-wireless"
+        if domain == "climate":
+            return "mdi:thermostat"
+        if domain == "vacuum":
+            if service in {"pause", "stop"}:
+                return "mdi:pause"
+            if service in {"return_to_base", "dock"}:
+                return "mdi:robot-vacuum-variant"
+            return "mdi:robot-vacuum"
+        return "mdi:home-automation"
+
     def _prune_recent_rule_snapshots(self) -> None:
         """Drop expired snapshot entries."""
         now = monotonic()
@@ -1084,10 +1258,7 @@ class TopomationManagedActions:
         self,
         trigger_types: tuple[ActionTriggerType, ...],
     ) -> ActionAmbientCondition:
-        if "on_dark" in trigger_types:
-            return "dark"
-        if "on_bright" in trigger_types:
-            return "bright"
+        _ = trigger_types
         return "any"
 
     def _normalize_ambient_condition(
@@ -1192,7 +1363,9 @@ class TopomationManagedActions:
         for trigger_type in trigger_types:
             if trigger_type in {"on_occupied", "on_vacant"}:
                 if not occupancy_entity_id:
-                    raise ValueError("Occupancy trigger requested but no occupancy entity was found")
+                    raise ValueError(
+                        "Occupancy trigger requested but no occupancy entity was found"
+                    )
                 triggers.append(
                     {
                         "trigger": "state",
@@ -1278,9 +1451,11 @@ class TopomationManagedActions:
             threshold = float(
                 ambient_config.get(
                     threshold_key,
-                    AMBIENT_DARK_THRESHOLD_DEFAULT
-                    if dark_state
-                    else AMBIENT_BRIGHT_THRESHOLD_DEFAULT,
+                    (
+                        AMBIENT_DARK_THRESHOLD_DEFAULT
+                        if dark_state
+                        else AMBIENT_BRIGHT_THRESHOLD_DEFAULT
+                    ),
                 )
             )
             lux_clause: dict[str, Any] = {
@@ -1289,9 +1464,8 @@ class TopomationManagedActions:
                 "below" if dark_state else "above": threshold,
             }
             local_lux_sensor = ambient_config.get("lux_sensor")
-            if (
-                lux_sensor == local_lux_sensor
-                and bool(ambient_config.get("ignore_local_lux_when_lights_on", False))
+            if lux_sensor == local_lux_sensor and bool(
+                ambient_config.get("ignore_local_lux_when_lights_on", False)
             ):
                 local_light_entity_ids = [
                     entity_id
@@ -1392,20 +1566,14 @@ class TopomationManagedActions:
         automation_entity_id = f"automation.{automation_id}"
         if paused_carveout_entity_id:
             value_template = (
-                "{%- set last = state_attr('"
-                + automation_entity_id
-                + "', 'last_triggered') -%}\n"
+                "{%- set last = state_attr('" + automation_entity_id + "', 'last_triggered') -%}\n"
                 "{{ last is none\n"
                 "   or as_local(last).date() != as_local(now()).date()\n"
-                "   or is_state('"
-                + paused_carveout_entity_id
-                + "', 'paused') }}"
+                "   or is_state('" + paused_carveout_entity_id + "', 'paused') }}"
             )
         else:
             value_template = (
-                "{%- set last = state_attr('"
-                + automation_entity_id
-                + "', 'last_triggered') -%}\n"
+                "{%- set last = state_attr('" + automation_entity_id + "', 'last_triggered') -%}\n"
                 "{{ last is none\n"
                 "   or as_local(last).date() != as_local(now()).date() }}"
             )
@@ -1527,9 +1695,7 @@ class TopomationManagedActions:
 
             ambient_condition = self._normalize_ambient_condition(
                 ambient_condition=(
-                    parsed.get("ambient_condition")
-                    if isinstance(parsed, Mapping)
-                    else None
+                    parsed.get("ambient_condition") if isinstance(parsed, Mapping) else None
                 ),
                 trigger_types=trigger_types,
             )
@@ -1537,9 +1703,7 @@ class TopomationManagedActions:
                 parsed.get("must_be_occupied") if isinstance(parsed, Mapping) else None
             )
             must_be_occupied = (
-                raw_must_be_occupied
-                if isinstance(raw_must_be_occupied, bool)
-                else None
+                raw_must_be_occupied if isinstance(raw_must_be_occupied, bool) else None
             )
             time_condition_enabled = bool(parsed.get("time_condition_enabled", False))
             start_time = self._normalize_time_hhmm(
@@ -1550,11 +1714,7 @@ class TopomationManagedActions:
                 parsed.get("end_time") if isinstance(parsed, Mapping) else None,
                 "23:59",
             )
-            run_on_startup = (
-                parsed.get("run_on_startup")
-                if isinstance(parsed, Mapping)
-                else None
-            )
+            run_on_startup = parsed.get("run_on_startup") if isinstance(parsed, Mapping) else None
             rule_uuid = self._normalize_rule_uuid(
                 parsed.get("rule_uuid") if isinstance(parsed, Mapping) else None
             )
@@ -1563,9 +1723,7 @@ class TopomationManagedActions:
                     str(parsed.get("automation_id", "")).strip()
                 )
 
-            raw_user_named = (
-                parsed.get("user_named") if isinstance(parsed, Mapping) else None
-            )
+            raw_user_named = parsed.get("user_named") if isinstance(parsed, Mapping) else None
             raw_daily_gating_enabled = (
                 parsed.get("daily_gating_enabled") if isinstance(parsed, Mapping) else None
             )
@@ -1689,7 +1847,9 @@ class TopomationManagedActions:
 
         return normalized_actions
 
-    def _default_action_service_for_trigger(self, entity_id: str, trigger_type: ActionTriggerType) -> str:
+    def _default_action_service_for_trigger(
+        self, entity_id: str, trigger_type: ActionTriggerType
+    ) -> str:
         """Return default service for one entity+trigger pairing."""
         domain = entity_id.split(".", 1)[0] if "." in entity_id else ""
         prefers_off = trigger_type in {"on_vacant", "on_bright"}
@@ -1719,7 +1879,9 @@ class TopomationManagedActions:
             if not entity_id or entity_id in seen_entity_ids:
                 continue
             raw_service = str(raw_action.get("service", "")).strip()
-            service = raw_service or self._default_action_service_for_trigger(entity_id, trigger_type)
+            service = raw_service or self._default_action_service_for_trigger(
+                entity_id, trigger_type
+            )
             data = self._normalize_action_data(raw_action.get("data"))
             only_if_off = (
                 raw_action.get("only_if_off")
@@ -1867,6 +2029,7 @@ class TopomationManagedActions:
         trigger_type: ActionTriggerType,
         *,
         area_id: str | None = None,
+        icon: str | None = None,
     ) -> bool:
         """Apply area, label, and category to an automation entity (matches UI Save dialog)."""
         _ = trigger_type
@@ -1890,19 +2053,35 @@ class TopomationManagedActions:
         }
         if area_id is not None:
             update_kwargs["area_id"] = area_id
+        if icon is not None:
+            update_kwargs["icon"] = icon
         existing_labels = set(entry.labels or ())
         existing_categories = dict(entry.categories or {})
         existing_area_id = getattr(entry, "area_id", None)
+        existing_icon = getattr(entry, "icon", None)
         if (
             existing_labels == set(update_kwargs["labels"])
             and existing_categories == cast(dict[str, Any], update_kwargs["categories"])
             and (area_id is None or existing_area_id == area_id)
+            and (icon is None or existing_icon == icon)
         ):
             return False
         try:
             entity_registry.async_update_entity(entity_id, **update_kwargs)
             return True
         except Exception:
+            if "icon" in update_kwargs:
+                fallback_kwargs = dict(update_kwargs)
+                fallback_kwargs.pop("icon", None)
+                try:
+                    entity_registry.async_update_entity(entity_id, **fallback_kwargs)
+                    return True
+                except Exception:
+                    _LOGGER.debug(
+                        "Failed fallback Topomation grouping update without icon for %s",
+                        entity_id,
+                        exc_info=True,
+                    )
             _LOGGER.debug(
                 "Failed to apply Topomation area/labels/categories for %s",
                 entity_id,

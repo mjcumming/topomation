@@ -625,7 +625,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     @callback
     def _schedule_managed_rule_contract_rebuild(_: Any) -> None:
-        """One-shot rewrite for managed automations created by older contracts."""
+        """One-shot rewrite for managed automations created by older contracts.
+
+        ADR-HA-095 bumps managed-rule metadata to v6. Keep this startup rebuild
+        enabled for the v6 rollout so existing production environments converge
+        automatically, then remove the scheduled rebuild in the next release once
+        deployed installs have had a chance to rewrite their managed rules.
+        """
         async def _run_managed_rule_startup_cleanup() -> None:
             await managed_action_rules.async_rebuild_rules_before_metadata_version()
             await managed_action_rules.async_cleanup_legacy_grouping()

@@ -492,8 +492,8 @@ def test_managed_action_condition_requires_entity_for_occupancy_guard(
     [
         pytest.param(None, ("on_occupied",), "any", id="on_occupied_default_any"),
         pytest.param("bright", ("on_occupied",), "bright", id="explicit_bright"),
-        pytest.param(None, ("on_dark",), "dark", id="on_dark_default_dark"),
-        pytest.param(None, ("on_bright",), "bright", id="on_bright_default_bright"),
+        pytest.param(None, ("on_dark",), "any", id="on_dark_default_any"),
+        pytest.param(None, ("on_bright",), "any", id="on_bright_default_any"),
     ],
 )
 def test_normalize_ambient_condition_matrix(
@@ -507,3 +507,133 @@ def test_normalize_ambient_condition_matrix(
         trigger_types=trigger_types,  # type: ignore[arg-type]
     )
     assert result == expected
+
+
+@pytest.mark.parametrize(
+    (
+        "trigger_types",
+        "ambient_condition",
+        "must_be_occupied",
+        "expected_ambient_condition",
+        "expected_must_be_occupied",
+    ),
+    [
+        pytest.param(("on_bright",), "bright", None, "any", None, id="bright_self_guard"),
+        pytest.param(("on_dark",), "dark", None, "any", None, id="dark_self_guard"),
+        pytest.param(("on_occupied",), "any", True, "any", None, id="occupied_self_guard"),
+        pytest.param(("on_vacant",), "any", False, "any", None, id="vacant_self_guard"),
+        pytest.param(("on_occupied",), "dark", None, "dark", None, id="occupancy_dark_guard"),
+        pytest.param(("on_bright",), "any", False, "any", False, id="bright_vacant_guard"),
+    ],
+)
+def test_managed_rule_compiler_truth_table_valid_combinations(
+    build_manager: TopomationManagedActions,
+    monkeypatch: pytest.MonkeyPatch,
+    trigger_types: tuple[str, ...],
+    ambient_condition: str,
+    must_be_occupied: bool | None,
+    expected_ambient_condition: str,
+    expected_must_be_occupied: bool | None,
+) -> None:
+    monkeypatch.setattr(
+        build_manager, "_resolve_managed_rule_ha_area_id", lambda _location: "area_kitchen"
+    )
+
+    compiled = build_manager._compile_managed_rule(  # noqa: SLF001
+        location=object(),
+        trigger_types=trigger_types,  # type: ignore[arg-type]
+        actions=[{"entity_id": "light.kitchen", "service": "turn_on"}],
+        ambient_condition=ambient_condition,
+        must_be_occupied=must_be_occupied,
+    )
+
+    assert compiled.ambient_condition == expected_ambient_condition
+    assert compiled.must_be_occupied is expected_must_be_occupied
+
+
+@pytest.mark.parametrize(
+    ("trigger_types", "ambient_condition", "must_be_occupied", "match"),
+    [
+        pytest.param(("on_bright",), "dark", None, "cannot require dark", id="bright_dark"),
+        pytest.param(("on_dark",), "bright", None, "cannot require bright", id="dark_bright"),
+        pytest.param(
+            ("on_occupied",), "any", False, "cannot require vacancy", id="occupied_vacant"
+        ),
+        pytest.param(("on_vacant",), "any", True, "cannot require occupancy", id="vacant_occupied"),
+    ],
+)
+def test_managed_rule_compiler_truth_table_rejects_impossible_combinations(
+    build_manager: TopomationManagedActions,
+    monkeypatch: pytest.MonkeyPatch,
+    trigger_types: tuple[str, ...],
+    ambient_condition: str,
+    must_be_occupied: bool | None,
+    match: str,
+) -> None:
+    monkeypatch.setattr(
+        build_manager, "_resolve_managed_rule_ha_area_id", lambda _location: "area_kitchen"
+    )
+
+    with pytest.raises(ValueError, match=match):
+        build_manager._compile_managed_rule(  # noqa: SLF001
+            location=object(),
+            trigger_types=trigger_types,  # type: ignore[arg-type]
+            actions=[{"entity_id": "light.kitchen", "service": "turn_on"}],
+            ambient_condition=ambient_condition,
+            must_be_occupied=must_be_occupied,
+        )
+
+
+@pytest.mark.parametrize(
+    ("entity_id", "trigger_types", "ambient_condition", "expected_ambient_condition"),
+    [
+        ("fan.bath", ("on_occupied",), "dark", "any"),
+        ("switch.coffee", ("on_vacant",), "bright", "any"),
+        ("media_player.den", ("on_occupied",), "dark", "any"),
+        ("climate.hall", ("on_vacant",), "bright", "any"),
+        ("vacuum.main", ("on_vacant",), "dark", "any"),
+    ],
+)
+def test_non_lighting_rules_strip_ambient_guard_semantics(
+    build_manager: TopomationManagedActions,
+    monkeypatch: pytest.MonkeyPatch,
+    entity_id: str,
+    trigger_types: tuple[str, ...],
+    ambient_condition: str,
+    expected_ambient_condition: str,
+) -> None:
+    monkeypatch.setattr(
+        build_manager, "_resolve_managed_rule_ha_area_id", lambda _location: "area_kitchen"
+    )
+
+    compiled = build_manager._compile_managed_rule(  # noqa: SLF001
+        location=object(),
+        trigger_types=trigger_types,  # type: ignore[arg-type]
+        actions=[{"entity_id": entity_id, "service": "turn_on"}],
+        ambient_condition=ambient_condition,
+        must_be_occupied=None,
+    )
+
+    assert compiled.ambient_condition == expected_ambient_condition
+
+
+@pytest.mark.parametrize(
+    "entity_id", ["fan.bath", "switch.coffee", "media_player.den", "climate.hall", "vacuum.main"]
+)
+def test_non_lighting_rules_reject_ambient_trigger_semantics(
+    build_manager: TopomationManagedActions,
+    monkeypatch: pytest.MonkeyPatch,
+    entity_id: str,
+) -> None:
+    monkeypatch.setattr(
+        build_manager, "_resolve_managed_rule_ha_area_id", lambda _location: "area_kitchen"
+    )
+
+    with pytest.raises(ValueError, match="Ambient triggers are only supported for Lighting"):
+        build_manager._compile_managed_rule(  # noqa: SLF001
+            location=object(),
+            trigger_types=("on_dark",),
+            actions=[{"entity_id": entity_id, "service": "turn_on"}],
+            ambient_condition=None,
+            must_be_occupied=None,
+        )

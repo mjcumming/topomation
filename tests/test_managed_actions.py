@@ -10,6 +10,7 @@ import pytest
 from homeassistant.components.automation import DATA_COMPONENT as AUTOMATION_DATA_COMPONENT
 from homeassistant.const import CONF_ID
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import area_registry as ar
 
 from custom_components.topomation.const import TOPOMATION_AUTOMATION_METADATA_PREFIX
 from custom_components.topomation.managed_actions import TopomationManagedActions
@@ -50,7 +51,9 @@ async def test_async_list_rules_filters_to_location_and_extracts_actions(
         "end_time": "23:59",
         "run_on_startup": True,
     }
-    description = f"Managed by Topomation.\n{TOPOMATION_AUTOMATION_METADATA_PREFIX} {json.dumps(metadata)}"
+    description = (
+        f"Managed by Topomation.\n{TOPOMATION_AUTOMATION_METADATA_PREFIX} {json.dumps(metadata)}"
+    )
 
     matching_config = {
         CONF_ID: "topomation_bathroom_vacant",
@@ -204,7 +207,9 @@ async def test_async_list_rules_snapshots_entity_mapping_before_awaits(
         "start_time": "18:00",
         "end_time": "23:59",
     }
-    description = f"Managed by Topomation.\n{TOPOMATION_AUTOMATION_METADATA_PREFIX} {json.dumps(metadata)}"
+    description = (
+        f"Managed by Topomation.\n{TOPOMATION_AUTOMATION_METADATA_PREFIX} {json.dumps(metadata)}"
+    )
 
     first_config = {
         CONF_ID: "topomation_kitchen_occupied_ceiling",
@@ -249,7 +254,9 @@ async def test_async_list_rules_snapshots_entity_mapping_before_awaits(
     hass.states.async_set(first_entity.entity_id, "on")
     hass.states.async_set(second_entity.entity_id, "on")
 
-    async def _fake_get(method: str, automation_id: str, payload: dict[str, object] | None = None) -> dict[str, object]:
+    async def _fake_get(
+        method: str, automation_id: str, payload: dict[str, object] | None = None
+    ) -> dict[str, object]:
         del method, payload
         component.entities["automation.transient"] = SimpleNamespace(
             entity_id="automation.transient",
@@ -347,9 +354,9 @@ def test_metadata_round_trip_rejects_non_bool_daily_gating_enabled() -> None:
         )
         parsed = manager._parse_metadata(f"Managed by Topomation.\n{line}")  # noqa: SLF001
         assert parsed is not None
-        assert parsed.daily_gating_enabled is False, (
-            f"non-bool {bad_value!r} should coerce to False"
-        )
+        assert (
+            parsed.daily_gating_enabled is False
+        ), f"non-bool {bad_value!r} should coerce to False"
 
     generated_id = manager._build_stable_automation_id(  # noqa: SLF001
         "kitchen",
@@ -363,7 +370,10 @@ def test_metadata_round_trip_rejects_non_bool_daily_gating_enabled() -> None:
         manager._normalize_trigger_types(["on_dark", "on_bright"])  # noqa: SLF001
     with pytest.raises(ValueError, match="cannot include both on_occupied and on_vacant"):
         manager._normalize_trigger_types(["on_occupied", "on_vacant"])  # noqa: SLF001
-    assert manager._normalize_existing_automation_id("automation.kitchen dark safety") == "kitchen_dark_safety"  # noqa: SLF001
+    assert (
+        manager._normalize_existing_automation_id("automation.kitchen dark safety")
+        == "kitchen_dark_safety"
+    )  # noqa: SLF001
     assert manager._normalize_rule_uuid("Rule-ABC_12345678") == "rule-abc_12345678"  # noqa: SLF001
 
     extracted_actions = manager._extract_actions(  # noqa: SLF001
@@ -468,7 +478,9 @@ async def test_resolve_created_entity_id_retries_registry_lookup(
     async def _no_sleep(_: float) -> None:
         return None
 
-    monkeypatch.setattr("custom_components.topomation.managed_actions.er.async_get", lambda _: fake_registry)
+    monkeypatch.setattr(
+        "custom_components.topomation.managed_actions.er.async_get", lambda _: fake_registry
+    )
     monkeypatch.setattr("custom_components.topomation.managed_actions.asyncio.sleep", _no_sleep)
 
     entity_id = await manager._resolve_created_entity_id(  # noqa: SLF001
@@ -523,6 +535,9 @@ async def test_async_create_rule_rolls_back_when_registration_does_not_converge(
     )
     monkeypatch.setattr(manager, "_call_automation_config_api", _fake_call)
     monkeypatch.setattr(manager, "_resolve_created_entity_id", _never_resolve_entity_id)
+    monkeypatch.setattr(
+        manager, "_resolve_managed_rule_ha_area_id", lambda _location: "area_kitchen"
+    )
 
     location = SimpleNamespace(id="kitchen", name="Kitchen", modules={})
 
@@ -584,6 +599,9 @@ async def test_async_create_rule_wraps_only_if_off_light_turn_on_action(
     )
     monkeypatch.setattr(manager, "_call_automation_config_api", _fake_call)
     monkeypatch.setattr(manager, "_resolve_created_entity_id", _fake_resolve_entity_id)
+    monkeypatch.setattr(
+        manager, "_resolve_managed_rule_ha_area_id", lambda _location: "area_kitchen"
+    )
     monkeypatch.setattr(manager, "_apply_topomation_grouping", lambda *args, **kwargs: None)
 
     location = SimpleNamespace(id="kitchen", name="Kitchen", modules={})
@@ -680,7 +698,9 @@ def test_apply_topomation_grouping_uses_topomation_labels_and_category(
             return "label_topomation"
         return "label_unknown"
 
-    monkeypatch.setattr("custom_components.topomation.managed_actions.er.async_get", lambda _: fake_registry)
+    monkeypatch.setattr(
+        "custom_components.topomation.managed_actions.er.async_get", lambda _: fake_registry
+    )
     monkeypatch.setattr(manager, "_ensure_label", _ensure_label)
     monkeypatch.setattr(manager, "_label_ids_by_name", lambda _: {"label_occupied"})
     monkeypatch.setattr(manager, "_ensure_automation_category", lambda _: "category_topomation")
@@ -689,6 +709,7 @@ def test_apply_topomation_grouping_uses_topomation_labels_and_category(
         "automation.kitchen_occupied",
         "on_occupied",
         area_id="area_kitchen",
+        icon="mdi:lightbulb-group",
     )
 
     assert requested_label_names == ["Topomation"]
@@ -702,6 +723,7 @@ def test_apply_topomation_grouping_uses_topomation_labels_and_category(
         "automation": "category_topomation",
     }
     assert captured["area_id"] == "area_kitchen"
+    assert captured["icon"] == "mdi:lightbulb-group"
 
 
 def test_apply_topomation_grouping_skips_registry_write_when_metadata_is_unchanged(
@@ -734,7 +756,9 @@ def test_apply_topomation_grouping_skips_registry_write_when_metadata_is_unchang
             return "label_topomation"
         return "label_unknown"
 
-    monkeypatch.setattr("custom_components.topomation.managed_actions.er.async_get", lambda _: fake_registry)
+    monkeypatch.setattr(
+        "custom_components.topomation.managed_actions.er.async_get", lambda _: fake_registry
+    )
     monkeypatch.setattr(manager, "_ensure_label", _ensure_label)
     monkeypatch.setattr(manager, "_label_ids_by_name", lambda _: {"label_occupied"})
     monkeypatch.setattr(manager, "_ensure_automation_category", lambda _: "category_topomation")
@@ -909,7 +933,7 @@ async def test_rebuild_rules_before_metadata_version_rewrites_only_old_rules(
             },
             {
                 "id": "topomation_kitchen_new",
-                "metadata_version": 5,
+                "metadata_version": 6,
                 "trigger_type": "on_dark",
                 "actions": [{"entity_id": "light.kitchen", "service": "turn_on"}],
             },
@@ -935,6 +959,89 @@ async def test_rebuild_rules_before_metadata_version_rewrites_only_old_rules(
     assert created[0]["trigger_types"] == ["on_dark"]
     assert created[0]["ambient_condition"] == "dark"
     assert enabled_updates == [("automation.topomation_kitchen_old", False)]
+
+
+def test_managed_rule_area_resolution_uses_direct_room_area(
+    hass: HomeAssistant,
+) -> None:
+    """Room-like locations assign managed automations to their direct HA area."""
+    manager = TopomationManagedActions(hass)
+    area_registry = ar.async_get(hass)
+    kitchen_area = area_registry.async_create("Kitchen")
+    location = SimpleNamespace(
+        id="area_kitchen_location",
+        name="Kitchen",
+        ha_area_id=kitchen_area.id,
+        modules={"_meta": {"type": "area"}},
+    )
+
+    assert manager._resolve_managed_rule_ha_area_id(location) == kitchen_area.id  # noqa: SLF001
+
+
+def test_managed_rule_area_resolution_uses_structural_shadow_area(
+    hass: HomeAssistant,
+) -> None:
+    """Structural hosts assign managed automations to their managed-shadow HA area."""
+    area_registry = ar.async_get(hass)
+    shadow_area = area_registry.async_create("Main Floor")
+    host = SimpleNamespace(
+        id="floor_main",
+        name="Main Floor",
+        ha_area_id=None,
+        modules={"_meta": {"type": "floor"}},
+    )
+    shadow = SimpleNamespace(
+        id="shadow_floor_main",
+        name="Main Floor Shadow",
+        ha_area_id=shadow_area.id,
+        modules={
+            "_meta": {
+                "type": "area",
+                "role": "managed_shadow",
+                "shadow_for_location_id": "floor_main",
+            }
+        },
+    )
+    loc_mgr = SimpleNamespace(all_locations=lambda: [host, shadow])
+    manager = TopomationManagedActions(hass, loc_mgr)
+
+    assert manager._resolve_managed_rule_ha_area_id(host) == shadow_area.id  # noqa: SLF001
+
+
+def test_managed_rule_area_resolution_fails_when_area_missing(
+    hass: HomeAssistant,
+) -> None:
+    """Saving a managed rule fails instead of creating an unscoped automation."""
+    manager = TopomationManagedActions(hass)
+    location = SimpleNamespace(
+        id="area_missing",
+        name="Missing",
+        ha_area_id="area_missing",
+        modules={"_meta": {"type": "area"}},
+    )
+
+    with pytest.raises(ValueError, match="No valid HA area"):
+        manager._resolve_managed_rule_ha_area_id(location)  # noqa: SLF001
+
+
+@pytest.mark.parametrize(
+    ("action", "expected_icon"),
+    [
+        ({"entity_id": "light.kitchen", "service": "turn_on"}, "mdi:lightbulb-group"),
+        ({"entity_id": "light.kitchen", "service": "turn_off"}, "mdi:lightbulb-off"),
+        ({"entity_id": "fan.bath", "service": "turn_on"}, "mdi:fan"),
+        ({"entity_id": "switch.coffee", "service": "turn_on"}, "mdi:power-plug"),
+        ({"entity_id": "media_player.den", "service": "media_play"}, "mdi:play"),
+        ({"entity_id": "media_player.den", "service": "volume_set"}, "mdi:volume-high"),
+        ({"entity_id": "climate.hall", "service": "set_hvac_mode"}, "mdi:thermostat"),
+        ({"entity_id": "vacuum.main", "service": "start"}, "mdi:robot-vacuum"),
+        ({"entity_id": "vacuum.main", "service": "pause"}, "mdi:pause"),
+    ],
+)
+def test_generated_icon_selection(action: dict[str, str], expected_icon: str) -> None:
+    """Generated automation icons come from target domain and primary action."""
+    manager = TopomationManagedActions(cast(HomeAssistant, SimpleNamespace()))
+    assert manager._select_generated_icon([action]) == expected_icon  # noqa: SLF001
 
 
 @pytest.mark.asyncio
@@ -1093,9 +1200,7 @@ def test_find_occupancy_entity_id_resolves_via_managed_shadow_for_host(
         id="area_kitchen",
         modules={"_meta": {"type": "area"}},
     )
-    fake_loc_mgr = SimpleNamespace(
-        all_locations=lambda: [shadow_location, other_location]
-    )
+    fake_loc_mgr = SimpleNamespace(all_locations=lambda: [shadow_location, other_location])
 
     manager = TopomationManagedActions(hass, fake_loc_mgr)
 
@@ -1121,4 +1226,6 @@ def test_find_occupancy_entity_id_returns_none_when_no_loc_mgr_and_no_direct_mat
         {"device_class": "occupancy", "location_id": "area_kitchen"},
     )
     assert manager._find_occupancy_entity_id("floor_main_floor") is None  # noqa: SLF001
-    assert manager._find_occupancy_entity_id("area_kitchen") == "binary_sensor.kitchen_occupancy"  # noqa: SLF001
+    assert (
+        manager._find_occupancy_entity_id("area_kitchen") == "binary_sensor.kitchen_occupancy"
+    )  # noqa: SLF001

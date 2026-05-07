@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-05-07
+
+### Changed
+
+- **Managed rule compiler contract**: managed rules now compile through a
+  backend-normalized rule model that strips redundant self-guards and rejects
+  contradictory trigger/guard pairs before Home Assistant automation config is
+  generated.
+- **Existing rule rebuild**: bumped managed automation metadata to version 6
+  and kept the startup rebuild enabled for this rollout so existing production
+  installs rewrite older managed rules in place on load.
+- **Home Assistant presentation metadata**: managed automations now require a
+  valid HA area assignment and receive generated icon metadata derived from the
+  target domain and primary action. Icon registry writes fall back safely when
+  the running HA version does not support durable automation icons.
+
 ## [0.3.2] - 2026-05-03
 
 ### Changed

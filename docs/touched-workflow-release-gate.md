@@ -81,6 +81,50 @@ Run the rows that match the touched workflow.
 
 ## 6. Release Records
 
+### 2026-05-07 - v0.3.3 managed rule compiler contract
+
+1. Commit under test: `5eab98b` (release code/tests/version commit for
+   Topomation `0.3.3`).
+2. Frontend bundle rebuilt from that commit: yes; release gate rebuilt the
+   runtime bundle and produced no committed bundle diff.
+3. Touched workflow list:
+   - Managed rule backend compiler truth table for trigger/guard combinations.
+   - Existing managed-rule startup rebuild from metadata versions `< 6`.
+   - Managed automation HA area/category/label/icon presentation metadata.
+   - Release metadata/version synchronization for Topomation `0.3.3`.
+4. Commands run:
+   - `ruff check custom_components/topomation/__init__.py
+     custom_components/topomation/managed_actions.py
+     tests/test_managed_action_config_build_matrix.py tests/test_managed_actions.py`
+     — **PASS** (2026-05-07)
+   - `pytest tests/test_init.py tests/test_managed_action_config_build_matrix.py
+     tests/test_managed_actions.py -q --no-cov` — **PASS** (`101 passed`;
+     2026-05-07)
+   - `pytest tests/test_managed_lighting_automation_runtime.py -q --no-cov`
+     — **PASS** (`10 passed`; 2026-05-07)
+   - `./scripts/test-comprehensive.sh` — **PASS** (version sync `0.3.3`,
+     Ruff, Mypy, backend pytest `333 passed, 29 skipped`, frontend Vitest
+     `261 passed`, production bundle rebuild, Web Test Runner `202 passed`,
+     Playwright workflow suites `34 passed`; 2026-05-07)
+   - `make test-release-live` — **FAIL / environment**: local HA override
+     selected `http://localhost:8123`, which was not running; 2026-05-07.
+   - `./scripts/ha-dev-up.sh` — **PASS** (local HA dev runtime ready at
+     `http://127.0.0.1:8123`; 2026-05-07)
+   - `HA_URL=http://127.0.0.1:8123 HA_TOKEN=<local token>
+     python tests/ha_dev_e2e/bootstrap.py` — **PASS** (bootstrapped 18
+     locations; 2026-05-07)
+   - `make test-release-live` — **PASS** (local comprehensive matrix, live HA
+     managed-action contract `2 passed`, live HA browser workflow `6 passed`;
+     2026-05-07)
+5. Outcome:
+   - Managed rule backend compiler truth table: **PASS**
+   - Existing managed-rule metadata v6 startup rebuild: **PASS**
+   - Managed automation HA presentation metadata: **PASS**
+   - Release metadata/version sync: **PASS**
+   - Local comprehensive gate: **PASS**
+   - Live HA managed-action contract: **PASS**
+   - Live HA browser workflows: **PASS**
+
 ### 2026-05-03 - v0.3.2 managed automation grouping cleanup
 
 1. Commit under test: release-candidate worktree for Topomation `0.3.2`.
