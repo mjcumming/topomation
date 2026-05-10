@@ -81,6 +81,49 @@ Run the rows that match the touched workflow.
 
 ## 6. Release Records
 
+### 2026-05-10 - v0.3.4 mobile header and occupancy event patch
+
+1. Commit under test: release-candidate worktree for Topomation `0.3.4`
+   (final commit hash recorded after push).
+2. Frontend bundle rebuilt from that commit: yes; `npm run build` published the
+   updated runtime bundle before release validation.
+3. Touched workflow list:
+   - Mobile topology panel Home Assistant sidebar hamburger placement.
+   - Live occupancy projection event payload compaction and frontend merge of
+     compact live events over detailed projection reads.
+   - Managed rule ambient guard normalization when occupancy and dark/bright
+     triggers are combined.
+   - Release metadata/version synchronization for Topomation `0.3.4`.
+4. Commands run:
+   - `npm run test -- topomation-panel.test.ts` — **PASS** (`39 passed`;
+     2026-05-10).
+   - `npm run build` — **PASS** (published rebuilt
+     `frontend/topomation-panel.js`; 2026-05-10).
+   - `./scripts/test-comprehensive.sh` — **PASS** (version sync `0.3.4`,
+     Ruff, Mypy, backend pytest `335 passed, 29 skipped`, frontend Vitest
+     `262 passed`, production bundle rebuild, Web Test Runner `203 passed`,
+     Playwright workflow suites `34 passed`; 2026-05-10).
+   - `make test-release-live` — **FAIL / environment**: local HA override
+     selected `http://localhost:8123`, which was not running; 2026-05-10.
+   - `./scripts/ha-dev-up.sh` — **PASS** (local HA dev runtime ready at
+     `http://127.0.0.1:8123`; 2026-05-10).
+   - `HA_URL=http://127.0.0.1:8123 HA_TOKEN=<local token>
+     python tests/ha_dev_e2e/bootstrap.py` — **PASS** (bootstrapped 18
+     locations; 2026-05-10).
+   - `make test-release-live` — **PASS** (local comprehensive matrix, live HA
+     managed-action contract `2 passed`, live HA browser workflow `6 passed`;
+     2026-05-10).
+5. Outcome:
+   - Mobile topology panel sidebar hamburger placement: **PASS**
+   - Live occupancy projection event compaction and frontend merge behavior:
+     **PASS**
+   - Managed rule ambient guard normalization for combined occupancy and
+     dark/bright triggers: **PASS**
+   - Release metadata/version sync: **PASS**
+   - Local comprehensive gate: **PASS**
+   - Live HA managed-action contract: **PASS**
+   - Live HA browser workflows: **PASS**
+
 ### 2026-05-07 - v0.3.3 managed rule compiler contract
 
 1. Commit under test: `0d55f10` (release code/tests/version commit for

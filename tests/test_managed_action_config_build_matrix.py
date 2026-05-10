@@ -520,6 +520,22 @@ def test_normalize_ambient_condition_matrix(
     [
         pytest.param(("on_bright",), "bright", None, "any", None, id="bright_self_guard"),
         pytest.param(("on_dark",), "dark", None, "any", None, id="dark_self_guard"),
+        pytest.param(
+            ("on_occupied", "on_dark"),
+            "dark",
+            None,
+            "dark",
+            None,
+            id="occupied_plus_dark_keeps_occupancy_dark_guard",
+        ),
+        pytest.param(
+            ("on_vacant", "on_bright"),
+            "bright",
+            None,
+            "bright",
+            None,
+            id="vacant_plus_bright_keeps_occupancy_bright_guard",
+        ),
         pytest.param(("on_occupied",), "any", True, "any", None, id="occupied_self_guard"),
         pytest.param(("on_vacant",), "any", False, "any", None, id="vacant_self_guard"),
         pytest.param(("on_occupied",), "dark", None, "dark", None, id="occupancy_dark_guard"),

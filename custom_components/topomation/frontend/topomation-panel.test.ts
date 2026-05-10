@@ -990,6 +990,7 @@ describe('TopomationPanel integration (fake hass)', () => {
     ) as HTMLButtonElement | null;
     expect(sidebarButton).to.exist;
     expect(sidebarButton?.getAttribute("aria-label")).to.equal("Open Home Assistant sidebar");
+    expect(sidebarButton?.parentElement?.classList.contains("header-heading")).to.equal(true);
 
     sidebarButton!.click();
 
@@ -1759,6 +1760,36 @@ describe('TopomationPanel integration (fake hass)', () => {
 
     expect(occupancyStatus).to.equal("Vacant");
     expect(vacancyReasonDetail).to.include("Vacant because the hold timer expired");
+  });
+
+  it("merges compact live occupancy events over the existing detailed projection", async () => {
+    const element = document.createElement("topomation-panel") as any;
+    const detailed = occupancyProjection("kitchen", true, {
+      reason: "event:trigger",
+      contributions: [{ source_id: "binary_sensor.kitchen_motion", state: "active" }],
+      recent_changes: [{ kind: "state", event: "occupied" }],
+    });
+
+    element._applyOccupancyRuntimeStates([detailed], true);
+    element._applyOccupancyRuntimeStates([
+      {
+        location_id: "kitchen",
+        occupied: false,
+        previous_occupied: true,
+        reason: "timeout",
+        changed_at: "2026-03-18T04:05:00+00:00",
+      },
+    ]);
+
+    const stateLike = element._occupancyRuntimeStateByLocation.kitchen;
+    expect(stateLike.state).to.equal("off");
+    expect(stateLike.attributes.reason).to.equal("timeout");
+    expect(stateLike.attributes.contributions).to.deep.equal([
+      { source_id: "binary_sensor.kitchen_motion", state: "active" },
+    ]);
+    expect(stateLike.attributes.recent_changes).to.deep.equal([
+      { kind: "state", event: "occupied" },
+    ]);
   });
 
   it("does not resubscribe live event handlers on same-connection hass churn", async () => {

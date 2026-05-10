@@ -455,6 +455,17 @@ export class TopomationPanel extends LitElement {
         margin-bottom: var(--spacing-xs);
       }
 
+      .header-heading {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-sm);
+        margin-bottom: var(--spacing-xs);
+      }
+
+      .header-heading .header-title {
+        margin-bottom: 0;
+      }
+
       .panel-right > .header .header-title {
         margin-bottom: 0;
       }
@@ -832,11 +843,7 @@ export class TopomationPanel extends LitElement {
           ${this._renderConflictBanner()}
           ${this._locations.length === 0 ? this._renderEmptyStateBanner() : ""}
           <div class="header">
-            <div class="header-title">${managerHeader.title}</div>
-            <div class="header-subtitle">
-              ${managerHeader.subtitle}
-            </div>
-            <div class="header-actions">
+            <div class="header-heading">
               ${this._isSplitStackedLayout()
                 ? html`
                     <button
@@ -850,6 +857,12 @@ export class TopomationPanel extends LitElement {
                     </button>
                   `
                 : ""}
+              <div class="header-title">${managerHeader.title}</div>
+            </div>
+            <div class="header-subtitle">
+              ${managerHeader.subtitle}
+            </div>
+            <div class="header-actions">
               ${canCreateStructure
                 ? html`
                     <button class="button button-primary" @click=${this._handleNewLocation}>
@@ -2472,7 +2485,19 @@ export class TopomationPanel extends LitElement {
           ? runtimeState.state
           : this._runtimeStateToStateLike(runtimeState);
 
-      nextRuntimeStates[locationId] = stateLike;
+      if (!replace && nextRuntimeStates[locationId]) {
+        const previousState = nextRuntimeStates[locationId];
+        nextRuntimeStates[locationId] = {
+          ...previousState,
+          ...stateLike,
+          attributes: {
+            ...((previousState as any).attributes || {}),
+            ...((stateLike as any).attributes || {}),
+          },
+        };
+      } else {
+        nextRuntimeStates[locationId] = stateLike;
+      }
       if (typeof occupied === "boolean") {
         nextStates[locationId] = occupied;
         nextTransitions[locationId] = {
@@ -2506,36 +2531,43 @@ export class TopomationPanel extends LitElement {
       typeof runtimeState.changed_at === "string" && runtimeState.changed_at.trim().length
         ? runtimeState.changed_at
         : undefined;
+    const attributes: Record<string, any> = {
+      device_class: "occupancy",
+      location_id: locationId,
+    };
+    const assignIfPresent = (key: string, value: unknown) => {
+      if (value !== undefined && value !== null) {
+        attributes[key] = value;
+      }
+    };
+    assignIfPresent("effective_location_id", runtimeState.effective_location_id);
+    assignIfPresent("projection", runtimeState.projection);
+    if (Array.isArray(runtimeState.locked_by)) attributes.locked_by = runtimeState.locked_by;
+    if (typeof runtimeState.is_locked === "boolean") attributes.is_locked = runtimeState.is_locked;
+    if (Array.isArray(runtimeState.lock_modes)) attributes.lock_modes = runtimeState.lock_modes;
+    if (Array.isArray(runtimeState.direct_locks)) attributes.direct_locks = runtimeState.direct_locks;
+    if (Array.isArray(runtimeState.contributions)) {
+      attributes.contributions = runtimeState.contributions;
+    } else if (Array.isArray(runtimeState.contributors)) {
+      attributes.contributions = runtimeState.contributors;
+    }
+    assignIfPresent("effective_timeout_at", runtimeState.effective_timeout_at || runtimeState.vacant_at);
+    assignIfPresent("vacant_at", runtimeState.vacant_at || runtimeState.effective_timeout_at);
+    assignIfPresent("seconds_until_vacant", runtimeState.seconds_until_vacant);
+    assignIfPresent("previous_occupied", runtimeState.previous_occupied);
+    assignIfPresent("reason", runtimeState.reason);
+    assignIfPresent("explanation", runtimeState.explanation);
+    if (Array.isArray(runtimeState.recent_changes)) {
+      attributes.recent_changes = runtimeState.recent_changes;
+    }
+    assignIfPresent("occupancy_group_id", runtimeState.occupancy_group_id);
+
     return {
       entity_id: `binary_sensor.topomation_occupancy_projection_${locationId}`,
       state: occupied === true ? "on" : occupied === false ? "off" : "unknown",
       last_changed: changedAt,
       last_updated: changedAt,
-      attributes: {
-        device_class: "occupancy",
-        location_id: locationId,
-        effective_location_id: runtimeState.effective_location_id,
-        projection: runtimeState.projection,
-        locked_by: Array.isArray(runtimeState.locked_by) ? runtimeState.locked_by : [],
-        is_locked: Boolean(runtimeState.is_locked),
-        lock_modes: Array.isArray(runtimeState.lock_modes) ? runtimeState.lock_modes : [],
-        direct_locks: Array.isArray(runtimeState.direct_locks) ? runtimeState.direct_locks : [],
-        contributions: Array.isArray(runtimeState.contributions)
-          ? runtimeState.contributions
-          : Array.isArray(runtimeState.contributors)
-            ? runtimeState.contributors
-            : [],
-        effective_timeout_at: runtimeState.effective_timeout_at || runtimeState.vacant_at,
-        vacant_at: runtimeState.vacant_at || runtimeState.effective_timeout_at,
-        seconds_until_vacant: runtimeState.seconds_until_vacant,
-        previous_occupied: runtimeState.previous_occupied,
-        reason: runtimeState.reason,
-        explanation: runtimeState.explanation,
-        recent_changes: Array.isArray(runtimeState.recent_changes)
-          ? runtimeState.recent_changes
-          : [],
-        occupancy_group_id: runtimeState.occupancy_group_id,
-      },
+      attributes,
     };
   }
 

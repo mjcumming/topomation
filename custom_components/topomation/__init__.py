@@ -151,10 +151,40 @@ def _live_occupancy_projection_event_states(
         )
 
     return [
-        dict(state)
+        _compact_live_occupancy_projection_state(state)
         for state in states
         if state.get("location_id") in include_location_ids
     ]
+
+
+def _compact_live_occupancy_projection_state(state: Mapping[str, Any]) -> dict[str, Any]:
+    """Return recorder-friendly live occupancy fields for the panel event stream."""
+    compact: dict[str, Any] = {}
+    scalar_fields = (
+        "location_id",
+        "effective_location_id",
+        "projection",
+        "occupied",
+        "previous_occupied",
+        "reason",
+        "changed_at",
+        "is_locked",
+        "vacant_at",
+        "effective_timeout_at",
+        "seconds_until_vacant",
+        "occupancy_group_id",
+        "summary",
+    )
+    list_fields = ("locked_by", "lock_modes", "direct_locks")
+    for field in scalar_fields:
+        value = state.get(field)
+        if value is not None:
+            compact[field] = value
+    for field in list_fields:
+        value = state.get(field)
+        if isinstance(value, list):
+            compact[field] = list(value)
+    return compact
 
 
 async def _async_handle_options_update(hass: HomeAssistant, entry: ConfigEntry) -> None:

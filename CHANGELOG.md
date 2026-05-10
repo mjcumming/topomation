@@ -9,12 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-05-10
+
 ### Changed
 
 - **ADR documentation workflow**: new ADRs now live as split files under
   `docs/adr/` with compact entries in `docs/adr-log.md`, and active agent/docs
   guidance now treats the ADR log as an index plus legacy archive instead of a
   file to read wholesale.
+- **Live occupancy projection events**: compacted live occupancy projection
+  payloads so high-volume explainability details stay available from state
+  reads without bloating recorder-forwarded event traffic.
+- **Managed ambient guards**: occupancy-triggered dark/bright managed rules now
+  retain their ambient guard instead of treating the matching dark/bright
+  trigger as a redundant self-guard.
+
+### Fixed
+
+- **Mobile topology header**: moved the Home Assistant sidebar hamburger control
+  into the mobile topology title row so it aligns one line higher with the
+  left-menu affordance instead of dropping onto the action-button row.
 
 ## [0.3.3] - 2026-05-07
 

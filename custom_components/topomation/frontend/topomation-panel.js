@@ -12753,11 +12753,7 @@ const Ce = class Ce extends ft {
           ${this._renderConflictBanner()}
           ${this._locations.length === 0 ? this._renderEmptyStateBanner() : ""}
           <div class="header">
-            <div class="header-title">${i.title}</div>
-            <div class="header-subtitle">
-              ${i.subtitle}
-            </div>
-            <div class="header-actions">
+            <div class="header-heading">
               ${this._isSplitStackedLayout() ? g`
                     <button
                       class="button button-secondary icon-button"
@@ -12769,6 +12765,12 @@ const Ce = class Ce extends ft {
                       <ha-icon .icon=${"mdi:menu"}></ha-icon>
                     </button>
                   ` : ""}
+              <div class="header-title">${i.title}</div>
+            </div>
+            <div class="header-subtitle">
+              ${i.subtitle}
+            </div>
+            <div class="header-actions">
               ${g`
                     <button class="button button-primary" @click=${this._handleNewLocation}>
                       + Add Structure
@@ -13730,7 +13732,19 @@ const Ce = class Ce extends ft {
       const r = typeof (a == null ? void 0 : a.location_id) == "string" ? a.location_id : "";
       if (!r) continue;
       const c = typeof a.occupied == "boolean" ? a.occupied : void 0, l = a.state && typeof a.state == "object" ? a.state : this._runtimeStateToStateLike(a);
-      i[r] = l, typeof c == "boolean" && (n[r] = c, o[r] = {
+      if (!e && i[r]) {
+        const u = i[r];
+        i[r] = {
+          ...u,
+          ...l,
+          attributes: {
+            ...u.attributes || {},
+            ...l.attributes || {}
+          }
+        };
+      } else
+        i[r] = l;
+      typeof c == "boolean" && (n[r] = c, o[r] = {
         occupied: c,
         previousOccupied: typeof a.previous_occupied == "boolean" ? a.previous_occupied : void 0,
         reason: typeof a.reason == "string" && a.reason.trim().length ? a.reason.trim() : void 0,
@@ -13740,31 +13754,18 @@ const Ce = class Ce extends ft {
     this._occupancyRuntimeStateByLocation = i, this._occupancyStateByLocation = n, this._occupancyTransitionByLocation = o;
   }
   _runtimeStateToStateLike(t) {
-    const e = t.location_id, i = typeof t.occupied == "boolean" ? t.occupied : void 0, n = typeof t.changed_at == "string" && t.changed_at.trim().length ? t.changed_at : void 0;
-    return {
+    const e = t.location_id, i = typeof t.occupied == "boolean" ? t.occupied : void 0, n = typeof t.changed_at == "string" && t.changed_at.trim().length ? t.changed_at : void 0, o = {
+      device_class: "occupancy",
+      location_id: e
+    }, a = (r, c) => {
+      c != null && (o[r] = c);
+    };
+    return a("effective_location_id", t.effective_location_id), a("projection", t.projection), Array.isArray(t.locked_by) && (o.locked_by = t.locked_by), typeof t.is_locked == "boolean" && (o.is_locked = t.is_locked), Array.isArray(t.lock_modes) && (o.lock_modes = t.lock_modes), Array.isArray(t.direct_locks) && (o.direct_locks = t.direct_locks), Array.isArray(t.contributions) ? o.contributions = t.contributions : Array.isArray(t.contributors) && (o.contributions = t.contributors), a("effective_timeout_at", t.effective_timeout_at || t.vacant_at), a("vacant_at", t.vacant_at || t.effective_timeout_at), a("seconds_until_vacant", t.seconds_until_vacant), a("previous_occupied", t.previous_occupied), a("reason", t.reason), a("explanation", t.explanation), Array.isArray(t.recent_changes) && (o.recent_changes = t.recent_changes), a("occupancy_group_id", t.occupancy_group_id), {
       entity_id: `binary_sensor.topomation_occupancy_projection_${e}`,
       state: i === !0 ? "on" : i === !1 ? "off" : "unknown",
       last_changed: n,
       last_updated: n,
-      attributes: {
-        device_class: "occupancy",
-        location_id: e,
-        effective_location_id: t.effective_location_id,
-        projection: t.projection,
-        locked_by: Array.isArray(t.locked_by) ? t.locked_by : [],
-        is_locked: !!t.is_locked,
-        lock_modes: Array.isArray(t.lock_modes) ? t.lock_modes : [],
-        direct_locks: Array.isArray(t.direct_locks) ? t.direct_locks : [],
-        contributions: Array.isArray(t.contributions) ? t.contributions : Array.isArray(t.contributors) ? t.contributors : [],
-        effective_timeout_at: t.effective_timeout_at || t.vacant_at,
-        vacant_at: t.vacant_at || t.effective_timeout_at,
-        seconds_until_vacant: t.seconds_until_vacant,
-        previous_occupied: t.previous_occupied,
-        reason: t.reason,
-        explanation: t.explanation,
-        recent_changes: Array.isArray(t.recent_changes) ? t.recent_changes : [],
-        occupancy_group_id: t.occupancy_group_id
-      }
+      attributes: o
     };
   }
   _showKeyboardShortcutsHelp() {
@@ -14056,6 +14057,17 @@ Ce.properties = {
         font-size: 20px;
         font-weight: 600;
         margin-bottom: var(--spacing-xs);
+      }
+
+      .header-heading {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-sm);
+        margin-bottom: var(--spacing-xs);
+      }
+
+      .header-heading .header-title {
+        margin-bottom: 0;
       }
 
       .panel-right > .header .header-title {

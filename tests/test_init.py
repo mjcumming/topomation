@@ -10,6 +10,7 @@ Following Home Assistant integration testing best practices:
 from __future__ import annotations
 
 import copy
+import json
 from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock, patch
 
@@ -270,12 +271,26 @@ async def test_setup_entry_forwards_minimal_occupancy_projection_event(
                 "occupied": True,
                 "occupancy_group_id": "main_open_area",
                 "explanation": {"basis": "held_by"},
+                "recent_changes": [{"kind": "signal", "source_id": f"sensor_{idx}"} for idx in range(200)],
+                "contributions": [{"source_id": f"source_{idx}", "state": "active"} for idx in range(200)],
+                "state": {
+                    "entity_id": "binary_sensor.topomation_occupancy_projection_area_kitchen",
+                    "state": "on",
+                    "attributes": {"recent_changes": [{"kind": "state"} for _ in range(200)]},
+                },
             },
             {
                 "location_id": "area_front_entry",
                 "occupied": True,
                 "occupancy_group_id": "main_open_area",
                 "explanation": {"basis": "held_by"},
+                "recent_changes": [{"kind": "signal", "source_id": f"sensor_{idx}"} for idx in range(200)],
+                "contributions": [{"source_id": f"source_{idx}", "state": "active"} for idx in range(200)],
+                "state": {
+                    "entity_id": "binary_sensor.topomation_occupancy_projection_area_front_entry",
+                    "state": "on",
+                    "attributes": {"recent_changes": [{"kind": "state"} for _ in range(200)]},
+                },
             },
             {
                 "location_id": "area_guest_bedroom",
@@ -296,6 +311,12 @@ async def test_setup_entry_forwards_minimal_occupancy_projection_event(
         "area_kitchen",
         "area_front_entry",
     }
+    assert len(json.dumps(forwarded_projection_events[0])) < 32768
+    for state in states:
+        assert "state" not in state
+        assert "explanation" not in state
+        assert "recent_changes" not in state
+        assert "contributions" not in state
 
 
 async def test_setup_entry_throttles_stayed_occupied_explainability_within_window(

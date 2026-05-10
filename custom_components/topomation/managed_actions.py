@@ -1016,6 +1016,9 @@ class TopomationManagedActions:
         has_ambient_trigger = any(
             trigger_type in {"on_dark", "on_bright"} for trigger_type in trigger_types
         )
+        has_occupancy_trigger = any(
+            trigger_type in {"on_occupied", "on_vacant"} for trigger_type in trigger_types
+        )
 
         if has_ambient_trigger and not lighting_rule:
             raise ValueError("Ambient triggers are only supported for Lighting rules")
@@ -1032,12 +1035,12 @@ class TopomationManagedActions:
         if "on_bright" in trigger_types:
             if normalized_ambient_condition == "dark":
                 raise ValueError("on_bright rules cannot require dark ambient state")
-            if normalized_ambient_condition == "bright":
+            if normalized_ambient_condition == "bright" and not has_occupancy_trigger:
                 normalized_ambient_condition = "any"
         if "on_dark" in trigger_types:
             if normalized_ambient_condition == "bright":
                 raise ValueError("on_dark rules cannot require bright ambient state")
-            if normalized_ambient_condition == "dark":
+            if normalized_ambient_condition == "dark" and not has_occupancy_trigger:
                 normalized_ambient_condition = "any"
 
         if "on_occupied" in trigger_types:
