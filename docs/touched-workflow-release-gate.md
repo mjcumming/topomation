@@ -83,8 +83,8 @@ Run the rows that match the touched workflow.
 
 ### 2026-05-10 - v0.3.4 mobile header and occupancy event patch
 
-1. Commit under test: release-candidate worktree for Topomation `0.3.4`
-   (final commit hash recorded after push).
+1. Commit under test: `a026688` (release code/tests/version commit for
+   Topomation `0.3.4`).
 2. Frontend bundle rebuilt from that commit: yes; `npm run build` published the
    updated runtime bundle before release validation.
 3. Touched workflow list:
