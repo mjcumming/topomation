@@ -105,8 +105,7 @@ The full rule contract is in [docs/automation-ui-guide.md](docs/automation-ui-gu
 
 ## More screenshots
 
-GitHub renders these directly from `docs/screenshots/`, so this section is a
-quick visual tour of the current beta UI.
+Quick visual tour of the current beta UI.
 
 | Topology | Occupancy | Automation |
 | --- | --- | --- |
