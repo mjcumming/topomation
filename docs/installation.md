@@ -60,12 +60,13 @@ The main workspace is split into:
   hints—not a replacement for HA History or Logbook)
 - a right-side inspector with:
 
-- `Occupancy`
-- `Ambient`
-- `Lighting`
-- `Appliances`
-- `Media`
-- `HVAC`
+  - `Occupancy` or `Occupancy Groups`, depending on location type
+  - `Ambient`
+  - `Lighting`
+  - `Appliances`
+  - `Media`
+  - `HVAC`
+  - `Vacuum`
 
 Admin access is required for panel use and managed automation writes.
 
@@ -135,6 +136,7 @@ Use the rule tabs to create native Home Assistant automations:
 - `Appliances` for standalone `fan.*` and `switch.*` targets (exhaust fans, plug-in heaters, anything not on a climate device chain)
 - `HVAC` for `fan.*` entities linked to a `climate.*` device on the same device chain
 - `Media` for `media_player.*` targets (power, playback, volume, mute)
+- `Vacuum` for `vacuum.*` targets (start, pause, return to dock, optional daily run gating)
 
 Rules created here are stored as Home Assistant automations and appear in:
 

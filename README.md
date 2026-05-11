@@ -8,26 +8,44 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/mjcumming/topomation/frontend-tests.yml?branch=main&label=CI)](https://github.com/mjcumming/topomation/actions/workflows/frontend-tests.yml)
 [![License](https://img.shields.io/github/license/mjcumming/topomation.svg)](https://github.com/mjcumming/topomation/blob/main/LICENSE)
 
-> TopoMation is a one-person beta project. It started as occupancy automation for my own two homes and I'm sharing it because I think other people will find it useful. There's no company behind it and no roadmap. The core has been through a lot of testing and runs in my houses every day, but expect some rough edges, and I can't promise turnaround on issues or feature requests. If that trade-off is fair to you, the rest of this explains what it does.
+> TopoMation is a one-person beta project. It started as occupancy automation for my own homes, and I'm sharing it because the same shape of problem may exist in other Home Assistant installs. There's no company behind it and no support contract. The core has a real test suite and runs in my houses every day, but outside installs are still young. Expect rough edges, UI changes, and slow or selective responses to issues and feature requests. If that trade-off is fair to you, start small and read on.
 
-TopoMation is a Home Assistant integration for occupancy-driven automation across a whole house. You arrange your home as a hierarchy (properties, buildings, grounds, floors, and areas), assign the sensors that imply someone is around, and let it generate the lighting, fan, media, and HVAC automations from there.
+TopoMation is a Home Assistant integration for occupancy-driven automation across a whole house. You arrange your home as a hierarchy (properties, buildings, grounds, floors, and areas), assign the sensors that imply someone is around, and let it generate common-case lighting, appliance, media, HVAC fan, and vacuum automations from there.
 
-Anyone who's spent time with Home Assistant has bumped into the limits of its area model. Areas are flat, floors are little more than a label, and a device that belongs to a whole floor or a building has nowhere natural to live. TopoMation sits on top of your existing floors and areas and adds the structural model HA is missing: a real hierarchy where every level is a real place, and devices can attach at any of them, not just to rooms. From there, configuration is point-and-click in the panel. No YAML, no automation rules to design and remember. The rules it generates are normal Home Assistant automations you can open, read, and trace, not a hidden box.
+I built it because I kept running into the same practical gap: Home Assistant areas are flat, floors are mostly labels, and a device that belongs to a whole floor, a building, or the grounds has nowhere especially natural to live. TopoMation sits on top of your existing floors and areas and adds a real hierarchy where every level can participate in occupancy and automation. Configuration happens in the TopoMation panel, and the rules it generates are normal Home Assistant automations you can open, read, disable, and trace.
 
 In practice, here's what's different about a TopoMation-driven house:
 
-- **Every level of your home has its own occupancy entity.** "Is anyone home", "is anyone upstairs", "is anyone outside" are each a single HA binary sensor you can use as a trigger. Vanilla HA can't give you that.
+- **Every level of your home has its own occupancy entity.** "Is anyone home", "is anyone upstairs", "is anyone outside" can each become a single HA binary sensor you can use elsewhere.
 - **Lights, fans, and TVs all respond to who's actually in the room.** One configuration per location, no per-room automations to maintain.
-- **Sensors stop fighting you.** Multiple occupancy sources can fuse per room with independent timing, plus optional wasp-in-a-box inference for rooms with a door and an interior sensor. Rooms stay occupied while you're sitting still.
+- **Sensors stop fighting you as much.** Multiple occupancy sources can contribute per room with independent timing, plus optional wasp-in-a-box inference for rooms with a door and an interior sensor.
 - **Hold a room's state when you need to.** Click the lock icon on a row to freeze that location and its subtree. Useful for keeping lights on during a party or stopping things from triggering while you're testing.
 - **Reorganize a room or swap a sensor in one place.** The rules regenerate. You don't go hunting through twenty automations.
-- **Open-plan rooms and outdoor space work the same way.** A kitchen flowing into the family room can behave as one space. Driveway, porch, and yard use the same rule types as rooms.
+- **Open-plan rooms and outdoor space have a model.** A kitchen flowing into the family room can share occupancy, and driveway, porch, and yard locations can use the same managed-rule surfaces when they have compatible entities assigned.
+
+## Beta expectations
+
+This is useful software, but it is not a polished product launch.
+
+- TopoMation touches a lot of Home Assistant surface area: areas, floors,
+  entities, services, websocket APIs, custom panels, automation creation, and
+  automation traces. It runs well in my environments, but there is no practical
+  way for me to predict every combination of Home Assistant version, device
+  integration, entity model, browser, and household topology before people try it.
+- Back up your Home Assistant config before installing any custom integration.
+- Start with one boring room, one source, one light, and one vacant rule before modeling the whole house.
+- Managed automations belong to TopoMation. You can inspect and trace them in Home Assistant, but edits made outside TopoMation may be overwritten when the rule is rebuilt.
+- UI labels and workflows may change before `1.0`.
+- Appliance, media, HVAC, and vacuum workflows are intentionally narrow common-case editors, not replacements for the full Home Assistant automation editor.
+- Bug reports are welcome when they include versions, logs, screenshots when relevant, and a small reproduction. Feature requests may not be accepted.
+
+Support and reporting expectations are in [SUPPORT.md](SUPPORT.md).
 
 ## The tree
 
 ![Topology tree](docs/screenshots/tree.jpg)
 
-The hierarchy is the central idea. TopoMation imports your existing HA floors and areas and wraps them in a deeper structure: a `property` at the top, one or more `building`s, `floor`s, the `area`s HA already knows about, and `subarea`s for things like closets and pantries. There's also `grounds` for outdoor space.
+The hierarchy is the central idea. TopoMation imports your existing HA floors and areas and wraps them in a deeper structure: a `property` at the top, one or more `building`s, `floor`s, the `area`s HA already knows about, and `subarea`s for things like closets and pantries. There's also `grounds` for outdoor space. `subarea` is a TopoMation hierarchy label; under the hood it is still backed by a normal Home Assistant area.
 
 Each row in the tree exposes a few controls. The drag handle on the left reorders and re-parents. The dot next to the name turns green when the location is occupied and gray when vacant. On the right, a **manual occupancy toggle** sets the location occupied or vacant by hand (useful for testing rules), and a **lock icon** holds the location's state across itself and its descendants.
 
@@ -35,7 +53,7 @@ Each row in the tree exposes a few controls. The drag handle on the left reorder
 
 Occupancy rolls up the tree, and every level has its own HA binary sensor. If anyone's in the kitchen, the main floor's sensor reads occupied. If anyone's anywhere indoors, the building's sensor reads occupied. If anyone's anywhere on the property at all, indoor or out, the property's sensor reads occupied. These are real entities you can use as triggers in any other HA automation, which is something you can't get out of the flat HA area model on its own.
 
-Every non-area level is also a real place to attach devices. TopoMation backs each one with an HA area (a *shadow area*) so a building-wide alarm panel, a floor-level thermostat, or pool equipment on the grounds has somewhere to live that isn't a single room.
+Structural levels such as `property`, `building`, `floor`, and `grounds` can also own devices through integration-managed Home Assistant areas. That gives a building-wide alarm panel, a floor-level fan, or pool equipment on the grounds somewhere to live that is not a single room.
 
 For open-plan houses where adjacent rooms behave as one space (kitchen flowing into family room, say), there are **occupancy groups**: at any parent location, group its children so they share an occupied/vacant state.
 
@@ -49,7 +67,7 @@ The most common reason a room misbehaves with occupancy automation is having onl
 
 Each source on a location is independent. It has its own occupied hold time, its own vacant delay, and an optional indefinite mode that keeps the room occupied until that source's underlying entity returns to idle ("until OFF", "until No motion", "until Closed"). So a presence sensor can hold a room indefinitely while a door contact only contributes for a few minutes after it last triggered. The room stays occupied as long as *any* source is holding it, and goes vacant when they've all cleared.
 
-For rooms with a door and an interior sensor, you can turn on **wasp-in-a-box** inference, which uses the door's open and close events as boundary crossings and keeps the room occupied while someone is in it, even when the motion sensor goes quiet. It's the actual answer to "the sensor went vacant while I was sitting still."
+For rooms with a door and an interior sensor, you can turn on **wasp-in-a-box** inference, which uses the door's open and close events as boundary crossings and can keep the room occupied while someone is in it, even when the motion sensor goes quiet.
 
 This is the part that pays off most in awkward real houses: bathrooms with no motion sensor (use the light switch), pantries that need a 30-second hold (door contact, no delay), bedrooms where presence should win over motion at night.
 
@@ -57,7 +75,7 @@ This is the part that pays off most in awkward real houses: bathrooms with no mo
 
 ![Ambient configuration](docs/screenshots/ambient.jpg)
 
-Lighting rules can fire only when the room is dark, so the kitchen overhead doesn't slam on at noon and the living room lamps come on at dusk without a time-based trigger. Each location has a `dark` / `bright` state derived from a lux sensor, with configurable thresholds and inheritance from parent locations. Put one outdoor lux sensor on `grounds` and let it apply to the whole property; override at the room level if a specific room needs different thresholds. If no lux reading is available, there's an optional fallback to sunrise/sunset, plus an "assume dark on error" toggle.
+Lighting rules can fire only when the room is dark, so the kitchen overhead doesn't come on at noon and the living room lamps can respond at dusk without a time-based trigger. Each location has a `dark` / `bright` state derived from an explicitly assigned lux sensor, with configurable thresholds and inheritance from parent locations. Put one outdoor lux sensor on `grounds` and let rooms inherit it unless a specific room needs different thresholds. If no lux reading is available, there's an optional fallback to sunrise/sunset, plus an "assume dark on error" toggle.
 
 For most homes, a property-level outdoor illuminance estimate is the simplest and most reliable source. Home Assistant's built-in [Illuminance integration](https://www.home-assistant.io/integrations/illuminance/) is a good fit here: expose one illuminance entity, assign it high in the TopoMation tree (`property`, `grounds`, or `building`), and let rooms inherit it unless a specific room truly needs its own local lux sensor.
 
@@ -65,14 +83,15 @@ For most homes, a property-level outdoor illuminance estimate is the simplest an
 
 ![Lighting rule editor](docs/screenshots/lighting-occupancy.jpg)
 
-Rules live in four categories on each location:
+Rules live in focused categories on each location:
 
-- **Lighting**: turn on/off and set brightness on occupancy or ambient changes
-- **Appliances**: standalone fans and switches (exhaust fans, heaters, anything driven by `fan.*` or `switch.*`)
-- **HVAC**: `fan.*` entities linked to a climate device
-- **Media**: pause, play, mute on occupancy changes
+- **Lighting**: turn lights on/off, toggle, or set brightness on occupancy and/or ambient changes
+- **Appliances**: standalone `fan.*` and `switch.*` targets such as exhaust fans, heaters, or simple loads
+- **HVAC**: `fan.*` targets linked to `climate.*` equipment through the HA device graph
+- **Media**: common `media_player.*` power, playback, volume, and mute actions
+- **Vacuum**: `vacuum.*` start, pause, and return-to-dock actions, with optional once-per-day run gating
 
-Each rule binds to a trigger (room becomes occupied/vacant, or ambient becomes dark/bright), an optional time window, and target entities. The lighting rule shown above fires when the storage room becomes occupied and it's dark. The paired vacant rule turns it off again.
+Lighting rules can use one occupancy edge and one ambient edge in the same rule, with cross-conditions such as "room becomes occupied only if it is dark" or "it becomes dark only if the room is occupied." Non-lighting rules are simpler on purpose: occupancy edge, optional time window, and compatible target command. The lighting rule shown above fires when the storage room becomes occupied and it's dark. The paired vacant rule turns it off again.
 
 A few examples to make this concrete:
 
@@ -80,9 +99,20 @@ A few examples to make this concrete:
 
 **Bathroom with no dedicated sensor.** Use the bathroom light switch's `on` state as the occupancy source with a 20-minute hold. Add vacant rules for the light and the exhaust fan. The switch interaction *is* the signal, no extra hardware needed.
 
-**Open-plan kitchen and family room.** Keep them as separate locations so per-room rules still work, but put both into one occupancy group on their parent floor so they go vacant together.
+**Open-plan kitchen and family room.** Keep them as separate locations so per-room rules still work, but put both into one occupancy group on their parent floor so they share occupancy state.
 
-The full enumeration of rule options per category is in [docs/automation-ui-guide.md](docs/automation-ui-guide.md).
+The full rule contract is in [docs/automation-ui-guide.md](docs/automation-ui-guide.md).
+
+## More screenshots
+
+GitHub renders these directly from `docs/screenshots/`, so this section is a
+quick visual tour of the current beta UI.
+
+| Topology | Occupancy | Automation |
+| --- | --- | --- |
+| ![Compact topology tree](docs/screenshots/tree-short.jpg) | ![Motion occupancy source](docs/screenshots/occupancy-motion.jpg) | ![Ambient-aware lighting rule](docs/screenshots/lighting-ambient.jpg) |
+| ![Grounds topology](docs/screenshots/tree-grounds.jpg) | ![Door occupancy source](docs/screenshots/occupancy-door.jpg) | ![Fan occupancy rule](docs/screenshots/fan-occupancy.jpg) |
+| ![Occupancy groups](docs/screenshots/tree-occupancy-groups.jpg) | ![Mixed occupancy sources](docs/screenshots/occupancy-mixed-sources.jpg) | ![Media occupancy rule](docs/screenshots/media-occupancy.jpg) |
 
 ## Locking
 
@@ -120,7 +150,7 @@ After install, open the **TopoMation** sidebar panel. Your existing HA floors an
 
 ## Status
 
-It's been through a lot of testing and is ready for wider use. The core (location model, source fusion, timeout behavior, locks, ambient inheritance, automation generation) has been stable for a while and is covered by tests. Expect a few rough edges in onboarding copy and the occasional UI change.
+I'm calling this beta. The core (location model, source fusion, timeout behavior, locks, ambient inheritance, automation generation) has been stable in my use and is covered by tests, but public install variety is where custom integrations learn humility. Expect onboarding rough edges and occasional UI changes.
 
 ## Services
 
@@ -138,14 +168,16 @@ Lock workflows are explained in [docs/occupancy-lock-workflows.md](docs/occupanc
 
 ## Limitations
 
-- Lux sensor assignment is explicit. There's no automatic discovery.
+- Lux sensor assignment is explicit. There is no v1 automatic ambient discovery workflow in the panel.
 - Admin access is required for the panel routes and managed-automation writes.
-- The Appliance, Media, and HVAC editors are intentionally narrower than full HA automation editing. If you need something more elaborate, write it as a normal HA automation against the location's occupancy entity.
+- TopoMation-managed automations may be rebuilt by the integration. Treat the TopoMation panel as the owner of those rules.
+- The Appliance, Media, HVAC, and Vacuum editors are intentionally narrower than full HA automation editing. If you need something more elaborate, write it as a normal HA automation against the location's occupancy entity.
 - Rich `climate.*` thermostat workflows are deferred for now.
 
 ## Documentation
 
 - [Installation](docs/installation.md)
+- [Support expectations](SUPPORT.md)
 - [Occupancy lock workflows](docs/occupancy-lock-workflows.md)
 - [Automation UI guide](docs/automation-ui-guide.md)
 - [Architecture](docs/architecture.md)
@@ -173,8 +205,9 @@ Open `http://localhost:8123` and validate changes in the TopoMation panel. `make
 
 ## Support
 
-- [Issues](https://github.com/mjcumming/topomation/issues)
-- [Discussions](https://github.com/mjcumming/topomation/discussions)
+Please use [GitHub Issues](https://github.com/mjcumming/topomation/issues) for
+bug reports, installation problems, automation behavior reports, and focused
+feature ideas.
 
 ## About
 

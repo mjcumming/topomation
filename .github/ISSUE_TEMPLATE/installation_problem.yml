@@ -1,0 +1,52 @@
+name: Installation problem
+description: TopoMation will not install, load, or appear in Home Assistant.
+title: "[Install]: "
+labels: ["installation"]
+body:
+  - type: input
+    id: ha_version
+    attributes:
+      label: Home Assistant version
+      placeholder: "2026.5.0"
+    validations:
+      required: true
+  - type: input
+    id: topomation_version
+    attributes:
+      label: TopoMation version or source
+      placeholder: "0.3.4, latest release, or main branch"
+    validations:
+      required: true
+  - type: dropdown
+    id: install_method
+    attributes:
+      label: Install method
+      options:
+        - HACS custom repository
+        - Manual copy
+        - Development checkout
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: symptom
+    attributes:
+      label: What is failing?
+      description: For example, HACS cannot install, integration does not load, sidebar panel missing, config flow missing.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps taken
+      description: List the install/restart/reload steps you already tried.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Home Assistant logs
+      description: Paste the relevant log lines from startup or integration load.
+      render: text
+    validations:
+      required: true

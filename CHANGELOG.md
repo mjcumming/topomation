@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.5] - 2026-05-11
+
+### Added
+
+- **Public beta support guidance**: added support expectations for a
+  one-person beta project, including start-small onboarding, good bug-report
+  guidance, and clear boundaries for feature requests.
+- **Structured GitHub issue intake**: added issue forms for bugs,
+  installation problems, automation behavior reports, and focused feature
+  ideas, with blank issues disabled.
+- **README screenshot gallery**: added a compact visual tour of topology,
+  occupancy, ambient, and managed automation workflows.
+
+### Changed
+
+- **README beta posture**: reframed the public README around beta expectations,
+  Home Assistant install variability, managed-automation ownership, and
+  cautious onboarding instead of a broad product-style announcement.
+- **Current docs surface**: updated public docs to mention current automation
+  tabs, including Vacuum, and removed the GitHub Discussions support path so
+  issue templates remain the single public feedback channel.
+
 ## [0.3.4] - 2026-05-10
 
 ### Changed

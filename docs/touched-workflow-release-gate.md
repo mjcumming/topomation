@@ -81,6 +81,38 @@ Run the rows that match the touched workflow.
 
 ## 6. Release Records
 
+### 2026-05-11 - v0.3.5 public beta documentation and issue intake
+
+1. Commit under test: release-candidate worktree for Topomation `0.3.5`
+   documentation/support release.
+2. Frontend bundle rebuilt from that commit: no; no frontend runtime code or
+   bundled panel asset changed.
+3. Touched workflow list:
+   - Public README/onboarding docs.
+   - Support expectations and public feedback routing.
+   - GitHub issue intake forms.
+   - Installation documentation for current automation tabs.
+   - Release metadata/version synchronization for Topomation `0.3.5`.
+4. Commands run:
+   - `python scripts/verify-version-sync.py` — **PASS** (version sync
+     `0.3.5`; 2026-05-11).
+   - `scripts/check-docs-structure.sh` — **PASS** (2026-05-11).
+   - `scripts/check-docs-consistency.sh` — **PASS** (2026-05-11).
+   - Python YAML parse of `.github/ISSUE_TEMPLATE/*.yml` — **PASS**
+     (2026-05-11).
+   - `git diff --check` — **PASS** (2026-05-11).
+   - `./scripts/test-comprehensive.sh` — **PASS** (version sync `0.3.5`,
+     Ruff, Mypy, backend pytest `342 passed, 22 skipped`, frontend Vitest
+     `262 passed`, production bundle rebuild, Web Test Runner `203 passed`,
+     Playwright workflow suites `34 passed`; 2026-05-11).
+5. Outcome:
+   - Public README/onboarding docs: **PASS**
+   - Support expectations and public feedback routing: **PASS**
+   - GitHub issue intake forms: **PASS**
+   - Installation documentation for current automation tabs: **PASS**
+   - Release metadata/version sync: **PASS**
+   - Local comprehensive gate: **PASS**
+
 ### 2026-05-10 - v0.3.4 mobile header and occupancy event patch
 
 1. Commit under test: `a026688` (release code/tests/version commit for

@@ -1,0 +1,68 @@
+name: Automation behavior problem
+description: A TopoMation-managed rule fired, did not fire, or rebuilt unexpectedly.
+title: "[Automation]: "
+labels: ["automation"]
+body:
+  - type: input
+    id: ha_version
+    attributes:
+      label: Home Assistant version
+    validations:
+      required: true
+  - type: input
+    id: topomation_version
+    attributes:
+      label: TopoMation version
+    validations:
+      required: true
+  - type: dropdown
+    id: rule_type
+    attributes:
+      label: Rule type
+      options:
+        - Lighting
+        - Appliances
+        - HVAC
+        - Media
+        - Vacuum
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: setup
+    attributes:
+      label: Location, sources, and rule setup
+      description: Include the location, occupancy source entities, ambient/lux source if relevant, target entities, trigger, conditions, and time window.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected automation behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual automation behavior
+    validations:
+      required: true
+  - type: textarea
+    id: trace
+    attributes:
+      label: Home Assistant automation trace and relevant states
+      description: Paste trace details, entity states, lux values, occupancy binary sensor state, and lock state at the time of the problem.
+      render: text
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I checked whether the location or ancestor was locked.
+          required: true
+        - label: I checked the generated Home Assistant automation trace.
+          required: true
+        - label: I tried the behavior with one location and one rule where possible.
+          required: true

@@ -1,0 +1,47 @@
+name: Feature idea
+description: Suggest a focused improvement or new workflow.
+title: "[Idea]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Feature ideas are welcome, but TopoMation may stay narrow where Home Assistant's native automation editor is already the better tool.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: Describe the real household workflow, not only the UI control you want.
+    validations:
+      required: true
+  - type: textarea
+    id: current_workaround
+    attributes:
+      label: How do you handle it today?
+      description: Include existing HA automations, helpers, scripts, or manual steps.
+    validations:
+      required: false
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed TopoMation behavior
+      description: What would TopoMation do differently?
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Workflow area
+      options:
+        - Topology
+        - Occupancy
+        - Ambient light
+        - Lighting
+        - Appliances
+        - HVAC
+        - Media
+        - Vacuum
+        - Documentation
+        - Other
+    validations:
+      required: true

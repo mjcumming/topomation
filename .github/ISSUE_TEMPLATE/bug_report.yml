@@ -1,0 +1,79 @@
+name: Bug report
+description: Something in TopoMation is not working as expected.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. Please try to reduce the issue to one location, one source, or one rule where possible.
+  - type: input
+    id: ha_version
+    attributes:
+      label: Home Assistant version
+      placeholder: "2026.5.0"
+    validations:
+      required: true
+  - type: input
+    id: topomation_version
+    attributes:
+      label: TopoMation version
+      placeholder: "0.3.4"
+    validations:
+      required: true
+  - type: dropdown
+    id: install_method
+    attributes:
+      label: Install method
+      options:
+        - HACS custom repository
+        - Manual copy
+        - Development checkout
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+      description: Describe the behavior you expected.
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened instead?
+      description: Include the exact behavior, error message, or UI state.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Smallest reproduction
+      description: List the location type, source entities, rule type, and steps needed to reproduce.
+      placeholder: |
+        1. Select Kitchen
+        2. Add binary_sensor.kitchen_motion as an occupancy source
+        3. Create Lighting rule...
+        4. Trigger motion...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs, traces, or screenshots
+      description: Paste relevant HA logs, automation trace details, browser console errors, or attach screenshots.
+      render: text
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I backed up my Home Assistant config before testing.
+          required: false
+        - label: I tried to reproduce this with the smallest room/source/rule setup I can.
+          required: true
+        - label: I checked Home Assistant logs and automation traces where relevant.
+          required: true
