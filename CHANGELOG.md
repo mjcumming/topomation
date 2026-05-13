@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.6] - 2026-05-13
+
+### Fixed
+
+- **Managed lighting ambient updates**: ambient-only bright/dark rule updates now
+  persist with `ambient_condition: "any"` so stale hidden ambient guards do not
+  cause contradictory backend validation errors when saving an otherwise valid
+  rule.
+- **Managed rule guard validation**: backend validation now preserves
+  cross-family ambient guards for combined occupancy plus ambient-trigger rules
+  while still rejecting impossible ambient-only trigger/guard pairs.
+
 ## [0.3.5] - 2026-05-11
 
 ### Added

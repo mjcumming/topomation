@@ -7119,9 +7119,12 @@ const Ee = class Ee extends ft {
   }
   _effectiveAmbientConditionForRule(t, e) {
     const i = e ?? this._ruleTabForEditing(t);
-    return i && !this._tabSupportsActionAmbient(i) ? "any" : this._normalizeActionAmbientCondition(
+    if (i && !this._tabSupportsActionAmbient(i))
+      return "any";
+    const n = this._normalizeActionTriggerTypes(t.trigger_types, t.trigger_type);
+    return this._ambientTriggerForRule(n) && !this._occupancyTriggerForRule(n) ? "any" : this._normalizeActionAmbientCondition(
       t.ambient_condition,
-      this._normalizeActionTriggerTypes(t.trigger_types, t.trigger_type)
+      n
     );
   }
   _normalizeActionBrightnessPct(t, e = 100) {

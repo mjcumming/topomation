@@ -1033,12 +1033,15 @@ class TopomationManagedActions:
             normalized_ambient_condition = "any"
 
         if "on_bright" in trigger_types:
-            if normalized_ambient_condition == "dark":
+            # "dark" / "bright" here guard occupancy edges when both families are present
+            # (ADR-HA-095 cross-family). Reject only the impossible same-family case:
+            # bright lux edge with a global dark lux guard and no occupancy path.
+            if normalized_ambient_condition == "dark" and not has_occupancy_trigger:
                 raise ValueError("on_bright rules cannot require dark ambient state")
             if normalized_ambient_condition == "bright" and not has_occupancy_trigger:
                 normalized_ambient_condition = "any"
         if "on_dark" in trigger_types:
-            if normalized_ambient_condition == "bright":
+            if normalized_ambient_condition == "bright" and not has_occupancy_trigger:
                 raise ValueError("on_dark rules cannot require bright ambient state")
             if normalized_ambient_condition == "dark" and not has_occupancy_trigger:
                 normalized_ambient_condition = "any"

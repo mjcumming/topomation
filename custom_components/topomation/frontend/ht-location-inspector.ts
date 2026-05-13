@@ -7745,9 +7745,13 @@ export class HtLocationInspector extends LitElement {
     if (resolvedTab && !this._tabSupportsActionAmbient(resolvedTab)) {
       return "any";
     }
+    const triggerTypes = this._normalizeActionTriggerTypes(rule.trigger_types, rule.trigger_type);
+    if (this._ambientTriggerForRule(triggerTypes) && !this._occupancyTriggerForRule(triggerTypes)) {
+      return "any";
+    }
     return this._normalizeActionAmbientCondition(
       rule.ambient_condition,
-      this._normalizeActionTriggerTypes(rule.trigger_types, rule.trigger_type)
+      triggerTypes
     );
   }
 

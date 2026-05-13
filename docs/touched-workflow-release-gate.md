@@ -81,6 +81,59 @@ Run the rows that match the touched workflow.
 
 ## 6. Release Records
 
+### 2026-05-13 - managed lighting ambient-only rule update validation
+
+1. Commit under test: release-candidate worktree for Topomation `0.3.6`
+   managed lighting ambient rule save validation.
+2. Frontend bundle rebuilt from that commit: yes; `npm run build` published the
+   updated runtime bundle before release validation.
+3. Touched workflow list:
+   - Managed Lighting ambient-only rule update save payload.
+   - Managed rule backend compiler validation for ambient trigger/guard
+     combinations.
+   - Live HA browser save path for managed lighting rules.
+   - Release metadata/version synchronization for Topomation `0.3.6`.
+4. Commands to run:
+   - `npm run test -- ht-location-inspector.test.ts` — **PASS**
+     (`97 passed`; 2026-05-13).
+   - `npm run test:unit -- --run` — **PASS** (`263 passed`;
+     2026-05-13).
+   - `pytest tests/test_managed_action_config_build_matrix.py -q --no-cov`
+     — **PASS** (`52 passed`; 2026-05-13).
+   - `./scripts/test-comprehensive.sh` — **PASS** (version sync `0.3.5`,
+     Ruff, Mypy, backend pytest `344 passed, 22 skipped`, frontend Vitest
+     `263 passed`, production bundle rebuild, Web Test Runner `204 passed`,
+     Playwright workflow suites `34 passed`; 2026-05-13).
+   - `HA_DEV_PORT=8124 ... ./scripts/ha-dev-reset.sh && ./scripts/ha-dev-up.sh`
+     — **PASS** (isolated local HA dev runtime ready at
+     `http://127.0.0.1:8124`; 2026-05-13).
+   - `HA_URL=http://127.0.0.1:8124 HA_TOKEN=<local token>
+     python tests/ha_dev_e2e/bootstrap.py` — **PASS** (bootstrapped 18
+     locations; 2026-05-13).
+   - `HA_TARGET=dev TOPOMATION_PREFER_LOCAL_HA=0
+     HA_URL_DEV=http://127.0.0.1:8124 HA_TOKEN_DEV=<local token>
+     make test-release-live` — **PASS** (local comprehensive matrix, live HA
+     managed-action contract `2 passed`, live HA browser workflow `6 passed`;
+     2026-05-13).
+   - `python scripts/verify-version-sync.py` — **PASS** (version sync
+     `0.3.6`; 2026-05-13).
+   - Post-version-bump `HA_TARGET=dev TOPOMATION_PREFER_LOCAL_HA=0
+     HA_URL_DEV=http://127.0.0.1:8124 HA_TOKEN_DEV=<local token>
+     make test-release-live` — **PASS** (version sync `0.3.6`, Ruff, Mypy,
+     backend pytest `344 passed, 22 skipped`, frontend Vitest `263 passed`,
+     production bundle rebuild, Web Test Runner `204 passed`, Playwright
+     workflow suites `34 passed`, live HA managed-action contract `2 passed`,
+     live HA browser workflow `6 passed`; 2026-05-13).
+5. Outcome:
+   - Managed Lighting ambient-only rule update save payload: **PASS**
+   - Managed rule backend compiler validation: **PASS**
+   - Live HA browser save path for managed lighting rules: **PASS**
+   - Local comprehensive gate: **PASS**
+   - Live HA managed-action contract: **PASS**
+   - Live HA browser workflows: **PASS**
+   - Release metadata/version sync: **PASS**
+   - Post-version-bump release gate: **PASS**
+
 ### 2026-05-11 - v0.3.5 public beta documentation and issue intake
 
 1. Commit under test: release-candidate worktree for Topomation `0.3.5`

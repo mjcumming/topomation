@@ -5741,6 +5741,103 @@ describe("HtLocationInspector WIAB configuration", () => {
     expect(setConfigCalls.some((request) => request.module_id === "dusk_dawn")).to.equal(false);
   });
 
+  it("does not persist stale ambient conditions for ambient-only lighting triggers", async () => {
+    const createCalls: Array<Record<string, any>> = [];
+    const persistedRules = [
+      {
+        id: "rule_existing",
+        entity_id: "automation.rule_existing",
+        name: "Back deck",
+        trigger_type: "on_bright",
+        trigger_types: ["on_bright"],
+        rule_uuid: "rule_existing_uuid",
+        actions: [{ entity_id: "light.back_deck", service: "turn_off" }],
+        ambient_condition: "dark",
+        time_condition_enabled: false,
+        start_time: "18:00",
+        end_time: "23:59",
+        run_on_startup: true,
+        enabled: true,
+      },
+    ];
+
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>): Promise<T> => {
+        if (request.type === "topomation/actions/rules/list") {
+          return { rules: persistedRules } as T;
+        }
+        if (request.type === "topomation/actions/rules/create") {
+          createCalls.push(request);
+          return {
+            rule: {
+              ...persistedRules[0],
+              ambient_condition: request.ambient_condition,
+            },
+          } as T;
+        }
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        if (request.type === "topomation/ambient/get_reading") {
+          return {
+            lux: 1800,
+            is_dark: false,
+            is_bright: true,
+            source_sensor: null,
+            source_location: null,
+            timestamp: new Date().toISOString(),
+          } as T;
+        }
+        return {} as T;
+      },
+      connection: {},
+      states: {
+        "light.back_deck": {
+          entity_id: "light.back_deck",
+          state: "off",
+          attributes: {
+            friendly_name: "Back Deck",
+            supported_color_modes: ["brightness"],
+          },
+        },
+      },
+      areas: {
+        deck: { area_id: "deck", name: "Deck" },
+      },
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_deck";
+    location.name = "Deck";
+    location.ha_area_id = "deck";
+    location.entity_ids = ["light.back_deck"];
+    location.modules._meta = { type: "area" };
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${location}
+        .forcedTab=${"lighting"}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    await waitUntil(
+      () => (element.shadowRoot?.querySelectorAll(".dusk-block-row").length || 0) === 1,
+      "expected persisted lighting rule row to render"
+    );
+
+    await (element as unknown as { _saveOrUpdateActionRule(ruleId: string): Promise<void> })._saveOrUpdateActionRule(
+      "rule_existing"
+    );
+
+    await waitUntil(() => createCalls.length === 1, "expected managed lighting update call");
+    expect(createCalls[0].trigger_type).to.equal("on_bright");
+    expect(createCalls[0].trigger_types).to.deep.equal(["on_bright"]);
+    expect(createCalls[0].ambient_condition).to.equal("any");
+  });
+
   it("supports multiple lighting actions in a single rule save payload", async () => {
     const createCalls: Array<Record<string, any>> = [];
     let listCalls = 0;
