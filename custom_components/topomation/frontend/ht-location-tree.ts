@@ -286,6 +286,7 @@ export class HtLocationTree extends LitElement {
         border-radius: 50%;
         border: 1px solid rgba(0, 0, 0, 0.15);
         flex-shrink: 0;
+        cursor: pointer;
       }
 
       .occupancy-dot.occupied {
@@ -847,6 +848,21 @@ export class HtLocationTree extends LitElement {
         <div
           class="occupancy-dot ${occupancyStatus}"
           title=${occupancyDotTitle}
+          role="button"
+          tabindex="0"
+          aria-label=${occupancyTitle}
+          @click=${(e: Event) => {
+            if (this.readOnly || location.is_explicit_root) return;
+            e.stopPropagation();
+            this._handleOccupancyToggle(e, location, isDirectlyOccupied);
+          }}
+          @keydown=${(e: KeyboardEvent) => {
+            if (this.readOnly || location.is_explicit_root) return;
+            if (e.key !== "Enter" && e.key !== " ") return;
+            e.preventDefault();
+            e.stopPropagation();
+            this._handleOccupancyToggle(e as unknown as Event, location, isDirectlyOccupied);
+          }}
         ></div>
 
         ${isEditing
@@ -993,7 +1009,8 @@ export class HtLocationTree extends LitElement {
       target.closest(".drag-handle") ||
       target.closest(".expand-btn") ||
       target.closest(".lock-btn") ||
-      target.closest(".occupancy-btn")
+      target.closest(".occupancy-btn") ||
+      target.closest(".occupancy-dot")
     ) return;
     this.dispatchEvent(new CustomEvent("location-selected", { detail: { locationId: location.id }, bubbles: true, composed: true }));
   }

@@ -663,6 +663,33 @@ describe('HtLocationTree - shouldUpdate Performance', () => {
     expect(occupancyDetail?.occupied).to.equal(true);
   });
 
+  it('dispatches location-occupancy-toggle when occupancy dot is clicked', async () => {
+    const element = await fixture<HtLocationTree>(html`
+      <ht-location-tree
+        .hass=${mockHass as HomeAssistant}
+        .locations=${mockLocations}
+        .occupancyStates=${{ kitchen: false }}
+        .allowRename=${true}
+      ></ht-location-tree>
+    `);
+
+    await element.updateComplete;
+
+    let occupancyDetail: { locationId: string; occupied: boolean } | undefined;
+    element.addEventListener('location-occupancy-toggle', (e: Event) => {
+      occupancyDetail = (e as CustomEvent).detail;
+    });
+
+    const dot = element.shadowRoot!.querySelector('[data-id="kitchen"] .occupancy-dot') as HTMLElement;
+    expect(dot).to.exist;
+    dot.click();
+
+    await element.updateComplete;
+    expect(occupancyDetail).to.exist;
+    expect(occupancyDetail?.locationId).to.equal('kitchen');
+    expect(occupancyDetail?.occupied).to.equal(true);
+  });
+
   it('uses backend projection state for managed-shadow host toggle intent and title', async () => {
     const element = await fixture<HtLocationTree>(html`
       <ht-location-tree

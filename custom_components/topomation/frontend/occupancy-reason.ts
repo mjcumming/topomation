@@ -575,7 +575,14 @@ function formatExplanationBasis(
   if (basis === "child_rollup") return "a child location is occupied";
   if (basis === "follow_parent") return "the parent location is occupied";
   if (basis === "lock_hold" || basis === "lock_freeze") return "a lock is holding occupancy";
-  if (basis === "no_active_holds") return "no active holders remain";
+  if (basis === "no_active_holds") {
+    // Engine reports no holders -> only meaningful while showing vacant state.
+    // If status says "occupied" we have a projection/explanation mismatch; let
+    // the occupiedSummary fall through to its generic "no active holder is
+    // exposed by the runtime yet" message instead of emitting the contradictory
+    // "Occupied because no active holders remain.".
+    return ctx.status === "occupied" ? undefined : "no active holders remain";
+  }
   return undefined;
 }
 

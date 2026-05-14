@@ -9,6 +9,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.7] - 2026-05-14
+
+### Fixed
+
+- **Manual occupancy toggle**: ignore a second vacate/trigger for the same room for
+  ~550ms after a successful toggle so a double-click cannot immediately undo the
+  action (vacate then re-trigger). The tree occupancy dot is now clickable like
+  the home toggle control and no longer only selects the row.
+- **Occupancy reason copy mismatch**: when the projection reports a location as
+  occupied but the engine explanation basis is `no_active_holds` (a state /
+  explanation race), the inspector no longer renders the contradictory
+  "Occupied because no active holders remain." line. The summary falls through
+  to the existing "Occupied. No active holder is exposed by the runtime yet."
+  message instead.
+
+### Added
+
+- **Occupancy diagnostic logging**: the HA event bridge now emits an INFO log
+  line for every `trigger` / `clear` signal that is forwarded into the
+  occupancy kernel (entity, location, occupancy group, source id, old → new
+  state). Combined with the home-topology 1.0.7 group-authority transition log,
+  operators can attribute an unexpected re-occupy of an occupancy group to the
+  specific HA entity that fired it, without instrumenting downstream
+  integrations.
+
+### Changed
+
+- Bumped `home-topology` runtime dependency from `1.0.6` to `1.0.7` for the
+  group-authority transition log.
+
 ## [0.3.6] - 2026-05-13
 
 ### Fixed

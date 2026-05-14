@@ -2490,7 +2490,8 @@ function Zi(s, t) {
     if (e === "child_rollup") return "a child location is occupied";
     if (e === "follow_parent") return "the parent location is occupied";
     if (e === "lock_hold" || e === "lock_freeze") return "a lock is holding occupancy";
-    if (e === "no_active_holds") return "no active holders remain";
+    if (e === "no_active_holds")
+      return t.status === "occupied" ? void 0 : "no active holders remain";
   }
 }
 function fa(s, t, e = []) {
@@ -2932,6 +2933,15 @@ const on = "application/x-topomation-entity-id", Re = class Re extends ft {
         <div
           class="occupancy-dot ${e}"
           title=${w}
+          role="button"
+          tabindex="0"
+          aria-label=${x}
+          @click=${(b) => {
+      this.readOnly || n.is_explicit_root || (b.stopPropagation(), this._handleOccupancyToggle(b, n, m));
+    }}
+          @keydown=${(b) => {
+      this.readOnly || n.is_explicit_root || b.key !== "Enter" && b.key !== " " || (b.preventDefault(), b.stopPropagation(), this._handleOccupancyToggle(b, n, m));
+    }}
         ></div>
 
         ${l ? g`<input class="location-name-input" .value=${this._editingValue}
@@ -3040,7 +3050,7 @@ const on = "application/x-topomation-entity-id", Re = class Re extends ft {
   }
   _handleClick(t, e) {
     const i = t.target;
-    i.closest(".drag-handle") || i.closest(".expand-btn") || i.closest(".lock-btn") || i.closest(".occupancy-btn") || this.dispatchEvent(new CustomEvent("location-selected", { detail: { locationId: e.id }, bubbles: !0, composed: !0 }));
+    i.closest(".drag-handle") || i.closest(".expand-btn") || i.closest(".lock-btn") || i.closest(".occupancy-btn") || i.closest(".occupancy-dot") || this.dispatchEvent(new CustomEvent("location-selected", { detail: { locationId: e.id }, bubbles: !0, composed: !0 }));
   }
   _handleExpand(t, e) {
     t.stopPropagation();
@@ -3297,6 +3307,7 @@ Re.properties = {
         border-radius: 50%;
         border: 1px solid rgba(0, 0, 0, 0.15);
         flex-shrink: 0;
+        cursor: pointer;
       }
 
       .occupancy-dot.occupied {
@@ -12584,7 +12595,7 @@ De.properties = {
 ];
 let mi = De;
 customElements.get("ht-location-dialog") || customElements.define("ht-location-dialog", mi);
-const ln = "topomation:panel-tree-split", dn = "topomation:panel-right-mode", ti = 0.4, ei = 0.25, ii = 0.75, ja = "application/x-topomation-entity-id", un = "manual_ui";
+const ln = "topomation:panel-tree-split", dn = "topomation:panel-right-mode", ti = 0.4, ei = 0.25, ii = 0.75, ja = "application/x-topomation-entity-id", un = "manual_ui", Ua = 550;
 var mn, yn;
 try {
   (yn = (mn = import.meta) == null ? void 0 : mn.hot) == null || yn.accept(() => window.location.reload());
@@ -12592,7 +12603,7 @@ try {
 }
 const Ce = class Ce extends ft {
   constructor() {
-    super(), this.narrow = !1, this._allLocations = [], this._locations = [], this._locationsVersion = 0, this._loading = !0, this._pendingChanges = /* @__PURE__ */ new Map(), this._saving = !1, this._discarding = !1, this._locationDialogOpen = !1, this._occupancyStateByLocation = {}, this._occupancyTransitionByLocation = {}, this._occupancyRuntimeStateByLocation = {}, this._adjacencyEdges = [], this._handoffTraceByLocation = {}, this._treePanelSplit = ti, this._isResizingPanels = !1, this._entityAreaById = {}, this._entitySearch = "", this._assignBusyByEntityId = {}, this._rightPanelMode = "inspector", this._assignmentFilter = "all", this._deviceGroupExpanded = {}, this._haRegistryRevision = 0, this._hasLoaded = !1, this._loadSeq = 0, this._entityAreaIndexLoaded = !1, this._entityAreaRevision = 0, this._deviceGroupsCache = [], this._opQueueByLocationId = /* @__PURE__ */ new Map(), this._resumeRefreshQueued = !1, this._handleDeviceSearch = (t) => {
+    super(), this.narrow = !1, this._allLocations = [], this._locations = [], this._locationsVersion = 0, this._loading = !0, this._pendingChanges = /* @__PURE__ */ new Map(), this._saving = !1, this._discarding = !1, this._locationDialogOpen = !1, this._occupancyStateByLocation = {}, this._occupancyTransitionByLocation = {}, this._occupancyRuntimeStateByLocation = {}, this._adjacencyEdges = [], this._handoffTraceByLocation = {}, this._treePanelSplit = ti, this._isResizingPanels = !1, this._entityAreaById = {}, this._entitySearch = "", this._assignBusyByEntityId = {}, this._rightPanelMode = "inspector", this._assignmentFilter = "all", this._deviceGroupExpanded = {}, this._haRegistryRevision = 0, this._hasLoaded = !1, this._loadSeq = 0, this._entityAreaIndexLoaded = !1, this._entityAreaRevision = 0, this._deviceGroupsCache = [], this._opQueueByLocationId = /* @__PURE__ */ new Map(), this._occupancyManualToggleCooldownUntilByLocationId = /* @__PURE__ */ new Map(), this._resumeRefreshQueued = !1, this._handleDeviceSearch = (t) => {
       var i;
       const e = ((i = t.target) == null ? void 0 : i.value) ?? "";
       this._entitySearch = e;
@@ -13444,39 +13455,44 @@ const Ce = class Ce extends ft {
       return;
     }
     await this._enqueueLocationOp(e, async () => {
-      var u, d;
-      const a = this._locations.find((h) => h.id === e), r = (a == null ? void 0 : a.name) || e, { isLocked: c, lockedBy: l } = this._getLocationLockState(e);
+      var d, h;
+      const a = this._locations.find((_) => _.id === e), r = (a == null ? void 0 : a.name) || e, { isLocked: c, lockedBy: l } = this._getLocationLockState(e);
       if (c) {
-        const h = l.length ? ` (${l.map((_) => xi(_)).join(", ")})` : "";
-        this._showToast(`Hey, can't do it. "${r}" is locked${h}.`, "warning");
+        const _ = l.length ? ` (${l.map((p) => xi(p)).join(", ")})` : "";
+        this._showToast(`Hey, can't do it. "${r}" is locked${_}.`, "warning");
         return;
       }
-      try {
-        if (!a) {
-          this._showToast("Invalid occupancy request", "error");
-          return;
+      const u = this._occupancyManualToggleCooldownUntilByLocationId.get(e);
+      if (!(typeof u == "number" && Date.now() < u))
+        try {
+          if (!a) {
+            this._showToast("Invalid occupancy request", "error");
+            return;
+          }
+          const _ = this._getLocationOccupiedForToggle(e), p = typeof _ == "boolean" ? !_ : i, f = p ? "trigger" : "vacate_area", m = {
+            location_id: e,
+            source_id: un
+          };
+          if (p) {
+            const y = (h = (d = a.modules) == null ? void 0 : d.occupancy) == null ? void 0 : h.default_timeout;
+            typeof y == "number" && y >= 0 && (m.timeout = Math.floor(y));
+          } else
+            m.include_locked = !1;
+          await this.hass.callWS({
+            type: "call_service",
+            domain: "topomation",
+            service: f,
+            service_data: this._serviceDataWithEntryId(m)
+          }), await this._loadLocations(!0), this._locationsVersion += 1, this._showToast(
+            p ? `Marked "${r}" as occupied` : `Marked "${r}" as unoccupied (vacated)`,
+            "success"
+          ), this._occupancyManualToggleCooldownUntilByLocationId.set(
+            e,
+            Date.now() + Ua
+          );
+        } catch (_) {
+          console.error("Failed to toggle occupancy:", _), this._showToast((_ == null ? void 0 : _.message) || "Hey, can't do it.", "error");
         }
-        const h = this._getLocationOccupiedForToggle(e), _ = typeof h == "boolean" ? !h : i, p = _ ? "trigger" : "vacate_area", f = {
-          location_id: e,
-          source_id: un
-        };
-        if (_) {
-          const m = (d = (u = a.modules) == null ? void 0 : u.occupancy) == null ? void 0 : d.default_timeout;
-          typeof m == "number" && m >= 0 && (f.timeout = Math.floor(m));
-        } else
-          f.include_locked = !1;
-        await this.hass.callWS({
-          type: "call_service",
-          domain: "topomation",
-          service: p,
-          service_data: this._serviceDataWithEntryId(f)
-        }), await this._loadLocations(!0), this._locationsVersion += 1, this._showToast(
-          _ ? `Marked "${r}" as occupied` : `Marked "${r}" as unoccupied (vacated)`,
-          "success"
-        );
-      } catch (h) {
-        console.error("Failed to toggle occupancy:", h), this._showToast((h == null ? void 0 : h.message) || "Hey, can't do it.", "error");
-      }
     });
   }
   async _handleLocationRenamed(t) {

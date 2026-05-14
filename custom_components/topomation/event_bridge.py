@@ -142,7 +142,22 @@ class EventBridge:
         if not source_events:
             return
 
+        group_id_for_log = occupancy_config.get("occupancy_group_id")
         for source_event in source_events:
+            if _LOGGER.isEnabledFor(logging.INFO) and source_event["event_type"] in (
+                "trigger",
+                "clear",
+            ):
+                _LOGGER.info(
+                    "occupancy.signal entity=%s location=%s group=%s event=%s source=%s old=%s new=%s",
+                    entity_id,
+                    location_id,
+                    group_id_for_log or "-",
+                    source_event["event_type"],
+                    source_event["source_id"],
+                    normalized_old,
+                    normalized_new,
+                )
             payload = {
                 "event_type": source_event["event_type"],
                 "source_id": source_event["source_id"],

@@ -43,6 +43,8 @@ const TREE_PANEL_SPLIT_MIN = 0.25;
 const TREE_PANEL_SPLIT_MAX = 0.75;
 const ENTITY_DND_MIME = "application/x-topomation-entity-id";
 const MANUAL_OPERATOR_SOURCE_ID = "manual_ui";
+/** Ignore rapid repeat toggles for the same row (double-click vacate+trigger flip). */
+const OCCUPANCY_MANUAL_TOGGLE_COOLDOWN_MS = 550;
 
 type DeviceGroup = {
   key: string;
@@ -177,6 +179,8 @@ export class TopomationPanel extends LitElement {
   private _deviceGroupsCache: DeviceGroup[] = [];
   private _lastKnownEntryId?: string;
   private _opQueueByLocationId = new Map<string, Promise<void>>();
+  /** After a successful manual vacate/trigger, ignore duplicate toggles until this time (epoch ms). */
+  private _occupancyManualToggleCooldownUntilByLocationId = new Map<string, number>();
   private _panelResizePointerId?: number;
   private _resumeRefreshQueued = false;
 
@@ -1882,6 +1886,11 @@ export class TopomationPanel extends LitElement {
         return;
       }
 
+      const cooldownUntil = this._occupancyManualToggleCooldownUntilByLocationId.get(locationId);
+      if (typeof cooldownUntil === "number" && Date.now() < cooldownUntil) {
+        return;
+      }
+
       try {
         if (!location) {
           this._showToast("Invalid occupancy request", "error");
@@ -1921,6 +1930,10 @@ export class TopomationPanel extends LitElement {
             ? `Marked "${locationName}" as occupied`
             : `Marked "${locationName}" as unoccupied (vacated)`,
           "success"
+        );
+        this._occupancyManualToggleCooldownUntilByLocationId.set(
+          locationId,
+          Date.now() + OCCUPANCY_MANUAL_TOGGLE_COOLDOWN_MS
         );
       } catch (error: any) {
         console.error("Failed to toggle occupancy:", error);
