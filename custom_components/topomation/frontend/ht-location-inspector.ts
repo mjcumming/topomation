@@ -79,6 +79,14 @@ type EntityRegistryMeta = {
   disabledBy?: string | null;
   entityCategory?: string | null;
 };
+type HassState = {
+  entity_id?: string;
+  state?: string;
+  attributes?: Record<string, any>;
+  last_changed?: string;
+  last_updated?: string;
+  [key: string]: any;
+};
 type FloorOccupancyGroup = {
   id: string;
   memberIds: string[];
@@ -147,6 +155,7 @@ export class HtLocationInspector extends LitElement {
   @state() private _externalEntityId = "";
   @state() private _entityAreaById: Record<string, string | null> = {};
   @state() private _entityRegistryMetaById: Record<string, EntityRegistryMeta> = {};
+  @state() private _liveSourceEntityStates: Record<string, HassState> = {};
   @state() private _actionRules: TopomationActionRule[] = [];
   @state() private _actionRulesDraft?: TopomationActionRule[];
   @state() private _actionRulesDraftDirty = false;
@@ -198,6 +207,10 @@ export class HtLocationInspector extends LitElement {
   private _managedShadowAutoRepairKey?: string;
   private _unsubAutomationStateChanged?: () => void;
   private _automationStateSubscriptionConnection?: unknown;
+  private _unsubSourceStateChanged?: () => void;
+  private _sourceStateSubscriptionConnection?: unknown;
+  private _sourceStateWatchEntityIds = new Set<string>();
+  private _sourceStateWatchKey = "";
   private _actionRulesReloadTimer?: number;
   private _beforeUnloadHandler = (event: BeforeUnloadEvent) => {
     if (!this._hasUnsavedDrafts()) return;
@@ -2221,6 +2234,22 @@ export class HtLocationInspector extends LitElement {
         text-transform: lowercase;
       }
 
+      .source-state-pill.state-active {
+        border-color: rgba(var(--rgb-success-color), 0.45);
+        background: rgba(var(--rgb-success-color), 0.1);
+        color: var(--success-color);
+      }
+
+      .source-state-pill.state-off {
+        background: rgba(var(--rgb-primary-color), 0.04);
+      }
+
+      .source-state-pill.state-unavailable {
+        border-color: rgba(var(--rgb-warning-color), 0.45);
+        background: rgba(var(--rgb-warning-color), 0.1);
+        color: var(--warning-color);
+      }
+
       .inline-mode-select {
         min-width: 180px;
         border: 1px solid var(--divider-color);
@@ -2807,6 +2836,7 @@ export class HtLocationInspector extends LitElement {
             this._unsubAutomationStateChanged = undefined;
           }
           this._automationStateSubscriptionConnection = undefined;
+          this._teardownSourceStateSubscription();
         } else {
           void this._loadEntityAreaAssignments();
           void this._loadClimateDeviceLinkIndex();
@@ -2901,6 +2931,21 @@ export class HtLocationInspector extends LitElement {
     if (changedProps.has("entityRegistryRevision")) {
       void this._loadEntityAreaAssignments();
       void this._loadClimateDeviceLinkIndex();
+    }
+
+    if (
+      changedProps.has("hass") ||
+      changedProps.has("location") ||
+      changedProps.has("forcedTab") ||
+      changedProps.has("_activeTab") ||
+      changedProps.has("_occupancyDraft") ||
+      changedProps.has("_externalSourceDialogOpen") ||
+      changedProps.has("_externalAreaId") ||
+      changedProps.has("_externalEntityId") ||
+      changedProps.has("_entityAreaById") ||
+      changedProps.has("_entityRegistryMetaById")
+    ) {
+      this._refreshSourceStateWatchSet();
     }
   }
 
@@ -4079,6 +4124,9 @@ export class HtLocationInspector extends LitElement {
     window.addEventListener("beforeunload", this._beforeUnloadHandler);
     this._startClockTicker();
     void this._subscribeAutomationStateChanged();
+    void this.updateComplete.then(() => {
+      if (this.isConnected) this._refreshSourceStateWatchSet();
+    });
   }
 
   disconnectedCallback(): void {
@@ -4099,6 +4147,7 @@ export class HtLocationInspector extends LitElement {
       this._unsubAutomationStateChanged = undefined;
     }
     this._automationStateSubscriptionConnection = undefined;
+    this._teardownSourceStateSubscription();
   }
 
   private _scheduleActionRulesReload(delayMs = 250): void {
@@ -4175,6 +4224,142 @@ export class HtLocationInspector extends LitElement {
       // ignore subscribe failures in restricted/test contexts
       this._automationStateSubscriptionConnection = undefined;
     }
+  }
+
+  private async _subscribeSourceStateChanged(): Promise<void> {
+    const connection = this.hass?.connection;
+    if (!this._sourceStateWatchEntityIds.size) {
+      this._unsubscribeSourceStateChanged();
+      return;
+    }
+    if (!connection?.subscribeEvents) {
+      this._teardownSourceStateSubscription();
+      return;
+    }
+    if (this._unsubSourceStateChanged && this._sourceStateSubscriptionConnection === connection) {
+      return;
+    }
+    this._unsubscribeSourceStateChanged();
+
+    try {
+      const unsubscribe = await connection.subscribeEvents(
+        (event: any) => this._handleWatchedSourceStateChanged(event),
+        "state_changed"
+      );
+      if (
+        !this._sourceStateWatchEntityIds.size ||
+        this.hass?.connection !== connection
+      ) {
+        if (typeof unsubscribe === "function") unsubscribe();
+        return;
+      }
+      this._unsubSourceStateChanged = unsubscribe;
+      this._sourceStateSubscriptionConnection = connection;
+    } catch (err) {
+      this._sourceStateSubscriptionConnection = undefined;
+    }
+  }
+
+  private _unsubscribeSourceStateChanged(): void {
+    if (this._unsubSourceStateChanged) {
+      this._unsubSourceStateChanged();
+      this._unsubSourceStateChanged = undefined;
+    }
+    this._sourceStateSubscriptionConnection = undefined;
+  }
+
+  private _teardownSourceStateSubscription(): void {
+    this._unsubscribeSourceStateChanged();
+    this._sourceStateWatchEntityIds = new Set();
+    this._sourceStateWatchKey = "";
+    if (Object.keys(this._liveSourceEntityStates).length) {
+      this._liveSourceEntityStates = {};
+    }
+  }
+
+  private _handleWatchedSourceStateChanged(event: any): void {
+    const entityId = typeof event?.data?.entity_id === "string" ? event.data.entity_id : "";
+    if (!entityId || !this._sourceStateWatchEntityIds.has(entityId)) return;
+
+    const newState = event?.data?.new_state;
+    const next = { ...this._liveSourceEntityStates };
+    if (newState && typeof newState === "object") {
+      next[entityId] = newState as HassState;
+    } else {
+      next[entityId] = {
+        entity_id: entityId,
+        state: "unavailable",
+        attributes: {},
+        last_changed: event?.time_fired,
+        last_updated: event?.time_fired,
+      };
+    }
+    this._liveSourceEntityStates = next;
+  }
+
+  private _refreshSourceStateWatchSet(): void {
+    const nextIds = this._sourceStateWatchEntityIdsForCurrentView();
+    const nextKey = [...nextIds].sort().join("|");
+    if (nextKey === this._sourceStateWatchKey) return;
+
+    this._sourceStateWatchEntityIds = nextIds;
+    this._sourceStateWatchKey = nextKey;
+
+    const retained: Record<string, HassState> = {};
+    for (const entityId of nextIds) {
+      const liveState = this._liveSourceEntityStates[entityId];
+      if (liveState) retained[entityId] = liveState;
+    }
+    if (Object.keys(retained).length !== Object.keys(this._liveSourceEntityStates).length) {
+      this._liveSourceEntityStates = retained;
+    }
+
+    if (nextIds.size) {
+      void this._subscribeSourceStateChanged();
+    } else {
+      this._unsubscribeSourceStateChanged();
+    }
+  }
+
+  private _sourceStateWatchEntityIdsForCurrentView(): Set<string> {
+    const ids = new Set<string>();
+    const addEntityId = (entityId: unknown): void => {
+      if (typeof entityId !== "string" || !entityId.trim()) return;
+      ids.add(entityId.trim());
+    };
+
+    const config = this._getOccupancyConfig();
+    for (const source of this._workingSources(config)) {
+      addEntityId(source.entity_id);
+    }
+
+    if (this._activeTab === "detection" && this.location) {
+      const areaEntityIdSet = new Set<string>(this.location.entity_ids || []);
+      if (this.location.ha_area_id) {
+        for (const entityId of this._entitiesForArea(this.location.ha_area_id)) {
+          areaEntityIdSet.add(entityId);
+        }
+      }
+      for (const entityId of areaEntityIdSet) {
+        if (this._isCoreAreaSourceEntity(entityId)) addEntityId(entityId);
+      }
+    }
+
+    if (this._externalSourceDialogOpen) {
+      addEntityId(this._externalEntityId);
+      const selectedAreaId = this._externalAreaId || "";
+      const currentAreaId = this.location?.ha_area_id || "";
+      const entityOptions = !selectedAreaId
+        ? []
+        : selectedAreaId === "__this_area__"
+          ? (currentAreaId ? this._entitiesForArea(currentAreaId) : [])
+          : this._entitiesForArea(selectedAreaId);
+      for (const entityId of entityOptions) {
+        addEntityId(entityId);
+      }
+    }
+
+    return ids;
   }
 
   private _renderOccupancyTab() {
@@ -6051,7 +6236,7 @@ export class HtLocationInspector extends LitElement {
                             <span class="candidate-entity-inline">[${item.entityId}]</span>
                           </div>
                           <div class="candidate-controls">
-                            <span class="source-state-pill">${this._entityState(item.entityId)}</span>
+                            <span class=${`source-state-pill ${this._entityStateBadgeTone(item.entityId)}`}>${this._entityState(item.entityId)}</span>
                             ${configured && draft && modeOptions.length > 1
                               ? html`
                                   <div class="inline-mode-group">
@@ -6154,7 +6339,7 @@ export class HtLocationInspector extends LitElement {
                   <span class="candidate-entity-inline">[${entityId}]</span>
                 </div>
                 <div class="candidate-controls">
-                  <span class="source-state-pill">${this._entityState(entityId)}</span>
+                  <span class=${`source-state-pill ${this._entityStateBadgeTone(entityId)}`}>${this._entityState(entityId)}</span>
                   ${primarySource && primarySourceIndex !== undefined && modeOptions.length > 1
                     ? html`
                         <div class="inline-mode-group">
@@ -6281,7 +6466,7 @@ export class HtLocationInspector extends LitElement {
                   <span class="candidate-entity-inline">[${entityId}]</span>
                 </div>
                 <div class="candidate-controls">
-                  <span class="source-state-pill">${this._entityState(entityId)}</span>
+                  <span class=${`source-state-pill ${this._entityStateBadgeTone(entityId)}`}>${this._entityState(entityId)}</span>
                   ${primarySource && primarySourceIndex !== undefined && modeOptions.length > 1
                     ? html`
                         <div class="inline-mode-group">
@@ -6422,6 +6607,16 @@ export class HtLocationInspector extends LitElement {
               </option>
             `)}
           </select>
+          ${entityId
+            ? html`
+                <div class="candidate-submeta">
+                  Current state:
+                  <span class=${`source-state-pill ${this._entityStateBadgeTone(entityId)}`}>
+                    ${this._entityState(entityId)}
+                  </span>
+                </div>
+              `
+            : ""}
         </div>
       </div>
     `;
@@ -11540,13 +11735,17 @@ export class HtLocationInspector extends LitElement {
     return `${Math.floor(seconds / 60)}m`;
   }
 
+  private _entityStateObj(entityId: string): HassState | undefined {
+    return this._liveSourceEntityStates[entityId] || this.hass?.states?.[entityId];
+  }
+
   private _entityName(entityId: string): string {
-    return this.hass.states[entityId]?.attributes?.friendly_name || entityId;
+    return this._entityStateObj(entityId)?.attributes?.friendly_name || entityId;
   }
 
   /** Home Assistant `device_class` when set (used for occupancy source UX). */
   private _entityDeviceClass(entityId: string): string | undefined {
-    const raw = this.hass?.states?.[entityId]?.attributes?.device_class;
+    const raw = this._entityStateObj(entityId)?.attributes?.device_class;
     if (raw === undefined || raw === null) return undefined;
     const s = String(raw).trim();
     return s || undefined;
@@ -11563,13 +11762,13 @@ export class HtLocationInspector extends LitElement {
   }
 
   private _entityState(entityId: string): string {
-    const state = this.hass.states[entityId]?.state;
+    const state = this._entityStateObj(entityId)?.state;
     if (!state) return "unknown";
     return state;
   }
 
   private _entityStateBadgeTone(entityId: string): string {
-    const rawState = String(this.hass?.states?.[entityId]?.state || "unknown").trim();
+    const rawState = String(this._entityStateObj(entityId)?.state || "unknown").trim();
     if (rawState === "unknown" || rawState === "unavailable") return "state-unavailable";
     if (["off", "idle", "standby", "paused", "closed", "locked"].includes(rawState)) {
       return "state-off";

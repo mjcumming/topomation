@@ -45,6 +45,9 @@ class _TopomationAutomation:
     daily_gating_enabled: bool = False
     ambient_lux_entity_ids: tuple[str, ...] = ()
     ambient_fallback_entity_ids: tuple[str, ...] = ()
+    ambient_threshold: float | None = None
+    ambient_direction: Literal["below", "above"] | None = None
+    ambient_sun_state: Literal["below_horizon", "above_horizon"] | None = None
 
 
 @dataclass(slots=True)
@@ -382,7 +385,7 @@ class TopomationActionsRuntime:
         for automation in source_automations:
             if automation.location_id != location_id:
                 continue
-            if automation.run_on_startup is False:
+            if automation.run_on_startup is not True:
                 continue
             if automation.entity_id in self._startup_triggered_automation_ids:
                 continue
@@ -400,8 +403,16 @@ class TopomationActionsRuntime:
                 reconcile_timed_out=reconcile_timed_out,
             ):
                 continue
-            if automation.run_on_startup is True:
-                matched.append(automation.entity_id)
+            ambient_decision = self._startup_ambient_currently_matches(
+                automation,
+                reconcile_timed_out=reconcile_timed_out,
+            )
+            if ambient_decision is False:
+                self._startup_triggered_automation_ids.add(automation.entity_id)
+                continue
+            if ambient_decision is None:
+                continue
+            matched.append(automation.entity_id)
         return matched
 
     def _pending_startup_automations_for(
@@ -476,13 +487,13 @@ class TopomationActionsRuntime:
         reconcile_timed_out: bool,
     ) -> str | None:
         """Return why an ambient automation should wait, or None when it can run."""
-        if automation.trigger_type not in {"on_dark", "on_bright"}:
-            return None
         lux_entity_ids = automation.ambient_lux_entity_ids
+        fallback_entity_ids = automation.ambient_fallback_entity_ids
+        if not lux_entity_ids and not fallback_entity_ids:
+            return None
         if lux_entity_ids and not reconcile_timed_out:
             if not any(self._has_numeric_state(entity_id) for entity_id in lux_entity_ids):
                 return "waiting_for_lux_state"
-        fallback_entity_ids = automation.ambient_fallback_entity_ids
         if not lux_entity_ids and fallback_entity_ids:
             if not any(
                 self._has_known_state(entity_id) for entity_id in fallback_entity_ids
@@ -495,6 +506,51 @@ class TopomationActionsRuntime:
                 self._has_known_state(entity_id) for entity_id in fallback_entity_ids
             ):
                 return "waiting_for_ambient_state"
+        return None
+
+    def _startup_ambient_currently_matches(
+        self,
+        automation: _TopomationAutomation,
+        *,
+        reconcile_timed_out: bool,
+    ) -> bool | None:
+        """Evaluate whether current ambient state matches an on_dark/on_bright trigger.
+
+        Returns True when state currently matches the trigger threshold (rule
+        should fire), False when state is known and does not match (rule should
+        be skipped — without this check, a midday HA restart would fire
+        nighttime "on_dark" rules because automation.trigger bypasses the
+        rule's lux/sun trigger), and None when state is not yet observable.
+
+        For non-ambient trigger types this returns True; the readiness gate is
+        the only thing standing between them and being triggered.
+        """
+        if automation.trigger_type not in {"on_dark", "on_bright"}:
+            return True
+
+        threshold = automation.ambient_threshold
+        direction = automation.ambient_direction
+        if automation.ambient_lux_entity_ids and threshold is not None and direction is not None:
+            for entity_id in automation.ambient_lux_entity_ids:
+                state = self.hass.states.get(entity_id)
+                if state is None:
+                    continue
+                try:
+                    value = float(state.state)
+                except (TypeError, ValueError):
+                    continue
+                if direction == "below":
+                    return value < threshold
+                return value > threshold
+
+        sun_state = automation.ambient_sun_state
+        if sun_state is not None:
+            sun = self.hass.states.get("sun.sun")
+            if sun is not None and sun.state in {"below_horizon", "above_horizon"}:
+                return sun.state == sun_state
+
+        if reconcile_timed_out:
+            return False
         return None
 
     def _has_numeric_state(self, entity_id: str) -> bool:
@@ -541,9 +597,13 @@ class TopomationActionsRuntime:
             metadata = self._parse_topomation_metadata(raw_config.get("description"))
             if metadata is None:
                 continue
-            ambient_lux_entity_ids, ambient_fallback_entity_ids = (
-                self._startup_ambient_entity_ids(raw_config)
-            )
+            (
+                ambient_lux_entity_ids,
+                ambient_fallback_entity_ids,
+                ambient_threshold,
+                ambient_direction,
+                ambient_sun_state,
+            ) = self._startup_ambient_trigger_info(raw_config)
             parsed.append(
                 _TopomationAutomation(
                     entity_id=entity_id,
@@ -553,17 +613,36 @@ class TopomationActionsRuntime:
                     daily_gating_enabled=metadata.daily_gating_enabled,
                     ambient_lux_entity_ids=ambient_lux_entity_ids,
                     ambient_fallback_entity_ids=ambient_fallback_entity_ids,
+                    ambient_threshold=ambient_threshold,
+                    ambient_direction=ambient_direction,
+                    ambient_sun_state=ambient_sun_state,
                 )
             )
         return parsed
 
-    def _startup_ambient_entity_ids(
+    def _startup_ambient_trigger_info(
         self,
         raw_config: Mapping[str, Any],
-    ) -> tuple[tuple[str, ...], tuple[str, ...]]:
-        """Extract lux and fallback state dependencies from a generated automation."""
+    ) -> tuple[
+        tuple[str, ...],
+        tuple[str, ...],
+        float | None,
+        Literal["below", "above"] | None,
+        Literal["below_horizon", "above_horizon"] | None,
+    ]:
+        """Extract lux/fallback deps and trigger threshold from a generated automation.
+
+        The threshold and sun-state are taken from the trigger block only — that
+        is where the on_dark/on_bright semantics live ("fire when lux drops
+        below X" or "sun moves to below_horizon"). At startup we evaluate those
+        directly against current state so a midday restart does not fire a dark
+        rule when it is not actually dark.
+        """
         lux_entity_ids: list[str] = []
         fallback_entity_ids: list[str] = []
+        threshold: float | None = None
+        direction: Literal["below", "above"] | None = None
+        sun_state: Literal["below_horizon", "above_horizon"] | None = None
 
         def _add_unique(target: list[str], value: object) -> None:
             values = value if isinstance(value, list) else [value]
@@ -573,10 +652,11 @@ class TopomationActionsRuntime:
                 if item not in target:
                     target.append(item)
 
-        def _walk(value: object) -> None:
+        def _walk(value: object, in_trigger: bool) -> None:
+            nonlocal threshold, direction, sun_state
             if isinstance(value, list):
                 for item in value:
-                    _walk(item)
+                    _walk(item, in_trigger)
                 return
             if not isinstance(value, Mapping):
                 return
@@ -585,18 +665,43 @@ class TopomationActionsRuntime:
             trigger = str(value.get("trigger", "") or "").lower()
             if condition == "numeric_state" or trigger == "numeric_state":
                 _add_unique(lux_entity_ids, entity_id)
+                if in_trigger and threshold is None:
+                    if "below" in value:
+                        try:
+                            threshold = float(value["below"])
+                            direction = "below"
+                        except (TypeError, ValueError):
+                            pass
+                    elif "above" in value:
+                        try:
+                            threshold = float(value["above"])
+                            direction = "above"
+                        except (TypeError, ValueError):
+                            pass
             elif entity_id == "sun.sun":
                 _add_unique(fallback_entity_ids, entity_id)
+                if in_trigger and sun_state is None:
+                    sun_to = value.get("to") if in_trigger else value.get("state")
+                    if sun_to in {"below_horizon", "above_horizon"}:
+                        sun_state = cast(
+                            Literal["below_horizon", "above_horizon"], sun_to
+                        )
             for nested_key in ("conditions", "choose", "sequence"):
                 nested = value.get(nested_key)
                 if nested is not None:
-                    _walk(nested)
+                    _walk(nested, in_trigger=False)
 
-        _walk(raw_config.get("triggers"))
-        _walk(raw_config.get("trigger"))
-        _walk(raw_config.get("conditions"))
-        _walk(raw_config.get("condition"))
-        return tuple(lux_entity_ids), tuple(fallback_entity_ids)
+        _walk(raw_config.get("triggers"), in_trigger=True)
+        _walk(raw_config.get("trigger"), in_trigger=True)
+        _walk(raw_config.get("conditions"), in_trigger=False)
+        _walk(raw_config.get("condition"), in_trigger=False)
+        return (
+            tuple(lux_entity_ids),
+            tuple(fallback_entity_ids),
+            threshold,
+            direction,
+            sun_state,
+        )
 
     def _is_automation_enabled(self, entity_id: str) -> bool:
         """Return True when automation entity is currently enabled."""

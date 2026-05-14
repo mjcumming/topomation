@@ -81,6 +81,38 @@ Run the rows that match the touched workflow.
 
 ## 6. Release Records
 
+### 2026-05-14 - v0.3.8 source-state UI and startup occupancy safeguards
+
+1. Commit under test: release-candidate worktree for Topomation `0.3.8`.
+2. Frontend bundle rebuilt from that commit: yes; `npm run build` published the
+   updated runtime bundle before release validation.
+3. Touched workflow list:
+   - Detection source state pill live updates in the source list and Add Source
+     dialog.
+   - Managed rule startup reapply for ambient dark/bright rules.
+   - Occupancy event bridge handling of restored/recovered active source state.
+   - Release metadata/version synchronization for Topomation `0.3.8`.
+4. Commands to run:
+   - `npm run test -- --files ht-location-inspector.test.ts` — **PASS**
+     (`98 passed`; 2026-05-14).
+   - `npm run build` — **PASS** (published rebuilt
+     `frontend/topomation-panel.js`; 2026-05-14).
+   - `./scripts/test-comprehensive.sh` — **PASS** (`350 passed, 22 skipped`
+     backend; `265 passed` Vitest; `206 passed` Web Test Runner; `34 passed`
+     Playwright; 2026-05-14).
+   - `make test-release-live` — **PASS** (local comprehensive gate plus
+     live HA managed-action contract `2 passed` and live browser workflow
+     `6 passed`; 2026-05-14).
+   - `python scripts/verify-version-sync.py` — **PASS** (`Version sync ok:
+     0.3.8`; 2026-05-14).
+5. Outcome:
+   - Detection source state pill live updates: **PASS**
+   - Managed rule startup ambient reapply: **PASS**
+   - Occupancy active-state replay handling: **PASS**
+   - Release metadata/version sync: **PASS**
+   - Local comprehensive gate: **PASS**
+   - Live HA managed-action contract/browser workflows: **PASS**
+
 ### 2026-05-13 - managed lighting ambient-only rule update validation
 
 1. Commit under test: release-candidate worktree for Topomation `0.3.6`

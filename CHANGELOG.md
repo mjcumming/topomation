@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.8] - 2026-05-14
+
+### Fixed
+
+- **Startup ambient reapply safety**: run-on-startup dark/bright managed rules
+  now evaluate the current lux or sun trigger state before calling
+  `automation.trigger`, so a daytime Home Assistant restart cannot fire an
+  `on_dark` rule just because the trigger was bypassed during startup replay.
+- **Occupancy active-state replay**: restored or recovered HA state rows that
+  report an already-active source no longer create fresh occupancy evidence.
+  This keeps manually vacated grouped rooms vacant when HA later replays a
+  still-on motion/presence entity.
+
+### Changed
+
+- **Detection source live state**: the source UI now keeps a small filtered
+  `state_changed` subscription for visible source entities, so source state
+  pills in the Detection tab and Add Source dialog update live without
+  re-enabling full-panel `hass` churn.
+
 ## [0.3.7] - 2026-05-14
 
 ### Fixed

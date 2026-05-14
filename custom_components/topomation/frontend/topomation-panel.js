@@ -45,7 +45,7 @@ const Yn = (s) => new vn(typeof s == "string" ? s : s + "", void 0, bi), ie = (s
  * Copyright 2017 Google LLC
  * SPDX-License-Identifier: BSD-3-Clause
  */
-const { is: Qn, defineProperty: Zn, getOwnPropertyDescriptor: Jn, getOwnPropertyNames: to, getOwnPropertySymbols: eo, getPrototypeOf: io } = Object, _t = globalThis, Ii = _t.trustedTypes, no = Ii ? Ii.emptyScript : "", ze = _t.reactiveElementPolyfillSupport, Ut = (s, t) => s, ni = { toAttribute(s, t) {
+const { is: Qn, defineProperty: Zn, getOwnPropertyDescriptor: Jn, getOwnPropertyNames: to, getOwnPropertySymbols: eo, getPrototypeOf: io } = Object, _t = globalThis, Ii = _t.trustedTypes, no = Ii ? Ii.emptyScript : "", ze = _t.reactiveElementPolyfillSupport, Wt = (s, t) => s, ni = { toAttribute(s, t) {
   switch (t) {
     case Boolean:
       s = s ? no : null;
@@ -103,13 +103,13 @@ let Rt = class extends HTMLElement {
     return this.elementProperties.get(t) ?? Oi;
   }
   static _$Ei() {
-    if (this.hasOwnProperty(Ut("elementProperties"))) return;
+    if (this.hasOwnProperty(Wt("elementProperties"))) return;
     const t = io(this);
     t.finalize(), t.l !== void 0 && (this.l = [...t.l]), this.elementProperties = new Map(t.elementProperties);
   }
   static finalize() {
-    if (this.hasOwnProperty(Ut("finalized"))) return;
-    if (this.finalized = !0, this._$Ei(), this.hasOwnProperty(Ut("properties"))) {
+    if (this.hasOwnProperty(Wt("finalized"))) return;
+    if (this.finalized = !0, this._$Ei(), this.hasOwnProperty(Wt("properties"))) {
       const e = this.properties, i = [...to(e), ...eo(e)];
       for (const n of i) this.createProperty(n, e[n]);
     }
@@ -278,13 +278,13 @@ let Rt = class extends HTMLElement {
   firstUpdated(t) {
   }
 };
-Rt.elementStyles = [], Rt.shadowRootOptions = { mode: "open" }, Rt[Ut("elementProperties")] = /* @__PURE__ */ new Map(), Rt[Ut("finalized")] = /* @__PURE__ */ new Map(), ze == null || ze({ ReactiveElement: Rt }), (_t.reactiveElementVersions ?? (_t.reactiveElementVersions = [])).push("2.1.1");
+Rt.elementStyles = [], Rt.shadowRootOptions = { mode: "open" }, Rt[Wt("elementProperties")] = /* @__PURE__ */ new Map(), Rt[Wt("finalized")] = /* @__PURE__ */ new Map(), ze == null || ze({ ReactiveElement: Rt }), (_t.reactiveElementVersions ?? (_t.reactiveElementVersions = [])).push("2.1.1");
 /**
  * @license
  * Copyright 2017 Google LLC
  * SPDX-License-Identifier: BSD-3-Clause
  */
-const Wt = globalThis, we = Wt.trustedTypes, Pi = we ? we.createPolicy("lit-html", { createHTML: (s) => s }) : void 0, wn = "$lit$", ut = `lit$${Math.random().toFixed(9).slice(2)}$`, xn = "?" + ut, oo = `<${xn}>`, $t = document, Xt = () => $t.createComment(""), Qt = (s) => s === null || typeof s != "object" && typeof s != "function", wi = Array.isArray, ao = (s) => wi(s) || typeof (s == null ? void 0 : s[Symbol.iterator]) == "function", Ne = `[ \t\n\f\r]`, zt = /<(?:(!--|\/[^a-zA-Z])|(\/?[a-zA-Z][^>\s]*)|(\/?$))/g, Mi = /-->/g, zi = />/g, mt = RegExp(`>|${Ne}(?:([^\\s"'>=/]+)(${Ne}*=${Ne}*(?:[^ \t\n\f\r"'\`<>=]|("|')|))|$)`, "g"), Ni = /'/g, Fi = /"/g, Sn = /^(?:script|style|textarea|title)$/i, ro = (s) => (t, ...e) => ({ _$litType$: s, strings: t, values: e }), g = ro(1), At = Symbol.for("lit-noChange"), j = Symbol.for("lit-nothing"), Bi = /* @__PURE__ */ new WeakMap(), xt = $t.createTreeWalker($t, 129);
+const Ut = globalThis, we = Ut.trustedTypes, Pi = we ? we.createPolicy("lit-html", { createHTML: (s) => s }) : void 0, wn = "$lit$", ut = `lit$${Math.random().toFixed(9).slice(2)}$`, xn = "?" + ut, oo = `<${xn}>`, $t = document, Xt = () => $t.createComment(""), Qt = (s) => s === null || typeof s != "object" && typeof s != "function", wi = Array.isArray, ao = (s) => wi(s) || typeof (s == null ? void 0 : s[Symbol.iterator]) == "function", Ne = `[ \t\n\f\r]`, zt = /<(?:(!--|\/[^a-zA-Z])|(\/?[a-zA-Z][^>\s]*)|(\/?$))/g, Mi = /-->/g, zi = />/g, mt = RegExp(`>|${Ne}(?:([^\\s"'>=/]+)(${Ne}*=${Ne}*(?:[^ \t\n\f\r"'\`<>=]|("|')|))|$)`, "g"), Ni = /'/g, Fi = /"/g, Sn = /^(?:script|style|textarea|title)$/i, ro = (s) => (t, ...e) => ({ _$litType$: s, strings: t, values: e }), g = ro(1), At = Symbol.for("lit-noChange"), j = Symbol.for("lit-nothing"), Bi = /* @__PURE__ */ new WeakMap(), xt = $t.createTreeWalker($t, 129);
 function $n(s, t) {
   if (!wi(s) || !s.hasOwnProperty("raw")) throw Error("invalid template strings array");
   return Pi !== void 0 ? Pi.createHTML(t) : t;
@@ -502,8 +502,8 @@ class po {
     Lt(this, t);
   }
 }
-const go = { I: Pt }, Fe = Wt.litHtmlPolyfillSupport;
-Fe == null || Fe(Zt, Pt), (Wt.litHtmlVersions ?? (Wt.litHtmlVersions = [])).push("3.3.1");
+const go = { I: Pt }, Fe = Ut.litHtmlPolyfillSupport;
+Fe == null || Fe(Zt, Pt), (Ut.litHtmlVersions ?? (Ut.litHtmlVersions = [])).push("3.3.1");
 const _o = (s, t, e) => {
   const i = (e == null ? void 0 : e.renderBefore) ?? t;
   let n = i._$litPart$;
@@ -826,7 +826,7 @@ const { I: ko } = go, ji = () => document.createComment(""), Nt = (s, t, e) => {
     }
   }
   return e;
-}, yt = (s, t, e = s) => (s._$AI(t, e), s), To = {}, Ro = (s, t = To) => s._$AH = t, Eo = (s) => s._$AH, Ue = (s) => {
+}, yt = (s, t, e = s) => (s._$AI(t, e), s), To = {}, Ro = (s, t = To) => s._$AH = t, Eo = (s) => s._$AH, We = (s) => {
   s._$AR(), s._$AA.remove();
 };
 /**
@@ -834,7 +834,7 @@ const { I: ko } = go, ji = () => document.createComment(""), Nt = (s, t, e) => {
  * Copyright 2017 Google LLC
  * SPDX-License-Identifier: BSD-3-Clause
  */
-const Ui = (s, t, e) => {
+const Wi = (s, t, e) => {
   const i = /* @__PURE__ */ new Map();
   for (let n = t; n <= e; n++) i.set(s[n], n);
   return i;
@@ -864,22 +864,22 @@ const Ui = (s, t, e) => {
     else if (r[h] === a[p]) c[p] = yt(n[h], o[p]), h--, p--;
     else if (r[d] === a[p]) c[p] = yt(n[d], o[p]), Nt(s, c[p + 1], n[d]), d++, p--;
     else if (r[h] === a[_]) c[_] = yt(n[h], o[_]), Nt(s, n[d], n[h]), h--, _++;
-    else if (l === void 0 && (l = Ui(a, _, p), u = Ui(r, d, h)), l.has(r[d])) if (l.has(r[h])) {
+    else if (l === void 0 && (l = Wi(a, _, p), u = Wi(r, d, h)), l.has(r[d])) if (l.has(r[h])) {
       const f = u.get(a[_]), m = f !== void 0 ? n[f] : null;
       if (m === null) {
         const y = Nt(s, n[d]);
         yt(y, o[_]), c[_] = y;
       } else c[_] = yt(m, o[_]), Nt(s, n[d], m), n[f] = null;
       _++;
-    } else Ue(n[h]), h--;
-    else Ue(n[d]), d++;
+    } else We(n[h]), h--;
+    else We(n[d]), d++;
     for (; _ <= p; ) {
       const f = Nt(s, c[p + 1]);
       yt(f, o[_]), c[_++] = f;
     }
     for (; d <= h; ) {
       const f = n[d++];
-      f !== null && Ue(f);
+      f !== null && We(f);
     }
     return this.ut = a, Ro(s, c), At;
   }
@@ -890,7 +890,7 @@ const Ui = (s, t, e) => {
  * @author	owenm    <owen23355@gmail.com>
  * @license MIT
  */
-function Wi(s, t) {
+function Ui(s, t) {
   var e = Object.keys(s);
   if (Object.getOwnPropertySymbols) {
     var i = Object.getOwnPropertySymbols(s);
@@ -903,9 +903,9 @@ function Wi(s, t) {
 function ot(s) {
   for (var t = 1; t < arguments.length; t++) {
     var e = arguments[t] != null ? arguments[t] : {};
-    t % 2 ? Wi(Object(e), !0).forEach(function(i) {
+    t % 2 ? Ui(Object(e), !0).forEach(function(i) {
       Do(s, i, e[i]);
-    }) : Object.getOwnPropertyDescriptors ? Object.defineProperties(s, Object.getOwnPropertyDescriptors(e)) : Wi(Object(e)).forEach(function(i) {
+    }) : Object.getOwnPropertyDescriptors ? Object.defineProperties(s, Object.getOwnPropertyDescriptors(e)) : Ui(Object(e)).forEach(function(i) {
       Object.defineProperty(s, i, Object.getOwnPropertyDescriptor(e, i));
     });
   }
@@ -1139,7 +1139,7 @@ function Po(s, t) {
       t.hasOwnProperty(e) && (s[e] = t[e]);
   return s;
 }
-function We(s, t) {
+function Ue(s, t) {
   return Math.round(s.top) === Math.round(t.top) && Math.round(s.left) === Math.round(t.left) && Math.round(s.height) === Math.round(t.height) && Math.round(s.width) === Math.round(t.width);
 }
 var Gt;
@@ -1213,8 +1213,8 @@ function zo() {
       var o = !1, a = 0;
       s.forEach(function(r) {
         var c = 0, l = r.target, u = l.fromRect, d = F(l), h = l.prevFromRect, _ = l.prevToRect, p = r.rect, f = Ct(l, !0);
-        f && (d.top -= f.f, d.left -= f.e), l.toRect = d, l.thisAnimationDuration && We(h, d) && !We(u, d) && // Make sure animatingRect is on line between toRect & fromRect
-        (p.top - d.top) / (p.left - d.left) === (u.top - d.top) / (u.left - d.left) && (c = Fo(p, h, _, n.options)), We(d, u) || (l.prevFromRect = u, l.prevToRect = d, c || (c = n.options.animation), n.animate(l, p, d, c)), c && (o = !0, a = Math.max(a, c), clearTimeout(l.animationResetTimer), l.animationResetTimer = setTimeout(function() {
+        f && (d.top -= f.f, d.left -= f.e), l.toRect = d, l.thisAnimationDuration && Ue(h, d) && !Ue(u, d) && // Make sure animatingRect is on line between toRect & fromRect
+        (p.top - d.top) / (p.left - d.left) === (u.top - d.top) / (u.left - d.left) && (c = Fo(p, h, _, n.options)), Ue(d, u) || (l.prevFromRect = u, l.prevToRect = d, c || (c = n.options.animation), n.animate(l, p, d, c)), c && (o = !0, a = Math.max(a, c), clearTimeout(l.animationResetTimer), l.animationResetTimer = setTimeout(function() {
           l.animationTime = 0, l.prevFromRect = null, l.fromRect = null, l.prevToRect = null, l.thisAnimationDuration = null;
         }, c), l.thisAnimationDuration = c);
       }), clearTimeout(t), o ? t = setTimeout(function() {
@@ -1316,7 +1316,7 @@ var jo = ["evt"], G = function(t, e) {
     cloneEl: O,
     cloneHidden: ht,
     dragStarted: Ft,
-    putSortable: U,
+    putSortable: W,
     activeSortable: A.active,
     originalEvent: n,
     oldIndex: Dt,
@@ -1342,7 +1342,7 @@ var jo = ["evt"], G = function(t, e) {
 };
 function H(s) {
   Bo(ot({
-    putSortable: U,
+    putSortable: W,
     cloneEl: O,
     targetEl: v,
     rootEl: I,
@@ -1352,7 +1352,7 @@ function H(s) {
     newDraggableIndex: dt
   }, s));
 }
-var v, P, k, I, wt, me, O, ht, Dt, Y, Vt, dt, ce, U, Et = !1, Se = !1, $e = [], vt, Z, Ge, Ve, Ki, Yi, Ft, Tt, qt, Kt = !1, le = !1, ye, W, qe = [], ri = !1, Ae = [], Oe = typeof document < "u", de = Si, Xi = ae || st ? "cssFloat" : "float", Uo = Oe && !An && !Si && "draggable" in document.createElement("div"), In = function() {
+var v, P, k, I, wt, me, O, ht, Dt, Y, Vt, dt, ce, W, Et = !1, Se = !1, $e = [], vt, Z, Ge, Ve, Ki, Yi, Ft, Tt, qt, Kt = !1, le = !1, ye, U, qe = [], ri = !1, Ae = [], Oe = typeof document < "u", de = Si, Xi = ae || st ? "cssFloat" : "float", Wo = Oe && !An && !Si && "draggable" in document.createElement("div"), In = function() {
   if (Oe) {
     if (st)
       return !1;
@@ -1370,7 +1370,7 @@ var v, P, k, I, wt, me, O, ht, Dt, Y, Vt, dt, ce, U, Et = !1, Se = !1, $e = [], 
     return a && (c.clear === "both" || c.clear === d) ? "vertical" : "horizontal";
   }
   return o && (r.display === "block" || r.display === "flex" || r.display === "table" || r.display === "grid" || l >= n && i[Xi] === "none" || a && i[Xi] === "none" && l + u > n) ? "vertical" : "horizontal";
-}, Wo = function(t, e, i) {
+}, Uo = function(t, e, i) {
   var n = i ? t.left : t.top, o = i ? t.right : t.bottom, a = i ? t.width : t.height, r = i ? e.left : e.top, c = i ? e.right : e.bottom, l = i ? e.width : e.height;
   return n === r || o === c || n + a / 2 === r + l / 2;
 }, Ho = function(t, e) {
@@ -1482,7 +1482,7 @@ function A(s, t) {
   Pn(t);
   for (var n in this)
     n.charAt(0) === "_" && typeof this[n] == "function" && (this[n] = this[n].bind(this));
-  this.nativeDraggable = t.forceFallback ? !1 : Uo, this.nativeDraggable && (this.options.touchStartThreshold = 1), t.supportPointer ? R(s, "pointerdown", this._onTapStart) : (R(s, "mousedown", this._onTapStart), R(s, "touchstart", this._onTapStart)), this.nativeDraggable && (R(s, "dragover", this), R(s, "dragenter", this)), $e.push(this.el), t.store && t.store.get && this.sort(t.store.get(this) || []), rt(this, zo());
+  this.nativeDraggable = t.forceFallback ? !1 : Wo, this.nativeDraggable && (this.options.touchStartThreshold = 1), t.supportPointer ? R(s, "pointerdown", this._onTapStart) : (R(s, "mousedown", this._onTapStart), R(s, "touchstart", this._onTapStart)), this.nativeDraggable && (R(s, "dragover", this), R(s, "dragenter", this)), $e.push(this.el), t.store && t.store.get && this.sort(t.store.get(this) || []), rt(this, zo());
 }
 A.prototype = /** @lends Sortable.prototype */
 {
@@ -1623,7 +1623,7 @@ A.prototype = /** @lends Sortable.prototype */
   },
   _onTouchMove: function(t) {
     if (vt) {
-      var e = this.options, i = e.fallbackTolerance, n = e.fallbackOffset, o = t.touches ? t.touches[0] : t, a = k && Ct(k, !0), r = k && a && a.a, c = k && a && a.d, l = de && W && qi(W), u = (o.clientX - vt.clientX + n.x) / (r || 1) + (l ? l[0] - qe[0] : 0) / (r || 1), d = (o.clientY - vt.clientY + n.y) / (c || 1) + (l ? l[1] - qe[1] : 0) / (c || 1);
+      var e = this.options, i = e.fallbackTolerance, n = e.fallbackOffset, o = t.touches ? t.touches[0] : t, a = k && Ct(k, !0), r = k && a && a.a, c = k && a && a.d, l = de && U && qi(U), u = (o.clientX - vt.clientX + n.x) / (r || 1) + (l ? l[0] - qe[0] : 0) / (r || 1), d = (o.clientY - vt.clientY + n.y) / (c || 1) + (l ? l[1] - qe[1] : 0) / (c || 1);
       if (!A.active && !Et) {
         if (i && Math.max(Math.abs(o.clientX - this._lastX), Math.abs(o.clientY - this._lastY)) < i)
           return;
@@ -1648,9 +1648,9 @@ A.prototype = /** @lends Sortable.prototype */
     if (!k) {
       var t = this.options.fallbackOnBody ? document.body : I, e = F(v, !0, de, !0, t), i = this.options;
       if (de) {
-        for (W = t; $(W, "position") === "static" && $(W, "transform") === "none" && W !== document; )
-          W = W.parentNode;
-        W !== document.body && W !== document.documentElement ? (W === document && (W = nt()), e.top += W.scrollTop, e.left += W.scrollLeft) : W = nt(), qe = qi(W);
+        for (U = t; $(U, "position") === "static" && $(U, "transform") === "none" && U !== document; )
+          U = U.parentNode;
+        U !== document.body && U !== document.documentElement ? (U === document && (U = nt()), e.top += U.scrollTop, e.left += U.scrollLeft) : U = nt(), qe = qi(U);
       }
       k = v.cloneNode(!0), K(k, i.ghostClass, !1), K(k, i.fallbackClass, !0), K(k, i.dragClass, !0), $(k, "transition", ""), $(k, "transform", ""), $(k, "box-sizing", "border-box"), $(k, "margin", 0), $(k, "top", e.top), $(k, "left", e.left), $(k, "width", e.width), $(k, "height", e.height), $(k, "opacity", "0.8"), $(k, "position", de ? "absolute" : "fixed"), $(k, "zIndex", "100000"), $(k, "pointerEvents", "none"), A.ghost = k, t.appendChild(k), $(k, "transform-origin", Ki / parseInt(k.style.width) * 100 + "% " + Yi / parseInt(k.style.height) * 100 + "%");
     }
@@ -1672,7 +1672,7 @@ A.prototype = /** @lends Sortable.prototype */
   },
   // Returns true - if no further action is needed (either inserted or another condition)
   _onDragOver: function(t) {
-    var e = this.el, i = t.target, n, o, a, r = this.options, c = r.group, l = A.active, u = ce === c, d = r.sort, h = U || l, _, p = this, f = !1;
+    var e = this.el, i = t.target, n, o, a, r = this.options, c = r.group, l = A.active, u = ce === c, d = r.sort, h = W || l, _, p = this, f = !1;
     if (ri) return;
     function m(Mt, qn) {
       G(Mt, p, ot({
@@ -1698,7 +1698,7 @@ A.prototype = /** @lends Sortable.prototype */
     function x(Mt) {
       return m("dragOverCompleted", {
         insertion: Mt
-      }), Mt && (u ? l._hideClone() : l._showClone(p), p !== h && (K(v, U ? U.options.ghostClass : l.options.ghostClass, !1), K(v, r.ghostClass, !0)), U !== p && p !== A.active ? U = p : p === A.active && U && (U = null), h === p && (p._ignoreWhileAnimating = i), p.animateAll(function() {
+      }), Mt && (u ? l._hideClone() : l._showClone(p), p !== h && (K(v, W ? W.options.ghostClass : l.options.ghostClass, !1), K(v, r.ghostClass, !0)), W !== p && p !== A.active ? W = p : p === A.active && W && (W = null), h === p && (p._ignoreWhileAnimating = i), p.animateAll(function() {
         m("dragOverAnimationComplete"), p._ignoreWhileAnimating = null;
       }), p !== h && (h.animateAll(), h._ignoreWhileAnimating = null)), (i === v && !v.animated || i === e && !i.animated) && (Tt = null), !r.dragoverBubble && !t.rootEl && i !== document && (v.parentNode[V]._isOutsideThisEl(t.target), !Mt && bt(t)), !r.dragoverBubble && t.stopPropagation && t.stopPropagation(), f = !0;
     }
@@ -1715,7 +1715,7 @@ A.prototype = /** @lends Sortable.prototype */
     if (t.preventDefault !== void 0 && t.cancelable && t.preventDefault(), i = J(i, r.draggable, e, !0), m("dragOver"), A.eventCanceled) return f;
     if (v.contains(t.target) || i.animated && i.animatingX && i.animatingY || p._ignoreWhileAnimating === i)
       return x(!1);
-    if (Se = !1, l && !r.disabled && (u ? d || (a = P !== I) : U === this || (this.lastPutMode = ce.checkPull(this, l, v, t)) && c.checkPut(this, l, v, t))) {
+    if (Se = !1, l && !r.disabled && (u ? d || (a = P !== I) : W === this || (this.lastPutMode = ce.checkPull(this, l, v, t)) && c.checkPut(this, l, v, t))) {
       if (_ = this._getDirection(t, i) === "vertical", n = F(v), m("dragOverValid"), A.eventCanceled) return f;
       if (a)
         return P = I, y(), this._hideClone(), m("revert"), A.eventCanceled || (wt ? I.insertBefore(v, wt) : I.appendChild(v)), x(!0);
@@ -1733,7 +1733,7 @@ A.prototype = /** @lends Sortable.prototype */
           return y(), e.insertBefore(v, L), P = e, w(), x(!0);
       } else if (i.parentNode === e) {
         o = F(i);
-        var E = 0, M, D = v.parentNode !== e, S = !Wo(v.animated && v.toRect || n, i.animated && i.toRect || o, _), C = _ ? "top" : "left", B = Vi(i, "top", "top") || Vi(v, "top", "top"), ct = B ? B.scrollTop : void 0;
+        var E = 0, M, D = v.parentNode !== e, S = !Uo(v.animated && v.toRect || n, i.animated && i.toRect || o, _), C = _ ? "top" : "left", B = Vi(i, "top", "top") || Vi(v, "top", "top"), ct = B ? B.scrollTop : void 0;
         Tt !== i && (M = o[C], Kt = !1, le = !S && r.invertSwap || D), E = Xo(t, i, o, _, S ? 1 : r.swapThreshold, r.invertedSwapThreshold == null ? r.swapThreshold : r.invertedSwapThreshold, le, Tt === i);
         var q;
         if (E !== 0) {
@@ -1772,7 +1772,7 @@ A.prototype = /** @lends Sortable.prototype */
       this._nulling();
       return;
     }
-    Et = !1, le = !1, Kt = !1, clearInterval(this._loopId), clearTimeout(this._dragStartTimer), si(this.cloneId), si(this._dragStartId), this.nativeDraggable && (T(document, "drop", this), T(e, "dragstart", this._onDragStart)), this._offMoveEvents(), this._offUpEvents(), Ht && $(document.body, "user-select", ""), $(v, "transform", ""), t && (Ft && (t.cancelable && t.preventDefault(), !i.dropBubble && t.stopPropagation()), k && k.parentNode && k.parentNode.removeChild(k), (I === P || U && U.lastPutMode !== "clone") && O && O.parentNode && O.parentNode.removeChild(O), v && (this.nativeDraggable && T(v, "dragend", this), Ke(v), v.style["will-change"] = "", Ft && !Et && K(v, U ? U.options.ghostClass : this.options.ghostClass, !1), K(v, this.options.chosenClass, !1), H({
+    Et = !1, le = !1, Kt = !1, clearInterval(this._loopId), clearTimeout(this._dragStartTimer), si(this.cloneId), si(this._dragStartId), this.nativeDraggable && (T(document, "drop", this), T(e, "dragstart", this._onDragStart)), this._offMoveEvents(), this._offUpEvents(), Ht && $(document.body, "user-select", ""), $(v, "transform", ""), t && (Ft && (t.cancelable && t.preventDefault(), !i.dropBubble && t.stopPropagation()), k && k.parentNode && k.parentNode.removeChild(k), (I === P || W && W.lastPutMode !== "clone") && O && O.parentNode && O.parentNode.removeChild(O), v && (this.nativeDraggable && T(v, "dragend", this), Ke(v), v.style["will-change"] = "", Ft && !Et && K(v, W ? W.options.ghostClass : this.options.ghostClass, !1), K(v, this.options.chosenClass, !1), H({
       sortable: this,
       name: "unchoose",
       toEl: P,
@@ -1801,7 +1801,7 @@ A.prototype = /** @lends Sortable.prototype */
       name: "sort",
       toEl: P,
       originalEvent: t
-    })), U && U.save()) : Y !== Dt && Y >= 0 && (H({
+    })), W && W.save()) : Y !== Dt && Y >= 0 && (H({
       sortable: this,
       name: "update",
       toEl: P,
@@ -1819,7 +1819,7 @@ A.prototype = /** @lends Sortable.prototype */
     }), this.save()))), this._nulling();
   },
   _nulling: function() {
-    G("nulling", this), I = v = P = k = wt = O = me = ht = vt = Z = Ft = Y = dt = Dt = Vt = Tt = qt = U = ce = A.dragged = A.ghost = A.clone = A.active = null, Ae.forEach(function(t) {
+    G("nulling", this), I = v = P = k = wt = O = me = ht = vt = Z = Ft = Y = dt = Dt = Vt = Tt = qt = W = ce = A.dragged = A.ghost = A.clone = A.active = null, Ae.forEach(function(t) {
       t.checked = !0;
     }), Ae.length = Ge = Ve = 0;
   },
@@ -3530,7 +3530,7 @@ function Ea(s) {
   return [...t];
 }
 const pt = 30 * 60, an = 5 * 60;
-function Un(s) {
+function Wn(s) {
   if (!s) return "";
   const t = s.indexOf(".");
   return t >= 0 ? s.slice(0, t) : "";
@@ -3544,13 +3544,13 @@ function Ca(s) {
 function La(s) {
   return s === "motion";
 }
-function Wn(s) {
+function Un(s) {
   return s === "media_player";
 }
 function Hn(s) {
   var i;
-  const t = Un(s == null ? void 0 : s.entity_id), e = (i = s == null ? void 0 : s.attributes) == null ? void 0 : i.device_class;
-  if (Wn(t))
+  const t = Wn(s == null ? void 0 : s.entity_id), e = (i = s == null ? void 0 : s.attributes) == null ? void 0 : i.device_class;
+  if (Un(t))
     return {
       entity_id: (s == null ? void 0 : s.entity_id) || "",
       mode: "any_change",
@@ -3616,8 +3616,8 @@ function Hn(s) {
   };
 }
 function Je(s, t, e) {
-  const i = Un(e == null ? void 0 : e.entity_id), n = Hn(e);
-  if (Wn(i)) {
+  const i = Wn(e == null ? void 0 : e.entity_id), n = Hn(e);
+  if (Un(i)) {
     const a = s.on_timeout && s.on_timeout > 0 ? s.on_timeout : pt;
     return {
       ...s,
@@ -3859,7 +3859,7 @@ try {
 }
 const Ee = class Ee extends ft {
   constructor() {
-    super(...arguments), this.allLocations = [], this.adjacencyEdges = [], this.entityRegistryRevision = 0, this.occupancyStates = {}, this.occupancyTransitions = {}, this.occupancyRuntimeStates = {}, this.handoffTraces = [], this._activeTab = "detection", this._occupancyDraftDirty = !1, this._savingOccupancyDraft = !1, this._pendingOccupancyByLocation = {}, this._externalSourceDialogOpen = !1, this._externalAreaId = "", this._externalEntityId = "", this._entityAreaById = {}, this._entityRegistryMetaById = {}, this._actionRules = [], this._actionRulesDraftDirty = !1, this._savingActionRules = !1, this._loadingActionRules = !1, this._nowEpochMs = Date.now(), this._editingActionRuleNameValue = "", this._editingActionRuleNameFallback = "", this._actionRuleTabById = {}, this._climateDeviceLinkRevision = 0, this._climateHostDeviceIds = /* @__PURE__ */ new Set(), this._deviceViaParentId = /* @__PURE__ */ new Map(), this._entityRegistryDeviceByEntityId = /* @__PURE__ */ new Map(), this._syncImportInProgress = !1, this._managedShadowAutoRepairInProgress = !1, this._adjacencyNeighborId = "", this._adjacencyBoundaryType = "door", this._adjacencyDirection = "bidirectional", this._adjacencyCrossingSources = "", this._adjacencyHandoffWindowSec = 12, this._adjacencyPriority = 50, this._savingAdjacency = !1, this._wiabInteriorEntityId = "", this._wiabDoorEntityId = "", this._wiabExteriorDoorEntityId = "", this._wiabShowAllEntities = !1, this._ambientDraftDirty = !1, this._loadingAmbientReading = !1, this._savingAmbientConfig = !1, this._floorGroupCreateSelection = [], this._onTimeoutMemory = {}, this._actionRulesLoadSeq = 0, this._ambientReadingLoadSeq = 0, this._beforeUnloadHandler = (t) => {
+    super(...arguments), this.allLocations = [], this.adjacencyEdges = [], this.entityRegistryRevision = 0, this.occupancyStates = {}, this.occupancyTransitions = {}, this.occupancyRuntimeStates = {}, this.handoffTraces = [], this._activeTab = "detection", this._occupancyDraftDirty = !1, this._savingOccupancyDraft = !1, this._pendingOccupancyByLocation = {}, this._externalSourceDialogOpen = !1, this._externalAreaId = "", this._externalEntityId = "", this._entityAreaById = {}, this._entityRegistryMetaById = {}, this._liveSourceEntityStates = {}, this._actionRules = [], this._actionRulesDraftDirty = !1, this._savingActionRules = !1, this._loadingActionRules = !1, this._nowEpochMs = Date.now(), this._editingActionRuleNameValue = "", this._editingActionRuleNameFallback = "", this._actionRuleTabById = {}, this._climateDeviceLinkRevision = 0, this._climateHostDeviceIds = /* @__PURE__ */ new Set(), this._deviceViaParentId = /* @__PURE__ */ new Map(), this._entityRegistryDeviceByEntityId = /* @__PURE__ */ new Map(), this._syncImportInProgress = !1, this._managedShadowAutoRepairInProgress = !1, this._adjacencyNeighborId = "", this._adjacencyBoundaryType = "door", this._adjacencyDirection = "bidirectional", this._adjacencyCrossingSources = "", this._adjacencyHandoffWindowSec = 12, this._adjacencyPriority = 50, this._savingAdjacency = !1, this._wiabInteriorEntityId = "", this._wiabDoorEntityId = "", this._wiabExteriorDoorEntityId = "", this._wiabShowAllEntities = !1, this._ambientDraftDirty = !1, this._loadingAmbientReading = !1, this._savingAmbientConfig = !1, this._floorGroupCreateSelection = [], this._onTimeoutMemory = {}, this._actionRulesLoadSeq = 0, this._ambientReadingLoadSeq = 0, this._sourceStateWatchEntityIds = /* @__PURE__ */ new Set(), this._sourceStateWatchKey = "", this._beforeUnloadHandler = (t) => {
       this._hasUnsavedDrafts() && (t.preventDefault(), t.returnValue = "");
     }, this._handleActionRuleRenameDialogClosed = () => {
       this._editingActionRuleNameId && this._cancelActionRuleNameEdit();
@@ -3898,7 +3898,7 @@ const Ee = class Ee extends ft {
     var e, i;
     if (t.has("hass")) {
       const n = t.get("hass"), o = n == null ? void 0 : n.connection, a = (e = this.hass) == null ? void 0 : e.connection;
-      o !== a && (this._entityAreaById = {}, this._entityAreaLoadPromise = void 0, this.hass ? (this._loadEntityAreaAssignments(), this._loadClimateDeviceLinkIndex(), this._loadActionRules(), this._subscribeAutomationStateChanged()) : (this._unsubAutomationStateChanged && (this._unsubAutomationStateChanged(), this._unsubAutomationStateChanged = void 0), this._automationStateSubscriptionConnection = void 0));
+      o !== a && (this._entityAreaById = {}, this._entityAreaLoadPromise = void 0, this.hass ? (this._loadEntityAreaAssignments(), this._loadClimateDeviceLinkIndex(), this._loadActionRules(), this._subscribeAutomationStateChanged()) : (this._unsubAutomationStateChanged && (this._unsubAutomationStateChanged(), this._unsubAutomationStateChanged = void 0), this._automationStateSubscriptionConnection = void 0, this._teardownSourceStateSubscription()));
     }
     if (t.has("forcedTab")) {
       const n = this._mapRequestedTab(this.forcedTab);
@@ -3923,7 +3923,7 @@ const Ee = class Ee extends ft {
       const n = t.get("entryId") || "", o = this.entryId || "";
       n !== o && (this._loadActionRules(), this._loadAmbientReading());
     }
-    this._showsManagedShadowControls() && (t.has("allLocations") || t.has("location")) && this._maybeAutoRepairManagedShadowArea(), t.has("entityRegistryRevision") && (this._loadEntityAreaAssignments(), this._loadClimateDeviceLinkIndex());
+    this._showsManagedShadowControls() && (t.has("allLocations") || t.has("location")) && this._maybeAutoRepairManagedShadowArea(), t.has("entityRegistryRevision") && (this._loadEntityAreaAssignments(), this._loadClimateDeviceLinkIndex()), (t.has("hass") || t.has("location") || t.has("forcedTab") || t.has("_activeTab") || t.has("_occupancyDraft") || t.has("_externalSourceDialogOpen") || t.has("_externalAreaId") || t.has("_externalEntityId") || t.has("_entityAreaById") || t.has("_entityRegistryMetaById")) && this._refreshSourceStateWatchSet();
   }
   updated(t) {
     t.has("_editingActionRuleNameId") && this._editingActionRuleNameId && this._focusActionRuleRenameInput();
@@ -4710,10 +4710,12 @@ const Ee = class Ee extends ft {
     if (t === "occupancy") return "detection";
   }
   connectedCallback() {
-    super.connectedCallback(), window.addEventListener("beforeunload", this._beforeUnloadHandler), this._startClockTicker(), this._subscribeAutomationStateChanged();
+    super.connectedCallback(), window.addEventListener("beforeunload", this._beforeUnloadHandler), this._startClockTicker(), this._subscribeAutomationStateChanged(), this.updateComplete.then(() => {
+      this.isConnected && this._refreshSourceStateWatchSet();
+    });
   }
   disconnectedCallback() {
-    super.disconnectedCallback(), window.removeEventListener("beforeunload", this._beforeUnloadHandler), this._stopClockTicker(), this._resetSourceDraftState(), this._ambientReadingReloadTimer && (window.clearTimeout(this._ambientReadingReloadTimer), this._ambientReadingReloadTimer = void 0), this._actionRulesReloadTimer && (window.clearTimeout(this._actionRulesReloadTimer), this._actionRulesReloadTimer = void 0), this._unsubAutomationStateChanged && (this._unsubAutomationStateChanged(), this._unsubAutomationStateChanged = void 0), this._automationStateSubscriptionConnection = void 0;
+    super.disconnectedCallback(), window.removeEventListener("beforeunload", this._beforeUnloadHandler), this._stopClockTicker(), this._resetSourceDraftState(), this._ambientReadingReloadTimer && (window.clearTimeout(this._ambientReadingReloadTimer), this._ambientReadingReloadTimer = void 0), this._actionRulesReloadTimer && (window.clearTimeout(this._actionRulesReloadTimer), this._actionRulesReloadTimer = void 0), this._unsubAutomationStateChanged && (this._unsubAutomationStateChanged(), this._unsubAutomationStateChanged = void 0), this._automationStateSubscriptionConnection = void 0, this._teardownSourceStateSubscription();
   }
   _scheduleActionRulesReload(t = 250) {
     this._actionRulesReloadTimer && (window.clearTimeout(this._actionRulesReloadTimer), this._actionRulesReloadTimer = void 0), this._actionRulesReloadTimer = window.setTimeout(() => {
@@ -4747,6 +4749,87 @@ const Ee = class Ee extends ft {
         this._automationStateSubscriptionConnection = void 0;
       }
     }
+  }
+  async _subscribeSourceStateChanged() {
+    var e, i;
+    const t = (e = this.hass) == null ? void 0 : e.connection;
+    if (!this._sourceStateWatchEntityIds.size) {
+      this._unsubscribeSourceStateChanged();
+      return;
+    }
+    if (!(t != null && t.subscribeEvents)) {
+      this._teardownSourceStateSubscription();
+      return;
+    }
+    if (!(this._unsubSourceStateChanged && this._sourceStateSubscriptionConnection === t)) {
+      this._unsubscribeSourceStateChanged();
+      try {
+        const n = await t.subscribeEvents(
+          (o) => this._handleWatchedSourceStateChanged(o),
+          "state_changed"
+        );
+        if (!this._sourceStateWatchEntityIds.size || ((i = this.hass) == null ? void 0 : i.connection) !== t) {
+          typeof n == "function" && n();
+          return;
+        }
+        this._unsubSourceStateChanged = n, this._sourceStateSubscriptionConnection = t;
+      } catch {
+        this._sourceStateSubscriptionConnection = void 0;
+      }
+    }
+  }
+  _unsubscribeSourceStateChanged() {
+    this._unsubSourceStateChanged && (this._unsubSourceStateChanged(), this._unsubSourceStateChanged = void 0), this._sourceStateSubscriptionConnection = void 0;
+  }
+  _teardownSourceStateSubscription() {
+    this._unsubscribeSourceStateChanged(), this._sourceStateWatchEntityIds = /* @__PURE__ */ new Set(), this._sourceStateWatchKey = "", Object.keys(this._liveSourceEntityStates).length && (this._liveSourceEntityStates = {});
+  }
+  _handleWatchedSourceStateChanged(t) {
+    var o, a;
+    const e = typeof ((o = t == null ? void 0 : t.data) == null ? void 0 : o.entity_id) == "string" ? t.data.entity_id : "";
+    if (!e || !this._sourceStateWatchEntityIds.has(e)) return;
+    const i = (a = t == null ? void 0 : t.data) == null ? void 0 : a.new_state, n = { ...this._liveSourceEntityStates };
+    i && typeof i == "object" ? n[e] = i : n[e] = {
+      entity_id: e,
+      state: "unavailable",
+      attributes: {},
+      last_changed: t == null ? void 0 : t.time_fired,
+      last_updated: t == null ? void 0 : t.time_fired
+    }, this._liveSourceEntityStates = n;
+  }
+  _refreshSourceStateWatchSet() {
+    const t = this._sourceStateWatchEntityIdsForCurrentView(), e = [...t].sort().join("|");
+    if (e === this._sourceStateWatchKey) return;
+    this._sourceStateWatchEntityIds = t, this._sourceStateWatchKey = e;
+    const i = {};
+    for (const n of t) {
+      const o = this._liveSourceEntityStates[n];
+      o && (i[n] = o);
+    }
+    Object.keys(i).length !== Object.keys(this._liveSourceEntityStates).length && (this._liveSourceEntityStates = i), t.size ? this._subscribeSourceStateChanged() : this._unsubscribeSourceStateChanged();
+  }
+  _sourceStateWatchEntityIdsForCurrentView() {
+    var n;
+    const t = /* @__PURE__ */ new Set(), e = (o) => {
+      typeof o != "string" || !o.trim() || t.add(o.trim());
+    }, i = this._getOccupancyConfig();
+    for (const o of this._workingSources(i))
+      e(o.entity_id);
+    if (this._activeTab === "detection" && this.location) {
+      const o = new Set(this.location.entity_ids || []);
+      if (this.location.ha_area_id)
+        for (const a of this._entitiesForArea(this.location.ha_area_id))
+          o.add(a);
+      for (const a of o)
+        this._isCoreAreaSourceEntity(a) && e(a);
+    }
+    if (this._externalSourceDialogOpen) {
+      e(this._externalEntityId);
+      const o = this._externalAreaId || "", a = ((n = this.location) == null ? void 0 : n.ha_area_id) || "", r = o ? o === "__this_area__" ? a ? this._entitiesForArea(a) : [] : this._entitiesForArea(o) : [];
+      for (const c of r)
+        e(c);
+    }
+    return t;
   }
   _renderOccupancyTab() {
     if (!this.location) return "";
@@ -6017,7 +6100,7 @@ const Ee = class Ee extends ft {
                             <span class="candidate-entity-inline">[${y.entityId}]</span>
                           </div>
                           <div class="candidate-controls">
-                            <span class="source-state-pill">${this._entityState(y.entityId)}</span>
+                            <span class=${`source-state-pill ${this._entityStateBadgeTone(y.entityId)}`}>${this._entityState(y.entityId)}</span>
                             ${b && E && M.length > 1 ? g`
                                   <div class="inline-mode-group">
                                     <span class="inline-mode-label">Mode</span>
@@ -6097,7 +6180,7 @@ const Ee = class Ee extends ft {
                   <span class="candidate-entity-inline">[${o}]</span>
                 </div>
                 <div class="candidate-controls">
-                  <span class="source-state-pill">${this._entityState(o)}</span>
+                  <span class=${`source-state-pill ${this._entityStateBadgeTone(o)}`}>${this._entityState(o)}</span>
                   ${d && u !== void 0 && h.length > 1 ? g`
                         <div class="inline-mode-group">
                           <span class="inline-mode-label">Mode</span>
@@ -6194,7 +6277,7 @@ const Ee = class Ee extends ft {
                   <span class="candidate-entity-inline">[${o}]</span>
                 </div>
                 <div class="candidate-controls">
-                  <span class="source-state-pill">${this._entityState(o)}</span>
+                  <span class=${`source-state-pill ${this._entityStateBadgeTone(o)}`}>${this._entityState(o)}</span>
                   ${d && u !== void 0 && h.length > 1 ? g`
                         <div class="inline-mode-group">
                           <span class="inline-mode-label">Mode</span>
@@ -6299,6 +6382,14 @@ const Ee = class Ee extends ft {
               </option>
             `)}
           </select>
+          ${l ? g`
+                <div class="candidate-submeta">
+                  Current state:
+                  <span class=${`source-state-pill ${this._entityStateBadgeTone(l)}`}>
+                    ${this._entityState(l)}
+                  </span>
+                </div>
+              ` : ""}
         </div>
       </div>
     `;
@@ -9477,14 +9568,18 @@ const Ee = class Ee extends ft {
   _formatDuration(t) {
     return t === null ? "indefinite" : !t || t <= 0 ? "0m" : `${Math.floor(t / 60)}m`;
   }
+  _entityStateObj(t) {
+    var e, i;
+    return this._liveSourceEntityStates[t] || ((i = (e = this.hass) == null ? void 0 : e.states) == null ? void 0 : i[t]);
+  }
   _entityName(t) {
     var e, i;
-    return ((i = (e = this.hass.states[t]) == null ? void 0 : e.attributes) == null ? void 0 : i.friendly_name) || t;
+    return ((i = (e = this._entityStateObj(t)) == null ? void 0 : e.attributes) == null ? void 0 : i.friendly_name) || t;
   }
   /** Home Assistant `device_class` when set (used for occupancy source UX). */
   _entityDeviceClass(t) {
-    var n, o, a, r;
-    const e = (r = (a = (o = (n = this.hass) == null ? void 0 : n.states) == null ? void 0 : o[t]) == null ? void 0 : a.attributes) == null ? void 0 : r.device_class;
+    var n, o;
+    const e = (o = (n = this._entityStateObj(t)) == null ? void 0 : n.attributes) == null ? void 0 : o.device_class;
     return e == null ? void 0 : String(e).trim() || void 0;
   }
   _occupancySourceDeviceClassMeta(t) {
@@ -9497,12 +9592,12 @@ const Ee = class Ee extends ft {
   }
   _entityState(t) {
     var i;
-    const e = (i = this.hass.states[t]) == null ? void 0 : i.state;
+    const e = (i = this._entityStateObj(t)) == null ? void 0 : i.state;
     return e || "unknown";
   }
   _entityStateBadgeTone(t) {
-    var i, n, o;
-    const e = String(((o = (n = (i = this.hass) == null ? void 0 : i.states) == null ? void 0 : n[t]) == null ? void 0 : o.state) || "unknown").trim();
+    var i;
+    const e = String(((i = this._entityStateObj(t)) == null ? void 0 : i.state) || "unknown").trim();
     return e === "unknown" || e === "unavailable" ? "state-unavailable" : ["off", "idle", "standby", "paused", "closed", "locked"].includes(e) ? "state-off" : "state-active";
   }
   _formatEntityStateText(t) {
@@ -11715,6 +11810,22 @@ Ee.properties = {
         text-transform: lowercase;
       }
 
+      .source-state-pill.state-active {
+        border-color: rgba(var(--rgb-success-color), 0.45);
+        background: rgba(var(--rgb-success-color), 0.1);
+        color: var(--success-color);
+      }
+
+      .source-state-pill.state-off {
+        background: rgba(var(--rgb-primary-color), 0.04);
+      }
+
+      .source-state-pill.state-unavailable {
+        border-color: rgba(var(--rgb-warning-color), 0.45);
+        background: rgba(var(--rgb-warning-color), 0.1);
+        color: var(--warning-color);
+      }
+
       .inline-mode-select {
         min-width: 180px;
         border: 1px solid var(--divider-color);
@@ -12595,7 +12706,7 @@ De.properties = {
 ];
 let mi = De;
 customElements.get("ht-location-dialog") || customElements.define("ht-location-dialog", mi);
-const ln = "topomation:panel-tree-split", dn = "topomation:panel-right-mode", ti = 0.4, ei = 0.25, ii = 0.75, ja = "application/x-topomation-entity-id", un = "manual_ui", Ua = 550;
+const ln = "topomation:panel-tree-split", dn = "topomation:panel-right-mode", ti = 0.4, ei = 0.25, ii = 0.75, ja = "application/x-topomation-entity-id", un = "manual_ui", Wa = 550;
 var mn, yn;
 try {
   (yn = (mn = import.meta) == null ? void 0 : mn.hot) == null || yn.accept(() => window.location.reload());
@@ -13488,7 +13599,7 @@ const Ce = class Ce extends ft {
             "success"
           ), this._occupancyManualToggleCooldownUntilByLocationId.set(
             e,
-            Date.now() + Ua
+            Date.now() + Wa
           );
         } catch (_) {
           console.error("Failed to toggle occupancy:", _), this._showToast((_ == null ? void 0 : _.message) || "Hey, can't do it.", "error");

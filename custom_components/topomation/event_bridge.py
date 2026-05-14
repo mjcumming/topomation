@@ -13,6 +13,8 @@ from homeassistant.const import (
     STATE_ON,
     STATE_PAUSED,
     STATE_PLAYING,
+    STATE_UNAVAILABLE,
+    STATE_UNKNOWN,
 )
 from homeassistant.core import HomeAssistant, callback
 
@@ -87,6 +89,15 @@ class EventBridge:
             old_state.attributes if old_state else {},
         )
         normalized_new = self._normalize_state(new_state.state, new_state.attributes)
+        if self._is_active_state_replay(normalized_old, normalized_new):
+            _LOGGER.debug(
+                "Ignoring occupancy active-state replay entity=%s old=%s new=%s",
+                entity_id,
+                normalized_old,
+                normalized_new,
+            )
+            return
+
         signal_type: str | None = None
         signal_key: str | None = None
         if domain == "media_player":
@@ -684,6 +695,21 @@ class EventBridge:
         if new_state in clear_states:
             return "clear"
         return None
+
+    def _is_active_state_replay(
+        self,
+        old_state: str | None,
+        new_state: str | None,
+    ) -> bool:
+        """Return True for HA restore/recovery events that merely report active state.
+
+        A manual Topomation vacate is operator intent. If HA later emits a
+        state_changed row with no prior concrete state, do not turn unchanged
+        active sensors back into fresh occupancy evidence.
+        """
+        if old_state not in (None, STATE_UNKNOWN, STATE_UNAVAILABLE):
+            return False
+        return self._state_to_signal_type(STATE_OFF, new_state) == "trigger"
 
     def _media_state_to_signal(
         self,

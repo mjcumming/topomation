@@ -76,6 +76,106 @@ const openExternalSourceDialog = async (element: HtLocationInspector): Promise<v
 };
 
 describe("HtLocationInspector occupancy source composer", () => {
+  it("updates visible source state pills from watched state_changed events", async () => {
+    const listeners: Record<string, Array<(event: any) => void>> = {};
+    const connection = {
+      subscribeEvents: async (cb: (event: any) => void, eventType?: string) => {
+        const type = eventType || "*";
+        listeners[type] = listeners[type] || [];
+        listeners[type].push(cb);
+        return () => {
+          listeners[type] = (listeners[type] || []).filter((listener) => listener !== cb);
+        };
+      },
+    };
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>): Promise<T> => {
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        if (request.type === "topomation/action_rules/list") return { rules: [] } as T;
+        return {} as T;
+      },
+      connection,
+      states: {
+        "binary_sensor.kitchen_motion": {
+          entity_id: "binary_sensor.kitchen_motion",
+          state: "off",
+          attributes: {
+            friendly_name: "Kitchen Motion",
+            device_class: "motion",
+            area_id: "kitchen",
+          },
+        },
+      },
+      areas: {
+        kitchen: { area_id: "kitchen", name: "Kitchen" },
+      },
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_kitchen";
+    location.name = "Kitchen";
+    location.ha_area_id = "kitchen";
+    location.entity_ids = ["binary_sensor.kitchen_motion"];
+    location.modules._meta = { type: "area" };
+    location.modules.occupancy = {
+      enabled: true,
+      default_timeout: 300,
+      default_trailing_timeout: 120,
+      occupancy_sources: [
+        {
+          entity_id: "binary_sensor.kitchen_motion",
+          source_id: "binary_sensor.kitchen_motion",
+          mode: "specific_states",
+          on_event: "trigger",
+          on_timeout: 300,
+          off_event: "clear",
+          off_trailing: 0,
+        },
+      ],
+    };
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${location}
+        .allLocations=${[location]}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
+    await waitUntil(
+      () => (listeners.state_changed || []).length > 0,
+      "state_changed subscription did not start"
+    );
+
+    const statePill = () =>
+      element.shadowRoot?.querySelector(".source-state-pill") as HTMLElement | null;
+    expect(statePill()?.textContent?.trim()).to.equal("off");
+
+    for (const listener of listeners.state_changed || []) {
+      listener({
+        data: {
+          entity_id: "binary_sensor.kitchen_motion",
+          new_state: {
+            entity_id: "binary_sensor.kitchen_motion",
+            state: "on",
+            attributes: {
+              friendly_name: "Kitchen Motion",
+              device_class: "motion",
+              area_id: "kitchen",
+            },
+          },
+        },
+        time_fired: "2026-05-14T12:00:00Z",
+      });
+    }
+    await element.updateComplete;
+
+    expect(statePill()?.textContent?.trim()).to.equal("on");
+  });
+
   it("renders source test buttons for configured sources and triggers services", async () => {
     const callWsRequests: Array<Record<string, any>> = [];
     const hass: HomeAssistant = {

@@ -228,7 +228,14 @@ async def test_startup_reapply_runs_ambient_rules_without_occupancy_sensor(
                         location_id,
                         "on_dark",
                         run_on_startup=True,
-                    )
+                    ),
+                    "triggers": [
+                        {
+                            "trigger": "state",
+                            "entity_id": "sun.sun",
+                            "to": "below_horizon",
+                        }
+                    ],
                 },
             ),
             _AutomationEntity(
@@ -245,6 +252,7 @@ async def test_startup_reapply_runs_ambient_rules_without_occupancy_sensor(
     )
     hass.states.async_set("automation.porch_dark", "on")
     hass.states.async_set("automation.porch_occupied", "on")
+    hass.states.async_set("sun.sun", "below_horizon")
 
     mock_async_call = AsyncMock(return_value=None)
 
@@ -395,6 +403,104 @@ async def test_startup_reapply_uses_sun_fallback_after_lux_timeout(
     await runtime.async_teardown()
 
 
+async def test_startup_reapply_skips_on_dark_when_currently_bright(
+    hass: HomeAssistant,
+) -> None:
+    """Midday restart must not fire on_dark rules — the trigger threshold is bypassed
+    by automation.trigger, so the runtime must evaluate current lux directly.
+    """
+    location_id = "area_porch"
+    location_manager = _LocationManager({location_id: {}})
+    event_bus = EventBus()
+    runtime = TopomationActionsRuntime(
+        hass,
+        location_manager,
+        event_bus,
+        startup_delay_seconds=0,
+    )
+
+    hass.data[AUTOMATION_DATA_COMPONENT] = SimpleNamespace(
+        entities=[
+            _AutomationEntity(
+                entity_id="automation.porch_dark",
+                raw_config={
+                    "description": _metadata_line(
+                        location_id,
+                        "on_dark",
+                        run_on_startup=True,
+                    ),
+                    "triggers": [
+                        {
+                            "trigger": "numeric_state",
+                            "entity_id": "sensor.porch_lux",
+                            "below": 50,
+                        }
+                    ],
+                },
+            ),
+        ]
+    )
+    hass.states.async_set("automation.porch_dark", "on")
+    hass.states.async_set("sensor.porch_lux", "1200")
+
+    mock_async_call = AsyncMock(return_value=None)
+
+    with patch("homeassistant.core.ServiceRegistry.async_call", new=mock_async_call):
+        await runtime.async_reapply_startup_actions()
+        await hass.async_block_till_done()
+
+    mock_async_call.assert_not_awaited()
+    await runtime.async_teardown()
+
+
+async def test_startup_reapply_skips_on_dark_when_sun_above_horizon(
+    hass: HomeAssistant,
+) -> None:
+    """Sun-fallback on_dark rules must not fire during the day."""
+    location_id = "area_porch"
+    location_manager = _LocationManager({location_id: {}})
+    event_bus = EventBus()
+    runtime = TopomationActionsRuntime(
+        hass,
+        location_manager,
+        event_bus,
+        startup_delay_seconds=0,
+    )
+
+    hass.data[AUTOMATION_DATA_COMPONENT] = SimpleNamespace(
+        entities=[
+            _AutomationEntity(
+                entity_id="automation.porch_dark_sun",
+                raw_config={
+                    "description": _metadata_line(
+                        location_id,
+                        "on_dark",
+                        run_on_startup=True,
+                    ),
+                    "triggers": [
+                        {
+                            "trigger": "state",
+                            "entity_id": "sun.sun",
+                            "to": "below_horizon",
+                        }
+                    ],
+                },
+            ),
+        ]
+    )
+    hass.states.async_set("automation.porch_dark_sun", "on")
+    hass.states.async_set("sun.sun", "above_horizon")
+
+    mock_async_call = AsyncMock(return_value=None)
+
+    with patch("homeassistant.core.ServiceRegistry.async_call", new=mock_async_call):
+        await runtime.async_reapply_startup_actions()
+        await hass.async_block_till_done()
+
+    mock_async_call.assert_not_awaited()
+    await runtime.async_teardown()
+
+
 async def test_startup_reapply_honors_per_rule_run_on_startup_without_global_flag(
     hass: HomeAssistant,
 ) -> None:
@@ -413,7 +519,14 @@ async def test_startup_reapply_honors_per_rule_run_on_startup_without_global_fla
                         location_id,
                         "on_dark",
                         run_on_startup=True,
-                    )
+                    ),
+                    "triggers": [
+                        {
+                            "trigger": "state",
+                            "entity_id": "sun.sun",
+                            "to": "below_horizon",
+                        }
+                    ],
                 },
             ),
             _AutomationEntity(
@@ -424,6 +537,7 @@ async def test_startup_reapply_honors_per_rule_run_on_startup_without_global_fla
     )
     hass.states.async_set("automation.kitchen_dark", "on")
     hass.states.async_set("automation.kitchen_occupied", "on")
+    hass.states.async_set("sun.sun", "below_horizon")
     hass.states.async_set(
         "binary_sensor.kitchen_occupancy",
         "on",

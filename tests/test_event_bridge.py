@@ -14,6 +14,7 @@ from unittest.mock import Mock
 
 import pytest
 from home_topology import Event, EventBus, EventFilter, LocationManager
+from home_topology.modules.occupancy import OccupancyModule
 from homeassistant.const import EVENT_STATE_CHANGED, STATE_OFF, STATE_ON, STATE_PAUSED, STATE_PLAYING
 from homeassistant.core import HomeAssistant, State
 
@@ -382,6 +383,118 @@ async def test_state_change_publishes_kernel_event(
     assert published_event.payload["source_id"] == "binary_sensor.kitchen_motion"
     assert published_event.payload["old_state"] == STATE_OFF
     assert published_event.payload["new_state"] == STATE_ON
+
+
+async def test_active_state_replay_does_not_publish_kernel_event(
+    event_bridge: EventBridge,
+    event_bus: Mock,
+) -> None:
+    """Restored/replayed active HA state is not fresh occupancy evidence."""
+    new_state = State("binary_sensor.kitchen_motion", STATE_ON)
+
+    ha_event = Mock()
+    ha_event.data = {
+        "entity_id": "binary_sensor.kitchen_motion",
+        "old_state": None,
+        "new_state": new_state,
+    }
+
+    event_bridge._state_changed_listener(ha_event)
+
+    event_bus.publish.assert_not_called()
+
+
+@pytest.mark.parametrize("old_value", ["unknown", "unavailable"])
+async def test_recovered_active_state_does_not_publish_kernel_event(
+    event_bridge: EventBridge,
+    event_bus: Mock,
+    old_value: str,
+) -> None:
+    """Recovery into an already-active state should not reoccupy after vacate."""
+    old_state = State("binary_sensor.kitchen_motion", old_value)
+    new_state = State("binary_sensor.kitchen_motion", STATE_ON)
+
+    ha_event = Mock()
+    ha_event.data = {
+        "entity_id": "binary_sensor.kitchen_motion",
+        "old_state": old_state,
+        "new_state": new_state,
+    }
+
+    event_bridge._state_changed_listener(ha_event)
+
+    event_bus.publish.assert_not_called()
+
+
+async def test_replayed_group_member_active_state_does_not_reoccupy_after_vacate(
+    hass: HomeAssistant,
+) -> None:
+    """A grouped room stays vacant when HA replays a still-on member sensor."""
+    bus = EventBus()
+    loc_mgr = LocationManager()
+    bus.set_location_manager(loc_mgr)
+    loc_mgr.set_event_bus(bus)
+
+    loc_mgr.create_location(id="floor_main", name="Main Floor")
+    loc_mgr.create_location(id="area_kitchen", name="Kitchen", parent_id="floor_main")
+    loc_mgr.create_location(id="area_family", name="Family Room", parent_id="floor_main")
+    loc_mgr.add_entity_to_location("binary_sensor.kitchen_motion", "area_kitchen")
+
+    for location_id in ("area_kitchen", "area_family"):
+        loc_mgr.set_module_config(
+            location_id,
+            "occupancy",
+            {
+                "enabled": True,
+                "default_timeout": 300,
+                "occupancy_group_id": "main_open_area",
+                "occupancy_sources": [
+                    {
+                        "entity_id": "binary_sensor.kitchen_motion",
+                        "mode": "specific_states",
+                        "on_event": "trigger",
+                        "on_timeout": 300,
+                        "off_event": "clear",
+                        "off_trailing": 0,
+                    }
+                ]
+                if location_id == "area_kitchen"
+                else [],
+            },
+        )
+
+    occupancy = OccupancyModule()
+    occupancy.attach(bus, loc_mgr)
+    bridge = EventBridge(hass, bus, loc_mgr, occupancy_module=occupancy)
+
+    bridge._state_changed_listener(
+        Mock(
+            data={
+                "entity_id": "binary_sensor.kitchen_motion",
+                "old_state": State("binary_sensor.kitchen_motion", STATE_OFF),
+                "new_state": State("binary_sensor.kitchen_motion", STATE_ON),
+            }
+        )
+    )
+    assert occupancy.get_location_state("area_kitchen")["occupied"] is True
+    assert occupancy.get_location_state("area_family")["occupied"] is True
+
+    occupancy.vacate_area("area_kitchen", "manual_ui")
+    assert occupancy.get_location_state("area_kitchen")["occupied"] is False
+    assert occupancy.get_location_state("area_family")["occupied"] is False
+
+    bridge._state_changed_listener(
+        Mock(
+            data={
+                "entity_id": "binary_sensor.kitchen_motion",
+                "old_state": None,
+                "new_state": State("binary_sensor.kitchen_motion", STATE_ON),
+            }
+        )
+    )
+
+    assert occupancy.get_location_state("area_kitchen")["occupied"] is False
+    assert occupancy.get_location_state("area_family")["occupied"] is False
 
 
 async def test_light_power_clear_with_zero_trailing_sets_authoritative_vacant(
