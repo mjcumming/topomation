@@ -103,6 +103,9 @@ Top-to-bottom layout order:
    per-rule card controls for rule lifecycle edits.
 6. Do not mix tab-level `Save changes` / `Discard changes` with per-card
    `Delete rule` for the same rule workflow.
+7. Editable device/source lists stay alphabetical by display name. Checked,
+   selected, or configured rows are visually marked in place rather than moved
+   to the top during editing.
 
 ## 6.5 Non-Lighting Scope
 
@@ -223,6 +226,7 @@ Rule-card requirements:
 13. Overlapping time windows are allowed.
 14. Actions editor uses a capability-based light device list:
    - one row per compatible local `light.*` entity
+   - rows stay alphabetical by display name even when included in the rule
    - row include toggles are multi-select and define the ordered action list for the rule
    - dimmable rows use a brightness slider (`0` -> `turn_off`, `>0` ->
      `turn_on` with `brightness_pct`)

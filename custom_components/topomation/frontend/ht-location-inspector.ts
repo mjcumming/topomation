@@ -6125,11 +6125,6 @@ export class HtLocationInspector extends LitElement {
         signalKey: this._normalizedSignalKeyForSource(source),
       }));
     const items = [...visibleCandidateItems, ...configuredExtraItems].sort((a, b) => {
-      const aConfigured = sourceIndexByKey.has(a.key) ? 1 : 0;
-      const bConfigured = sourceIndexByKey.has(b.key) ? 1 : 0;
-      if (aConfigured !== bConfigured) {
-        return bConfigured - aConfigured;
-      }
       const byName = this._entityName(a.entityId).localeCompare(this._entityName(b.entityId));
       if (byName !== 0) return byName;
 
@@ -6158,16 +6153,7 @@ export class HtLocationInspector extends LitElement {
       itemGroups.push(created);
     }
 
-    // Flat `items` are sorted configured-first, but integrated cards merge rows later; reorder
-    // cards so any source with an enabled checkbox stays above purely optional rows.
     itemGroups.sort((ga, gb) => {
-      const groupHasConfigured = (group: { items: CandidateItem[] }) =>
-        group.items.some((row) => sourceIndexByKey.has(row.key));
-      const aHas = groupHasConfigured(ga);
-      const bHas = groupHasConfigured(gb);
-      if (aHas !== bHas) {
-        return aHas ? -1 : 1;
-      }
       const idA = ga.items[0]?.entityId ?? "";
       const idB = gb.items[0]?.entityId ?? "";
       const nameCmp = this._entityName(idA).localeCompare(this._entityName(idB));
@@ -9310,27 +9296,13 @@ export class HtLocationInspector extends LitElement {
     ruleId: string,
     rule: TopomationActionRule,
     busy: boolean,
-    entityOptions: string[],
-    preferConfiguredLightsFirst: boolean
+    entityOptions: string[]
   ) {
     const ruleTargets = this._actionTargetsForRule(rule);
     const targetByEntity = new Map(ruleTargets.map((target) => [target.entity_id, target] as const));
-    let rowEntityIds: string[];
-    if (preferConfiguredLightsFirst) {
-      const configuredIds = ruleTargets.map((t) => t.entity_id);
-      const configuredSet = new Set(configuredIds);
-      rowEntityIds = [
-        ...configuredIds,
-        ...entityOptions.filter((entityId) => !configuredSet.has(entityId)),
-      ];
-    } else {
-      rowEntityIds = [...entityOptions];
-      for (const target of ruleTargets) {
-        if (!rowEntityIds.includes(target.entity_id)) {
-          rowEntityIds.unshift(target.entity_id);
-        }
-      }
-    }
+    const rowEntityIds = [...new Set([...entityOptions, ...ruleTargets.map((target) => target.entity_id)])]
+      .filter((entityId) => entityId.trim().length > 0)
+      .sort((a, b) => this._entityName(a).localeCompare(this._entityName(b)));
     if (rowEntityIds.length === 0) {
       return html`<div class="text-muted">No local lights found for this location.</div>`;
     }
@@ -9548,8 +9520,7 @@ export class HtLocationInspector extends LitElement {
     ruleId: string,
     rule: TopomationActionRule,
     busy: boolean,
-    entityOptions: string[],
-    preferConfiguredLightsFirst: boolean
+    entityOptions: string[]
   ) {
     return html`
       ${this._renderLightingTriggerRows(ruleId, rule, busy)}
@@ -9623,8 +9594,7 @@ export class HtLocationInspector extends LitElement {
         ruleId,
         rule,
         busy,
-        entityOptions,
-        preferConfiguredLightsFirst
+        entityOptions
       )}
 
       <div class="dusk-rule-section-title">Execution</div>
@@ -10204,7 +10174,6 @@ export class HtLocationInspector extends LitElement {
                 const persistedRule = this._persistedActionRuleForDraft(rule);
                 const isPersisted = Boolean(persistedRule);
                 const hasRuleEdits = this._isActionRuleDirty(rule, index, persistedRule);
-                const preferConfiguredLightsFirst = isPersisted && !hasRuleEdits;
                 return html`
                   <div class="dusk-block-row" data-testid=${`action-rule-${ruleId}`}>
                     <div class="dusk-block-head">
@@ -10223,8 +10192,7 @@ export class HtLocationInspector extends LitElement {
                           ruleId,
                           rule,
                           busy,
-                          entityOptions,
-                          preferConfiguredLightsFirst
+                          entityOptions
                         )
                       : this._renderOccupancyOnlyRuleEditor(tab, ruleId, rule, busy, entityOptions)}
                     <div class="dusk-block-footer">

@@ -1,6 +1,6 @@
 # Work Tracking - topomation
 
-**Last Updated**: 2026-03-06
+**Last Updated**: 2026-05-20
 **Purpose**: operational execution tracker for the active sprint.
 
 Status markers:
@@ -20,6 +20,14 @@ Canonical separation:
 - Strategy and release sequencing: `project/roadmap.md`
 - Task-level scope and acceptance criteria: `project/issues/*.md`
 - Architecture/contracts: `docs/working-agreement.md`, `docs/contracts.md`, `docs/automation-ui-guide.md`, `docs/architecture.md`, `docs/adr-log.md`
+
+### 2026-05-20 — Stable automation list ordering
+
+- Automation editor source/device lists now use stable alphabetical ordering
+  while editing; configured or selected rows are highlighted in place rather
+  than floating to the top.
+- Touched workflow: Occupancy source cards and Lighting rule device rows in
+  `custom_components/topomation/frontend/ht-location-inspector.ts`.
 
 ## Current Sprint
 

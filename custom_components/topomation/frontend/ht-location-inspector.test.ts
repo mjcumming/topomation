@@ -1034,7 +1034,7 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect((estimatedCard!.textContent || "")).to.include("Device class: occupancy");
   });
 
-  it("lists configured occupancy source cards before unconfigured cards", async () => {
+  it("keeps occupancy source cards alphabetical when configured", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>): Promise<T> => {
         if (request.type === "config/entity_registry/list") return [] as T;
@@ -1102,7 +1102,7 @@ describe("HtLocationInspector occupancy source composer", () => {
     const alphaIdx = cards.findIndex((row) => (row.textContent || "").includes("Alpha Motion"));
     expect(zebraIdx).to.be.at.least(0);
     expect(alphaIdx).to.be.at.least(0);
-    expect(zebraIdx).to.be.lessThan(alphaIdx);
+    expect(alphaIdx).to.be.lessThan(zebraIdx);
   });
 
   it("shows only core detection entities in area source candidates while keeping generic switches in Add Source", async () => {
@@ -6439,7 +6439,7 @@ describe("HtLocationInspector WIAB configuration", () => {
     );
   });
 
-  it("renders configured lighting entities first when a persisted rule is clean", async () => {
+  it("keeps lighting entities alphabetical for clean and dirty persisted rules", async () => {
     const persistedRules = [
       {
         id: "rule_existing",
@@ -6517,7 +6517,7 @@ describe("HtLocationInspector WIAB configuration", () => {
     const row0 = element.shadowRoot?.querySelector(
       '[data-testid="action-rule-rule_existing-device-row-0"]'
     );
-    expect(row0?.textContent || "").to.include("light.kitchen_island");
+    expect(row0?.textContent || "").to.include("light.kitchen_ceiling");
 
     const persistedRow = element.shadowRoot?.querySelector(
       '[data-testid="action-rule-rule_existing"]'

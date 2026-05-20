@@ -81,6 +81,33 @@ Run the rows that match the touched workflow.
 
 ## 6. Release Records
 
+### 2026-05-20 - v0.3.9 stable automation list ordering
+
+1. Commit under test: release-candidate worktree for Topomation `0.3.9`.
+2. Frontend bundle rebuilt from that commit: yes; `npm run build` published the
+   updated runtime bundle before release validation.
+3. Touched workflow list:
+   - Occupancy source card list ordering while selecting/deselecting sources.
+   - Lighting rule device row ordering while including/excluding lights in a rule.
+   - Release metadata/version synchronization for Topomation `0.3.9`.
+4. Commands to run:
+   - `npm run test:unit -- ht-location-inspector.test.ts`
+   - `npm run build`
+   - `./scripts/test-comprehensive.sh`
+   - `make test-release-live`
+   - `python scripts/verify-version-sync.py`
+5. Outcome:
+   - Occupancy source card list ordering: **PASS** (`ht-location-inspector.test.ts`
+     `98 passed`; 2026-05-20).
+   - Lighting rule device row ordering: **PASS** (same frontend suite;
+     2026-05-20).
+   - Release metadata/version sync: **PASS** (`Version sync ok: 0.3.9`;
+     2026-05-20).
+   - Local comprehensive gate: **PASS** (`make test-release-live` comprehensive
+     matrix; 2026-05-20).
+   - Live HA managed-action contract/browser workflows: **PASS** (`2 passed`
+     contract, `6 passed` live Playwright; 2026-05-20).
+
 ### 2026-05-14 - v0.3.8 source-state UI and startup occupancy safeguards
 
 1. Commit under test: release-candidate worktree for Topomation `0.3.8`.

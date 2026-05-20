@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.9] - 2026-05-20
+
+### Changed
+
+- **Automation editor device lists**: Occupancy source cards and Lighting rule
+  light rows now stay alphabetical while items are selected or deselected, so
+  editing no longer moves the row under the cursor.
+
 ## [0.3.8] - 2026-05-14
 
 ### Fixed

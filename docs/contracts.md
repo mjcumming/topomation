@@ -503,6 +503,10 @@ Additional save points:
     controls (`Save rule` / `Update rule` / `Discard edits` / `Remove rule` /
     `Delete rule`) as applicable.
   - no silent auto-save for user-authored policy/config edits in these tabs.
+- Device and source list ordering:
+  - editable device/source rows remain alphabetical by display name.
+  - selected, included, or configured rows are highlighted in place; they must
+    not float ahead of unselected rows while the user is editing.
 - Rule-card destructive-control gating:
   - unsaved draft rule rows must not render `Delete rule`
   - unsaved drafts expose `Save rule` + `Remove rule`
