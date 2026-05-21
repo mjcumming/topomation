@@ -1047,14 +1047,16 @@ class TopomationManagedActions:
                 normalized_ambient_condition = "any"
 
         if "on_occupied" in trigger_types:
-            if normalized_must_be_occupied is False:
+            # "occupied" / "vacant" here guard ambient edges when both families
+            # are present. Reject/strip only same-family-only occupancy guards.
+            if normalized_must_be_occupied is False and not has_ambient_trigger:
                 raise ValueError("on_occupied rules cannot require vacancy")
-            if normalized_must_be_occupied is True:
+            if normalized_must_be_occupied is True and not has_ambient_trigger:
                 normalized_must_be_occupied = None
         if "on_vacant" in trigger_types:
-            if normalized_must_be_occupied is True:
+            if normalized_must_be_occupied is True and not has_ambient_trigger:
                 raise ValueError("on_vacant rules cannot require occupancy")
-            if normalized_must_be_occupied is False:
+            if normalized_must_be_occupied is False and not has_ambient_trigger:
                 normalized_must_be_occupied = None
 
         return _CompiledManagedRule(

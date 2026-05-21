@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.10] - 2026-05-20
+
+### Fixed
+
+- **Lighting ambient triggers**: Mixed occupancy + ambient-light rules now keep
+  the "Only if room is occupied/vacant" guard when saved, so ambient-light
+  automations no longer revert to "Any" after update.
+
 ## [0.3.9] - 2026-05-20
 
 ### Changed
