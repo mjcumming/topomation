@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.11] - 2026-05-21
+
+### Changed
+
+- **Add Structure dialog**: polished the create/edit structure modal with themed
+  header guidance, clearer `Add Structure` / `Edit Structure` titling, and
+  visible Save/Cancel actions using Home Assistant dialog button slots.
+
 ## [0.3.10] - 2026-05-20
 
 ### Fixed

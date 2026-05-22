@@ -66,7 +66,7 @@ describe("HtLocationDialog", () => {
     await element.updateComplete;
 
     const cancelButton = element.shadowRoot?.querySelector(
-      'ha-button[slot="secondaryAction"]'
+      'mwc-button[slot="secondaryAction"]'
     ) as HTMLElement | null;
     expect(cancelButton).to.exist;
 

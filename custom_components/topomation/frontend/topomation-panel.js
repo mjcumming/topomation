@@ -12433,38 +12433,55 @@ const De = class De extends ft {
         .open=${this.open}
         data-testid="location-dialog"
         @closed=${this._handleClosed}
-        .heading=${this.location ? "Edit Location" : "New Location"}
+        .heading=${this.location ? "Edit Structure" : "Add Structure"}
       >
         <div class="dialog-content">
+          <div class="dialog-hero">
+            <div class="hero-icon" aria-hidden="true">
+              <ha-icon icon=${this.location ? "mdi:pencil-outline" : "mdi:shape-plus"}></ha-icon>
+            </div>
+            <div>
+              <div class="hero-title">
+                ${this.location ? "Update this structure" : "Create a new topology structure"}
+              </div>
+              <div class="hero-copy">
+                Choose where it belongs in the home topology, then save it into Topomation.
+              </div>
+            </div>
+          </div>
+
           ${this._error ? g`
             <div class="error-message">${this._error}</div>
           ` : ""}
 
-        <ha-form
-            .hass=${this.hass}
-            .data=${this._config}
-            .schema=${t}
-            .computeLabel=${this._computeLabel}
-            @value-changed=${this._handleValueChanged}
-          ></ha-form>
+          <div class="form-card">
+            <ha-form
+              .hass=${this.hass}
+              .data=${this._config}
+              .schema=${t}
+              .computeLabel=${this._computeLabel}
+              @value-changed=${this._handleValueChanged}
+            ></ha-form>
+          </div>
         </div>
 
-        <ha-button
+        <mwc-button
           slot="secondaryAction"
-          .dialogAction=${"cancel"}
+          dialogAction="cancel"
           @click=${this._handleCancel}
-          ?disabled=${this._submitting}
+          .disabled=${this._submitting}
         >
           Cancel
-        </ha-button>
-        <ha-button
+        </mwc-button>
+        <mwc-button
           slot="primaryAction"
-          .dialogAction=${"confirm"}
+          dialogAction="confirm"
+          raised
           @click=${this._handleSubmit}
-          ?disabled=${!this._isValid() || this._submitting}
+          .disabled=${!this._isValid() || this._submitting}
         >
-          ${this._submitting ? "Saving..." : this.location ? "Save" : "Create"}
-        </ha-button>
+          ${this._submitting ? "Saving..." : "Save"}
+        </mwc-button>
       </ha-dialog>
     `;
   }
@@ -12662,11 +12679,68 @@ De.properties = {
   Ie,
   ie`
       ha-dialog {
-        --mdc-dialog-min-width: 500px;
+        --mdc-dialog-min-width: 520px;
+        --mdc-dialog-max-width: 620px;
       }
 
       .dialog-content {
-        padding: 16px 24px;
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+        padding: 8px 24px 20px;
+      }
+
+      .dialog-hero {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 14px;
+        align-items: center;
+        padding: 16px;
+        border: 1px solid rgba(var(--rgb-primary-color), 0.24);
+        border-radius: 16px;
+        background:
+          linear-gradient(
+            135deg,
+            rgba(var(--rgb-primary-color), 0.14),
+            rgba(var(--rgb-success-color), 0.08)
+          ),
+          var(--card-background-color);
+      }
+
+      .hero-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 44px;
+        height: 44px;
+        border-radius: 14px;
+        background: var(--primary-color);
+        color: var(--text-primary-color, white);
+        box-shadow: 0 8px 20px rgba(var(--rgb-primary-color), 0.28);
+      }
+
+      .hero-icon ha-icon {
+        --mdc-icon-size: 24px;
+        color: var(--primary-background-color, white);
+      }
+
+      .hero-title {
+        color: var(--primary-text-color);
+        font-size: 16px;
+        font-weight: 600;
+        line-height: 1.25;
+      }
+
+      .hero-copy {
+        color: var(--secondary-text-color);
+        font-size: 13px;
+        line-height: 1.4;
+        margin-top: 4px;
+      }
+
+      .form-card {
+        padding: 4px 0 0;
+        border-top: 1px solid var(--divider-color);
       }
 
       .error-message {
@@ -12674,12 +12748,28 @@ De.properties = {
         padding: 8px 16px;
         background: rgba(var(--rgb-error-color), 0.1);
         border-radius: 4px;
-        margin-bottom: 16px;
+        margin-bottom: 0;
+      }
+
+      mwc-button[slot="primaryAction"] {
+        --mdc-theme-primary: var(--primary-color);
+      }
+
+      mwc-button[slot="secondaryAction"] {
+        --mdc-theme-primary: var(--primary-color);
       }
 
       @media (max-width: 600px) {
         ha-dialog {
           --mdc-dialog-min-width: 90vw;
+        }
+
+        .dialog-content {
+          padding: 8px 20px 18px;
+        }
+
+        .dialog-hero {
+          grid-template-columns: 1fr;
         }
       }
     `
