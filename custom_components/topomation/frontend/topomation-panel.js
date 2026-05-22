@@ -12485,15 +12485,14 @@ const De = class De extends ft {
           ` : ""}
 
           <div class="field">
-            <label class="field-label" for="location-icon">Location Icon (optional)</label>
-            <input
+            <ha-icon-picker
               id="location-icon"
-              class="field-control"
-              type="text"
-              placeholder="mdi:stairs"
+              class="icon-picker-control"
+              .hass=${this.hass}
+              .label=${"Location Icon (optional)"}
               .value=${this._config.icon || ""}
-              @input=${this._handleIconInput}
-            />
+              @value-changed=${this._handleIconChanged}
+            ></ha-icon-picker>
           </div>
 
           <div class="dialog-actions">
@@ -12654,6 +12653,14 @@ const De = class De extends ft {
       icon: e || void 0
     }, this._error = void 0;
   }
+  _handleIconChanged(t) {
+    var i;
+    const e = String(((i = t.detail) == null ? void 0 : i.value) || "").trim();
+    this._config = {
+      ...this._config,
+      icon: e || void 0
+    }, this._error = void 0;
+  }
   _isValid() {
     return !!this._config.name && !!this._config.type;
   }
@@ -12800,6 +12807,11 @@ De.properties = {
         border-bottom-color: var(--primary-color);
         box-shadow: inset 0 -1px 0 var(--primary-color);
         outline: none;
+      }
+
+      .icon-picker-control {
+        display: block;
+        --mdc-theme-primary: var(--primary-color);
       }
 
       .dialog-actions {

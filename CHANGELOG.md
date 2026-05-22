@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.13] - 2026-05-22
+
+### Changed
+
+- **Add Structure dialog**: location icon selection now uses Home Assistant's
+  `ha-icon-picker` instead of a plain text field, matching the standard area
+  icon picker UX while keeping native dialog fields and in-dialog Cancel/Save.
+
 ## [0.3.12] - 2026-05-22
 
 ### Fixed

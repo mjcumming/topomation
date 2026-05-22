@@ -89,13 +89,40 @@ describe("HtLocationDialog", () => {
     expect(element.shadowRoot?.querySelector("ha-form")).to.equal(null);
     expect(element.shadowRoot?.querySelector("#location-name")).to.exist;
     expect(element.shadowRoot?.querySelector("#location-type")).to.exist;
-    expect(element.shadowRoot?.querySelector("#location-icon")).to.exist;
+    expect(element.shadowRoot?.querySelector("ha-icon-picker#location-icon")).to.exist;
 
     const actionLabels = Array.from(
       element.shadowRoot?.querySelectorAll(".dialog-actions .button") || []
     ).map((button) => (button.textContent || "").trim());
 
     expect(actionLabels).to.deep.equal(["Cancel", "Save"]);
+  });
+
+  it("uses the icon picker value for location icons", async () => {
+    const element = await fixture<any>(html`
+      <ht-location-dialog
+        .hass=${createHass()}
+        .open=${true}
+        .locations=${[]}
+      ></ht-location-dialog>
+    `);
+    await element.updateComplete;
+
+    const iconPicker = element.shadowRoot?.querySelector(
+      "ha-icon-picker#location-icon"
+    ) as HTMLElement | null;
+    expect(iconPicker).to.exist;
+
+    iconPicker?.dispatchEvent(
+      new CustomEvent("value-changed", {
+        detail: { value: "mdi:stairs" },
+        bubbles: true,
+        composed: true,
+      })
+    );
+    await element.updateComplete;
+
+    expect(element._config.icon).to.equal("mdi:stairs");
   });
 
   it("hides parent selector for root-only wrappers and submits null parent", async () => {

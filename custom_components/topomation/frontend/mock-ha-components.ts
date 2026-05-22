@@ -929,6 +929,103 @@ export class MockHaSelect extends LitElement {
 }
 
 // ============================================================================
+// MockHaIconPicker
+// ============================================================================
+
+export class MockHaIconPicker extends LitElement {
+  @property({ attribute: false }) hass: any;
+  @property({ type: String }) value = "";
+  @property({ type: String }) label = "";
+
+  static properties = {
+    hass: { attribute: false },
+    value: { type: String },
+    label: { type: String },
+  };
+
+  static styles = css`
+    :host {
+      display: block;
+    }
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--secondary-text-color, #757575);
+      margin-bottom: 6px;
+    }
+    .picker {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      min-height: 44px;
+      border: 0;
+      border-bottom: 1px solid rgba(3, 169, 244, 0.22);
+      border-radius: 4px 4px 0 0;
+      background: rgba(3, 169, 244, 0.05);
+      color: var(--primary-text-color, #212121);
+      padding: 8px 12px;
+      box-sizing: border-box;
+    }
+    ha-icon {
+      color: var(--secondary-text-color, #757575);
+    }
+    select {
+      width: 100%;
+      min-width: 0;
+      border: none;
+      background: transparent;
+      color: inherit;
+      font: inherit;
+      outline: none;
+    }
+  `;
+
+  private _iconOptions() {
+    return [
+      { value: "", label: "No icon" },
+      { value: "mdi:home", label: "mdi:home" },
+      { value: "mdi:stairs", label: "mdi:stairs" },
+      { value: "mdi:sofa", label: "mdi:sofa" },
+      { value: "mdi:bed", label: "mdi:bed" },
+      { value: "mdi:silverware-fork-knife", label: "mdi:silverware-fork-knife" },
+      { value: "mdi:garage", label: "mdi:garage" },
+      { value: "mdi:pine-tree", label: "mdi:pine-tree" },
+      { value: "mdi:office-building", label: "mdi:office-building" },
+    ];
+  }
+
+  render() {
+    const currentIcon = this.value || "mdi:shape-outline";
+    return html`
+      ${this.label ? html`<label>${this.label}</label>` : ""}
+      <div class="picker">
+        <ha-icon .icon=${currentIcon}></ha-icon>
+        <select
+          .value=${this.value || ""}
+          @change=${(e: Event) => {
+            this.value = (e.target as HTMLSelectElement).value;
+            this.dispatchEvent(
+              new CustomEvent("value-changed", {
+                detail: { value: this.value },
+                bubbles: true,
+                composed: true,
+              })
+            );
+          }}
+        >
+          ${this._iconOptions().map((option) => html`
+            <option value=${option.value}>${option.label}</option>
+          `)}
+        </select>
+      </div>
+    `;
+  }
+}
+
+// ============================================================================
 // MockHaEntityPicker
 // ============================================================================
 
@@ -1010,6 +1107,7 @@ const MOCK_COMPONENTS: Array<{ name: string; cls: CustomElementConstructor }> = 
   { name: "ha-radio", cls: MockHaRadio },
   { name: "ha-formfield", cls: MockHaFormfield },
   { name: "ha-select", cls: MockHaSelect },
+  { name: "ha-icon-picker", cls: MockHaIconPicker },
   { name: "ha-entity-picker", cls: MockHaEntityPicker },
   { name: "ha-button", cls: MockHaButton },
   { name: "mwc-button", cls: MockMwcButton },

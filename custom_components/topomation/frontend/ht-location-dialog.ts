@@ -115,6 +115,11 @@ export class HtLocationDialog extends LitElement {
         outline: none;
       }
 
+      .icon-picker-control {
+        display: block;
+        --mdc-theme-primary: var(--primary-color);
+      }
+
       .dialog-actions {
         display: flex;
         justify-content: flex-end;
@@ -279,15 +284,14 @@ export class HtLocationDialog extends LitElement {
           ` : ""}
 
           <div class="field">
-            <label class="field-label" for="location-icon">Location Icon (optional)</label>
-            <input
+            <ha-icon-picker
               id="location-icon"
-              class="field-control"
-              type="text"
-              placeholder="mdi:stairs"
+              class="icon-picker-control"
+              .hass=${this.hass}
+              .label=${"Location Icon (optional)"}
               .value=${this._config.icon || ""}
-              @input=${this._handleIconInput}
-            />
+              @value-changed=${this._handleIconChanged}
+            ></ha-icon-picker>
           </div>
 
           <div class="dialog-actions">
@@ -514,6 +518,15 @@ export class HtLocationDialog extends LitElement {
 
   private _handleIconInput(ev: Event) {
     const icon = (ev.currentTarget as HTMLInputElement).value.trim();
+    this._config = {
+      ...this._config,
+      icon: icon || undefined
+    };
+    this._error = undefined;
+  }
+
+  private _handleIconChanged(ev: CustomEvent) {
+    const icon = String(ev.detail?.value || "").trim();
     this._config = {
       ...this._config,
       icon: icon || undefined
