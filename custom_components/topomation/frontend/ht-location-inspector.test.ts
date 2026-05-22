@@ -5082,6 +5082,132 @@ describe("HtLocationInspector WIAB configuration", () => {
     ).to.equal(null);
   });
 
+  it("saves and discards property recent activity settings", async () => {
+    const callWsRequests: Array<Record<string, any>> = [];
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>): Promise<T> => {
+        callWsRequests.push(request);
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        if (request.type === "topomation/locations/set_module_config") {
+          return { success: true } as T;
+        }
+        return {} as T;
+      },
+      connection: {},
+      states: {
+        "binary_sensor.queen_recent_activity": {
+          entity_id: "binary_sensor.queen_recent_activity",
+          state: "off",
+          attributes: {
+            recently_active: false,
+            location_id: "property_queen",
+          },
+        },
+      },
+      areas: {},
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const property = structuredClone(baseLocation);
+    property.id = "property_queen";
+    property.name = "Queen";
+    property.parent_id = null;
+    property.modules = {
+      _meta: { type: "property" },
+      occupancy: {
+        enabled: true,
+        default_timeout: 300,
+        default_trailing_timeout: 120,
+        occupancy_sources: [],
+      },
+      recent_activity: {
+        version: 1,
+        enabled: false,
+        window_hours: 48,
+        include_descendant_occupancy: true,
+      },
+    };
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${property}
+        .allLocations=${[property]}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    const enabledToggle = element.shadowRoot!.querySelector(
+      '[data-testid="recent-activity-enabled-toggle"]'
+    ) as HTMLInputElement | null;
+    expect(enabledToggle).to.exist;
+    enabledToggle!.checked = true;
+    enabledToggle!.dispatchEvent(new Event("change", { bubbles: true }));
+    await element.updateComplete;
+
+    const windowInput = element.shadowRoot!.querySelector(
+      '[data-testid="recent-activity-window-hours"]'
+    ) as HTMLInputElement | null;
+    expect(windowInput).to.exist;
+    windowInput!.value = "24";
+    windowInput!.dispatchEvent(new Event("change", { bubbles: true }));
+    await element.updateComplete;
+
+    const saveButton = element.shadowRoot!.querySelector(
+      '[data-testid="recent-activity-save-button"]'
+    ) as HTMLButtonElement | null;
+    expect(saveButton).to.exist;
+    saveButton!.click();
+
+    await waitUntil(
+      () =>
+        callWsRequests.some(
+          (request) =>
+            request.type === "topomation/locations/set_module_config" &&
+            request.module_id === "recent_activity"
+        ),
+      "recent activity save did not call set_module_config"
+    );
+
+    const saveRequest = callWsRequests.find(
+      (request) =>
+        request.type === "topomation/locations/set_module_config" &&
+        request.module_id === "recent_activity"
+    );
+    expect(saveRequest).to.deep.include({
+      location_id: "property_queen",
+      module_id: "recent_activity",
+    });
+    expect(saveRequest?.config).to.deep.equal({
+      version: 1,
+      enabled: true,
+      window_hours: 24,
+      include_descendant_occupancy: true,
+    });
+    await element.updateComplete;
+
+    windowInput!.value = "12";
+    windowInput!.dispatchEvent(new Event("change", { bubbles: true }));
+    await element.updateComplete;
+
+    const section = element.shadowRoot!.querySelector(
+      '[data-testid="recent-activity-section"]'
+    ) as HTMLElement | null;
+    const discardButton = Array.from(section?.querySelectorAll("button") || []).find(
+      (button) => button.textContent?.trim() === "Discard"
+    ) as HTMLButtonElement | undefined;
+    expect(discardButton).to.exist;
+    discardButton!.click();
+    await element.updateComplete;
+
+    expect(windowInput!.value).to.equal("24");
+    expect(
+      element.shadowRoot!.querySelector('[data-testid="recent-activity-save-button"]')
+    ).to.equal(null);
+  });
+
   it("renders room explainability with current state and expandable recent changes", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>) => {
@@ -7056,7 +7182,7 @@ describe("HtLocationInspector WIAB configuration", () => {
 });
 
 describe("HtLocationInspector structure host managed-shadow enumeration", () => {
-  const metaTypes = ["property", "building", "grounds"] as const;
+  const metaTypes = ["building", "grounds"] as const;
 
   type MetaType = (typeof metaTypes)[number];
 
@@ -7492,7 +7618,7 @@ describe("HtLocationInspector structure host managed-shadow enumeration", () => 
 
   // ADR-HA-087: structural hosts list only devices in their own HA area or
   // shadow area — never devices in descendant room areas.
-  it("property host excludes descendant room media_players from media rule targets", async () => {
+  it("property host hides direct managed-action tabs", async () => {
     const hostId = "prop_scope_test";
     const shadowId = "shadow_prop_scope_test";
     const roomId = "room_prop_scope_test";
@@ -7598,42 +7724,9 @@ describe("HtLocationInspector structure host managed-shadow enumeration", () => 
     `);
     await element.updateComplete;
 
-    await waitUntil(
-      () => {
-        const section = element.shadowRoot?.querySelector('[data-testid="actions-rules-section"]');
-        const text = section?.textContent || "";
-        return !text.includes("No compatible media devices found in this location.");
-      },
-      "media entity pool stayed empty for property scope test"
-    );
-
-    const addRuleButton = element.shadowRoot?.querySelector(
-      '[data-testid="action-rule-add"]'
-    ) as HTMLButtonElement | null;
-    expect(addRuleButton).to.exist;
-    addRuleButton!.click();
-    await element.updateComplete;
-
-    await waitUntil(
-      () => {
-        const row = element.shadowRoot!.querySelector(".dusk-block-row") as HTMLElement | null;
-        return Boolean(
-          row?.querySelector(
-            `input[type="radio"][name^="media-target-"][value="media_player.property_shadow_receiver"]`
-          )
-        );
-      },
-      "property media targets did not include the shadow-area receiver"
-    );
-
-    const row = element.shadowRoot!.querySelector(".dusk-block-row") as HTMLElement | null;
-    const descendantRadio = row?.querySelector(
-      `input[type="radio"][name^="media-target-"][value="media_player.room_descendant_speaker"]`
-    );
-    expect(
-      descendantRadio,
-      "property media targets should NOT list descendant room media_players (ADR-HA-087)"
-    ).to.equal(null);
+    expect(element.shadowRoot?.querySelector('[data-testid="actions-rules-section"]')).to.equal(null);
+    expect(element.shadowRoot?.querySelector('[data-testid="action-rule-add"]')).to.equal(null);
+    expect(element.shadowRoot?.textContent || "").to.contain("Recent Activity");
   });
 });
 

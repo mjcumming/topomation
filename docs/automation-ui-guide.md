@@ -1,8 +1,8 @@
 # Automation UI Guide (Workspace + Inspector)
 
-**Last reviewed**: 2026-04-13  
+**Last reviewed**: 2026-05-22
 **Status**: Active (design baseline)  
-**Authority**: ADR-HA-055, ADR-HA-056, ADR-HA-060, ADR-HA-066, ADR-HA-068, ADR-HA-069, ADR-HA-080, ADR-HA-087, ADR-HA-089, ADR-HA-091 + `docs/contracts.md`
+**Authority**: ADR-HA-055, ADR-HA-056, ADR-HA-060, ADR-HA-066, ADR-HA-068, ADR-HA-069, ADR-HA-080, ADR-HA-087, ADR-HA-089, ADR-HA-091, ADR-HA-096 + `docs/contracts.md`
 
 This guide defines the intended user interaction model for Topomation's
 automation workspace and inspector tabs.
@@ -33,15 +33,23 @@ These locations use **derived** occupancy surfaces (summary or occupancy groups)
 not room-style source lists on structural hosts—see `docs/contracts.md` and
 ADR-HA-073 (initial intent) as superseded by **ADR-HA-087** (current tab policy).
 
-1. **Tabs shown**: `Occupancy Groups`, `Ambient`, `Lighting`, `Appliances`, `Media`, `HVAC`, `Vacuum`.
-2. **Device and lux enumeration** (Ambient selector, Lighting/Appliances/Media/HVAC/Vacuum
+1. **Property tabs shown** (ADR-HA-096 target): property is a site-context
+   surface. It shows Recent Activity configuration/status, `Occupancy Groups`
+   where applicable, `Ambient`, and structure/rollup summary. It does **not**
+   show direct managed-action tabs (`Lighting`, `Appliances`, `Media`, `HVAC`,
+   `Vacuum`).
+2. **Non-property structural tabs shown**: `Occupancy Groups`, `Ambient`,
+   `Lighting`, `Appliances`, `Media`, `HVAC`, `Vacuum`.
+3. **Device and lux enumeration** (Ambient selector, Lighting/Appliances/Media/HVAC/Vacuum
    action targets): the host’s `entity_ids` and `ha_area_id` plus the **managed
    shadow** wrapper’s `ha_area_id` and `entity_ids` (`_meta.shadow_area_id` on the
    host). **No descendant walk** — devices in child-room HA areas are authored
    from the room that owns them (ADR-HA-049, ADR-HA-087).
-3. **ADR-HA-073** originally hid automation tabs on structural nodes; **ADR-HA-087**
-   restores them while scoping target-device enumeration to the host's own HA area
-   plus its managed shadow area. Rollup-first occupancy UX is preserved.
+4. **ADR-HA-073** originally hid automation tabs on structural nodes; **ADR-HA-087**
+   restored them while scoping target-device enumeration to the host's own HA area
+   plus its managed shadow area. **ADR-HA-096** narrows this for `property` only:
+   property is context, while concrete descendant locations own device actions.
+   Rollup-first occupancy UX is preserved.
 
 ## 2. Header Status Behavior
 
@@ -215,15 +223,24 @@ Rule-card requirements:
 9. Current backend-backed Lighting rules support at most:
    - one occupancy-family trigger
    - one ambient-family trigger
-10. `Time window` is a separate section with pill-style choices:
+10. When the selected location belongs to a property with Recent Activity
+    enabled, Lighting may show a rule-level property activity option equivalent
+    to `Require property activity`.
+    - It is a rule-level guard, not a per-action light option.
+    - It should be presented near rule conditions / `Only if` behavior.
+    - For dark-triggered rules, the backend compiler handles the additional
+      property-active wake path; the panel does not need to expose a third
+      trigger-family card in v1.
+    - No non-lighting rule tab exposes property activity in v1.
+11. `Time window` is a separate section with pill-style choices:
     - `Any time`
     - `Limit to a time range`
     Begin / End inputs appear only when the time range option is active.
-11. One rule supports one optional time window only.
-12. Multi-band behavior is authored as multiple rules, typically via
+12. One rule supports one optional time window only.
+13. Multi-band behavior is authored as multiple rules, typically via
     `Duplicate rule`.
-13. Overlapping time windows are allowed.
-14. Actions editor uses a capability-based light device list:
+14. Overlapping time windows are allowed.
+15. Actions editor uses a capability-based light device list:
    - one row per compatible local `light.*` entity
    - rows stay alphabetical by display name even when included in the rule
    - row include toggles are multi-select and define the ordered action list for the rule
@@ -236,14 +253,14 @@ Rule-card requirements:
    - do not show `Only if off` for `turn_off`; do not preserve it for `toggle`
    - do not render a separate top-level `Device` + `Action` dropdown pair for
      Lighting rules.
-15. Duplicate-rule helper copy is placed with the rule footer controls, not in
+16. Duplicate-rule helper copy is placed with the rule footer controls, not in
     the middle of the editor body.
-16. Rule lifecycle controls:
+17. Rule lifecycle controls:
    - unsaved draft rows show `Save rule` + `Remove rule`
    - all Lighting rule cards also show `Duplicate rule`
    - persisted edited rows show `Update rule` + `Discard edits` + `Delete rule`
    - persisted clean rows show `Delete rule` + `Duplicate rule`
-17. Rule lifecycle controls are card-local; they are not split between tab-level
+18. Rule lifecycle controls are card-local; they are not split between tab-level
    buttons and rule-card buttons.
 
 Acceptance checks:
@@ -264,6 +281,9 @@ Acceptance checks:
 11. Lighting actions render capability-based device rows (dimmer/switch style),
    not a single `Device` + `Action` dropdown editor.
 12. One lighting rule can persist multiple action targets.
+13. `Require property activity` appears only for descendant rules under a
+    property with Recent Activity enabled, and it saves as a rule-level
+    condition/compile option.
 
 ## 11. Human Approval Gate for Ambiguity
 

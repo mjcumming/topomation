@@ -81,6 +81,45 @@ Run the rows that match the touched workflow.
 
 ## 6. Release Records
 
+### 2026-05-22 - v0.3.15 property recent activity gate
+
+1. Commit under test: release-candidate worktree for Topomation `0.3.15`.
+2. Frontend bundle rebuilt from that commit: yes; `npm run build` published the
+   updated runtime bundle before release validation, and `make test-release-live`
+   rebuilt it again during the final release gate.
+3. Touched workflow list:
+   - Property Recent Activity configuration save/discard flow.
+   - Lighting managed-rule create/update path with optional property-active
+     guard.
+   - Property structural-host automation tab scope.
+   - Recent-activity runtime refresh/expiry and binary sensor projection.
+   - Release metadata/version synchronization for Topomation `0.3.15`.
+4. Commands to run:
+   - `pytest -q --no-cov tests/test_recent_activity.py tests/test_managed_action_config_build_matrix.py`
+   - `cd custom_components/topomation/frontend && npm run test:unit`
+   - `cd custom_components/topomation/frontend && npm run build`
+   - `python scripts/verify-version-sync.py`
+   - `./scripts/test-comprehensive.sh`
+   - `make test-release-live`
+5. Outcome:
+   - Property Recent Activity configuration save/discard flow: **PASS**
+     (`ht-location-inspector.test.ts` `95 passed`; 2026-05-22).
+   - Lighting managed-rule property-active guard: **PASS**
+     (`tests/test_managed_action_config_build_matrix.py`; 2026-05-22).
+   - Property structural-host automation tab scope: **PASS**
+     (`ht-location-inspector.test.ts`; 2026-05-22).
+   - Recent-activity runtime refresh/expiry and sensor projection: **PASS**
+     (`tests/test_recent_activity.py`; 2026-05-22).
+   - Release metadata/version sync: **PASS** (`Version sync ok: 0.3.15`;
+     2026-05-22).
+   - Local comprehensive gate: **PASS** (`./scripts/test-comprehensive.sh`;
+     backend `359 passed, 22 skipped`; Vitest `264 passed`; Web Test Runner
+     `205 passed`; Playwright `34 passed`; 2026-05-22).
+   - Live HA managed-action contract/browser workflows: **PASS**
+     (`make test-release-live`; local comprehensive matrix plus live
+     managed-action contract `2 passed` and live browser workflow `6 passed`;
+     2026-05-22).
+
 ### 2026-05-20 - v0.3.9 stable automation list ordering
 
 1. Commit under test: release-candidate worktree for Topomation `0.3.9`.

@@ -26,6 +26,7 @@ export interface TopomationActionRule {
   actions?: TopomationRuleAction[];
   ambient_condition?: ActionAmbientCondition;
   must_be_occupied?: boolean;
+  require_property_activity?: boolean;
   time_condition_enabled?: boolean;
   start_time?: string;
   end_time?: string;
@@ -235,6 +236,7 @@ export async function listTopomationActionRules(
             actions,
             ambient_condition: ambientCondition,
             must_be_occupied: normalizeMustBeOccupied(rule.must_be_occupied),
+            require_property_activity: Boolean(rule.require_property_activity),
             time_condition_enabled: Boolean(rule.time_condition_enabled),
             start_time:
               typeof rule.start_time === "string" && rule.start_time.length > 0
@@ -271,6 +273,7 @@ export async function createTopomationActionRule(
     actions?: TopomationRuleAction[];
     ambient_condition?: ActionAmbientCondition;
     must_be_occupied?: boolean;
+    require_property_activity?: boolean;
     time_condition_enabled?: boolean;
     start_time?: string;
     end_time?: string;
@@ -307,6 +310,7 @@ export async function createTopomationActionRule(
       ...(typeof args.must_be_occupied === "boolean"
         ? { must_be_occupied: args.must_be_occupied }
         : {}),
+      ...(args.require_property_activity ? { require_property_activity: true } : {}),
       time_condition_enabled: Boolean(args.time_condition_enabled),
       start_time: args.start_time,
       end_time: args.end_time,
@@ -340,6 +344,7 @@ export async function createTopomationActionRule(
         actions,
         ambient_condition: ambientCondition,
         must_be_occupied: normalizeMustBeOccupied(response.rule.must_be_occupied),
+        require_property_activity: Boolean(response.rule.require_property_activity),
         time_condition_enabled: Boolean(response.rule.time_condition_enabled),
         start_time:
           typeof response.rule.start_time === "string" && response.rule.start_time.length > 0

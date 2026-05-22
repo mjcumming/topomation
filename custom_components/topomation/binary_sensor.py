@@ -18,6 +18,8 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
+from .recent_activity import EVENT_RECENT_ACTIVITY_CHANGED
+from .recent_activity import MODULE_ID as RECENT_ACTIVITY_MODULE_ID
 from .sync_manager import _is_shadow_host
 
 if TYPE_CHECKING:
@@ -65,6 +67,40 @@ def _remove_occupancy_entity_for_location(
     return entity_id
 
 
+def _location_type(location: object) -> str:
+    """Return normalized integration location type."""
+    modules = getattr(location, "modules", {}) or {}
+    if not isinstance(modules, dict):
+        return ""
+    meta = modules.get("_meta", {})
+    if not isinstance(meta, dict):
+        return ""
+    return str(meta.get("type", "") or "").strip().lower()
+
+
+def _remove_recent_activity_entity_for_location(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    location_id: str,
+) -> str | None:
+    """Remove recent-activity entity registry entry for one property ID."""
+    registry = er.async_get(hass)
+    unique_id = f"recent_activity_{location_id}"
+
+    entity_id = registry.async_get_entity_id("binary_sensor", DOMAIN, unique_id)
+    if entity_id is None:
+        for reg_entry in er.async_entries_for_config_entry(registry, entry.entry_id):
+            if str(reg_entry.unique_id or "") == unique_id:
+                entity_id = reg_entry.entity_id
+                break
+
+    if not entity_id:
+        return None
+
+    registry.async_remove(entity_id)
+    return entity_id
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -78,14 +114,26 @@ async def async_setup_entry(
     bus = kernel["event_bus"]
     modules = kernel["modules"]
     occupancy_module = modules.get("occupancy")
+    recent_activity_module = modules.get(RECENT_ACTIVITY_MODULE_ID)
 
     # Create occupancy sensor for each non-host location (areas, subareas, explicit roots, …)
-    entities: list[OccupancyBinarySensor] = []
+    entities: list[BinarySensorEntity] = []
     sensors_by_location_id: dict[str, OccupancyBinarySensor] = {}
+    recent_activity_sensors_by_location_id: dict[str, PropertyRecentActivityBinarySensor] = {}
     for location in loc_mgr.all_locations():
         if _is_shadow_host(location):
+            if _location_type(location) == "property":
+                recent_activity_sensor = PropertyRecentActivityBinarySensor(
+                    location.id,
+                    location.name,
+                    bus,
+                    recent_activity_module=recent_activity_module,
+                    ha_area_id=_location_ha_area_id(location),
+                )
+                recent_activity_sensors_by_location_id[location.id] = recent_activity_sensor
+                entities.append(recent_activity_sensor)
             continue
-        sensor = OccupancyBinarySensor(
+        occupancy_sensor = OccupancyBinarySensor(
             location.id,
             location.name,
             bus,
@@ -97,8 +145,8 @@ async def async_setup_entry(
                 .get(current_location_id, [])
             ),
         )
-        sensors_by_location_id[location.id] = sensor
-        entities.append(sensor)
+        sensors_by_location_id[location.id] = occupancy_sensor
+        entities.append(occupancy_sensor)
 
     async_add_entities(entities)
     _LOGGER.info("Created %d binary sensors", len(entities))
@@ -116,9 +164,22 @@ async def async_setup_entry(
         if location is None:
             return
         if _is_shadow_host(location):
+            if (
+                _location_type(location) == "property"
+                and location_id not in recent_activity_sensors_by_location_id
+            ):
+                recent_activity_sensor = PropertyRecentActivityBinarySensor(
+                    location.id,
+                    location.name,
+                    bus,
+                    recent_activity_module=recent_activity_module,
+                    ha_area_id=_location_ha_area_id(location),
+                )
+                recent_activity_sensors_by_location_id[location_id] = recent_activity_sensor
+                async_add_entities([recent_activity_sensor])
             return
 
-        sensor = OccupancyBinarySensor(
+        occupancy_sensor = OccupancyBinarySensor(
             location.id,
             location.name,
             bus,
@@ -130,8 +191,8 @@ async def async_setup_entry(
                 .get(current_location_id, [])
             ),
         )
-        sensors_by_location_id[location_id] = sensor
-        async_add_entities([sensor])
+        sensors_by_location_id[location_id] = occupancy_sensor
+        async_add_entities([occupancy_sensor])
 
     @callback
     def _on_location_deleted(event: Event) -> None:
@@ -141,11 +202,23 @@ async def async_setup_entry(
             return
 
         sensors_by_location_id.pop(location_id, None)
+        recent_activity_sensors_by_location_id.pop(location_id, None)
         removed_entity = _remove_occupancy_entity_for_location(hass, entry, location_id)
         if removed_entity:
             _LOGGER.debug(
                 "Removed occupancy entity %s for deleted location %s",
                 removed_entity,
+                location_id,
+            )
+        removed_activity_entity = _remove_recent_activity_entity_for_location(
+            hass,
+            entry,
+            location_id,
+        )
+        if removed_activity_entity:
+            _LOGGER.debug(
+                "Removed recent activity entity %s for deleted location %s",
+                removed_activity_entity,
                 location_id,
             )
 
@@ -329,4 +402,118 @@ class OccupancyBinarySensor(BinarySensorEntity):
         self._bus.subscribe(
             on_occupancy_signal,
             EventFilter(event_type="occupancy.signal"),
+        )
+
+
+class PropertyRecentActivityBinarySensor(BinarySensorEntity):
+    """Binary sensor representing property recent activity."""
+
+    _attr_should_poll = False
+    _attr_icon = "mdi:home-clock-outline"
+
+    def __init__(
+        self,
+        location_id: str,
+        location_name: str,
+        bus: EventBus,
+        recent_activity_module: Any | None = None,
+        ha_area_id: str | None = None,
+    ) -> None:
+        """Initialize the sensor."""
+        self._location_id = location_id
+        self._location_name = location_name
+        self._bus = bus
+        self._recent_activity_module = recent_activity_module
+        self._ha_area_id = ha_area_id
+
+        self._attr_unique_id = f"recent_activity_{location_id}"
+        self._attr_name = f"{location_name} Recent Activity"
+        if ha_area_id:
+            self._attr_suggested_area = ha_area_id
+
+        self._attr_is_on = False
+        self._attr_extra_state_attributes = {
+            "location_id": self._location_id,
+            "location_name": self._location_name,
+            "recently_active": False,
+        }
+
+    def _apply_state_payload(self, payload: Mapping[str, Any]) -> None:
+        """Apply recent-activity payload to HA entity fields."""
+        active = bool(payload.get("active", False))
+        self._attr_is_on = active
+        self._attr_extra_state_attributes = {
+            "location_id": self._location_id,
+            "location_name": self._location_name,
+            "recently_active": active,
+            "enabled": bool(payload.get("enabled", False)),
+            "window_hours": payload.get("window_hours"),
+            "last_activity_at": payload.get("last_activity_at"),
+            "active_until": payload.get("active_until"),
+            "reason": payload.get("reason"),
+            "source_location_id": payload.get("source_location_id"),
+            "source_id": payload.get("source_id"),
+            "previous_active": payload.get("previous_active"),
+        }
+
+    def _hydrate_from_module_state(self) -> bool:
+        """Initialize entity state from current recent-activity module state."""
+        if self._recent_activity_module is None:
+            return False
+        get_state = getattr(self._recent_activity_module, "get_state", None)
+        if not callable(get_state):
+            return False
+        try:
+            payload = get_state(self._location_id)
+        except Exception:  # pragma: no cover - defensive logging
+            _LOGGER.debug(
+                "Failed to hydrate recent activity for %s",
+                self._location_id,
+                exc_info=True,
+            )
+            return False
+        if not isinstance(payload, Mapping):
+            return False
+        self._apply_state_payload(payload)
+        self.async_write_ha_state()
+        return True
+
+    def _ensure_registry_area_assignment(self) -> None:
+        """Assign this entity to its HA area when location linkage exists."""
+        if not self._ha_area_id or self.hass is None or not self.entity_id:
+            return
+
+        registry = er.async_get(self.hass)
+        entry = registry.async_get(self.entity_id)
+        if entry is None or entry.area_id == self._ha_area_id:
+            return
+
+        try:
+            registry.async_update_entity(self.entity_id, area_id=self._ha_area_id)
+        except Exception:  # pragma: no cover - defensive logging
+            _LOGGER.debug(
+                "Failed to assign recent activity entity %s to area %s",
+                self.entity_id,
+                self._ha_area_id,
+                exc_info=True,
+            )
+
+    async def async_added_to_hass(self) -> None:
+        """Subscribe to recent-activity events when added."""
+        self._ensure_registry_area_assignment()
+        self._hydrate_from_module_state()
+
+        @callback
+        def on_recent_activity_changed(event: Event) -> None:
+            if event.location_id != self._location_id:
+                return
+            payload = event.payload
+            if not isinstance(payload, Mapping):
+                return
+            self._apply_state_payload(payload)
+            self.async_write_ha_state()
+
+        self._bus.subscribe(
+            on_recent_activity_changed,
+            EventFilter(event_type=EVENT_RECENT_ACTIVITY_CHANGED),
         )

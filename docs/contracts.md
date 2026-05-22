@@ -1,6 +1,6 @@
 # Contracts
 
-**Last reviewed**: 2026-04-26
+**Last reviewed**: 2026-05-22
 **Purpose**: canonical behavior contracts for Topomation runtime and panel actions.
 
 Use this file as the quick contract surface. Keep it synchronized with:
@@ -319,18 +319,22 @@ Additional save points:
     locations, but they do not expose a room-style source editor
   - structural occupancy is expected to roll up from descendant locations
 - Structural nodes are informational pages in the active inspector for **occupancy
-  rollup** (no direct source authoring on aggregate hosts), but they **do** expose
-  **Lighting**, **Appliances**, **Media**, and **HVAC** alongside **Occupancy**
-  (summary or groups) and **Ambient**:
+  rollup** (no direct source authoring on aggregate hosts). Action-tab scope is
+  split by node type:
+  - `property` is a site-context surface and follows **C-024**: it does not expose
+    direct managed-action tabs in the target v1 recent-activity design.
+  - `floor`, `building`, and `grounds` may expose **Lighting**, **Appliances**,
+    **Media**, and **HVAC** alongside **Occupancy** (summary or groups) and
+    **Ambient** when they have managed-shadow device containers.
   - `property`, `floor`, `building`, and `grounds` use the same managed-shadow
-    HA area as the device container for aggregate automation targets (ADR-HA-049,
-    ADR-HA-087)
+    HA area as the device container for aggregate automation targets when action
+    tabs are allowed on that host (ADR-HA-049, ADR-HA-087).
   - `property`, `floor`, `building`, and `grounds` may manage occupancy groups
-    for immediate child `area` locations only
+    for immediate child `area` locations only.
   - `building` and `grounds` still render derived-occupancy summary and not a
-    room-style source editor
+    room-style source editor.
   - whole-home/floor aggregate scenes may still be authored as normal Home
-    Assistant automations when operators prefer HA-native automation UI
+    Assistant automations when operators prefer HA-native automation UI.
 
 ## C-014 Inspector Draft Bar Contract
 
@@ -813,3 +817,77 @@ Additional save points:
 - HA occupancy binary sensors remain the public Home Assistant entity surface,
   but they are not the panel's primary runtime-state transport once C-023 is
   implemented.
+
+## C-024 Property Recent Activity Contract
+
+**Delivery status**: Target. This contract records the intended design from
+ADR-HA-096 and is not an implementation or release claim.
+
+- Recent activity is a property-level context, not occupancy.
+  - `occupied` remains the runtime answer to "is someone probably here now?"
+  - `recently_active` answers "has this property had qualifying human/use
+    evidence within the configured activity window?"
+- Recent activity ownership is property-only in v1:
+  - `property` nodes may configure and publish recent activity.
+  - `building`, `grounds`, `floor`, `area`, and `subarea` nodes must not expose
+    their own recent-activity window authoring in v1.
+  - descendant rules may consume the ancestor property's recent-activity state.
+- Property inspector target IA:
+  - property rows expose Recent Activity configuration/status.
+  - property rows retain Ambient configuration for inherited/site ambient use.
+  - property rows retain occupancy rollup, occupancy groups where applicable,
+    and structure summary/diagnostics.
+  - property rows do not expose direct managed-action tabs:
+    **Lighting**, **Appliances**, **Media**, **HVAC**, and **Vacuum** are hidden
+    on `property`.
+  - controllable devices that belong to the site should be authored from a
+    concrete descendant location such as `grounds`, `building`, exterior,
+    pathway, garage, room, or another modeled area/subarea.
+- Recent Activity configuration must include:
+  - enabled/disabled state.
+  - activity window duration.
+  - explicit qualifying evidence policy.
+- Recent Activity runtime status must expose enough state for UI and diagnostics:
+  - active/inactive.
+  - `last_activity_at` when known.
+  - `active_until` when active.
+  - latest qualifying reason/source when available.
+- Qualifying evidence policy:
+  - descendant occupancy events may refresh property activity.
+  - direct explicit activity sources may refresh property activity when the UI
+    and backend support them.
+  - scheduled automation runs, generated action side effects, ambient/lux
+    changes, weather, battery reports, and generic telemetry must not refresh
+    property activity by default.
+  - Topomation-generated actions must not create a feedback loop that refreshes
+    the activity state that allowed the action to run.
+- Lighting rule authoring:
+  - descendant Lighting rules may expose a rule-level option equivalent to
+    `Require property activity` when their ancestor property has recent activity
+    enabled.
+  - the option is a rule-level guard, not a per-light action option.
+  - rules outside a configured property activity context must not show the
+    option.
+- V1 managed-rule consumption:
+  - only Lighting rules may consume property recent activity in v1.
+  - Appliance, Media, HVAC, and Vacuum rule editors must not expose or persist
+    property-activity conditions in this slice.
+  - non-lighting inactive-property workflows, such as turning off water pumps,
+    hot water heaters, ice makers, or similar equipment, are future work and
+    require a separate safety-oriented contract.
+- Lighting compilation:
+  - `Require property activity` adds a property-active condition to the managed
+    automation.
+  - if the rule includes an ambient `on_dark` trigger, compilation must also
+    wake on the property becoming active so arrivals after dark are handled.
+  - the dark/activity compiled shape must require both effective darkness and
+    property activity before actions run.
+  - if the rule includes an occupancy trigger, property activity is a
+    cross-family guard only; it does not replace the occupancy wake path.
+  - rules without `Require property activity` compile exactly as they would
+    without this feature.
+- Recent activity must not change occupancy rollup:
+  - activating the property does not mark the property occupied.
+  - expiring property activity does not vacate any location.
+  - locks, occupancy groups, and occupancy source timers keep their existing
+    semantics.

@@ -73,7 +73,7 @@ _VALID_AMBIENT_CONDITIONS = frozenset({"any", "dark", "bright"})
 _AUTOMATION_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_]+$")
 _RULE_UUID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{7,63}$")
 _RECENT_RULE_SNAPSHOT_TTL_SECONDS = 30.0
-_AUTOMATION_METADATA_VERSION = 7
+_AUTOMATION_METADATA_VERSION = 8
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -88,6 +88,7 @@ class _TopomationMetadata:
     trigger_types: tuple[ActionTriggerType, ...]
     ambient_condition: ActionAmbientCondition
     must_be_occupied: bool | None
+    require_property_activity: bool
     time_condition_enabled: bool
     start_time: str
     end_time: str
@@ -109,6 +110,7 @@ class _RecentRuleSnapshot:
     trigger_types: tuple[ActionTriggerType, ...]
     ambient_condition: ActionAmbientCondition
     must_be_occupied: bool | None
+    require_property_activity: bool
     time_condition_enabled: bool
     start_time: str
     end_time: str
@@ -127,9 +129,11 @@ class _CompiledManagedRule:
     trigger_types: tuple[ActionTriggerType, ...]
     ambient_condition: ActionAmbientCondition
     must_be_occupied: bool | None
+    require_property_activity: bool
     actions: list[dict[str, Any]]
     icon: str
     ha_area_id: str
+    property_activity_entity_id: str | None = None
 
 
 class TopomationManagedActions:
@@ -279,6 +283,7 @@ class TopomationManagedActions:
                         "actions": [dict(action) for action in recent_snapshot.actions],
                         "ambient_condition": recent_snapshot.ambient_condition,
                         "must_be_occupied": recent_snapshot.must_be_occupied,
+                        "require_property_activity": recent_snapshot.require_property_activity,
                         "time_condition_enabled": recent_snapshot.time_condition_enabled,
                         "start_time": recent_snapshot.start_time,
                         "end_time": recent_snapshot.end_time,
@@ -354,6 +359,7 @@ class TopomationManagedActions:
                     "actions": actions,
                     "ambient_condition": metadata.ambient_condition,
                     "must_be_occupied": metadata.must_be_occupied,
+                    "require_property_activity": metadata.require_property_activity,
                     "time_condition_enabled": metadata.time_condition_enabled,
                     "start_time": metadata.start_time,
                     "end_time": metadata.end_time,
@@ -379,6 +385,7 @@ class TopomationManagedActions:
         actions: list[Mapping[str, Any]] | None = None,
         ambient_condition: str | None = None,
         must_be_occupied: bool | None = None,
+        require_property_activity: bool = False,
         time_condition_enabled: bool = False,
         start_time: str | None = None,
         end_time: str | None = None,
@@ -411,6 +418,7 @@ class TopomationManagedActions:
             actions=normalized_actions,
             ambient_condition=ambient_condition,
             must_be_occupied=must_be_occupied,
+            require_property_activity=bool(require_property_activity),
         )
         normalized_trigger = compiled_rule.trigger_type
         normalized_trigger_types = compiled_rule.trigger_types
@@ -452,6 +460,8 @@ class TopomationManagedActions:
             trigger_types=normalized_trigger_types,
             occupancy_entity_id=occupancy_entity_id,
             ambient_config=ambient_config,
+            property_activity_entity_id=compiled_rule.property_activity_entity_id,
+            require_property_activity=compiled_rule.require_property_activity,
         )
         if not triggers:
             raise ValueError("Unable to build automation triggers for this rule")
@@ -466,6 +476,8 @@ class TopomationManagedActions:
             ambient_config=ambient_config,
             daily_gating_enabled=bool(daily_gating_enabled),
             automation_id=automation_id,
+            property_activity_entity_id=compiled_rule.property_activity_entity_id,
+            require_property_activity=compiled_rule.require_property_activity,
         )
 
         metadata_payload = {
@@ -476,6 +488,11 @@ class TopomationManagedActions:
             "ambient_condition": normalized_ambient_condition,
             **(
                 {"must_be_occupied": must_be_occupied} if isinstance(must_be_occupied, bool) else {}
+            ),
+            **(
+                {"require_property_activity": True}
+                if compiled_rule.require_property_activity
+                else {}
             ),
             "time_condition_enabled": bool(time_condition_enabled),
             "start_time": normalized_start_time,
@@ -560,6 +577,7 @@ class TopomationManagedActions:
             trigger_types=normalized_trigger_types,
             ambient_condition=normalized_ambient_condition,
             must_be_occupied=must_be_occupied,
+            require_property_activity=compiled_rule.require_property_activity,
             time_condition_enabled=bool(time_condition_enabled),
             start_time=normalized_start_time,
             end_time=normalized_end_time,
@@ -627,6 +645,7 @@ class TopomationManagedActions:
             "actions": normalized_actions,
             "ambient_condition": normalized_ambient_condition,
             "must_be_occupied": must_be_occupied,
+            "require_property_activity": compiled_rule.require_property_activity,
             "time_condition_enabled": bool(time_condition_enabled),
             "start_time": normalized_start_time,
             "end_time": normalized_end_time,
@@ -780,6 +799,9 @@ class TopomationManagedActions:
                             if isinstance(rule.get("must_be_occupied"), bool)
                             else None
                         ),
+                        require_property_activity=bool(
+                            rule.get("require_property_activity", False)
+                        ),
                         time_condition_enabled=bool(rule.get("time_condition_enabled", False)),
                         start_time=(
                             str(rule.get("start_time"))
@@ -928,6 +950,36 @@ class TopomationManagedActions:
                 return state.entity_id
         return None
 
+    def _find_recent_activity_entity_id(self, property_location_id: str) -> str | None:
+        """Resolve recent-activity binary sensor entity_id for a property id."""
+        for state in self.hass.states.async_all("binary_sensor"):
+            if state.attributes.get("location_id") != property_location_id:
+                continue
+            if state.attributes.get("recently_active") is not None:
+                return state.entity_id
+        return None
+
+    def _ancestor_property_with_recent_activity(self, location: Any) -> Any | None:
+        """Return the nearest ancestor property with recent activity enabled."""
+        if self._loc_mgr is None:
+            return None
+        candidates: list[Any] = []
+        if self._location_type(location) == "property":
+            candidates.append(location)
+        try:
+            candidates.extend(list(self._loc_mgr.ancestors_of(location.id)))
+        except Exception:  # pragma: no cover - defensive adapter boundary
+            return None
+
+        for candidate in candidates:
+            if self._location_type(candidate) != "property":
+                continue
+            modules = getattr(candidate, "modules", {}) or {}
+            config = modules.get("recent_activity", {}) if isinstance(modules, Mapping) else {}
+            if isinstance(config, Mapping) and bool(config.get("enabled", False)):
+                return candidate
+        return None
+
     def _shadow_location_id_for_host(self, host_location_id: str) -> str | None:
         """Return the managed-shadow location_id whose host matches, if any."""
         if self._loc_mgr is None:
@@ -995,6 +1047,7 @@ class TopomationManagedActions:
         actions: list[dict[str, Any]],
         ambient_condition: str | None,
         must_be_occupied: bool | None,
+        require_property_activity: bool = False,
     ) -> _CompiledManagedRule:
         """Normalize the product-level managed rule before HA config generation."""
         if not actions:
@@ -1013,6 +1066,8 @@ class TopomationManagedActions:
 
         if has_ambient_trigger and not lighting_rule:
             raise ValueError("Ambient triggers are only supported for Lighting rules")
+        if require_property_activity and not lighting_rule:
+            raise ValueError("Property activity conditions are only supported for Lighting rules")
 
         normalized_ambient_condition = self._normalize_ambient_condition(
             ambient_condition=ambient_condition,
@@ -1034,8 +1089,14 @@ class TopomationManagedActions:
         if "on_dark" in trigger_types:
             if normalized_ambient_condition == "bright" and not has_occupancy_trigger:
                 raise ValueError("on_dark rules cannot require bright ambient state")
-            if normalized_ambient_condition == "dark" and not has_occupancy_trigger:
+            if (
+                normalized_ambient_condition == "dark"
+                and not has_occupancy_trigger
+                and not require_property_activity
+            ):
                 normalized_ambient_condition = "any"
+            if require_property_activity and normalized_ambient_condition == "any":
+                normalized_ambient_condition = "dark"
 
         if "on_occupied" in trigger_types:
             # "occupied" / "vacant" here guard ambient edges when both families
@@ -1050,14 +1111,30 @@ class TopomationManagedActions:
             if normalized_must_be_occupied is False and not has_ambient_trigger:
                 normalized_must_be_occupied = None
 
+        property_activity_entity_id = None
+        if require_property_activity:
+            property_location = self._ancestor_property_with_recent_activity(location)
+            if property_location is None:
+                raise ValueError("No enabled property recent activity context found")
+            property_activity_entity_id = self._find_recent_activity_entity_id(
+                str(getattr(property_location, "id", "") or "")
+            )
+            if property_activity_entity_id is None:
+                property_name = str(
+                    getattr(property_location, "name", "Property") or "Property"
+                ).strip()
+                raise ValueError(f'No recent activity binary sensor found for property "{property_name}"')
+
         return _CompiledManagedRule(
             trigger_type=trigger_types[0],
             trigger_types=trigger_types,
             ambient_condition=normalized_ambient_condition,
             must_be_occupied=normalized_must_be_occupied,
+            require_property_activity=bool(require_property_activity),
             actions=actions,
             icon=self._select_generated_icon(actions),
             ha_area_id=self._resolve_managed_rule_ha_area_id(location),
+            property_activity_entity_id=property_activity_entity_id,
         )
 
     def _resolve_managed_rule_ha_area_id(self, location: Any) -> str:
@@ -1205,6 +1282,7 @@ class TopomationManagedActions:
         trigger_types: tuple[ActionTriggerType, ...],
         ambient_condition: ActionAmbientCondition,
         must_be_occupied: bool | None,
+        require_property_activity: bool,
         time_condition_enabled: bool,
         start_time: str,
         end_time: str,
@@ -1242,6 +1320,7 @@ class TopomationManagedActions:
             trigger_types=trigger_types,
             ambient_condition=ambient_condition,
             must_be_occupied=must_be_occupied,
+            require_property_activity=bool(require_property_activity),
             time_condition_enabled=time_condition_enabled,
             start_time=start_time,
             end_time=end_time,
@@ -1356,6 +1435,8 @@ class TopomationManagedActions:
         trigger_types: tuple[ActionTriggerType, ...],
         occupancy_entity_id: str | None,
         ambient_config: Mapping[str, Any],
+        property_activity_entity_id: str | None = None,
+        require_property_activity: bool = False,
     ) -> list[dict[str, Any]]:
         """Build Home Assistant trigger definitions for one managed action rule."""
         triggers: list[dict[str, Any]] = []
@@ -1412,6 +1493,16 @@ class TopomationManagedActions:
                         "to": "below_horizon" if trigger_type == "on_dark" else "above_horizon",
                     }
                 )
+        if require_property_activity and "on_dark" in trigger_types:
+            if not property_activity_entity_id:
+                raise ValueError("Property activity trigger requires a recent activity sensor")
+            triggers.append(
+                {
+                    "trigger": "state",
+                    "entity_id": property_activity_entity_id,
+                    "to": "on",
+                }
+            )
         return triggers
 
     @staticmethod
@@ -1507,6 +1598,8 @@ class TopomationManagedActions:
         ambient_config: Mapping[str, Any],
         daily_gating_enabled: bool = False,
         automation_id: str | None = None,
+        property_activity_entity_id: str | None = None,
+        require_property_activity: bool = False,
     ) -> list[dict[str, Any]]:
         """Build Home Assistant condition list for one managed action rule."""
         conditions: list[dict[str, Any]] = []
@@ -1526,6 +1619,17 @@ class TopomationManagedActions:
                     "condition": "state",
                     "entity_id": occupancy_entity_id,
                     "state": "on" if must_be_occupied else "off",
+                }
+            )
+
+        if require_property_activity:
+            if not property_activity_entity_id:
+                raise ValueError("Property activity condition requires a recent activity sensor")
+            conditions.append(
+                {
+                    "condition": "state",
+                    "entity_id": property_activity_entity_id,
+                    "state": "on",
                 }
             )
 
@@ -1687,6 +1791,9 @@ class TopomationManagedActions:
             must_be_occupied = (
                 raw_must_be_occupied if isinstance(raw_must_be_occupied, bool) else None
             )
+            raw_require_property_activity = (
+                parsed.get("require_property_activity") if isinstance(parsed, Mapping) else None
+            )
             time_condition_enabled = bool(parsed.get("time_condition_enabled", False))
             start_time = self._normalize_time_hhmm(
                 parsed.get("start_time") if isinstance(parsed, Mapping) else None,
@@ -1716,6 +1823,11 @@ class TopomationManagedActions:
                 trigger_types=trigger_types,
                 ambient_condition=ambient_condition,
                 must_be_occupied=must_be_occupied,
+                require_property_activity=(
+                    bool(raw_require_property_activity)
+                    if isinstance(raw_require_property_activity, bool)
+                    else False
+                ),
                 time_condition_enabled=time_condition_enabled,
                 start_time=start_time,
                 end_time=end_time,

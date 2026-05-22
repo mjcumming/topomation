@@ -933,7 +933,7 @@ async def test_rebuild_rules_before_metadata_version_rewrites_only_old_rules(
             },
             {
                 "id": "topomation_kitchen_new",
-                "metadata_version": 7,
+                "metadata_version": 8,
                 "trigger_type": "on_dark",
                 "actions": [{"entity_id": "light.kitchen", "service": "turn_on"}],
             },

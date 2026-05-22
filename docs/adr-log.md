@@ -5224,6 +5224,24 @@ rebuild existing managed rules into this contract.
 
 ---
 
+### ADR-HA-096: Property Recent Activity Context (2026-05-22)
+
+**Status**: 📝 PROPOSED
+**Full text**: `docs/adr/ADR-HA-096-property-recent-activity-context.md`
+
+**Decision summary**:
+
+TopoMation adds a property-only recent activity context for v1. Recent activity
+is distinct from occupancy: it answers whether the site has qualifying human/use
+evidence within a configured window. The property row becomes a site-context
+surface for Recent Activity, Ambient, occupancy rollup, and structure summary;
+direct managed-action tabs move off the property row. Descendant Lighting rules
+may use a rule-level "Require property activity" option, with dark-triggered
+rules compiled to handle both sunset-after-activity and arrival-after-dark
+orderings.
+
+---
+
 ## How to Use This Log
 
 This file is no longer the preferred home for long ADR bodies. Treat it as:

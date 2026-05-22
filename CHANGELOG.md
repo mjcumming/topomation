@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.15] - 2026-05-22
+
+### Added
+
+- **Property recent activity**: property nodes can now keep a configurable
+  recent-activity window, refreshed from descendant occupancy evidence, so
+  cabin/site automations can distinguish "used recently" from "occupied right
+  now." Lighting rules can opt into a property-active gate that wakes on
+  darkness or on the property becoming recently active.
+
+### Changed
+
+- **Property automation UI**: property hosts now focus on structural/detection
+  context instead of direct Lighting/Appliances/Media/HVAC/Vacuum action tabs.
+  Direct action authoring remains on buildings, grounds, floors, areas, and
+  rooms where the devices live.
+
 ## [0.3.14] - 2026-05-22
 
 ### Fixed

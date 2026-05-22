@@ -40,6 +40,13 @@ from .coordinator import TopomationCoordinator
 from .event_bridge import EventBridge
 from .managed_actions import TopomationManagedActions
 from .panel import async_register_panel
+from .recent_activity import (
+    EVENT_RECENT_ACTIVITY_CHANGED,
+    TopomationRecentActivityModule,
+)
+from .recent_activity import (
+    MODULE_ID as RECENT_ACTIVITY_MODULE_ID,
+)
 from .services import async_register_services, async_unregister_services
 from .sync_manager import SyncManager, managed_shadow_entity_ids_for_ambient
 from .websocket_api import async_register_websocket_api, build_occupancy_projection_states
@@ -447,11 +454,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     platform_adapter = HAPlatformAdapter(hass)
     occupancy_module = OccupancyModule()
     automation_module = AutomationModule()
+    recent_activity_module = TopomationRecentActivityModule()
     automation_module.set_platform(platform_adapter)
     automation_module.set_occupancy_module(occupancy_module)
     modules = {
         "occupancy": occupancy_module,
         "automation": automation_module,
+        RECENT_ACTIVITY_MODULE_ID: recent_activity_module,
         "ambient": TopomationAmbientLightModule(
             platform_adapter=platform_adapter,
             extra_lux_entity_ids=lambda lid: managed_shadow_entity_ids_for_ambient(
@@ -581,6 +590,27 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
 
     bus.subscribe(_record_occupancy_signal, EventFilter(event_type="occupancy.signal"))
+
+    @callback
+    def _forward_recent_activity_changed(event: Event) -> None:
+        """Mirror property recent-activity changes onto HA bus for live updates."""
+        payload = event.payload if isinstance(event.payload, Mapping) else {}
+        location_id = event.location_id
+        if not isinstance(location_id, str) or not location_id:
+            return
+        hass.bus.async_fire(
+            f"{DOMAIN}_recent_activity_changed",
+            {
+                "entry_id": entry.entry_id,
+                "location_id": location_id,
+                **dict(payload),
+            },
+        )
+
+    bus.subscribe(
+        _forward_recent_activity_changed,
+        EventFilter(event_type=EVENT_RECENT_ACTIVITY_CHANGED),
+    )
 
     @callback
     def _forward_handoff_trace(event: Event) -> None:
@@ -759,6 +789,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     bus.subscribe(_schedule_persist_on_occupancy, EventFilter(event_type="occupancy.changed"))
 
+    @callback
+    def _schedule_persist_on_recent_activity(_: Event) -> None:
+        _schedule_persist("recent_activity.changed")
+
+    bus.subscribe(
+        _schedule_persist_on_recent_activity,
+        EventFilter(event_type=EVENT_RECENT_ACTIVITY_CHANGED),
+    )
+
     # Persist topology migration updates for existing installs as soon as possible.
     if should_bootstrap_structure and has_saved_configuration:
         _schedule_persist("upgrade/ensure_home_root")
@@ -867,6 +906,8 @@ def _setup_default_configs(loc_mgr: LocationManager, modules: dict[str, Any]) ->
     """Set up default module configurations for all locations."""
     for location in loc_mgr.all_locations():
         for module_id, module in modules.items():
+            if module_id == RECENT_ACTIVITY_MODULE_ID and _location_type(location) != "property":
+                continue
             existing = loc_mgr.get_module_config(location.id, module_id)
             if isinstance(existing, dict):
                 if module_id == "ambient":

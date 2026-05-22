@@ -211,6 +211,36 @@ def test_managed_action_trigger_occupancy_required(build_manager: TopomationMana
         )
 
 
+def test_managed_action_dark_trigger_adds_property_activity_wake_path(
+    build_manager: TopomationManagedActions,
+) -> None:
+    """Dark rules requiring property activity should also wake when property becomes active."""
+    triggers = build_manager._build_trigger_definitions(  # noqa: SLF001
+        trigger_types=("on_dark",),
+        occupancy_entity_id=OCC,
+        ambient_config={
+            "lux_sensor": "sensor.path_lux",
+            "dark_threshold": 42.0,
+            "fallback_to_sun": False,
+        },
+        property_activity_entity_id="binary_sensor.cabin_recent_activity",
+        require_property_activity=True,
+    )
+
+    assert triggers == [
+        {
+            "trigger": "numeric_state",
+            "entity_id": "sensor.path_lux",
+            "below": 42.0,
+        },
+        {
+            "trigger": "state",
+            "entity_id": "binary_sensor.cabin_recent_activity",
+            "to": "on",
+        },
+    ]
+
+
 @pytest.mark.parametrize(
     (
         "ambient_condition",
@@ -487,6 +517,40 @@ def test_managed_action_condition_requires_entity_for_occupancy_guard(
         )
 
 
+def test_managed_action_condition_adds_property_activity_guard(
+    build_manager: TopomationManagedActions,
+) -> None:
+    """Property activity is a managed-rule condition, not a per-action option."""
+    conditions = build_manager._build_condition_definitions(  # noqa: SLF001
+        ambient_condition="dark",
+        must_be_occupied=None,
+        occupancy_entity_id=OCC,
+        time_condition_enabled=False,
+        start_time="09:00",
+        end_time="17:00",
+        ambient_config={
+            "lux_sensor": "sensor.path_lux",
+            "dark_threshold": 42.0,
+            "fallback_to_sun": False,
+        },
+        property_activity_entity_id="binary_sensor.cabin_recent_activity",
+        require_property_activity=True,
+    )
+
+    assert conditions == [
+        {
+            "condition": "numeric_state",
+            "entity_id": "sensor.path_lux",
+            "below": 42.0,
+        },
+        {
+            "condition": "state",
+            "entity_id": "binary_sensor.cabin_recent_activity",
+            "state": "on",
+        },
+    ]
+
+
 @pytest.mark.parametrize(
     ("ambient_condition", "trigger_types", "expected"),
     [
@@ -684,4 +748,53 @@ def test_non_lighting_rules_reject_ambient_trigger_semantics(
             actions=[{"entity_id": entity_id, "service": "turn_on"}],
             ambient_condition=None,
             must_be_occupied=None,
+        )
+
+
+def test_lighting_property_activity_keeps_dark_guard(
+    build_manager: TopomationManagedActions,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A dark rule with property activity must still be guarded by darkness."""
+    monkeypatch.setattr(
+        build_manager, "_resolve_managed_rule_ha_area_id", lambda _location: "area_pathway"
+    )
+    monkeypatch.setattr(build_manager, "_find_recent_activity_entity_id", lambda _prop_id: "binary_sensor.cabin_recent_activity")
+    monkeypatch.setattr(
+        build_manager,
+        "_ancestor_property_with_recent_activity",
+        lambda _location: type("Location", (), {"id": "home", "name": "Cabin"})(),
+    )
+
+    compiled = build_manager._compile_managed_rule(  # noqa: SLF001
+        location=object(),
+        trigger_types=("on_dark",),
+        actions=[{"entity_id": "light.pathway", "service": "turn_on"}],
+        ambient_condition="any",
+        must_be_occupied=None,
+        require_property_activity=True,
+    )
+
+    assert compiled.ambient_condition == "dark"
+    assert compiled.require_property_activity is True
+    assert compiled.property_activity_entity_id == "binary_sensor.cabin_recent_activity"
+
+
+def test_non_lighting_rules_reject_property_activity(
+    build_manager: TopomationManagedActions,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """V1 property activity consumption is Lighting-only."""
+    monkeypatch.setattr(
+        build_manager, "_resolve_managed_rule_ha_area_id", lambda _location: "area_pump"
+    )
+
+    with pytest.raises(ValueError, match="Property activity conditions are only supported"):
+        build_manager._compile_managed_rule(  # noqa: SLF001
+            location=object(),
+            trigger_types=("on_occupied",),
+            actions=[{"entity_id": "switch.water_pump", "service": "turn_off"}],
+            ambient_condition="any",
+            must_be_occupied=None,
+            require_property_activity=True,
         )

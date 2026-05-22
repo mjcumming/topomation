@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any
 from weakref import WeakKeyDictionary
@@ -361,6 +362,23 @@ def _occupancy_group_id(location: object) -> str | None:
         return None
     normalized = raw.strip()
     return normalized or None
+
+
+def _normalize_recent_activity_config(config: Mapping[str, Any]) -> dict[str, Any]:
+    """Normalize property recent-activity config from the panel."""
+    try:
+        window_hours = float(config.get("window_hours", 48))
+    except (TypeError, ValueError):
+        window_hours = 48.0
+    window_hours = max(1.0, min(window_hours, 24.0 * 30.0))
+    return {
+        "version": 1,
+        "enabled": bool(config.get("enabled", False)),
+        "window_hours": window_hours,
+        "include_descendant_occupancy": bool(
+            config.get("include_descendant_occupancy", True)
+        ),
+    }
 
 
 def _state_timestamp_iso(state_obj: object | None) -> str | None:
@@ -2033,6 +2051,15 @@ def handle_locations_set_module_config(
                 config = dict(config)
             if _OCCUPANCY_GROUP_ID_KEY in config:
                 config[_OCCUPANCY_GROUP_ID_KEY] = normalized_group_id
+        elif module_id == "recent_activity":
+            if _location_type(location) != "property":
+                connection.send_error(
+                    msg["id"],
+                    "invalid_config",
+                    "Recent activity can only be configured on property locations.",
+                )
+                return
+            config = _normalize_recent_activity_config(config)
         elif module_id == "_meta":
             normalized_meta, meta_error = _normalize_meta_config(loc_mgr, location, config)
             if meta_error:
@@ -2256,6 +2283,7 @@ async def handle_action_rules_list(
         vol.Required("actions"): [dict],
         vol.Optional("ambient_condition"): vol.In(("any", "dark", "bright")),
         vol.Optional("must_be_occupied"): vol.Any(bool, None),
+        vol.Optional("require_property_activity", default=False): bool,
         vol.Optional("time_condition_enabled", default=False): bool,
         vol.Optional("start_time"): str,
         vol.Optional("end_time"): str,
@@ -2395,6 +2423,7 @@ async def handle_action_rules_create(
                 if isinstance(msg.get("must_be_occupied"), bool)
                 else None
             ),
+            require_property_activity=bool(msg.get("require_property_activity", False)),
             time_condition_enabled=time_condition_enabled,
             start_time=start_time.strip() if isinstance(start_time, str) else None,
             end_time=end_time.strip() if isinstance(end_time, str) else None,
