@@ -62,68 +62,15 @@ export class HtLocationDialog extends LitElement {
     sharedStyles,
     css`
       ha-dialog {
-        --mdc-dialog-min-width: 520px;
-        --mdc-dialog-max-width: 620px;
+        --mdc-dialog-min-width: 480px;
+        --mdc-dialog-max-width: 560px;
       }
 
       .dialog-content {
         display: flex;
         flex-direction: column;
-        gap: 18px;
-        padding: 8px 24px 20px;
-      }
-
-      .dialog-hero {
-        display: grid;
-        grid-template-columns: auto 1fr;
-        gap: 14px;
-        align-items: center;
-        padding: 16px;
-        border: 1px solid rgba(var(--rgb-primary-color), 0.24);
-        border-radius: 16px;
-        background:
-          linear-gradient(
-            135deg,
-            rgba(var(--rgb-primary-color), 0.14),
-            rgba(var(--rgb-success-color), 0.08)
-          ),
-          var(--card-background-color);
-      }
-
-      .hero-icon {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        width: 44px;
-        height: 44px;
-        border-radius: 14px;
-        background: var(--primary-color);
-        color: var(--text-primary-color, white);
-        box-shadow: 0 8px 20px rgba(var(--rgb-primary-color), 0.28);
-      }
-
-      .hero-icon ha-icon {
-        --mdc-icon-size: 24px;
-        color: var(--primary-background-color, white);
-      }
-
-      .hero-title {
-        color: var(--primary-text-color);
-        font-size: 16px;
-        font-weight: 600;
-        line-height: 1.25;
-      }
-
-      .hero-copy {
-        color: var(--secondary-text-color);
-        font-size: 13px;
-        line-height: 1.4;
-        margin-top: 4px;
-      }
-
-      .form-card {
-        padding: 4px 0 0;
-        border-top: 1px solid var(--divider-color);
+        gap: 16px;
+        padding: 4px 24px 0;
       }
 
       .error-message {
@@ -131,15 +78,59 @@ export class HtLocationDialog extends LitElement {
         padding: 8px 16px;
         background: rgba(var(--rgb-error-color), 0.1);
         border-radius: 4px;
-        margin-bottom: 0;
       }
 
-      mwc-button[slot="primaryAction"] {
-        --mdc-theme-primary: var(--primary-color);
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
       }
 
-      mwc-button[slot="secondaryAction"] {
-        --mdc-theme-primary: var(--primary-color);
+      .field-label {
+        color: var(--secondary-text-color);
+        font-size: 12px;
+        font-weight: 500;
+      }
+
+      .field-control {
+        width: 100%;
+        min-height: 44px;
+        border: 0;
+        border-bottom: 1px solid rgba(var(--rgb-primary-color), 0.22);
+        border-radius: 4px 4px 0 0;
+        background: rgba(var(--rgb-primary-color), 0.05);
+        color: var(--primary-text-color);
+        font: inherit;
+        font-size: 14px;
+        padding: 10px 12px 9px;
+      }
+
+      select.field-control {
+        cursor: pointer;
+      }
+
+      .field-control:focus {
+        border-bottom-color: var(--primary-color);
+        box-shadow: inset 0 -1px 0 var(--primary-color);
+        outline: none;
+      }
+
+      .dialog-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        margin-top: 8px;
+        padding: 16px 0 20px;
+        border-top: 1px solid var(--divider-color);
+      }
+
+      .dialog-actions .button {
+        min-width: 88px;
+      }
+
+      .dialog-actions .button:disabled {
+        cursor: not-allowed;
+        opacity: 0.5;
       }
 
       @media (max-width: 600px) {
@@ -148,11 +139,7 @@ export class HtLocationDialog extends LitElement {
         }
 
         .dialog-content {
-          padding: 8px 20px 18px;
-        }
-
-        .dialog-hero {
-          grid-template-columns: 1fr;
+          padding: 0 20px;
         }
       }
     `
@@ -233,6 +220,9 @@ export class HtLocationDialog extends LitElement {
     // Always render the dialog element (mock needs it to exist for open prop binding)
     const schema = this._getSchema();
     console.log("[LocationDialog] Rendering dialog with schema:", schema.length, "fields");
+    const parentOptions = this._getValidParents();
+    const includeRootOption = this._includeRootOption();
+    const showParentField = includeRootOption || parentOptions.length > 1;
 
     return html`
       <ha-dialog
@@ -242,52 +232,83 @@ export class HtLocationDialog extends LitElement {
         .heading=${this.location ? "Edit Structure" : "Add Structure"}
       >
         <div class="dialog-content">
-          <div class="dialog-hero">
-            <div class="hero-icon" aria-hidden="true">
-              <ha-icon icon=${this.location ? "mdi:pencil-outline" : "mdi:shape-plus"}></ha-icon>
-            </div>
-            <div>
-              <div class="hero-title">
-                ${this.location ? "Update this structure" : "Create a new topology structure"}
-              </div>
-              <div class="hero-copy">
-                Choose where it belongs in the home topology, then save it into Topomation.
-              </div>
-            </div>
-          </div>
-
           ${this._error ? html`
             <div class="error-message">${this._error}</div>
           ` : ''}
 
-          <div class="form-card">
-            <ha-form
-              .hass=${this.hass}
-              .data=${this._config}
-              .schema=${schema}
-              .computeLabel=${this._computeLabel}
-              @value-changed=${this._handleValueChanged}
-            ></ha-form>
+          <div class="field">
+            <label class="field-label" for="location-name">Name*</label>
+            <input
+              id="location-name"
+              class="field-control"
+              type="text"
+              .value=${this._config.name || ""}
+              @input=${this._handleNameInput}
+            />
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="location-type">Type*</label>
+            <select
+              id="location-type"
+              class="field-control"
+              .value=${this._config.type}
+              @change=${this._handleTypeChange}
+            >
+              ${this._typeOptions().map((option) => html`
+                <option value=${option.value}>${option.label}</option>
+              `)}
+            </select>
+          </div>
+
+          ${showParentField ? html`
+            <div class="field">
+              <label class="field-label" for="location-parent">Parent Location</label>
+              <select
+                id="location-parent"
+                class="field-control"
+                .value=${this._config.parent_id || ""}
+                @change=${this._handleParentChange}
+              >
+                ${includeRootOption ? html`<option value="">Root Level</option>` : ""}
+                ${parentOptions.map((option) => html`
+                  <option value=${option.value}>${option.label}</option>
+                `)}
+              </select>
+            </div>
+          ` : ""}
+
+          <div class="field">
+            <label class="field-label" for="location-icon">Location Icon (optional)</label>
+            <input
+              id="location-icon"
+              class="field-control"
+              type="text"
+              placeholder="mdi:stairs"
+              .value=${this._config.icon || ""}
+              @input=${this._handleIconInput}
+            />
+          </div>
+
+          <div class="dialog-actions">
+            <button
+              class="button button-secondary"
+              type="button"
+              @click=${this._handleCancel}
+              ?disabled=${this._submitting}
+            >
+              Cancel
+            </button>
+            <button
+              class="button button-primary"
+              type="button"
+              @click=${this._handleSubmit}
+              ?disabled=${!this._isValid() || this._submitting}
+            >
+              ${this._submitting ? "Saving..." : "Save"}
+            </button>
           </div>
         </div>
-
-        <mwc-button
-          slot="secondaryAction"
-          dialogAction="cancel"
-          @click=${this._handleCancel}
-          .disabled=${this._submitting}
-        >
-          Cancel
-        </mwc-button>
-        <mwc-button
-          slot="primaryAction"
-          dialogAction="confirm"
-          raised
-          @click=${this._handleSubmit}
-          .disabled=${!this._isValid() || this._submitting}
-        >
-          ${this._submitting ? "Saving..." : "Save"}
-        </mwc-button>
       </ha-dialog>
     `;
   }
@@ -349,6 +370,17 @@ export class HtLocationDialog extends LitElement {
     });
 
     return schema;
+  }
+
+  private _typeOptions() {
+    return [
+      { value: "property", label: "Property" },
+      { value: "floor", label: "Floor" },
+      { value: "area", label: "Area" },
+      { value: "building", label: "Building" },
+      { value: "grounds", label: "Grounds" },
+      { value: "subarea", label: "Subarea" }
+    ];
   }
 
   /**
@@ -452,6 +484,41 @@ export class HtLocationDialog extends LitElement {
     this._error = undefined;
     // Some dev toolchains can be finicky with decorator-based reactivity; force an update.
     this.requestUpdate();
+  }
+
+  private _handleNameInput(ev: Event) {
+    this._config = {
+      ...this._config,
+      name: (ev.currentTarget as HTMLInputElement).value
+    };
+    this._error = undefined;
+  }
+
+  private _handleTypeChange(ev: Event) {
+    this._config = {
+      ...this._config,
+      type: (ev.currentTarget as HTMLSelectElement).value as LocationType,
+      parent_id: undefined
+    };
+    this._error = undefined;
+  }
+
+  private _handleParentChange(ev: Event) {
+    const parentId = (ev.currentTarget as HTMLSelectElement).value;
+    this._config = {
+      ...this._config,
+      parent_id: parentId || undefined
+    };
+    this._error = undefined;
+  }
+
+  private _handleIconInput(ev: Event) {
+    const icon = (ev.currentTarget as HTMLInputElement).value.trim();
+    this._config = {
+      ...this._config,
+      icon: icon || undefined
+    };
+    this._error = undefined;
   }
 
   private _isValid(): boolean {

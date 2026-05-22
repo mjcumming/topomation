@@ -66,14 +66,36 @@ describe("HtLocationDialog", () => {
     await element.updateComplete;
 
     const cancelButton = element.shadowRoot?.querySelector(
-      'mwc-button[slot="secondaryAction"]'
-    ) as HTMLElement | null;
+      ".dialog-actions .button-secondary"
+    ) as HTMLButtonElement | null;
     expect(cancelButton).to.exist;
 
     cancelButton?.click();
     await element.updateComplete;
 
     expect(element.open).to.equal(false);
+  });
+
+  it("renders native fields and visible save/cancel actions", async () => {
+    const element = await fixture<any>(html`
+      <ht-location-dialog
+        .hass=${createHass()}
+        .open=${true}
+        .locations=${[]}
+      ></ht-location-dialog>
+    `);
+    await element.updateComplete;
+
+    expect(element.shadowRoot?.querySelector("ha-form")).to.equal(null);
+    expect(element.shadowRoot?.querySelector("#location-name")).to.exist;
+    expect(element.shadowRoot?.querySelector("#location-type")).to.exist;
+    expect(element.shadowRoot?.querySelector("#location-icon")).to.exist;
+
+    const actionLabels = Array.from(
+      element.shadowRoot?.querySelectorAll(".dialog-actions .button") || []
+    ).map((button) => (button.textContent || "").trim());
+
+    expect(actionLabels).to.deep.equal(["Cancel", "Save"]);
   });
 
   it("hides parent selector for root-only wrappers and submits null parent", async () => {

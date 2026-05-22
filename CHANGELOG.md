@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.12] - 2026-05-22
+
+### Fixed
+
+- **Add Structure dialog**: replaced `ha-form` with native fields and in-dialog
+  Cancel/Save actions so picker overlays no longer bleed through the modal and
+  action buttons are always visible in Home Assistant.
+
 ## [0.3.11] - 2026-05-21
 
 ### Changed
