@@ -21,6 +21,18 @@
 
 ## Active Decisions
 
+### ADR-HA-097: Effective Ambient Source Parity (2026-05-22)
+
+**Status**: APPROVED
+**Full ADR**: [docs/adr/ADR-HA-097-effective-ambient-source-parity.md](adr/ADR-HA-097-effective-ambient-source-parity.md)
+
+**Decision summary**: Ambient readings and generated managed Lighting automations
+must use the same effective-source priority: clean local lux, inherited lux when
+local lux is contaminated by direct local `light.*` entities, and strict
+sunrise/sunset fallback when no inherited lux source exists.
+
+---
+
 ### ADR-HA-001: Lit for Frontend (2025-12-09)
 
 **Status**: ✅ APPROVED
@@ -5221,6 +5233,24 @@ valid. Non-light tabs remain occupancy-edge only. Every managed automation must
 resolve HA area ownership, keep Topomation category/label metadata, and receive
 a generated icon when HA/runtime support allows it. Metadata versioning must
 rebuild existing managed rules into this contract.
+
+---
+
+### ADR-HA-096: Property Recent Activity Context (2026-05-22)
+
+**Status**: 📝 PROPOSED
+**Full text**: `docs/adr/ADR-HA-096-property-recent-activity-context.md`
+
+**Decision summary**:
+
+TopoMation adds a property-only recent activity context for v1. Recent activity
+is distinct from occupancy: it answers whether the site has qualifying human/use
+evidence within a configured window. The property row becomes a site-context
+surface for Recent Activity, Ambient, occupancy rollup, and structure summary;
+direct managed-action tabs move off the property row. Descendant Lighting rules
+may use a rule-level "Require property activity" option, with dark-triggered
+rules compiled to handle both sunset-after-activity and arrival-after-dark
+orderings.
 
 ---
 

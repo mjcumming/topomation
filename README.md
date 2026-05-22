@@ -77,6 +77,8 @@ This is the part that pays off most in awkward real houses: bathrooms with no mo
 
 Lighting rules can fire only when the room is dark, so the kitchen overhead doesn't come on at noon and the living room lamps can respond at dusk without a time-based trigger. Each location has a `dark` / `bright` state derived from an explicitly assigned lux sensor, with configurable thresholds and inheritance from parent locations. Put one outdoor lux sensor on `grounds` and let rooms inherit it unless a specific room needs different thresholds. If no lux reading is available, there's an optional fallback to sunrise/sunset, plus an "assume dark on error" toggle.
 
+Indoor lux sensors can be ignored while local lights are on, so a room does not mistake its own lamps for daylight. In that case TopoMation uses the same fallback path for both the Ambient page and generated Lighting rules: inherited lux first, then sunrise/sunset when no parent lux source exists.
+
 For most homes, a property-level outdoor illuminance estimate is the simplest and most reliable source. Home Assistant's built-in [Illuminance integration](https://www.home-assistant.io/integrations/illuminance/) is a good fit here: expose one illuminance entity, assign it high in the TopoMation tree (`property`, `grounds`, or `building`), and let rooms inherit it unless a specific room truly needs its own local lux sensor.
 
 ## What you can automate

@@ -10,6 +10,7 @@ import type {
   Location,
   OccupancyConfig,
   OccupancySource,
+  RecentActivityConfig,
   TopomationActionRule,
   WaspInBoxConfig,
   WaspInBoxPreset,
@@ -196,6 +197,10 @@ export class HtLocationInspector extends LitElement {
   @state() private _loadingAmbientReading = false;
   @state() private _ambientReadingError?: string;
   @state() private _savingAmbientConfig = false;
+  @state() private _recentActivityDraft?: RecentActivityConfig;
+  @state() private _recentActivityDraftDirty = false;
+  @state() private _recentActivitySaveError?: string;
+  @state() private _savingRecentActivityConfig = false;
   @state() private _floorGroupCreateSelection: string[] = [];
   @state() private _detectionDraftHint?: string;
   private _onTimeoutMemory: Record<string, number> = {};
@@ -2887,8 +2892,12 @@ export class HtLocationInspector extends LitElement {
         this._ambientDraft = undefined;
         this._ambientDraftDirty = false;
         this._ambientSaveError = undefined;
+        this._recentActivityDraft = undefined;
+        this._recentActivityDraftDirty = false;
+        this._recentActivitySaveError = undefined;
         this._resetDetectionDraftFromLocation();
         this._resetAmbientDraftFromLocation();
+        this._resetRecentActivityDraftFromLocation();
         if (this.hass) {
           void this._loadEntityAreaAssignments();
         }
@@ -2910,6 +2919,9 @@ export class HtLocationInspector extends LitElement {
         }
         if (!this._ambientDraftDirty) {
           this._resetAmbientDraftFromLocation();
+        }
+        if (!this._recentActivityDraftDirty) {
+          this._resetRecentActivityDraftFromLocation();
         }
       }
       void this._loadActionRules();
@@ -3073,10 +3085,11 @@ export class HtLocationInspector extends LitElement {
           this._normalizeActionTriggerType(rule.trigger_type)
         ),
         actions: this._actionTargetsForRule(rule),
-        ambient_condition: String(rule.ambient_condition || ""),
-        must_be_occupied:
-          typeof rule.must_be_occupied === "boolean" ? rule.must_be_occupied : null,
-        time_condition_enabled: Boolean(rule.time_condition_enabled),
+      ambient_condition: String(rule.ambient_condition || ""),
+      must_be_occupied:
+        typeof rule.must_be_occupied === "boolean" ? rule.must_be_occupied : null,
+      require_property_activity: Boolean(rule.require_property_activity),
+      time_condition_enabled: Boolean(rule.time_condition_enabled),
         start_time: String(rule.start_time || ""),
         end_time: String(rule.end_time || ""),
         enabled: Boolean(rule.enabled),
@@ -3165,8 +3178,11 @@ export class HtLocationInspector extends LitElement {
     return type === "floor" || type === "building" || type === "grounds" || type === "property";
   }
 
-  /** Tabs allowed on structural summary locations (per ADR-HA-087: all action tabs). */
+  /** Tabs allowed on structural summary locations. Property is site context only. */
   private _structuralInspectorTabSet(): ReadonlySet<InspectorTab> {
+    if (this._locationType() === "property") {
+      return new Set<InspectorTab>(["detection", "ambient"]);
+    }
     return new Set<InspectorTab>([
       "detection",
       "ambient",
@@ -3459,6 +3475,109 @@ export class HtLocationInspector extends LitElement {
     } finally {
       this._savingAmbientConfig = false;
       this.requestUpdate();
+    }
+  }
+
+  private _recentActivityDefaults(): RecentActivityConfig {
+    return {
+      version: 1,
+      enabled: false,
+      window_hours: 48,
+      include_descendant_occupancy: true,
+    };
+  }
+
+  private _sanitizeRecentActivityConfig(config: RecentActivityConfig): RecentActivityConfig {
+    const defaults = this._recentActivityDefaults();
+    const windowHoursRaw = Number(config.window_hours);
+    const windowHours = Number.isFinite(windowHoursRaw)
+      ? Math.max(1, Math.min(24 * 30, windowHoursRaw))
+      : defaults.window_hours;
+    return {
+      ...defaults,
+      ...config,
+      version: 1,
+      enabled: Boolean(config.enabled),
+      window_hours: windowHours,
+      include_descendant_occupancy:
+        typeof config.include_descendant_occupancy === "boolean"
+          ? config.include_descendant_occupancy
+          : defaults.include_descendant_occupancy,
+    };
+  }
+
+  private _persistedRecentActivityConfig(): RecentActivityConfig {
+    const raw = ((this.location?.modules?.recent_activity || {}) as RecentActivityConfig) || {};
+    return this._sanitizeRecentActivityConfig(raw);
+  }
+
+  private _resetRecentActivityDraftFromLocation(): void {
+    this._recentActivityDraft = this._persistedRecentActivityConfig();
+    this._recentActivityDraftDirty = false;
+    this._recentActivitySaveError = undefined;
+  }
+
+  private _recentActivityConfigSignature(config: RecentActivityConfig): string {
+    const sanitized = this._sanitizeRecentActivityConfig(config);
+    return JSON.stringify({
+      enabled: Boolean(sanitized.enabled),
+      window_hours: Number(sanitized.window_hours || 48),
+      include_descendant_occupancy: Boolean(sanitized.include_descendant_occupancy),
+    });
+  }
+
+  private _getRecentActivityConfig(): RecentActivityConfig {
+    return this._sanitizeRecentActivityConfig(
+      this._recentActivityDraft || this._persistedRecentActivityConfig()
+    );
+  }
+
+  private _setRecentActivityDraft(config: RecentActivityConfig): void {
+    const sanitized = this._sanitizeRecentActivityConfig(config);
+    this._recentActivityDraft = sanitized;
+    this._recentActivityDraftDirty =
+      this._recentActivityConfigSignature(sanitized) !==
+      this._recentActivityConfigSignature(this._persistedRecentActivityConfig());
+    this._recentActivitySaveError = undefined;
+    this.requestUpdate();
+  }
+
+  private async _saveRecentActivityDraft(): Promise<void> {
+    if (!this.location || !this.hass) return;
+    this._savingRecentActivityConfig = true;
+    this._recentActivitySaveError = undefined;
+    const sanitized = this._sanitizeRecentActivityConfig(
+      this._recentActivityDraft || this._persistedRecentActivityConfig()
+    );
+    try {
+      await this.hass.callWS(
+        this._withEntryId({
+          type: "topomation/locations/set_module_config",
+          location_id: this.location.id,
+          module_id: "recent_activity",
+          config: sanitized,
+        })
+      );
+      this.location.modules = this.location.modules || {};
+      this.location.modules.recent_activity = sanitized;
+      this._recentActivityDraft = sanitized;
+      this._recentActivityDraftDirty = false;
+      this._showToast("Recent activity settings updated", "success");
+    } catch (err: any) {
+      console.error("Failed to update recent activity settings", err);
+      this._recentActivitySaveError = err?.message || "Failed to update recent activity settings";
+      this._showToast(this._recentActivitySaveError, "error");
+    } finally {
+      this._savingRecentActivityConfig = false;
+      this.requestUpdate();
+    }
+  }
+
+  private _discardRecentActivityDraft(showToast = true): void {
+    this._resetRecentActivityDraftFromLocation();
+    this.requestUpdate();
+    if (showToast) {
+      this._showToast("Discarded recent activity changes", "success");
     }
   }
 
@@ -3906,6 +4025,7 @@ export class HtLocationInspector extends LitElement {
   /** Structural hosts: rollup occupancy, ambient, and aggregate device automation (ADR-HA-078). */
   private _renderStructuralTabs() {
     const detectionLabel = this._detectionTabLabel();
+    const propertyOnly = this._locationType() === "property";
     return html`
       <div class="tabs">
         <button
@@ -3920,36 +4040,40 @@ export class HtLocationInspector extends LitElement {
         >
           Ambient
         </button>
-        <button
-          class="tab ${this._activeTab === "lighting" ? "active" : ""}"
-          @click=${() => this._handleTabChange("lighting")}
-        >
-          Lighting
-        </button>
-        <button
-          class="tab ${this._activeTab === "appliances" ? "active" : ""}"
-          @click=${() => this._handleTabChange("appliances")}
-        >
-          Appliances
-        </button>
-        <button
-          class="tab ${this._activeTab === "media" ? "active" : ""}"
-          @click=${() => this._handleTabChange("media")}
-        >
-          Media
-        </button>
-        <button
-          class="tab ${this._activeTab === "hvac" ? "active" : ""}"
-          @click=${() => this._handleTabChange("hvac")}
-        >
-          HVAC
-        </button>
-        <button
-          class="tab ${this._activeTab === "vacuum" ? "active" : ""}"
-          @click=${() => this._handleTabChange("vacuum")}
-        >
-          Vacuum
-        </button>
+        ${propertyOnly
+          ? ""
+          : html`
+              <button
+                class="tab ${this._activeTab === "lighting" ? "active" : ""}"
+                @click=${() => this._handleTabChange("lighting")}
+              >
+                Lighting
+              </button>
+              <button
+                class="tab ${this._activeTab === "appliances" ? "active" : ""}"
+                @click=${() => this._handleTabChange("appliances")}
+              >
+                Appliances
+              </button>
+              <button
+                class="tab ${this._activeTab === "media" ? "active" : ""}"
+                @click=${() => this._handleTabChange("media")}
+              >
+                Media
+              </button>
+              <button
+                class="tab ${this._activeTab === "hvac" ? "active" : ""}"
+                @click=${() => this._handleTabChange("hvac")}
+              >
+                HVAC
+              </button>
+              <button
+                class="tab ${this._activeTab === "vacuum" ? "active" : ""}"
+                @click=${() => this._handleTabChange("vacuum")}
+              >
+                Vacuum
+              </button>
+            `}
       </div>
     `;
   }
@@ -4068,6 +4192,7 @@ export class HtLocationInspector extends LitElement {
     return Boolean(
       this._occupancyDraftDirty ||
       this._ambientDraftDirty ||
+      this._recentActivityDraftDirty ||
       this._actionRulesDraftDirty
     );
   }
@@ -4080,6 +4205,13 @@ export class HtLocationInspector extends LitElement {
       );
       if (!discard) return;
       this._discardDetectionDraft(false);
+    }
+    if (this._activeTab === "detection" && this._recentActivityDraftDirty) {
+      const discard = window.confirm(
+        "Recent activity changes are not saved. Discard changes and continue?"
+      );
+      if (!discard) return;
+      this._discardRecentActivityDraft(false);
     }
     if (this._activeTab === "ambient" && this._ambientDraftDirty) {
       const discard = window.confirm(
@@ -4374,6 +4506,7 @@ export class HtLocationInspector extends LitElement {
     if (isGroupHost) {
       return html`
         <div>
+          ${this._locationType() === "property" ? this._renderRecentActivitySection() : ""}
           ${this._renderFloorOccupancyGroupsSection()}
           ${this._renderStructuralOverviewSection()}
         </div>
@@ -4459,6 +4592,170 @@ export class HtLocationInspector extends LitElement {
           </div>
         </div>
         ${this._isAreaLikeLocation() ? this._renderAreaOccupancyGroupSection(config) : ""}
+      </div>
+    `;
+  }
+
+  private _recentActivityEntityState(): HassState | undefined {
+    if (!this.location || !this.hass?.states) return undefined;
+    return Object.values(this.hass.states).find((state: any) => {
+      const attrs = state?.attributes || {};
+      return (
+        String(state?.entity_id || "").startsWith("binary_sensor.") &&
+        attrs.location_id === this.location?.id &&
+        Object.prototype.hasOwnProperty.call(attrs, "recently_active")
+      );
+    }) as HassState | undefined;
+  }
+
+  private _ancestorPropertyWithRecentActivity(): Location | undefined {
+    if (!this.location) return undefined;
+    let cursor: Location | undefined = this.location;
+    while (cursor) {
+      if (getLocationType(cursor) === "property") {
+        const config = this._sanitizeRecentActivityConfig(
+          (cursor.modules?.recent_activity || {}) as RecentActivityConfig
+        );
+        if (config.enabled) {
+          return cursor;
+        }
+      }
+      cursor = this._locationById(cursor.parent_id ?? null);
+    }
+    return undefined;
+  }
+
+  private _canRequirePropertyActivity(): boolean {
+    return Boolean(this._ancestorPropertyWithRecentActivity());
+  }
+
+  private _renderRecentActivitySection() {
+    if (!this.location || this._locationType() !== "property") return "";
+    const config = this._getRecentActivityConfig();
+    const state = this._recentActivityEntityState();
+    const attrs = (state?.attributes || {}) as Record<string, any>;
+    const active = state?.state === "on" || attrs.recently_active === true;
+    const lastActivity = this._parseDateValue(String(attrs.last_activity_at || ""));
+    const activeUntil = this._parseDateValue(String(attrs.active_until || ""));
+    const busy = this._savingRecentActivityConfig;
+
+    return html`
+      <div class="card-section" data-testid="recent-activity-section">
+        <div class="section-title">
+          <ha-icon .icon=${"mdi:home-clock-outline"}></ha-icon>
+          Recent Activity
+        </div>
+        <div class="policy-note">
+          Treat this property as recently active for a configurable window after qualifying activity.
+        </div>
+        <div class="occupancy-at-a-glance" style="margin-top: 12px;">
+          <div class="occupancy-status-chip ${active ? "is-occupied" : "is-vacant"}">
+            ${active ? "Active" : "Inactive"}
+          </div>
+          <div class="occupancy-primary-detail">
+            ${active && activeUntil
+              ? `Active until ${this._formatDateTime(activeUntil)}`
+              : lastActivity
+                ? `Last activity ${this._formatElapsedDuration(lastActivity)} ago`
+                : "No recent property activity recorded"}
+          </div>
+        </div>
+
+        <div class="config-grid" style="margin-top: 14px;">
+          <div class="config-row">
+            <div>
+              <div class="config-label">Track recent property activity</div>
+              <div class="config-help">Enables descendant lighting rules to require property activity.</div>
+            </div>
+            <div class="config-value">
+              <input
+                type="checkbox"
+                class="switch-input"
+                .checked=${Boolean(config.enabled)}
+                ?disabled=${busy}
+                data-testid="recent-activity-enabled-toggle"
+                @change=${(ev: Event) =>
+                  this._setRecentActivityDraft({
+                    ...config,
+                    enabled: (ev.target as HTMLInputElement).checked,
+                  })}
+              />
+            </div>
+          </div>
+          <div class="config-row">
+            <div>
+              <div class="config-label">Activity window</div>
+              <div class="config-help">Hours after qualifying activity before this property becomes inactive.</div>
+            </div>
+            <div class="config-value">
+              <input
+                type="number"
+                class="input compact-number-input"
+                min="1"
+                max=${24 * 30}
+                step="1"
+                .value=${String(config.window_hours || 48)}
+                ?disabled=${busy || !config.enabled}
+                data-testid="recent-activity-window-hours"
+                @change=${(ev: Event) =>
+                  this._setRecentActivityDraft({
+                    ...config,
+                    window_hours: Number((ev.target as HTMLInputElement).value),
+                  })}
+              />
+            </div>
+          </div>
+          <div class="config-row">
+            <div>
+              <div class="config-label">Descendant occupancy counts</div>
+              <div class="config-help">Occupied events from child locations refresh property activity.</div>
+            </div>
+            <div class="config-value">
+              <input
+                type="checkbox"
+                class="switch-input"
+                .checked=${Boolean(config.include_descendant_occupancy)}
+                ?disabled=${busy || !config.enabled}
+                data-testid="recent-activity-descendant-occupancy-toggle"
+                @change=${(ev: Event) =>
+                  this._setRecentActivityDraft({
+                    ...config,
+                    include_descendant_occupancy: (ev.target as HTMLInputElement).checked,
+                  })}
+              />
+            </div>
+          </div>
+        </div>
+
+        ${this._recentActivitySaveError
+          ? html`<div class="policy-warning">${this._recentActivitySaveError}</div>`
+          : ""}
+        ${this._recentActivityDraftDirty
+          ? html`
+              <div class="sticky-draft-bar" style="position: static; margin-top: 12px;">
+                <div class="sticky-draft-bar-note">Recent activity changes are staged locally.</div>
+                <div class="sticky-draft-bar-actions">
+                  <button
+                    class="button button-secondary"
+                    type="button"
+                    ?disabled=${busy}
+                    @click=${() => this._discardRecentActivityDraft()}
+                  >
+                    Discard
+                  </button>
+                  <button
+                    class="button button-primary"
+                    type="button"
+                    ?disabled=${busy}
+                    data-testid="recent-activity-save-button"
+                    @click=${() => void this._saveRecentActivityDraft()}
+                  >
+                    ${busy ? "Saving..." : "Save changes"}
+                  </button>
+                </div>
+              </div>
+            `
+          : ""}
       </div>
     `;
   }
@@ -4681,6 +4978,16 @@ export class HtLocationInspector extends LitElement {
           ignoredLocalLuxLights.length === 1 ? "is" : "are"
         } on.`
       : "";
+    const localLightEntityIds = (this.location.entity_ids || []).filter(
+      (entityId) => typeof entityId === "string" && entityId.startsWith("light.")
+    );
+    const localLightSummary =
+      localLightEntityIds.length > 0
+        ? localLightEntityIds.map((entityId) => this._entityName(entityId)).join(", ")
+        : "No local light entities are assigned to this location.";
+    const sourcePriorityNote = Boolean(config.ignore_local_lux_when_lights_on)
+      ? `Effective source priority: local lux when local lights are off; otherwise inherited lux; otherwise sunrise/sunset fallback. Local lights checked: ${localLightSummary}`
+      : "Effective source priority: local lux when configured; otherwise inherited lux; otherwise sunrise/sunset fallback.";
     const ambientStateLabel = this._ambientStateLabel(reading);
     const darkThreshold = Math.max(0, Number(config.dark_threshold) || 0);
     const brightThreshold = Math.max(darkThreshold + 1, Number(config.bright_threshold) || darkThreshold + 1);
@@ -4718,6 +5025,7 @@ export class HtLocationInspector extends LitElement {
         <div class="policy-note" style="margin-bottom: 8px;">
           Lux sensor assignment is explicit. Set a location sensor or inherit from parent.
         </div>
+        <div class="policy-note" data-testid="ambient-source-priority-note">${sourcePriorityNote}</div>
         ${ignoredLocalLuxMessage
           ? html`<div class="policy-note" data-testid="ambient-ignored-local-lux">${ignoredLocalLuxMessage}</div>`
           : ""}
@@ -7674,6 +7982,10 @@ export class HtLocationInspector extends LitElement {
       prefix = prefix ? `${prefix} ${begin}-${end}` : `${begin}-${end}`;
     }
 
+    if (rule.require_property_activity) {
+      prefix = prefix ? `${prefix} while property active` : "While property active";
+    }
+
     // No triggers / no conditions = rule isn't configured yet; don't claim a name from the target.
     if (!prefix) {
       return "New rule";
@@ -8278,6 +8590,8 @@ export class HtLocationInspector extends LitElement {
         triggerTypes
       ),
       must_be_occupied: this._normalizeActionMustBeOccupied(rule.must_be_occupied, triggerType),
+      require_property_activity:
+        this._isLightingActionRule(rule) && Boolean(rule.require_property_activity),
       time_condition_enabled: Boolean(rule.time_condition_enabled),
       start_time: this._normalizeActionTime(rule.start_time, "18:00"),
       end_time: this._normalizeActionTime(rule.end_time, "23:59"),
@@ -8412,6 +8726,7 @@ export class HtLocationInspector extends LitElement {
       ambient_condition: this._effectiveAmbientConditionForRule(rule),
       must_be_occupied:
         typeof rule.must_be_occupied === "boolean" ? rule.must_be_occupied : null,
+      require_property_activity: Boolean(rule.require_property_activity),
       time_condition_enabled: Boolean(rule.time_condition_enabled),
       start_time: this._normalizeActionTime(rule.start_time, "18:00"),
       end_time: this._normalizeActionTime(rule.end_time, "23:59"),
@@ -8592,6 +8907,7 @@ export class HtLocationInspector extends LitElement {
           tab === "lighting"
             ? undefined
             : this._normalizeActionMustBeOccupied(undefined, triggerType),
+        require_property_activity: false,
         time_condition_enabled: false,
         start_time: "18:00",
         end_time: "23:59",
@@ -8854,6 +9170,10 @@ export class HtLocationInspector extends LitElement {
             actions: ruleTargets,
             ambient_condition: ambientCondition,
             must_be_occupied: normalizedRule.must_be_occupied,
+            require_property_activity:
+              ruleTab === "lighting" &&
+              this._canRequirePropertyActivity() &&
+              Boolean(normalizedRule.require_property_activity),
             time_condition_enabled: Boolean(normalizedRule.time_condition_enabled),
             start_time: normalizedRule.start_time,
             end_time: normalizedRule.end_time,
@@ -8954,6 +9274,10 @@ export class HtLocationInspector extends LitElement {
           actions: ruleTargets,
           ambient_condition: ambientCondition,
           must_be_occupied: rule.must_be_occupied,
+          require_property_activity:
+            ruleTab === "lighting" &&
+            this._canRequirePropertyActivity() &&
+            Boolean(rule.require_property_activity),
           time_condition_enabled: Boolean(rule.time_condition_enabled),
           start_time: rule.start_time,
           end_time: rule.end_time,
@@ -9522,8 +9846,28 @@ export class HtLocationInspector extends LitElement {
     busy: boolean,
     entityOptions: string[]
   ) {
+    const propertyActivityHost = this._ancestorPropertyWithRecentActivity();
     return html`
       ${this._renderLightingTriggerRows(ruleId, rule, busy)}
+
+      ${propertyActivityHost
+        ? html`
+            <div class="dusk-rule-section-title">Only if</div>
+            <label class="startup-inline-toggle" data-testid=${`action-rule-${ruleId}-property-activity`}>
+              <input
+                type="checkbox"
+                class="switch-input"
+                .checked=${Boolean(rule.require_property_activity)}
+                ?disabled=${busy}
+                @change=${(ev: Event) =>
+                  this._updateActionRule(ruleId, {
+                    require_property_activity: (ev.target as HTMLInputElement).checked,
+                  })}
+              />
+              <span>${propertyActivityHost.name || "Property"} is recently active</span>
+            </label>
+          `
+        : ""}
 
       <div class="dusk-inline-heading-row">
         <div class="dusk-rule-section-title">Time window</div>

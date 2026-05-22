@@ -530,6 +530,8 @@ class TopomationActionsRuntime:
 
         threshold = automation.ambient_threshold
         direction = automation.ambient_direction
+        matched = False
+        observed = False
         if automation.ambient_lux_entity_ids and threshold is not None and direction is not None:
             for entity_id in automation.ambient_lux_entity_ids:
                 state = self.hass.states.get(entity_id)
@@ -539,15 +541,21 @@ class TopomationActionsRuntime:
                     value = float(state.state)
                 except (TypeError, ValueError):
                     continue
+                observed = True
                 if direction == "below":
-                    return value < threshold
-                return value > threshold
+                    matched = matched or value < threshold
+                else:
+                    matched = matched or value > threshold
 
         sun_state = automation.ambient_sun_state
         if sun_state is not None:
             sun = self.hass.states.get("sun.sun")
             if sun is not None and sun.state in {"below_horizon", "above_horizon"}:
-                return sun.state == sun_state
+                observed = True
+                matched = matched or sun.state == sun_state
+
+        if observed:
+            return matched
 
         if reconcile_timed_out:
             return False

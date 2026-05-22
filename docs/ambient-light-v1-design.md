@@ -40,7 +40,8 @@ Ambient support already exists in backend module wiring and WebSocket APIs, but 
 3. Optional per-location override is supported but not required.
 4. Backup input is sun position (`sun.sun`) when lux input is unavailable.
 5. When a lux sensor becomes available later, lux is authoritative and sun fallback is only used on error/unavailable states.
-6. Indoor/local lux sensors can opt into `ignore_local_lux_when_lights_on`; when any local `light.*` entity is `on`, that location's local lux sensor is skipped and the normal inherited/sun/error fallback chain is used.
+6. Indoor/local lux sensors can opt into `ignore_local_lux_when_lights_on`; when any directly assigned local `light.*` entity is `on`, that location's local lux sensor is skipped and the normal inherited/sun/error fallback chain is used.
+7. Ambient readings and generated Lighting rules use the same effective-source chain: clean local lux, inherited lux while local lux is contaminated, then strict `sun.sun` sunrise/sunset fallback when no inherited lux source exists.
 
 ### 5.2 Dark/bright classification
 
@@ -91,6 +92,7 @@ Ambient UI should show:
    - `assume_bright`
 6. Thresholds in effect
 7. Local lux ignore diagnostics when an enabled location skips its local lux sensor because local lights are on
+8. Source-priority explanation naming which direct local `light.*` entities can contaminate the local lux sensor
 
 ### 5.5 Output contract (v1)
 
@@ -125,6 +127,8 @@ Add an `Ambient` section in the location inspector (no dusk/dawn action tab yet)
    - fallback to sun toggle
    - assume dark on error toggle
    - ignore local lux while lights are on toggle
+   - effective source priority note, including the local lights checked when
+     local lux ignore is enabled
 3. Utility actions:
    - refresh reading
 

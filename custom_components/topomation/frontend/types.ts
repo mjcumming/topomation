@@ -150,6 +150,12 @@ export interface AmbientConfig extends ModuleConfig {
   ignore_local_lux_when_lights_on?: boolean;
 }
 
+export interface RecentActivityConfig extends ModuleConfig {
+  enabled?: boolean;
+  window_hours?: number;
+  include_descendant_occupancy?: boolean;
+}
+
 export interface AmbientLightReading {
   lux?: number | null;
   source_sensor?: string | null;
@@ -195,6 +201,7 @@ export interface TopomationActionRule {
   }>;
   ambient_condition?: "any" | "dark" | "bright";
   must_be_occupied?: boolean;
+  require_property_activity?: boolean;
   time_condition_enabled?: boolean;
   start_time?: string;
   end_time?: string;

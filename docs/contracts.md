@@ -1,6 +1,6 @@
 # Contracts
 
-**Last reviewed**: 2026-04-26
+**Last reviewed**: 2026-05-22
 **Purpose**: canonical behavior contracts for Topomation runtime and panel actions.
 
 Use this file as the quick contract surface. Keep it synchronized with:
@@ -319,18 +319,22 @@ Additional save points:
     locations, but they do not expose a room-style source editor
   - structural occupancy is expected to roll up from descendant locations
 - Structural nodes are informational pages in the active inspector for **occupancy
-  rollup** (no direct source authoring on aggregate hosts), but they **do** expose
-  **Lighting**, **Appliances**, **Media**, and **HVAC** alongside **Occupancy**
-  (summary or groups) and **Ambient**:
+  rollup** (no direct source authoring on aggregate hosts). Action-tab scope is
+  split by node type:
+  - `property` is a site-context surface and follows **C-024**: it does not expose
+    direct managed-action tabs in the target v1 recent-activity design.
+  - `floor`, `building`, and `grounds` may expose **Lighting**, **Appliances**,
+    **Media**, and **HVAC** alongside **Occupancy** (summary or groups) and
+    **Ambient** when they have managed-shadow device containers.
   - `property`, `floor`, `building`, and `grounds` use the same managed-shadow
-    HA area as the device container for aggregate automation targets (ADR-HA-049,
-    ADR-HA-087)
+    HA area as the device container for aggregate automation targets when action
+    tabs are allowed on that host (ADR-HA-049, ADR-HA-087).
   - `property`, `floor`, `building`, and `grounds` may manage occupancy groups
-    for immediate child `area` locations only
+    for immediate child `area` locations only.
   - `building` and `grounds` still render derived-occupancy summary and not a
-    room-style source editor
+    room-style source editor.
   - whole-home/floor aggregate scenes may still be authored as normal Home
-    Assistant automations when operators prefer HA-native automation UI
+    Assistant automations when operators prefer HA-native automation UI.
 
 ## C-014 Inspector Draft Bar Contract
 
@@ -441,25 +445,24 @@ Additional save points:
     `building`, `grounds`): the host’s managed shadow wrapper’s `ha_area_id` and
     that shadow location’s `entity_ids` (ADR-HA-087)
 - Ambient module configs must persist with `auto_discover: false` in integration defaults.
-- Ambient reading source priority:
+- Ambient reading and generated Lighting-rule source priority are the same
+  effective-source chain (ADR-HA-097):
   1. assigned location lux sensor, unless the location enables
-     `ignore_local_lux_when_lights_on` and one of its local `light.*` entities
-     is currently `on`
+     `ignore_local_lux_when_lights_on` and one of its directly assigned local
+     `light.*` entities is currently `on`
   2. inherited ancestor lux sensor (when enabled)
-  3. sun fallback (`sun.sun`) when lux input is unavailable and fallback is enabled
-- Per ADR-HA-094, generated managed Lighting rules intentionally bind to one ambient source at
-  save/rebuild time:
-  1. assigned location lux sensor
-  2. inherited ancestor lux sensor, only when no local lux sensor is assigned
-  3. sun fallback, only when no lux source is available and fallback is enabled
-- Generated rules must not encode local/inherited/sun fallback chains or OR
-  source arbitration. Dynamic source fallback belongs to Topomation ambient
-  readings/diagnostics, not HA automation YAML.
+  3. strict sun fallback (`sun.sun`) when the local lux sensor is ignored and no
+     inherited lux source exists, or when no lux source is available and fallback
+     is enabled
+- Generated managed Lighting rules must wake from every source that can become
+  effective under that chain and must include source-priority conditions so a
+  contaminated local lux reading cannot pass a dark/bright rule by itself.
 - If a dark/bright condition cannot resolve any lux source and sun fallback is
   disabled, the generated condition must fail closed rather than run unguarded.
 - `ignore_local_lux_when_lights_on` applies only to the configured location's
-  local lux source. It does not suppress inherited/ancestor lux sources and does
-  not scan descendant locations.
+  local lux source. It does not suppress inherited/ancestor lux sources, does
+  not scan descendant locations, and only considers directly assigned
+  `light.*` entities.
 - Inspector header must expose ambient status at-a-glance:
   - show effective lux level on the top card
   - indicate inherited source state when applicable.
@@ -470,6 +473,8 @@ Additional save points:
   - fallback-to-sun and assume-dark-on-error toggles.
   - `Ignore local lux while lights are on` toggle and a diagnostic note when the
     local lux sensor is skipped because local lights are on.
+  - source-priority explanation naming the directly assigned local lights that
+    can contaminate the local lux sensor.
 - Topomation ambient defaults are `dark_threshold: 800` and
   `bright_threshold: 1200`; existing explicit threshold values are preserved
   as authored.
@@ -598,9 +603,10 @@ Additional save points:
     users retain explicit control of those condition rows.
   - When Ambient config enables `ignore_local_lux_when_lights_on`, managed
     Lighting dark/bright conditions may only trust the local lux sensor while
-    the location's local `light.*` entities are `off`. Inherited lux is used
-    only for generated rules without a local lux sensor; sun is used only when
-    no lux source is available.
+    the location's directly assigned local `light.*` entities are `off`.
+    If local lux is contaminated, generated rules may use inherited lux; if no
+    inherited lux source exists and fallback is enabled, generated rules may use
+    `sun.sun` sunrise/sunset state.
 - Lighting multi-action contract:
   - one Lighting rule may include multiple action targets.
   - persistence writes those targets as ordered HA automation action steps.
@@ -813,3 +819,77 @@ Additional save points:
 - HA occupancy binary sensors remain the public Home Assistant entity surface,
   but they are not the panel's primary runtime-state transport once C-023 is
   implemented.
+
+## C-024 Property Recent Activity Contract
+
+**Delivery status**: Target. This contract records the intended design from
+ADR-HA-096 and is not an implementation or release claim.
+
+- Recent activity is a property-level context, not occupancy.
+  - `occupied` remains the runtime answer to "is someone probably here now?"
+  - `recently_active` answers "has this property had qualifying human/use
+    evidence within the configured activity window?"
+- Recent activity ownership is property-only in v1:
+  - `property` nodes may configure and publish recent activity.
+  - `building`, `grounds`, `floor`, `area`, and `subarea` nodes must not expose
+    their own recent-activity window authoring in v1.
+  - descendant rules may consume the ancestor property's recent-activity state.
+- Property inspector target IA:
+  - property rows expose Recent Activity configuration/status.
+  - property rows retain Ambient configuration for inherited/site ambient use.
+  - property rows retain occupancy rollup, occupancy groups where applicable,
+    and structure summary/diagnostics.
+  - property rows do not expose direct managed-action tabs:
+    **Lighting**, **Appliances**, **Media**, **HVAC**, and **Vacuum** are hidden
+    on `property`.
+  - controllable devices that belong to the site should be authored from a
+    concrete descendant location such as `grounds`, `building`, exterior,
+    pathway, garage, room, or another modeled area/subarea.
+- Recent Activity configuration must include:
+  - enabled/disabled state.
+  - activity window duration.
+  - explicit qualifying evidence policy.
+- Recent Activity runtime status must expose enough state for UI and diagnostics:
+  - active/inactive.
+  - `last_activity_at` when known.
+  - `active_until` when active.
+  - latest qualifying reason/source when available.
+- Qualifying evidence policy:
+  - descendant occupancy events may refresh property activity.
+  - direct explicit activity sources may refresh property activity when the UI
+    and backend support them.
+  - scheduled automation runs, generated action side effects, ambient/lux
+    changes, weather, battery reports, and generic telemetry must not refresh
+    property activity by default.
+  - Topomation-generated actions must not create a feedback loop that refreshes
+    the activity state that allowed the action to run.
+- Lighting rule authoring:
+  - descendant Lighting rules may expose a rule-level option equivalent to
+    `Require property activity` when their ancestor property has recent activity
+    enabled.
+  - the option is a rule-level guard, not a per-light action option.
+  - rules outside a configured property activity context must not show the
+    option.
+- V1 managed-rule consumption:
+  - only Lighting rules may consume property recent activity in v1.
+  - Appliance, Media, HVAC, and Vacuum rule editors must not expose or persist
+    property-activity conditions in this slice.
+  - non-lighting inactive-property workflows, such as turning off water pumps,
+    hot water heaters, ice makers, or similar equipment, are future work and
+    require a separate safety-oriented contract.
+- Lighting compilation:
+  - `Require property activity` adds a property-active condition to the managed
+    automation.
+  - if the rule includes an ambient `on_dark` trigger, compilation must also
+    wake on the property becoming active so arrivals after dark are handled.
+  - the dark/activity compiled shape must require both effective darkness and
+    property activity before actions run.
+  - if the rule includes an occupancy trigger, property activity is a
+    cross-family guard only; it does not replace the occupancy wake path.
+  - rules without `Require property activity` compile exactly as they would
+    without this feature.
+- Recent activity must not change occupancy rollup:
+  - activating the property does not mark the property occupied.
+  - expiring property activity does not vacate any location.
+  - locks, occupancy groups, and occupancy source timers keep their existing
+    semantics.

@@ -9,6 +9,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.16] - 2026-05-22
+
+### Changed
+
+- **Ambient source parity**: managed lighting rules now evaluate ambient
+  updates through the same effective-source order shown in the UI. A clean
+  local lux sensor wins first; when configured local lights contaminate that
+  reading, rules can fall back to inherited lux and then sunrise/sunset so
+  lights can still turn on or off as the parent source or sun state changes.
+- **Ambient automation guidance**: the Ambient page now explains which local
+  `light.*` entities contaminate lux readings and how local, inherited, and
+  sunrise/sunset sources are prioritized.
+
+### Fixed
+
+- **Ambient startup replay**: run-on-startup ambient rules now precheck every
+  possible effective lux/sun source before replaying, while the generated Home
+  Assistant conditions keep final local/inherited/sun priority strict.
+
+## [0.3.15] - 2026-05-22
+
+### Added
+
+- **Property recent activity**: property nodes can now keep a configurable
+  recent-activity window, refreshed from descendant occupancy evidence, so
+  cabin/site automations can distinguish "used recently" from "occupied right
+  now." Lighting rules can opt into a property-active gate that wakes on
+  darkness or on the property becoming recently active.
+
+### Changed
+
+- **Property automation UI**: property hosts now focus on structural/detection
+  context instead of direct Lighting/Appliances/Media/HVAC/Vacuum action tabs.
+  Direct action authoring remains on buildings, grounds, floors, areas, and
+  rooms where the devices live.
+
 ## [0.3.14] - 2026-05-22
 
 ### Fixed
