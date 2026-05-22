@@ -139,9 +139,8 @@ Top-to-bottom layout order:
    - optional **Daily run gating** pill row: `Run every time` (default) /
      `Run at most once per day`. When enabled, the rule's automation YAML
      gets a template condition that reads its own `last_triggered` attribute
-     and only allows firing when not yet fired today — with a Path Y carve-out
-     that allows re-fire if the target vacuum is currently `paused`, so the
-     two-rule "pause on occupied + start on vacant" composition keeps working.
+     and only allows firing when not yet fired today. A paused vacuum does not
+     bypass this gate.
    - daily gating is offered on every Vacuum rule regardless of action verb;
      enabling it on `Pause` or `Return to dock` is permitted but rarely
      meaningful and not blocked.

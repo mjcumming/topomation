@@ -4784,10 +4784,10 @@ preserve this composition or document its loss explicitly.
    When on:
    - The rule maintains a "last fired" date in managed-rule metadata, keyed by
      `rule_uuid`, evaluated in the host's local time.
-   - The rule fires on a matching trigger if **`(not-fired-today) OR
-     (target vacuum is currently in the `paused` state)`**. The second clause
-     is the *Path Y carve-out* and exists specifically to preserve the
-     two-rule pause/resume composition described in Context.
+   - The rule fires on a matching trigger only when it has not fired today.
+     Earlier drafts allowed a paused target vacuum to bypass the daily gate,
+     but that made the user-facing "once per day" option behave like "resume
+     every vacancy" for pause/start rule pairs.
    - "Fired today" is set on successful service-call dispatch, not on cleaning
      completion.
    - State resets at local midnight.
@@ -4813,11 +4813,10 @@ preserve this composition or document its loss explicitly.
 3. Daily-run gating is a hard requirement — without it, every vacancy edge in
    the time window starts the vacuum, which is unusable for any household
    that routinely transitions between occupied and vacant during the day.
-4. The Path Y carve-out (re-fire if the target vacuum is currently paused)
-   preserves the natural two-rule pause/resume pattern at the cost of one
-   extra condition on the gate. The alternative — Path X, simple gating with
-   no carve-out — silently breaks a composition that users will reach for
-   first, and the cost of the carve-out is small.
+4. Strict daily gating wins over pause/resume composition because the
+   user-facing option says "Run at most once per day." A paused-vacuum bypass
+   makes common occupied/vacant churn start the vacuum repeatedly in the same
+   day.
 5. Per-rule (rather than per-vacuum) gating state keeps composition flexible.
    A user can intentionally author two daily-gated rules on one vacuum (e.g.,
    morning window + afternoon window) and each tracks its own dispatch.
@@ -4834,8 +4833,8 @@ preserve this composition or document its loss explicitly.
   vacuum rules without writing YAML.
 - ✅ Tab follows the established Lighting / Appliances / Media / HVAC pattern;
   no new rule-card concepts, lifecycle controls, or section types.
-- ✅ The Path Y carve-out preserves the natural two-rule "Pause on occupied +
-  Start on vacant" auto-resume composition.
+- ✅ The daily gate is predictable: once the rule has fired today, later vacancy
+  edges do not start the same vacuum again.
 - ✅ HA-087 scoping applies unchanged — vacuums attach where their HA area
   places them; floor-scoped vacuums (the common case) author at the floor host.
 - ⚠️ **First stateful trigger gate in TopoMation's rule model.** All other rule
@@ -4873,8 +4872,8 @@ preserve this composition or document its loss explicitly.
   flag.
 - **Track vacuum-completion state to clear the daily flag.** Deferred. Would
   give crisper "ran successfully today" semantics, but requires subscribing
-  to vacuum state transitions. The Path Y carve-out covers the resume case at
-  much lower cost; revisit if completion-aware gating is later wanted.
+  to vacuum state transitions; revisit if completion-aware gating is later
+  wanted.
 - **Include `vacuum.stop` as a fourth verb.** Rejected. Leaves the vacuum
   mid-room with no clean resume path; Pause covers "stop temporarily" and
   Return-to-dock covers "stop and go home."

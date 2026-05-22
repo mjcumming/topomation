@@ -3828,7 +3828,8 @@ async function sn(s, t, e) {
         time_condition_enabled: !!c.rule.time_condition_enabled,
         start_time: typeof c.rule.start_time == "string" && c.rule.start_time.length > 0 ? c.rule.start_time : void 0,
         end_time: typeof c.rule.end_time == "string" && c.rule.end_time.length > 0 ? c.rule.end_time : void 0,
-        run_on_startup: typeof c.rule.run_on_startup == "boolean" ? c.rule.run_on_startup : r
+        run_on_startup: typeof c.rule.run_on_startup == "boolean" ? c.rule.run_on_startup : r,
+        daily_gating_enabled: typeof c.rule.daily_gating_enabled == "boolean" ? c.rule.daily_gating_enabled : !!t.daily_gating_enabled
       };
     }
   } catch (c) {

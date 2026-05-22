@@ -121,6 +121,8 @@ describe("ha-automation-rules websocket path", () => {
       start_time: undefined,
       end_time: undefined,
       run_on_startup: undefined,
+      rule_uuid: undefined,
+      daily_gating_enabled: false,
       user_named: false,
       enabled: true,
     };

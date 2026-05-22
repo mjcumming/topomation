@@ -192,6 +192,13 @@ Additional save points:
   - `true` => must be occupied
   - `false` => must be vacant
   - omitted / `null` => ignore occupancy
+- Vacuum **Run at most once per day** gating is strict:
+  - generated automation YAML must check the rule automation's own `last_triggered`
+    date in local time
+  - a rule that already fired today must not re-fire just because the target
+    vacuum is currently `paused`
+  - the create/list WebSocket contract must round-trip `daily_gating_enabled`
+    so the panel does not visually drop the saved setting
 
 ## C-010 Panel authorization contract
 

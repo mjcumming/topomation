@@ -933,7 +933,7 @@ async def test_rebuild_rules_before_metadata_version_rewrites_only_old_rules(
             },
             {
                 "id": "topomation_kitchen_new",
-                "metadata_version": 6,
+                "metadata_version": 7,
                 "trigger_type": "on_dark",
                 "actions": [{"entity_id": "light.kitchen", "service": "turn_on"}],
             },
@@ -1091,8 +1091,8 @@ async def test_cleanup_legacy_grouping_reapplies_grouping_to_existing_rules(
     ]
 
 
-def test_daily_gating_condition_emitted_for_vacuum_target_with_paused_carveout() -> None:
-    """Vacuum target gets the Path Y carve-out clause (ADR-HA-091 §7)."""
+def test_daily_gating_condition_emitted_for_vacuum_target_without_paused_carveout() -> None:
+    """Daily-gated vacuum targets use a strict once-per-day date check."""
     manager = TopomationManagedActions(cast(HomeAssistant, SimpleNamespace()))
     conditions = manager._build_condition_definitions(  # noqa: SLF001
         ambient_condition="any",
@@ -1104,7 +1104,6 @@ def test_daily_gating_condition_emitted_for_vacuum_target_with_paused_carveout()
         ambient_config={},
         daily_gating_enabled=True,
         automation_id="topomation_main_floor_vacant_vacuum_main",
-        gating_carveout_paused_entity_id="vacuum.main_floor",
     )
     template_clauses = [c for c in conditions if c.get("condition") == "template"]
     assert len(template_clauses) == 1
@@ -1112,11 +1111,12 @@ def test_daily_gating_condition_emitted_for_vacuum_target_with_paused_carveout()
     assert "automation.topomation_main_floor_vacant_vacuum_main" in body
     assert "last_triggered" in body
     assert "as_local(now()).date()" in body
-    assert "is_state('vacuum.main_floor', 'paused')" in body
+    assert "paused" not in body
+    assert "is_state(" not in body
 
 
-def test_daily_gating_condition_emitted_without_carveout_when_no_target() -> None:
-    """Non-vacuum daily-gated rules get the date check but no paused clause."""
+def test_daily_gating_condition_emitted_for_non_vacuum_target() -> None:
+    """Non-vacuum daily-gated rules get the same date check."""
     manager = TopomationManagedActions(cast(HomeAssistant, SimpleNamespace()))
     conditions = manager._build_condition_definitions(  # noqa: SLF001
         ambient_condition="any",
@@ -1128,7 +1128,6 @@ def test_daily_gating_condition_emitted_without_carveout_when_no_target() -> Non
         ambient_config={},
         daily_gating_enabled=True,
         automation_id="topomation_kitchen_vacant_switch_x",
-        gating_carveout_paused_entity_id=None,
     )
     template_clauses = [c for c in conditions if c.get("condition") == "template"]
     assert len(template_clauses) == 1
@@ -1168,7 +1167,6 @@ def test_daily_gating_condition_appears_after_time_condition() -> None:
         ambient_config={},
         daily_gating_enabled=True,
         automation_id="topomation_main_floor_vacant_vacuum_main",
-        gating_carveout_paused_entity_id="vacuum.main_floor",
     )
     kinds = [c.get("condition") for c in conditions]
     assert kinds == ["time", "template"]

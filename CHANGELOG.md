@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.14] - 2026-05-22
+
+### Fixed
+
+- **Vacuum daily run gating**: `Run at most once per day` now stays strict
+  even when the target vacuum is `paused`, so an occupied/pause then
+  vacant/start pair cannot restart the vacuum on every vacancy edge. The
+  managed-rule save response also round-trips the daily-gating flag so the
+  panel does not visually drop the saved setting after save. Existing managed
+  rules are rebuilt on startup through metadata version `7`.
+
 ## [0.3.13] - 2026-05-22
 
 ### Changed

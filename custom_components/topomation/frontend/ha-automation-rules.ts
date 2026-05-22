@@ -353,6 +353,10 @@ export async function createTopomationActionRule(
           typeof response.rule.run_on_startup === "boolean"
             ? response.rule.run_on_startup
             : runOnStartup,
+        daily_gating_enabled:
+          typeof response.rule.daily_gating_enabled === "boolean"
+            ? response.rule.daily_gating_enabled
+            : Boolean(args.daily_gating_enabled),
       };
     }
   } catch (err) {
