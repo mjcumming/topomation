@@ -2,7 +2,7 @@
 
 **Last reviewed**: 2026-05-22
 **Status**: Active (design baseline)  
-**Authority**: ADR-HA-055, ADR-HA-056, ADR-HA-060, ADR-HA-066, ADR-HA-068, ADR-HA-069, ADR-HA-080, ADR-HA-087, ADR-HA-089, ADR-HA-091, ADR-HA-096 + `docs/contracts.md`
+**Authority**: ADR-HA-055, ADR-HA-056, ADR-HA-060, ADR-HA-066, ADR-HA-068, ADR-HA-069, ADR-HA-080, ADR-HA-087, ADR-HA-089, ADR-HA-091, ADR-HA-096, ADR-HA-097 + `docs/contracts.md`
 
 This guide defines the intended user interaction model for Topomation's
 automation workspace and inspector tabs.
@@ -107,11 +107,16 @@ Top-to-bottom layout order:
      the host’s **managed shadow** when applicable; see ADR-HA-087 / C-015)
    - `Inherit from parent` as the empty/default option
    - do not render a separate inherit checkbox alongside the selector.
-5. Rule-authoring tabs (`Lighting`, `Appliances`, `Media`, `HVAC`, `Vacuum`) use
+5. Ambient status must explain effective source priority. When `Ignore local lux
+   while lights are on` is enabled, the panel names the directly assigned local
+   `light.*` entities that can contaminate the local lux sensor and explains that
+   managed Lighting rules use inherited lux or sunrise/sunset fallback while the
+   local lux source is ignored.
+6. Rule-authoring tabs (`Lighting`, `Appliances`, `Media`, `HVAC`, `Vacuum`) use
    per-rule card controls for rule lifecycle edits.
-6. Do not mix tab-level `Save changes` / `Discard changes` with per-card
+7. Do not mix tab-level `Save changes` / `Discard changes` with per-card
    `Delete rule` for the same rule workflow.
-7. Editable device/source lists stay alphabetical by display name. Checked,
+8. Editable device/source lists stay alphabetical by display name. Checked,
    selected, or configured rows are visually marked in place rather than moved
    to the top during editing.
 

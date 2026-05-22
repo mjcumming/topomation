@@ -21,6 +21,11 @@ from custom_components.topomation.managed_actions import TopomationManagedAction
 OCC = "binary_sensor.topomation_occupancy_test_room"
 
 
+def _with_trigger_id(trigger: dict[str, Any], trigger_type: str) -> dict[str, Any]:
+    """Expected generated triggers include stable ids for condition arbitration."""
+    return {**trigger, "id": trigger_type}
+
+
 @pytest.fixture
 def build_manager(hass: HomeAssistant) -> TopomationManagedActions:
     return TopomationManagedActions(hass)
@@ -123,6 +128,55 @@ def build_manager(hass: HomeAssistant) -> TopomationManagedActions:
             id="on_dark_inherited_lux_ignores_sun_fallback",
         ),
         pytest.param(
+            ("on_bright",),
+            {
+                "lux_sensor": "sensor.room_lux",
+                "inherited_lux_sensor": "sensor.parent_lux",
+                "dark_threshold": 42.0,
+                "bright_threshold": 400.0,
+                "fallback_to_sun": True,
+                "ignore_local_lux_when_lights_on": True,
+                "local_light_entity_ids": ["light.room_ceiling"],
+            },
+            [
+                {
+                    "trigger": "numeric_state",
+                    "entity_id": "sensor.room_lux",
+                    "above": 400.0,
+                },
+                {
+                    "trigger": "numeric_state",
+                    "entity_id": "sensor.parent_lux",
+                    "above": 400.0,
+                },
+            ],
+            id="on_bright_local_contamination_wakes_from_parent_lux",
+        ),
+        pytest.param(
+            ("on_bright",),
+            {
+                "lux_sensor": "sensor.room_lux",
+                "dark_threshold": 42.0,
+                "bright_threshold": 400.0,
+                "fallback_to_sun": True,
+                "ignore_local_lux_when_lights_on": True,
+                "local_light_entity_ids": ["light.room_ceiling"],
+            },
+            [
+                {
+                    "trigger": "numeric_state",
+                    "entity_id": "sensor.room_lux",
+                    "above": 400.0,
+                },
+                {
+                    "trigger": "state",
+                    "entity_id": "sun.sun",
+                    "to": "above_horizon",
+                },
+            ],
+            id="on_bright_local_contamination_wakes_from_sun_without_parent_lux",
+        ),
+        pytest.param(
             ("on_dark",),
             {
                 "lux_sensor": "sensor.living_lux",
@@ -199,7 +253,9 @@ def test_managed_action_trigger_build_matrix(
         occupancy_entity_id=OCC,
         ambient_config=ambient_config,
     )
-    assert triggers == expected_triggers
+    assert triggers == [
+        _with_trigger_id(trigger, trigger_types[0]) for trigger in expected_triggers
+    ]
 
 
 def test_managed_action_trigger_occupancy_required(build_manager: TopomationManagedActions) -> None:
@@ -232,11 +288,13 @@ def test_managed_action_dark_trigger_adds_property_activity_wake_path(
             "trigger": "numeric_state",
             "entity_id": "sensor.path_lux",
             "below": 42.0,
+            "id": "on_dark",
         },
         {
             "trigger": "state",
             "entity_id": "binary_sensor.cabin_recent_activity",
             "to": "on",
+            "id": "property_activity",
         },
     ]
 

@@ -1,6 +1,6 @@
 # Current work
 
-**Last updated**: 2026-04-24
+**Last updated**: 2026-05-22
 **Purpose**: short live context for parallel work, handoff, and branch safety.
 
 Status markers:
@@ -20,6 +20,9 @@ Status markers:
 - Active focus: lock UX contract hardening (ADR-HA-081 / ISSUE-060): fix managed-shadow host lock-state rendering, source-aware unlock behavior, and direct-vs-inherited lock readability before any future modes-module expansion.
 - Active execution checklist: `project/issues/issue-058-automation-ui-contract-implementation.md`.
 - New planning track: ambient light v1 design baseline captured in `docs/ambient-light-v1-design.md` before dusk/dawn coupling work.
+- Active focus: effective ambient source parity (ADR-HA-097) so Ambient readings
+  and generated Lighting rules both fall back from contaminated local lux to
+  inherited lux or sunrise/sunset.
 - Future work captured: a house-wide modes/activities context layer (for example `watching_tv`, `evening`, `overnight`, `party`, `bedtime`) that can modulate lighting/media/HVAC behavior is promising, but is intentionally deferred until the simpler lighting-behavior UX lands.
 - Recently completed: Tree DnD now uses explicit drop targets (before/inside/after/outdent) from pointer Y and optional outdent strip; zone-only resolver; heuristic x-offset logic removed. User order preserved by existing backend (`manual_order` + A-Z until first reorder).
 - Contract source set: `docs/working-agreement.md`, `docs/contracts.md`, `docs/automation-ui-guide.md`, `docs/architecture.md`, `docs/adr-log.md`.
@@ -34,6 +37,7 @@ Status markers:
 | Automation UX + contracts reset | active | Done | Live-validated | Detection `Shared Space`, docked explainability refinements, and panel shell reload fixes reran through `make test-release-live` on the exact 2026-03-17 branch state. |
 | Automation UX implementation checklist (ISSUE-058) | active | Done | Live-validated | Detection/Ambient draft flow, HA-canonical/card-local Lighting workflow, dev-mode no-legacy cleanup, and Media/HVAC card simplification are in repo and reran against local live HA on 2026-03-17. |
 | Ambient light v1 design + implementation sequencing | active | In progress | Target | Design guide added; next step is phase-A inspector read path and config UX. |
+| Effective ambient source parity | active | In progress | Implemented | ADR-HA-097; backend compiler now wakes from effective fallback sources and UI/docs explain local-light contamination. |
 | Lock UX contract hardening (ISSUE-060) | active | Pending | Target | Scope is lock correctness/readability/testing only; modes-module orchestration is explicitly deferred by ADR-HA-081. |
 | Parallel branch updates | multiple | In progress | n/a | Verify `git status` before editing overlapping files. |
 | Managed action rule resilience | active | Done | Live-validated | Added fallback/reconciliation contracts + production smoke coverage; live managed-actions contract rerun passed on 2026-03-06. |

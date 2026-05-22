@@ -81,6 +81,50 @@ Run the rows that match the touched workflow.
 
 ## 6. Release Records
 
+### 2026-05-22 - v0.3.16 ambient effective-source parity gate
+
+1. Commit under test: final release commit containing this record for
+   Topomation `0.3.16`.
+2. Frontend bundle rebuilt from that commit: yes; `npm run build` was run
+   during implementation and `make test-release-live` rebuilt the committed
+   runtime bundle again during final validation.
+3. Touched workflow list:
+   - Lighting managed-rule ambient trigger generation for local, inherited,
+     and sunrise/sunset effective-source fallback.
+   - Lighting managed-rule ambient condition arbitration when local lux is
+     ignored because configured local `light.*` entities are on.
+   - Ambient startup replay precheck for multiple possible lux/sun sources.
+   - Ambient page source-priority guidance and local light contamination copy.
+   - Release metadata/version synchronization for Topomation `0.3.16`.
+4. Commands run:
+   - `pytest -q --no-cov tests/test_managed_lighting_automation_runtime.py tests/test_managed_action_config_build_matrix.py tests/test_managed_actions.py tests/test_actions_runtime.py tests/test_ambient_extra_lux_hook.py tests/test_ambient_config_defaults.py`
+   - `cd custom_components/topomation/frontend && npm run build`
+   - `cd custom_components/topomation/frontend && npm run test:unit`
+   - `ruff check custom_components/topomation/managed_actions.py custom_components/topomation/actions_runtime.py tests/test_managed_actions.py tests/test_managed_action_config_build_matrix.py tests/test_actions_runtime.py`
+   - `python -m compileall custom_components/topomation/managed_actions.py custom_components/topomation/actions_runtime.py`
+   - `python scripts/verify-version-sync.py`
+   - `git diff --check`
+   - `./scripts/test-comprehensive.sh`
+   - `make test-release-live`
+5. Outcome:
+   - Lighting ambient trigger effective-source fallback: **PASS** (focused
+     managed-action/backend ambient suites `125 passed`; 2026-05-22).
+   - Lighting ambient condition arbitration: **PASS** (`tests/test_managed_actions.py`
+     and `tests/test_managed_action_config_build_matrix.py`; 2026-05-22).
+   - Ambient startup replay multi-source precheck: **PASS**
+     (`tests/test_actions_runtime.py`; 2026-05-22).
+   - Ambient page source-priority guidance: **PASS** (`npm run test:unit`;
+     `264 passed`; 2026-05-22).
+   - Release metadata/version sync: **PASS** (`Version sync ok: 0.3.16`;
+     2026-05-22).
+   - Local comprehensive gate: **PASS** (`./scripts/test-comprehensive.sh`;
+     backend `359 passed, 22 skipped`; Vitest `264 passed`; Web Test Runner
+     `205 passed`; Playwright `34 passed`; 2026-05-22).
+   - Live HA managed-action contract/browser workflows: **PASS**
+     (`make test-release-live`; local comprehensive matrix plus live
+     managed-action contract `2 passed` and live browser workflow `6 passed`;
+     2026-05-22).
+
 ### 2026-05-22 - v0.3.15 property recent activity gate
 
 1. Commit under test: release-candidate worktree for Topomation `0.3.15`.

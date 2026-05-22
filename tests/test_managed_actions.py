@@ -826,8 +826,8 @@ def test_ambient_condition_ignores_local_lux_while_local_lights_are_on() -> None
     ]
 
 
-def test_ambient_condition_uses_local_lux_when_local_sensor_is_configured() -> None:
-    """Managed rules choose one ambient source and do not emit inherited fallback chains."""
+def test_ambient_condition_falls_back_to_parent_when_local_lux_is_contaminated() -> None:
+    """Managed rules use inherited lux when local lux is contaminated."""
     manager = TopomationManagedActions(cast(HomeAssistant, SimpleNamespace()))
 
     conditions = manager._build_condition_definitions(  # noqa: SLF001
@@ -850,17 +850,46 @@ def test_ambient_condition_uses_local_lux_when_local_sensor_is_configured() -> N
 
     assert conditions == [
         {
-            "condition": "and",
+            "condition": "or",
             "conditions": [
                 {
-                    "condition": "state",
-                    "entity_id": "light.room_ceiling",
-                    "state": "off",
+                    "condition": "and",
+                    "conditions": [
+                        {
+                            "condition": "state",
+                            "entity_id": "light.room_ceiling",
+                            "state": "off",
+                        },
+                        {
+                            "condition": "numeric_state",
+                            "entity_id": "sensor.room_lux",
+                            "below": 800.0,
+                        },
+                    ],
                 },
                 {
-                    "condition": "numeric_state",
-                    "entity_id": "sensor.room_lux",
-                    "below": 800.0,
+                    "condition": "and",
+                    "conditions": [
+                        {
+                            "condition": "or",
+                            "conditions": [
+                                {
+                                    "condition": "template",
+                                    "value_template": "{{ states('sensor.room_lux') | float(none) is none }}",
+                                },
+                                {
+                                    "condition": "state",
+                                    "entity_id": "light.room_ceiling",
+                                    "state": "on",
+                                },
+                            ],
+                        },
+                        {
+                            "condition": "numeric_state",
+                            "entity_id": "sensor.outdoor_lux",
+                            "below": 800.0,
+                        },
+                    ],
                 },
             ],
         }
@@ -894,6 +923,150 @@ def test_ambient_condition_uses_inherited_lux_when_no_local_sensor_is_configured
             "condition": "numeric_state",
             "entity_id": "sensor.outdoor_lux",
             "below": 800.0,
+        }
+    ]
+
+
+def test_ambient_condition_falls_back_to_sun_when_local_lux_is_contaminated() -> None:
+    """Managed rules use sun fallback when local lux is contaminated and no parent lux exists."""
+    manager = TopomationManagedActions(cast(HomeAssistant, SimpleNamespace()))
+
+    conditions = manager._build_condition_definitions(  # noqa: SLF001
+        ambient_condition="bright",
+        must_be_occupied=None,
+        occupancy_entity_id=None,
+        time_condition_enabled=False,
+        start_time="00:00",
+        end_time="23:59",
+        ambient_config={
+            "lux_sensor": "sensor.room_lux",
+            "inherited_lux_sensor": None,
+            "dark_threshold": 800,
+            "bright_threshold": 1200,
+            "fallback_to_sun": True,
+            "ignore_local_lux_when_lights_on": True,
+            "local_light_entity_ids": ["light.room_ceiling"],
+        },
+    )
+
+    assert conditions == [
+        {
+            "condition": "or",
+            "conditions": [
+                {
+                    "condition": "and",
+                    "conditions": [
+                        {
+                            "condition": "state",
+                            "entity_id": "light.room_ceiling",
+                            "state": "off",
+                        },
+                        {
+                            "condition": "numeric_state",
+                            "entity_id": "sensor.room_lux",
+                            "above": 1200.0,
+                        },
+                    ],
+                },
+                {
+                    "condition": "and",
+                    "conditions": [
+                        {
+                            "condition": "or",
+                            "conditions": [
+                                {
+                                    "condition": "template",
+                                    "value_template": "{{ states('sensor.room_lux') | float(none) is none }}",
+                                },
+                                {
+                                    "condition": "state",
+                                    "entity_id": "light.room_ceiling",
+                                    "state": "on",
+                                },
+                            ],
+                        },
+                        {
+                            "condition": "state",
+                            "entity_id": "sun.sun",
+                            "state": "above_horizon",
+                        },
+                    ],
+                },
+            ],
+        }
+    ]
+
+
+def test_ambient_trigger_arbitration_preserves_combined_occupancy_trigger_path() -> None:
+    """Combined occupancy + ambient rules should not globally require ambient to match."""
+    manager = TopomationManagedActions(cast(HomeAssistant, SimpleNamespace()))
+
+    conditions = manager._build_condition_definitions(  # noqa: SLF001
+        ambient_condition="any",
+        must_be_occupied=None,
+        occupancy_entity_id="binary_sensor.room_occupancy",
+        time_condition_enabled=False,
+        start_time="00:00",
+        end_time="23:59",
+        ambient_config={
+            "lux_sensor": "sensor.room_lux",
+            "dark_threshold": 800,
+            "bright_threshold": 1200,
+            "fallback_to_sun": True,
+            "ignore_local_lux_when_lights_on": True,
+            "local_light_entity_ids": ["light.room_ceiling"],
+        },
+        trigger_types=("on_occupied", "on_bright"),
+    )
+
+    assert conditions == [
+        {
+            "condition": "or",
+            "conditions": [
+                {
+                    "condition": "template",
+                    "value_template": "{{ trigger is not defined or trigger.id in ['on_occupied'] }}",
+                },
+                {
+                    "condition": "and",
+                    "conditions": [
+                        {
+                            "condition": "state",
+                            "entity_id": "light.room_ceiling",
+                            "state": "off",
+                        },
+                        {
+                            "condition": "numeric_state",
+                            "entity_id": "sensor.room_lux",
+                            "above": 1200.0,
+                        },
+                    ],
+                },
+                {
+                    "condition": "and",
+                    "conditions": [
+                        {
+                            "condition": "or",
+                            "conditions": [
+                                {
+                                    "condition": "template",
+                                    "value_template": "{{ states('sensor.room_lux') | float(none) is none }}",
+                                },
+                                {
+                                    "condition": "state",
+                                    "entity_id": "light.room_ceiling",
+                                    "state": "on",
+                                },
+                            ],
+                        },
+                        {
+                            "condition": "state",
+                            "entity_id": "sun.sun",
+                            "state": "above_horizon",
+                        },
+                    ],
+                },
+            ],
         }
     ]
 
@@ -933,7 +1106,7 @@ async def test_rebuild_rules_before_metadata_version_rewrites_only_old_rules(
             },
             {
                 "id": "topomation_kitchen_new",
-                "metadata_version": 8,
+                "metadata_version": 9,
                 "trigger_type": "on_dark",
                 "actions": [{"entity_id": "light.kitchen", "service": "turn_on"}],
             },

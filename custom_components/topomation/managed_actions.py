@@ -73,7 +73,7 @@ _VALID_AMBIENT_CONDITIONS = frozenset({"any", "dark", "bright"})
 _AUTOMATION_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_]+$")
 _RULE_UUID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{7,63}$")
 _RECENT_RULE_SNAPSHOT_TTL_SECONDS = 30.0
-_AUTOMATION_METADATA_VERSION = 8
+_AUTOMATION_METADATA_VERSION = 9
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -478,6 +478,7 @@ class TopomationManagedActions:
             automation_id=automation_id,
             property_activity_entity_id=compiled_rule.property_activity_entity_id,
             require_property_activity=compiled_rule.require_property_activity,
+            trigger_types=normalized_trigger_types,
         )
 
         metadata_payload = {
@@ -1451,23 +1452,21 @@ class TopomationManagedActions:
                         "trigger": "state",
                         "entity_id": occupancy_entity_id,
                         "to": "on" if trigger_type == "on_occupied" else "off",
+                        "id": trigger_type,
                     }
                 )
                 continue
 
-            lux_sensor = self._effective_ambient_lux_sensor(ambient_config)
-            if isinstance(lux_sensor, str) and lux_sensor:
+            threshold = self._ambient_threshold_for_trigger(trigger_type, ambient_config)
+            threshold_key = "below" if trigger_type == "on_dark" else "above"
+            for lux_sensor in self._ambient_trigger_lux_sources(ambient_config):
                 if trigger_type == "on_dark":
                     triggers.append(
                         {
                             "trigger": "numeric_state",
                             "entity_id": lux_sensor,
-                            "below": float(
-                                ambient_config.get(
-                                    "dark_threshold",
-                                    AMBIENT_DARK_THRESHOLD_DEFAULT,
-                                )
-                            ),
+                            threshold_key: threshold,
+                            "id": trigger_type,
                         }
                     )
                 elif trigger_type == "on_bright":
@@ -1475,22 +1474,18 @@ class TopomationManagedActions:
                         {
                             "trigger": "numeric_state",
                             "entity_id": lux_sensor,
-                            "above": float(
-                                ambient_config.get(
-                                    "bright_threshold",
-                                    AMBIENT_BRIGHT_THRESHOLD_DEFAULT,
-                                )
-                            ),
+                            threshold_key: threshold,
+                            "id": trigger_type,
                         }
                     )
 
-            fallback_to_sun = bool(ambient_config.get("fallback_to_sun", True))
-            if fallback_to_sun and (not isinstance(lux_sensor, str) or not lux_sensor):
+            if self._ambient_uses_sun_fallback_trigger(ambient_config):
                 triggers.append(
                     {
                         "trigger": "state",
                         "entity_id": "sun.sun",
                         "to": "below_horizon" if trigger_type == "on_dark" else "above_horizon",
+                        "id": trigger_type,
                     }
                 )
         if require_property_activity and "on_dark" in trigger_types:
@@ -1501,19 +1496,14 @@ class TopomationManagedActions:
                     "trigger": "state",
                     "entity_id": property_activity_entity_id,
                     "to": "on",
+                    "id": "property_activity",
                 }
             )
         return triggers
 
     @staticmethod
     def _effective_ambient_lux_sensor(ambient_config: Mapping[str, Any]) -> str | None:
-        """Return the single lux source generated HA rules should watch.
-
-        Managed rules intentionally do not encode runtime fallback chains. A
-        location with a local sensor uses that sensor. A location without a
-        local sensor may inherit the first configured ancestor sensor. Sun is
-        only generated when no lux source is available.
-        """
+        """Return the primary lux source for legacy callers."""
         lux_sensor = ambient_config.get("lux_sensor")
         if isinstance(lux_sensor, str) and lux_sensor:
             return lux_sensor
@@ -1521,6 +1511,134 @@ class TopomationManagedActions:
         if isinstance(inherited_lux_sensor, str) and inherited_lux_sensor:
             return inherited_lux_sensor
         return None
+
+    @staticmethod
+    def _ambient_trigger_lux_sources(ambient_config: Mapping[str, Any]) -> list[str]:
+        """Return lux sources that can wake an ambient automation."""
+        sources: list[str] = []
+        for key in ("lux_sensor", "inherited_lux_sensor"):
+            value = ambient_config.get(key)
+            if isinstance(value, str) and value and value not in sources:
+                sources.append(value)
+        return sources
+
+    @staticmethod
+    def _ambient_threshold_for_trigger(
+        trigger_type: ActionTriggerType,
+        ambient_config: Mapping[str, Any],
+    ) -> float:
+        """Return the configured threshold for a dark/bright trigger."""
+        if trigger_type == "on_dark":
+            return float(ambient_config.get("dark_threshold", AMBIENT_DARK_THRESHOLD_DEFAULT))
+        return float(ambient_config.get("bright_threshold", AMBIENT_BRIGHT_THRESHOLD_DEFAULT))
+
+    @staticmethod
+    def _ambient_uses_sun_fallback_trigger(ambient_config: Mapping[str, Any]) -> bool:
+        """Return true when generated rules should wake from sun fallback."""
+        if not bool(ambient_config.get("fallback_to_sun", True)):
+            return False
+        inherited_lux_sensor = ambient_config.get("inherited_lux_sensor")
+        if isinstance(inherited_lux_sensor, str) and inherited_lux_sensor:
+            return False
+        local_lux_sensor = ambient_config.get("lux_sensor")
+        if isinstance(local_lux_sensor, str) and local_lux_sensor:
+            return bool(ambient_config.get("ignore_local_lux_when_lights_on", False))
+        return True
+
+    @staticmethod
+    def _numeric_state_clause(
+        entity_id: str,
+        *,
+        dark_state: bool,
+        threshold: float,
+    ) -> dict[str, Any]:
+        """Build a numeric dark/bright condition clause."""
+        return {
+            "condition": "numeric_state",
+            "entity_id": entity_id,
+            "below" if dark_state else "above": threshold,
+        }
+
+    @staticmethod
+    def _numeric_unavailable_clause(entity_id: str) -> dict[str, Any]:
+        """Build a template condition that is true when an entity is not numeric."""
+        return {
+            "condition": "template",
+            "value_template": (
+                "{{ states('" + entity_id.replace("'", "\\'") + "') | float(none) is none }}"
+            ),
+        }
+
+    @staticmethod
+    def _and_clause(clauses: list[dict[str, Any]]) -> dict[str, Any]:
+        """Return one clause or an HA and condition for many clauses."""
+        flattened: list[dict[str, Any]] = []
+        for clause in clauses:
+            if clause.get("condition") == "and" and isinstance(clause.get("conditions"), list):
+                flattened.extend(clause["conditions"])
+            else:
+                flattened.append(clause)
+        clauses = flattened
+        if len(clauses) == 1:
+            return clauses[0]
+        return {"condition": "and", "conditions": clauses}
+
+    @staticmethod
+    def _or_clause(clauses: list[dict[str, Any]]) -> dict[str, Any]:
+        """Return one clause or an HA or condition for many clauses."""
+        flattened: list[dict[str, Any]] = []
+        for clause in clauses:
+            if clause.get("condition") == "or" and isinstance(clause.get("conditions"), list):
+                flattened.extend(clause["conditions"])
+            else:
+                flattened.append(clause)
+        clauses = flattened
+        if len(clauses) == 1:
+            return clauses[0]
+        return {"condition": "or", "conditions": clauses}
+
+    @staticmethod
+    def _local_light_entity_ids(ambient_config: Mapping[str, Any]) -> list[str]:
+        """Return configured local light entities for ambient contamination."""
+        return [
+            entity_id
+            for entity_id in ambient_config.get("local_light_entity_ids", [])
+            if isinstance(entity_id, str) and entity_id.startswith("light.")
+        ]
+
+    def _local_lights_off_clause(
+        self,
+        ambient_config: Mapping[str, Any],
+    ) -> dict[str, Any] | None:
+        """Build a condition requiring all local contaminating lights to be off."""
+        if not bool(ambient_config.get("ignore_local_lux_when_lights_on", False)):
+            return None
+        local_light_entity_ids = self._local_light_entity_ids(ambient_config)
+        if not local_light_entity_ids:
+            return None
+        return self._and_clause(
+            [
+                {"condition": "state", "entity_id": entity_id, "state": "off"}
+                for entity_id in local_light_entity_ids
+            ]
+        )
+
+    def _local_lights_on_clause(
+        self,
+        ambient_config: Mapping[str, Any],
+    ) -> dict[str, Any] | None:
+        """Build a condition that is true when any contaminating local light is on."""
+        if not bool(ambient_config.get("ignore_local_lux_when_lights_on", False)):
+            return None
+        local_light_entity_ids = self._local_light_entity_ids(ambient_config)
+        if not local_light_entity_ids:
+            return None
+        return self._or_clause(
+            [
+                {"condition": "state", "entity_id": entity_id, "state": "on"}
+                for entity_id in local_light_entity_ids
+            ]
+        )
 
     def _ambient_condition_clause(
         self,
@@ -1532,59 +1650,85 @@ class TopomationManagedActions:
         if ambient_condition == "any":
             return None
 
-        lux_sensor = self._effective_ambient_lux_sensor(ambient_config)
-        fallback_to_sun = bool(ambient_config.get("fallback_to_sun", True))
         dark_state = ambient_condition == "dark"
+        threshold_key = "dark_threshold" if dark_state else "bright_threshold"
+        threshold = float(
+            ambient_config.get(
+                threshold_key,
+                AMBIENT_DARK_THRESHOLD_DEFAULT if dark_state else AMBIENT_BRIGHT_THRESHOLD_DEFAULT,
+            )
+        )
+        local_lux_sensor = ambient_config.get("lux_sensor")
+        inherited_lux_sensor = ambient_config.get("inherited_lux_sensor")
 
-        if isinstance(lux_sensor, str) and lux_sensor:
-            threshold_key = "dark_threshold" if dark_state else "bright_threshold"
-            threshold = float(
-                ambient_config.get(
-                    threshold_key,
-                    (
-                        AMBIENT_DARK_THRESHOLD_DEFAULT
-                        if dark_state
-                        else AMBIENT_BRIGHT_THRESHOLD_DEFAULT
-                    ),
+        clauses: list[dict[str, Any]] = []
+        fallback_gates: list[dict[str, Any]] = []
+
+        if isinstance(local_lux_sensor, str) and local_lux_sensor:
+            local_clause_parts: list[dict[str, Any]] = []
+            local_lights_off = self._local_lights_off_clause(ambient_config)
+            if local_lights_off is not None:
+                local_clause_parts.append(local_lights_off)
+            local_clause_parts.append(
+                self._numeric_state_clause(
+                    local_lux_sensor,
+                    dark_state=dark_state,
+                    threshold=threshold,
                 )
             )
-            lux_clause: dict[str, Any] = {
-                "condition": "numeric_state",
-                "entity_id": lux_sensor,
-                "below" if dark_state else "above": threshold,
-            }
-            local_lux_sensor = ambient_config.get("lux_sensor")
-            if lux_sensor == local_lux_sensor and bool(
-                ambient_config.get("ignore_local_lux_when_lights_on", False)
-            ):
-                local_light_entity_ids = [
-                    entity_id
-                    for entity_id in ambient_config.get("local_light_entity_ids", [])
-                    if isinstance(entity_id, str) and entity_id.startswith("light.")
-                ]
-                if local_light_entity_ids:
-                    lux_clause = {
-                        "condition": "and",
-                        "conditions": [
-                            {
-                                "condition": "state",
-                                "entity_id": entity_id,
-                                "state": "off",
-                            }
-                            for entity_id in local_light_entity_ids
-                        ]
-                        + [lux_clause],
-                    }
-            return lux_clause
+            clauses.append(self._and_clause(local_clause_parts))
 
-        if fallback_to_sun:
-            return {
+            local_lights_on = self._local_lights_on_clause(ambient_config)
+            unusable_local_clauses = [self._numeric_unavailable_clause(local_lux_sensor)]
+            if local_lights_on is not None:
+                unusable_local_clauses.append(local_lights_on)
+            fallback_gates.append(self._or_clause(unusable_local_clauses))
+
+        if isinstance(inherited_lux_sensor, str) and inherited_lux_sensor:
+            inherited_parts = list(fallback_gates)
+            inherited_parts.append(
+                self._numeric_state_clause(
+                    inherited_lux_sensor,
+                    dark_state=dark_state,
+                    threshold=threshold,
+                )
+            )
+            clauses.append(self._and_clause(inherited_parts))
+            fallback_gates.append(self._numeric_unavailable_clause(inherited_lux_sensor))
+
+        if self._ambient_uses_sun_fallback_trigger(ambient_config):
+            sun_clause: dict[str, Any] = {
                 "condition": "state",
                 "entity_id": "sun.sun",
                 "state": "below_horizon" if dark_state else "above_horizon",
             }
+            if fallback_gates:
+                clauses.append(self._and_clause([*fallback_gates, sun_clause]))
+            else:
+                clauses.append(sun_clause)
+
+        if clauses:
+            return self._or_clause(clauses)
 
         return {"condition": "template", "value_template": "{{ false }}"}
+
+    @staticmethod
+    def _trigger_passthrough_clause(trigger_types: tuple[ActionTriggerType, ...]) -> dict[str, Any]:
+        """Allow non-ambient trigger families through source-arbitration conditions."""
+        passthrough_ids = [
+            trigger_type
+            for trigger_type in trigger_types
+            if trigger_type in {"on_occupied", "on_vacant"}
+        ]
+        if "on_dark" in trigger_types:
+            passthrough_ids.append("property_activity")
+        ids_literal = ", ".join(f"'{trigger_id}'" for trigger_id in passthrough_ids)
+        return {
+            "condition": "template",
+            "value_template": (
+                "{{ trigger is not defined or trigger.id in [" + ids_literal + "] }}"
+            ),
+        }
 
     def _build_condition_definitions(
         self,
@@ -1600,15 +1744,32 @@ class TopomationManagedActions:
         automation_id: str | None = None,
         property_activity_entity_id: str | None = None,
         require_property_activity: bool = False,
+        trigger_types: tuple[ActionTriggerType, ...] = (),
     ) -> list[dict[str, Any]]:
         """Build Home Assistant condition list for one managed action rule."""
         conditions: list[dict[str, Any]] = []
 
+        ambient_trigger_condition: ActionAmbientCondition | None = None
+        if "on_dark" in trigger_types:
+            ambient_trigger_condition = "dark"
+        elif "on_bright" in trigger_types:
+            ambient_trigger_condition = "bright"
+        effective_ambient_condition = (
+            ambient_condition
+            if ambient_condition != "any"
+            else ambient_trigger_condition or ambient_condition
+        )
         ambient_clause = self._ambient_condition_clause(
-            ambient_condition=ambient_condition,
+            ambient_condition=effective_ambient_condition,
             ambient_config=ambient_config,
         )
         if ambient_clause is not None:
+            if ambient_condition == "any" and ambient_trigger_condition and any(
+                trigger_type in {"on_occupied", "on_vacant"} for trigger_type in trigger_types
+            ):
+                ambient_clause = self._or_clause(
+                    [self._trigger_passthrough_clause(trigger_types), ambient_clause]
+                )
             conditions.append(ambient_clause)
 
         if isinstance(must_be_occupied, bool):

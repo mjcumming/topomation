@@ -4978,6 +4978,16 @@ export class HtLocationInspector extends LitElement {
           ignoredLocalLuxLights.length === 1 ? "is" : "are"
         } on.`
       : "";
+    const localLightEntityIds = (this.location.entity_ids || []).filter(
+      (entityId) => typeof entityId === "string" && entityId.startsWith("light.")
+    );
+    const localLightSummary =
+      localLightEntityIds.length > 0
+        ? localLightEntityIds.map((entityId) => this._entityName(entityId)).join(", ")
+        : "No local light entities are assigned to this location.";
+    const sourcePriorityNote = Boolean(config.ignore_local_lux_when_lights_on)
+      ? `Effective source priority: local lux when local lights are off; otherwise inherited lux; otherwise sunrise/sunset fallback. Local lights checked: ${localLightSummary}`
+      : "Effective source priority: local lux when configured; otherwise inherited lux; otherwise sunrise/sunset fallback.";
     const ambientStateLabel = this._ambientStateLabel(reading);
     const darkThreshold = Math.max(0, Number(config.dark_threshold) || 0);
     const brightThreshold = Math.max(darkThreshold + 1, Number(config.bright_threshold) || darkThreshold + 1);
@@ -5015,6 +5025,7 @@ export class HtLocationInspector extends LitElement {
         <div class="policy-note" style="margin-bottom: 8px;">
           Lux sensor assignment is explicit. Set a location sensor or inherit from parent.
         </div>
+        <div class="policy-note" data-testid="ambient-source-priority-note">${sourcePriorityNote}</div>
         ${ignoredLocalLuxMessage
           ? html`<div class="policy-note" data-testid="ambient-ignored-local-lux">${ignoredLocalLuxMessage}</div>`
           : ""}

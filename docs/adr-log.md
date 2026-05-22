@@ -21,6 +21,18 @@
 
 ## Active Decisions
 
+### ADR-HA-097: Effective Ambient Source Parity (2026-05-22)
+
+**Status**: APPROVED
+**Full ADR**: [docs/adr/ADR-HA-097-effective-ambient-source-parity.md](adr/ADR-HA-097-effective-ambient-source-parity.md)
+
+**Decision summary**: Ambient readings and generated managed Lighting automations
+must use the same effective-source priority: clean local lux, inherited lux when
+local lux is contaminated by direct local `light.*` entities, and strict
+sunrise/sunset fallback when no inherited lux source exists.
+
+---
+
 ### ADR-HA-001: Lit for Frontend (2025-12-09)
 
 **Status**: ✅ APPROVED
