@@ -1,6 +1,6 @@
 # Work Tracking - topomation
 
-**Last Updated**: 2026-05-20
+**Last Updated**: 2026-05-23
 **Purpose**: operational execution tracker for the active sprint.
 
 Status markers:
@@ -28,6 +28,14 @@ Canonical separation:
   than floating to the top.
 - Touched workflow: Occupancy source cards and Lighting rule device rows in
   `custom_components/topomation/frontend/ht-location-inspector.ts`.
+
+### 2026-05-23 — Release asset repair hardening
+
+- Auto Release now repairs an existing GitHub release when `topomation.zip` is
+  missing, preventing HACS downloads from failing after a release shell exists
+  without its zip asset.
+- `v0.3.17` failure mode: the release existed, but had no assets, so HACS could
+  not download the configured zip.
 
 ## Current Sprint
 

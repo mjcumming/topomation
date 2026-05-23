@@ -178,7 +178,7 @@ That command now runs:
      - Title: `vX.Y.Z`
      - Body: top highlights + `Full changelog: https://github.com/<org>/<repo>/blob/main/CHANGELOG.md#xyz`
 
-CI runs the same backend/frontend/comprehensive checks. **Auto Release** runs when any of the three version files change and creates the release once CI passes. It also runs the release job when the release for the current version does not exist yet (e.g. after fixing CI or the changelog step without bumping again). If a release was skipped and you did not push another version-file change, go to **Actions → Auto Release → Run workflow** to create the release for the current version.
+CI runs the same backend/frontend/comprehensive checks. **Auto Release** runs when any of the three version files change and creates the release once CI passes. It also runs the release job when the release for the current version does not exist yet (e.g. after fixing CI or the changelog step without bumping again). If the GitHub release exists but the HACS asset is missing, Auto Release rebuilds and uploads `topomation.zip` for that release. If a release was skipped and you did not push another version-file change, go to **Actions → Auto Release → Run workflow** to create or repair the release for the current version.
 
 ### 4.1 GitHub release notes standard template
 

@@ -58,17 +58,23 @@ jobs:
             echo "Version unchanged"
           fi
 
-      - name: Check if release exists for current version
+      - name: Check if release or HACS asset is missing
         id: release-missing
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if gh release view "v${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
+          TAG="v${{ steps.version.outputs.version }}"
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            echo "missing=true" >> $GITHUB_OUTPUT
+            echo "Release $TAG does not exist; will create"
+            exit 0
+          fi
+          if gh release view "$TAG" --json assets --jq '.assets[].name' | grep -Fxq "topomation.zip"; then
             echo "missing=false" >> $GITHUB_OUTPUT
-            echo "Release v${{ steps.version.outputs.version }} already exists"
+            echo "Release $TAG and topomation.zip already exist"
           else
             echo "missing=true" >> $GITHUB_OUTPUT
-            echo "Release v${{ steps.version.outputs.version }} does not exist; will create"
+            echo "Release $TAG exists but topomation.zip is missing; will repair"
           fi
 
   hacs-validation:
@@ -187,19 +193,29 @@ jobs:
             exit 1
           fi
 
-      - name: Check if release already exists
+      - name: Check release asset state
         id: release-check
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if gh release view "v${{ needs.check-version.outputs.version }}" >/dev/null 2>&1; then
-            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "release-exists=true" >> $GITHUB_OUTPUT
+            if gh release view "v${{ needs.check-version.outputs.version }}" --json assets \
+              --jq '.assets[].name' | grep -Fxq "topomation.zip"; then
+              echo "asset-exists=true" >> $GITHUB_OUTPUT
+              echo "Release asset topomation.zip already exists."
+            else
+              echo "asset-exists=false" >> $GITHUB_OUTPUT
+              echo "Release exists but topomation.zip is missing; will upload it."
+            fi
           else
-            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "release-exists=false" >> $GITHUB_OUTPUT
+            echo "asset-exists=false" >> $GITHUB_OUTPUT
+            echo "Release does not exist; will create it with topomation.zip."
           fi
 
       - name: Set up Node
-        if: steps.release-check.outputs.exists == 'false'
+        if: steps.release-check.outputs.asset-exists == 'false'
         uses: actions/setup-node@v6
         with:
           node-version: "20"
@@ -207,7 +223,7 @@ jobs:
           cache-dependency-path: custom_components/topomation/frontend/package-lock.json
 
       - name: Build frontend runtime bundle
-        if: steps.release-check.outputs.exists == 'false'
+        if: steps.release-check.outputs.asset-exists == 'false'
         working-directory: custom_components/topomation/frontend
         run: |
           npm ci
@@ -215,7 +231,7 @@ jobs:
           cp dist/topomation-panel.js topomation-panel.js
 
       - name: Create ZIP file
-        if: steps.release-check.outputs.exists == 'false'
+        if: steps.release-check.outputs.asset-exists == 'false'
         run: |
           WORKSPACE_DIR="${GITHUB_WORKSPACE:-$(pwd)}"
           rm -f topomation.zip
@@ -239,7 +255,7 @@ jobs:
           zip -g topomation.zip LICENSE README.md
 
       - name: Extract changelog for this version
-        if: steps.release-check.outputs.exists == 'false'
+        if: steps.release-check.outputs.asset-exists == 'false'
         id: changelog
         env:
           VERSION: ${{ needs.check-version.outputs.version }}
@@ -260,18 +276,17 @@ jobs:
           fi
 
       - name: Create Release with GitHub CLI
-        if: steps.release-check.outputs.exists == 'false'
+        if: steps.release-check.outputs.asset-exists == 'false'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_NOTES: ${{ steps.changelog.outputs.changelog }}
         run: |
-          if gh release view "v${{ needs.check-version.outputs.version }}" >/dev/null 2>&1; then
-            echo "Release already exists, skipping."
-            exit 0
+          if [ "${{ steps.release-check.outputs.release-exists }}" = "true" ]; then
+            gh release upload "v${{ needs.check-version.outputs.version }}" topomation.zip --clobber
+          else
+            gh release create "v${{ needs.check-version.outputs.version }}" \
+              --title "Topomation v${{ needs.check-version.outputs.version }}" \
+              --notes "$RELEASE_NOTES" \
+              --latest \
+              topomation.zip
           fi
-
-          gh release create "v${{ needs.check-version.outputs.version }}" \
-            --title "Topomation v${{ needs.check-version.outputs.version }}" \
-            --notes "$RELEASE_NOTES" \
-            --latest \
-            topomation.zip
