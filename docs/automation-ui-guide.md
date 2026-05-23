@@ -34,13 +34,14 @@ not room-style source lists on structural hosts—see `docs/contracts.md` and
 ADR-HA-073 (initial intent) as superseded by **ADR-HA-087** (current tab policy).
 
 1. **Property tabs shown** (ADR-HA-096 target): property is a site-context
-   surface. It shows Recent Activity configuration/status, `Occupancy Groups`
-   where applicable, `Ambient`, and structure/rollup summary. It does **not**
-   show direct managed-action tabs (`Lighting`, `Appliances`, `Media`, `HVAC`,
-   `Vacuum`).
+   surface. It shows `Occupancy Groups`, `Recent Activity`, and `Ambient`.
+   The `Occupancy Groups` tab also carries the structure/rollup summary. It
+   does **not** show direct managed-action tabs (`Lighting`, `Appliances`,
+   `Media`, `HVAC`, `Vacuum`).
 2. **Non-property structural tabs shown**: `Occupancy Groups`, `Ambient`,
    `Lighting`, `Appliances`, `Media`, `HVAC`, `Vacuum`.
-3. **Device and lux enumeration** (Ambient selector, Lighting/Appliances/Media/HVAC/Vacuum
+3. **Device and lux enumeration** (Ambient selector, Ambient local-light
+   contamination list, Lighting/Appliances/Media/HVAC/Vacuum
    action targets): the host’s `entity_ids` and `ha_area_id` plus the **managed
    shadow** wrapper’s `ha_area_id` and `entity_ids` (`_meta.shadow_area_id` on the
    host). **No descendant walk** — devices in child-room HA areas are authored

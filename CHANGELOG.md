@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.17] - 2026-05-23
+
+### Changed
+
+- **Ambient tab configuration**: removed the fallback/error toggles and replaced
+  the old local-lux ignore switch with an explicit list of local `light.*`
+  entities that can contaminate the selected lux sensor.
+- **Managed lighting ambient contract**: generated managed automations now
+  ignore the legacy local-lux boolean and rebuild through metadata version `10`
+  so selected local light entities are the only contamination source.
+
+### Fixed
+
+- **Property recent activity tab**: property recent activity now renders on its
+  own `Recent Activity` tab instead of inside `Occupancy Groups`.
+
 ## [0.3.16] - 2026-05-22
 
 ### Changed

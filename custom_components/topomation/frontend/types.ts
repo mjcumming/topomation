@@ -146,8 +146,7 @@ export interface AmbientConfig extends ModuleConfig {
   dark_threshold?: number;
   bright_threshold?: number;
   fallback_to_sun?: boolean;
-  assume_dark_on_error?: boolean;
-  ignore_local_lux_when_lights_on?: boolean;
+  local_lux_light_entity_ids?: string[];
 }
 
 export interface RecentActivityConfig extends ModuleConfig {

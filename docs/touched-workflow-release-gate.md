@@ -81,6 +81,42 @@ Run the rows that match the touched workflow.
 
 ## 6. Release Records
 
+### 2026-05-23 - v0.3.17 ambient local-light selection and recent activity tab gate
+
+1. Commit under test: final release commit containing this record for
+   Topomation `0.3.17`.
+2. Frontend bundle rebuilt from that commit: yes; `npm run build` was run
+   during implementation and `make test-release-live` rebuilt the committed
+   runtime bundle again during final validation.
+3. Touched workflow list:
+   - Ambient page configuration for selected local `light.*` contamination
+     sources.
+   - Ambient backend effective-source arbitration that ignores the legacy
+     local-lux boolean and uses `local_lux_light_entity_ids` only.
+   - Managed lighting automation regeneration through metadata version `10`.
+   - Property recent activity tab placement.
+   - Release metadata/version synchronization for Topomation `0.3.17`.
+4. Commands run:
+   - `python scripts/verify-version-sync.py`
+   - `pytest -q --no-cov tests/test_ambient_extra_lux_hook.py tests/test_managed_actions.py tests/test_managed_action_config_build_matrix.py tests/test_actions_runtime.py tests/test_recent_activity.py`
+   - `ruff check custom_components/topomation tests`
+   - `make test-release-live`
+5. Outcome:
+   - Ambient selected local-light source contract: **PASS** (focused backend
+     suites `118 passed`; 2026-05-23).
+   - Managed lighting automation regeneration metadata: **PASS**
+     (`tests/test_managed_actions.py`; 2026-05-23).
+   - Property recent activity tab placement: **PASS** (`tests/test_recent_activity.py`
+     plus full frontend release gate; 2026-05-23).
+   - Release metadata/version sync: **PASS** (`Version sync ok: 0.3.17`;
+     2026-05-23).
+   - Local comprehensive gate: **PASS** (`make test-release-live`;
+     Ruff, Mypy, backend pytest suite, Vitest, Web Test Runner `205 passed`,
+     and Playwright `34 passed`; 2026-05-23).
+   - Live HA managed-action contract/browser workflows: **PASS**
+     (`make test-release-live`; live managed-action contract `2 passed` and
+     live browser workflow `6 passed`; 2026-05-23).
+
 ### 2026-05-22 - v0.3.16 ambient effective-source parity gate
 
 1. Commit under test: final release commit containing this record for

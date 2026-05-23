@@ -805,7 +805,6 @@ def test_ambient_condition_ignores_local_lux_while_local_lights_are_on() -> None
             "dark_threshold": 800,
             "bright_threshold": 1200,
             "fallback_to_sun": False,
-            "ignore_local_lux_when_lights_on": True,
             "local_light_entity_ids": ["light.room_ceiling", "light.room_lamp"],
         },
     )
@@ -843,7 +842,6 @@ def test_ambient_condition_falls_back_to_parent_when_local_lux_is_contaminated()
             "dark_threshold": 800,
             "bright_threshold": 1200,
             "fallback_to_sun": False,
-            "ignore_local_lux_when_lights_on": True,
             "local_light_entity_ids": ["light.room_ceiling"],
         },
     )
@@ -913,7 +911,6 @@ def test_ambient_condition_uses_inherited_lux_when_no_local_sensor_is_configured
             "dark_threshold": 800,
             "bright_threshold": 1200,
             "fallback_to_sun": True,
-            "ignore_local_lux_when_lights_on": True,
             "local_light_entity_ids": ["light.room_ceiling"],
         },
     )
@@ -944,7 +941,6 @@ def test_ambient_condition_falls_back_to_sun_when_local_lux_is_contaminated() ->
             "dark_threshold": 800,
             "bright_threshold": 1200,
             "fallback_to_sun": True,
-            "ignore_local_lux_when_lights_on": True,
             "local_light_entity_ids": ["light.room_ceiling"],
         },
     )
@@ -1013,7 +1009,6 @@ def test_ambient_trigger_arbitration_preserves_combined_occupancy_trigger_path()
             "dark_threshold": 800,
             "bright_threshold": 1200,
             "fallback_to_sun": True,
-            "ignore_local_lux_when_lights_on": True,
             "local_light_entity_ids": ["light.room_ceiling"],
         },
         trigger_types=("on_occupied", "on_bright"),
@@ -1106,7 +1101,7 @@ async def test_rebuild_rules_before_metadata_version_rewrites_only_old_rules(
             },
             {
                 "id": "topomation_kitchen_new",
-                "metadata_version": 9,
+                "metadata_version": 10,
                 "trigger_type": "on_dark",
                 "actions": [{"entity_id": "light.kitchen", "service": "turn_on"}],
             },

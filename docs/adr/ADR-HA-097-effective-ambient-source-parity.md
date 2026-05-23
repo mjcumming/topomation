@@ -6,9 +6,9 @@
 ## Context
 
 Indoor lux sensors can be contaminated by lights in the same location. Topomation
-already exposes `ignore_local_lux_when_lights_on` so the Ambient inspector can
-skip a location's direct lux sensor while local lights are on and then fall back
-to inherited lux or sun state.
+lets the Ambient inspector select which local `light.*` entities can contaminate
+a location's direct lux sensor. When any selected light is on, Topomation skips
+that local sensor and falls back to inherited lux or sun state.
 
 The previous managed Lighting rule compiler did not follow that same source
 priority. Generated Home Assistant automations selected one lux source at save
@@ -26,9 +26,8 @@ the same effective-source priority for every topology location, including
 structural hosts:
 
 1. Use the location's configured local lux sensor when it is usable.
-2. When `ignore_local_lux_when_lights_on` is enabled, treat the local lux sensor
-   as unusable while any `light.*` entity assigned directly to that location is
-   `on`.
+2. When any selected local lux-contaminating `light.*` entity is `on`, treat the
+   local lux sensor as unusable.
 3. If the local lux sensor is unusable and inherited ambient is enabled, use the
    first usable ancestor lux sensor.
 4. If the local lux sensor is unusable, no inherited lux source exists, and sun

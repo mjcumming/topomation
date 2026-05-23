@@ -43,6 +43,7 @@ const switchTopTab = async (
   label:
     | "Occupancy"
     | "Occupancy Groups"
+    | "Recent Activity"
     | "Ambient"
     | "Lighting"
     | "Media"
@@ -4936,7 +4937,6 @@ describe("HtLocationInspector WIAB configuration", () => {
       dark_threshold: 50,
       bright_threshold: 500,
       fallback_to_sun: true,
-      assume_dark_on_error: true,
     };
 
     const element = await fixture<HtLocationInspector>(html`
@@ -5138,6 +5138,7 @@ describe("HtLocationInspector WIAB configuration", () => {
       ></ht-location-inspector>
     `);
     await element.updateComplete;
+    await switchTopTab(element, "Recent Activity");
 
     const enabledToggle = element.shadowRoot!.querySelector(
       '[data-testid="recent-activity-enabled-toggle"]'
@@ -5395,6 +5396,16 @@ describe("HtLocationInspector WIAB configuration", () => {
             unit_of_measurement: "lx",
           },
         },
+        "light.kitchen_ceiling": {
+          entity_id: "light.kitchen_ceiling",
+          state: "off",
+          attributes: { friendly_name: "Kitchen Ceiling" },
+        },
+        "light.kitchen_pendants": {
+          entity_id: "light.kitchen_pendants",
+          state: "on",
+          attributes: { friendly_name: "Kitchen Pendants" },
+        },
       },
       areas: {
         kitchen: { area_id: "kitchen", name: "Kitchen" },
@@ -5407,7 +5418,7 @@ describe("HtLocationInspector WIAB configuration", () => {
     location.id = "area_kitchen";
     location.name = "Kitchen";
     location.ha_area_id = "kitchen";
-    location.entity_ids = ["sensor.patio_lux"];
+    location.entity_ids = ["sensor.patio_lux", "light.kitchen_ceiling", "light.kitchen_pendants"];
     location.modules._meta = { type: "area" };
     location.modules.ambient = {
       lux_sensor: null,
@@ -5416,7 +5427,6 @@ describe("HtLocationInspector WIAB configuration", () => {
       dark_threshold: 50,
       bright_threshold: 500,
       fallback_to_sun: true,
-      assume_dark_on_error: true,
     };
 
     const element = await fixture<HtLocationInspector>(html`
@@ -5446,6 +5456,24 @@ describe("HtLocationInspector WIAB configuration", () => {
     sensorSelect!.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
     await element.updateComplete;
 
+    expect(element.shadowRoot?.querySelector('[data-testid="ambient-fallback-to-sun-toggle"]')).to.equal(null);
+    expect(element.shadowRoot?.querySelector('[data-testid="ambient-assume-dark-on-error-toggle"]')).to.equal(null);
+    expect(element.shadowRoot?.querySelector('[data-testid="ambient-ignore-local-lux-toggle"]')).to.equal(null);
+
+    const localLightSelector = element.shadowRoot?.querySelector(
+      '[data-testid="ambient-local-light-selector"]'
+    ) as HTMLElement | null;
+    expect(localLightSelector?.textContent || "").to.include("Kitchen Ceiling");
+    expect(localLightSelector?.textContent || "").to.include("Kitchen Pendants");
+
+    const ceilingLight = element.shadowRoot?.querySelector(
+      '[data-testid="ambient-local-light-light.kitchen_ceiling"]'
+    ) as HTMLInputElement | null;
+    expect(ceilingLight).to.exist;
+    ceilingLight!.checked = true;
+    ceilingLight!.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+    await element.updateComplete;
+
     const saveButton = element.shadowRoot?.querySelector(
       '[data-testid="ambient-sticky-save-button"]'
     ) as HTMLButtonElement | null;
@@ -5462,7 +5490,9 @@ describe("HtLocationInspector WIAB configuration", () => {
             request.config?.bright_threshold >= 121 &&
             request.config?.lux_sensor === "sensor.patio_lux" &&
             request.config?.inherit_from_parent === false &&
-            request.config?.auto_discover === false
+            request.config?.auto_discover === false &&
+            request.config?.fallback_to_sun === true &&
+            request.config?.local_lux_light_entity_ids?.includes("light.kitchen_ceiling")
         ),
       "ambient changes were not persisted on save"
     );
@@ -5564,7 +5594,6 @@ describe("HtLocationInspector WIAB configuration", () => {
       dark_threshold: 50,
       bright_threshold: 500,
       fallback_to_sun: true,
-      assume_dark_on_error: true,
     };
 
     const element = await fixture<HtLocationInspector>(html`
@@ -5678,7 +5707,6 @@ describe("HtLocationInspector WIAB configuration", () => {
       dark_threshold: 50,
       bright_threshold: 500,
       fallback_to_sun: true,
-      assume_dark_on_error: true,
     };
 
     const element = await fixture<HtLocationInspector>(html`
@@ -5768,7 +5796,6 @@ describe("HtLocationInspector WIAB configuration", () => {
       dark_threshold: 50,
       bright_threshold: 500,
       fallback_to_sun: true,
-      assume_dark_on_error: true,
     };
 
     const element = await fixture<HtLocationInspector>(html`
@@ -7309,7 +7336,6 @@ describe("HtLocationInspector structure host managed-shadow enumeration", () => 
           dark_threshold: 50,
           bright_threshold: 500,
           fallback_to_sun: true,
-          assume_dark_on_error: true,
         },
       },
     };
@@ -7726,7 +7752,10 @@ describe("HtLocationInspector structure host managed-shadow enumeration", () => 
 
     expect(element.shadowRoot?.querySelector('[data-testid="actions-rules-section"]')).to.equal(null);
     expect(element.shadowRoot?.querySelector('[data-testid="action-rule-add"]')).to.equal(null);
-    expect(element.shadowRoot?.textContent || "").to.contain("Recent Activity");
+    const tabLabels = Array.from(element.shadowRoot?.querySelectorAll(".tabs > .tab") || []).map(
+      (tab) => tab.textContent?.trim()
+    );
+    expect(tabLabels).to.deep.equal(["Occupancy Groups", "Recent Activity", "Ambient"]);
   });
 });
 
@@ -7791,7 +7820,6 @@ describe("HtLocationInspector ambient lux HA area selection", () => {
           dark_threshold: 50,
           bright_threshold: 500,
           fallback_to_sun: true,
-          assume_dark_on_error: true,
         },
       },
     };
@@ -7924,7 +7952,6 @@ describe("HtLocationInspector ambient lux HA area selection", () => {
           dark_threshold: 50,
           bright_threshold: 500,
           fallback_to_sun: true,
-          assume_dark_on_error: true,
         },
       },
     };
@@ -8040,7 +8067,6 @@ describe("HtLocationInspector ambient lux HA area selection", () => {
           dark_threshold: 50,
           bright_threshold: 500,
           fallback_to_sun: true,
-          assume_dark_on_error: true,
         },
       },
     };

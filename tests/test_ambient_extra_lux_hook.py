@@ -96,7 +96,7 @@ def test_topomation_ambient_skips_local_lux_when_local_light_is_on() -> None:
             "lux_sensor": "sensor.room_lux",
             "auto_discover": False,
             "inherit_from_parent": True,
-            "ignore_local_lux_when_lights_on": True,
+            "local_lux_light_entity_ids": ["light.room_ceiling"],
         },
     )
     bus = EventBus()
@@ -127,6 +127,84 @@ def test_topomation_ambient_skips_local_lux_when_local_light_is_on() -> None:
     assert payload["ignored_local_lux_light_entity_ids"] == ["light.room_ceiling"]
 
 
+def test_topomation_ambient_uses_configured_light_list_for_local_lux_guard() -> None:
+    """Only selected local lights contaminate a local lux sensor."""
+    mgr = LocationManager()
+    mgr.create_location("room", "Room", is_explicit_root=True)
+    mgr.add_entity_to_location("sensor.room_lux", "room")
+    mgr.add_entity_to_location("light.room_ceiling", "room")
+    mgr.add_entity_to_location("light.room_lamp", "room")
+    mgr.set_module_config(
+        "room",
+        "ambient",
+        {
+            "version": 1,
+            "lux_sensor": "sensor.room_lux",
+            "auto_discover": False,
+            "inherit_from_parent": True,
+            "local_lux_light_entity_ids": ["light.room_ceiling"],
+            "fallback_to_sun": True,
+        },
+    )
+    bus = EventBus()
+    bus.set_location_manager(mgr)
+    mgr.set_event_bus(bus)
+
+    adapter = Mock()
+    adapter.get_device_class.return_value = "illuminance"
+    adapter.get_numeric_state.return_value = 900.0
+    adapter.get_state.side_effect = lambda entity_id: {
+        "light.room_ceiling": "off",
+        "light.room_lamp": "on",
+        "sun.sun": "below_horizon",
+    }.get(entity_id)
+
+    mod = TopomationAmbientLightModule(platform_adapter=adapter)
+    mod.attach(bus, mgr)
+
+    reading = mod.get_ambient_light("room")
+    payload = reading.to_dict()
+
+    assert reading.source_sensor == "sensor.room_lux"
+    assert payload["ignored_local_lux_sensor"] is None
+    assert payload["ignored_local_lux_light_entity_ids"] == []
+
+
+def test_topomation_ambient_ignores_legacy_local_lux_boolean_without_light_list() -> None:
+    """The old ambient boolean is inert without an explicit selected light list."""
+    mgr = LocationManager()
+    mgr.create_location("room", "Room", is_explicit_root=True)
+    mgr.add_entity_to_location("sensor.room_lux", "room")
+    mgr.add_entity_to_location("light.room_ceiling", "room")
+    mgr.set_module_config(
+        "room",
+        "ambient",
+        {
+            "version": 1,
+            "lux_sensor": "sensor.room_lux",
+            "auto_discover": False,
+            "inherit_from_parent": True,
+            "ignore_local_lux_when_lights_on": True,
+        },
+    )
+    bus = EventBus()
+    bus.set_location_manager(mgr)
+    mgr.set_event_bus(bus)
+
+    adapter = Mock()
+    adapter.get_device_class.return_value = "illuminance"
+    adapter.get_numeric_state.return_value = 900.0
+    adapter.get_state.return_value = "on"
+
+    mod = TopomationAmbientLightModule(platform_adapter=adapter)
+    mod.attach(bus, mgr)
+
+    reading = mod.get_ambient_light("room")
+
+    assert reading.source_sensor == "sensor.room_lux"
+    assert reading.is_inherited is False
+
+
 def test_topomation_ambient_uses_local_lux_when_local_light_is_off() -> None:
     """The local sensor remains authoritative when no local light is on."""
     mgr = LocationManager()
@@ -141,7 +219,7 @@ def test_topomation_ambient_uses_local_lux_when_local_light_is_off() -> None:
             "lux_sensor": "sensor.room_lux",
             "auto_discover": False,
             "inherit_from_parent": True,
-            "ignore_local_lux_when_lights_on": True,
+            "local_lux_light_entity_ids": ["light.room_ceiling"],
         },
     )
     bus = EventBus()
@@ -180,7 +258,7 @@ def test_topomation_ambient_reports_ignored_local_lux_when_falling_back_to_sun()
             "auto_discover": False,
             "inherit_from_parent": True,
             "fallback_to_sun": True,
-            "ignore_local_lux_when_lights_on": True,
+            "local_lux_light_entity_ids": ["light.room_ceiling"],
         },
     )
     bus = EventBus()

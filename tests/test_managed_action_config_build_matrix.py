@@ -135,7 +135,6 @@ def build_manager(hass: HomeAssistant) -> TopomationManagedActions:
                 "dark_threshold": 42.0,
                 "bright_threshold": 400.0,
                 "fallback_to_sun": True,
-                "ignore_local_lux_when_lights_on": True,
                 "local_light_entity_ids": ["light.room_ceiling"],
             },
             [
@@ -159,7 +158,6 @@ def build_manager(hass: HomeAssistant) -> TopomationManagedActions:
                 "dark_threshold": 42.0,
                 "bright_threshold": 400.0,
                 "fallback_to_sun": True,
-                "ignore_local_lux_when_lights_on": True,
                 "local_light_entity_ids": ["light.room_ceiling"],
             },
             [

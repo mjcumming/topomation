@@ -295,18 +295,19 @@ class TopomationAmbientLightModule(AmbientLightModule):
     def default_config(self) -> dict:
         """Default configuration for a location."""
         config = super().default_config()
-        config.setdefault("ignore_local_lux_when_lights_on", False)
+        config.setdefault("local_lux_light_entity_ids", [])
         return config
 
     def location_config_schema(self) -> dict:
         """JSON schema for location configuration."""
         schema = super().location_config_schema()
         properties = schema.setdefault("properties", {})
-        properties["ignore_local_lux_when_lights_on"] = {
-            "type": "boolean",
-            "title": "Ignore local lux while lights are on",
-            "description": "Skip this location's local lux sensor while any local light is on.",
-            "default": False,
+        properties["local_lux_light_entity_ids"] = {
+            "type": "array",
+            "title": "Local lights that affect lux",
+            "description": "Local light entities that can contaminate this location's lux sensor.",
+            "items": {"type": "string", "pattern": "^light\\."},
+            "default": [],
         }
         return schema
 
@@ -324,7 +325,7 @@ class TopomationAmbientLightModule(AmbientLightModule):
 
         ignored_sensor: str | None = None
         ignored_lights: list[str] = []
-        if self._ignore_local_lux_when_lights_on(location_id):
+        if self._has_local_lux_light_guard(location_id):
             ignored_lights = self._local_on_light_entity_ids(location_id)
 
         sensor = self._find_lux_sensor_for_location(location_id)
@@ -384,18 +385,13 @@ class TopomationAmbientLightModule(AmbientLightModule):
         self._last_readings[location_id] = reading
         return reading
 
-    def _ignore_local_lux_when_lights_on(self, location_id: str) -> bool:
+    def _has_local_lux_light_guard(self, location_id: str) -> bool:
         """Return true when the local-light contamination guard is enabled."""
-        config = self._require_location_manager().get_module_config(location_id, self.id)
-        return bool(
-            isinstance(config, Mapping)
-            and config.get("ignore_local_lux_when_lights_on") is True
-        )
+        return bool(self._configured_local_lux_light_entity_ids(location_id))
 
     def _local_on_light_entity_ids(self, location_id: str) -> list[str]:
         """Return local light entities currently on for a location."""
-        location = self._require_location_manager().get_location(location_id)
-        entity_ids = list(getattr(location, "entity_ids", []) or []) if location else []
+        entity_ids = self._configured_local_lux_light_entity_ids(location_id)
         on_lights: list[str] = []
         for entity_id in entity_ids:
             if not isinstance(entity_id, str) or not entity_id.startswith("light."):
@@ -403,6 +399,20 @@ class TopomationAmbientLightModule(AmbientLightModule):
             if self._platform and self._platform.get_state(entity_id) == "on":
                 on_lights.append(entity_id)
         return on_lights
+
+    def _configured_local_lux_light_entity_ids(self, location_id: str) -> list[str]:
+        """Return configured local lights that can contaminate lux readings."""
+        config = self._require_location_manager().get_module_config(location_id, self.id)
+        if not isinstance(config, Mapping):
+            return []
+        raw_entity_ids = config.get("local_lux_light_entity_ids", [])
+        if not isinstance(raw_entity_ids, list):
+            return []
+        return [
+            entity_id
+            for entity_id in raw_entity_ids
+            if isinstance(entity_id, str) and entity_id.startswith("light.")
+        ]
 
     def _annotate_ignored_local_lux(
         self,
@@ -687,10 +697,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     def _schedule_managed_rule_contract_rebuild(_: Any) -> None:
         """One-shot rewrite for managed automations created by older contracts.
 
-        ADR-HA-095 bumps managed-rule metadata to v6. Keep this startup rebuild
-        enabled for the v6 rollout so existing production environments converge
-        automatically, then remove the scheduled rebuild in the next release once
-        deployed installs have had a chance to rewrite their managed rules.
+        Keep this startup rebuild enabled while managed-rule metadata versions
+        roll forward so existing production environments converge automatically
+        after generated automation contracts change.
         """
         async def _run_managed_rule_startup_cleanup() -> None:
             await managed_action_rules.async_rebuild_rules_before_metadata_version()
@@ -896,7 +905,7 @@ def _apply_topomation_ambient_defaults(config: Mapping[str, Any]) -> dict[str, A
     """Apply Topomation ambient defaults."""
     updated = dict(config)
     updated["auto_discover"] = False
-    updated.setdefault("ignore_local_lux_when_lights_on", False)
+    updated.setdefault("local_lux_light_entity_ids", [])
     updated.setdefault("dark_threshold", AMBIENT_DARK_THRESHOLD_DEFAULT)
     updated.setdefault("bright_threshold", AMBIENT_BRIGHT_THRESHOLD_DEFAULT)
     return updated

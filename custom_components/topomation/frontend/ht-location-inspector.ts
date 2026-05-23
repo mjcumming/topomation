@@ -41,6 +41,7 @@ type CandidateItem = { key: string; entityId: string; signalKey?: SourceSignalKe
 type WiabEntityListKey = "interior_entities" | "door_entities" | "exterior_door_entities";
 type InspectorTab =
   | "detection"
+  | "recent_activity"
   | "ambient"
   | "lighting"
   | "appliances"
@@ -1587,6 +1588,26 @@ export class HtLocationInspector extends LitElement {
         align-items: center;
         gap: var(--spacing-sm);
         justify-self: start;
+      }
+
+      .ambient-light-selector-row {
+        align-items: flex-start;
+      }
+
+      .ambient-light-selector {
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+        min-width: min(360px, 100%);
+      }
+
+      .ambient-light-option {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 8px;
+        max-width: 420px;
       }
 
       .switch-input {
@@ -3181,7 +3202,7 @@ export class HtLocationInspector extends LitElement {
   /** Tabs allowed on structural summary locations. Property is site context only. */
   private _structuralInspectorTabSet(): ReadonlySet<InspectorTab> {
     if (this._locationType() === "property") {
-      return new Set<InspectorTab>(["detection", "ambient"]);
+      return new Set<InspectorTab>(["detection", "recent_activity", "ambient"]);
     }
     return new Set<InspectorTab>([
       "detection",
@@ -3367,8 +3388,7 @@ export class HtLocationInspector extends LitElement {
       dark_threshold: 800,
       bright_threshold: 1200,
       fallback_to_sun: true,
-      assume_dark_on_error: true,
-      ignore_local_lux_when_lights_on: false,
+      local_lux_light_entity_ids: [],
     };
   }
 
@@ -3388,6 +3408,7 @@ export class HtLocationInspector extends LitElement {
       Math.max(1, darkThreshold) + 1,
       Number(config.bright_threshold) || 0
     );
+    const localLuxLightEntityIds = this._normalizeAmbientLocalLuxLightEntityIds(config);
     return {
       ...defaults,
       ...config,
@@ -3399,17 +3420,18 @@ export class HtLocationInspector extends LitElement {
           : defaults.inherit_from_parent,
       dark_threshold: darkThreshold,
       bright_threshold: brightThreshold,
-      fallback_to_sun:
-        typeof config.fallback_to_sun === "boolean" ? config.fallback_to_sun : defaults.fallback_to_sun,
-      assume_dark_on_error:
-        typeof config.assume_dark_on_error === "boolean"
-          ? config.assume_dark_on_error
-          : defaults.assume_dark_on_error,
-      ignore_local_lux_when_lights_on:
-        typeof config.ignore_local_lux_when_lights_on === "boolean"
-          ? config.ignore_local_lux_when_lights_on
-          : defaults.ignore_local_lux_when_lights_on,
+      fallback_to_sun: true,
+      local_lux_light_entity_ids: localLuxLightEntityIds,
     };
+  }
+
+  private _normalizeAmbientLocalLuxLightEntityIds(config: AmbientConfig): string[] {
+    if (Array.isArray(config.local_lux_light_entity_ids)) {
+      return [...new Set(config.local_lux_light_entity_ids)]
+        .filter((entityId) => typeof entityId === "string" && entityId.startsWith("light."))
+        .sort((left, right) => this._entityName(left).localeCompare(this._entityName(right)));
+    }
+    return [];
   }
 
   private _resetAmbientDraftFromLocation(): void {
@@ -3425,9 +3447,7 @@ export class HtLocationInspector extends LitElement {
       inherit_from_parent: Boolean(sanitized.inherit_from_parent),
       dark_threshold: sanitized.dark_threshold,
       bright_threshold: sanitized.bright_threshold,
-      fallback_to_sun: Boolean(sanitized.fallback_to_sun),
-      assume_dark_on_error: Boolean(sanitized.assume_dark_on_error),
-      ignore_local_lux_when_lights_on: Boolean(sanitized.ignore_local_lux_when_lights_on),
+      local_lux_light_entity_ids: sanitized.local_lux_light_entity_ids || [],
     });
   }
 
@@ -4034,6 +4054,16 @@ export class HtLocationInspector extends LitElement {
         >
           ${detectionLabel}
         </button>
+        ${propertyOnly
+          ? html`
+              <button
+                class="tab ${this._activeTab === "recent_activity" ? "active" : ""}"
+                @click=${() => this._handleTabChange("recent_activity")}
+              >
+                Recent Activity
+              </button>
+            `
+          : ""}
         <button
           class="tab ${this._activeTab === "ambient" ? "active" : ""}"
           @click=${() => this._handleTabChange("ambient")}
@@ -4160,6 +4190,8 @@ export class HtLocationInspector extends LitElement {
       <div class="tab-content">
         ${activeTab === "detection"
           ? html`${detectionSticky}${this._renderOccupancyTab()} ${this._renderAdvancedTab()}`
+          : activeTab === "recent_activity"
+            ? this._renderRecentActivitySection()
           : activeTab === "ambient"
             ? html`${ambientSticky}${this._renderAmbientTab()}`
           : activeTab === "lighting"
@@ -4206,7 +4238,7 @@ export class HtLocationInspector extends LitElement {
       if (!discard) return;
       this._discardDetectionDraft(false);
     }
-    if (this._activeTab === "detection" && this._recentActivityDraftDirty) {
+    if (this._activeTab === "recent_activity" && this._recentActivityDraftDirty) {
       const discard = window.confirm(
         "Recent activity changes are not saved. Discard changes and continue?"
       );
@@ -4241,6 +4273,7 @@ export class HtLocationInspector extends LitElement {
 
   private _mapRequestedTab(requested?: InspectorTabRequest): InspectorTab | undefined {
     if (requested === "detection") return "detection";
+    if (requested === "recent_activity") return "recent_activity";
     if (requested === "ambient") return "ambient";
     if (requested === "lighting") return "lighting";
     if (requested === "appliances") return "appliances";
@@ -4506,7 +4539,6 @@ export class HtLocationInspector extends LitElement {
     if (isGroupHost) {
       return html`
         <div>
-          ${this._locationType() === "property" ? this._renderRecentActivitySection() : ""}
           ${this._renderFloorOccupancyGroupsSection()}
           ${this._renderStructuralOverviewSection()}
         </div>
@@ -4928,13 +4960,10 @@ export class HtLocationInspector extends LitElement {
     const configuredLuxSensor = String(config.lux_sensor || "").trim();
     const fallbackMethod = String(this._ambientReading?.fallback_method || "").toLowerCase();
     const tracksSun = Boolean(config.fallback_to_sun) || fallbackMethod.includes("sun");
+    const localLuxLightEntityIds = new Set(this._normalizeAmbientLocalLuxLightEntityIds(config));
 
     if (entityId === "sun.sun" && tracksSun) return true;
-    if (
-      Boolean(config.ignore_local_lux_when_lights_on) &&
-      entityId.startsWith("light.") &&
-      (this.location.entity_ids || []).includes(entityId)
-    ) {
+    if (localLuxLightEntityIds.has(entityId)) {
       return true;
     }
     if (!entityId.startsWith("sensor.")) return false;
@@ -4954,6 +4983,30 @@ export class HtLocationInspector extends LitElement {
     if ((this._deviceEnumerationExtraEntityIds() || []).includes(entityId)) return true;
 
     return false;
+  }
+
+  private _localAmbientLightEntityIds(): string[] {
+    if (!this.location) return [];
+    const ids = new Set<string>();
+    for (const entityId of this.location.entity_ids || []) {
+      if (typeof entityId === "string" && entityId.startsWith("light.")) {
+        ids.add(entityId);
+      }
+    }
+    for (const areaId of this._deviceEnumerationHaAreaIdsCore()) {
+      for (const entityId of this._entitiesForArea(areaId)) {
+        if (entityId.startsWith("light.")) {
+          ids.add(entityId);
+        }
+      }
+    }
+    for (const entityId of this._deviceEnumerationExtraEntityIds()) {
+      if (entityId.startsWith("light.")) {
+        ids.add(entityId);
+      }
+    }
+    return [...ids]
+      .sort((left, right) => this._entityName(left).localeCompare(this._entityName(right)));
   }
 
   private _renderAmbientSection() {
@@ -4978,16 +5031,14 @@ export class HtLocationInspector extends LitElement {
           ignoredLocalLuxLights.length === 1 ? "is" : "are"
         } on.`
       : "";
-    const localLightEntityIds = (this.location.entity_ids || []).filter(
-      (entityId) => typeof entityId === "string" && entityId.startsWith("light.")
-    );
+    const localLightEntityIds = this._localAmbientLightEntityIds();
+    const selectedLocalLightEntityIds = new Set(config.local_lux_light_entity_ids || []);
     const localLightSummary =
-      localLightEntityIds.length > 0
-        ? localLightEntityIds.map((entityId) => this._entityName(entityId)).join(", ")
-        : "No local light entities are assigned to this location.";
-    const sourcePriorityNote = Boolean(config.ignore_local_lux_when_lights_on)
-      ? `Effective source priority: local lux when local lights are off; otherwise inherited lux; otherwise sunrise/sunset fallback. Local lights checked: ${localLightSummary}`
-      : "Effective source priority: local lux when configured; otherwise inherited lux; otherwise sunrise/sunset fallback.";
+      selectedLocalLightEntityIds.size > 0
+        ? [...selectedLocalLightEntityIds].map((entityId) => this._entityName(entityId)).join(", ")
+        : "No local lights are selected for local lux protection.";
+    const sourcePriorityNote =
+      "Effective source priority: use this location's lux sensor when it is available and the selected local lights are off; otherwise use inherited lux; otherwise use sunrise/sunset.";
     const ambientStateLabel = this._ambientStateLabel(reading);
     const darkThreshold = Math.max(0, Number(config.dark_threshold) || 0);
     const brightThreshold = Math.max(darkThreshold + 1, Number(config.bright_threshold) || darkThreshold + 1);
@@ -5022,10 +5073,13 @@ export class HtLocationInspector extends LitElement {
           <div class="ambient-value" data-testid="ambient-source-location">${sourceLocation}</div>
         </div>
 
-        <div class="policy-note" style="margin-bottom: 8px;">
-          Lux sensor assignment is explicit. Set a location sensor or inherit from parent.
+        <div class="policy-note" style="margin-bottom: 8px;" data-testid="ambient-behavior-note">
+          Choose a lux sensor for this location, or inherit from the nearest parent with one. Sunrise and sunset are always the final fallback when no usable lux source is available.
         </div>
         <div class="policy-note" data-testid="ambient-source-priority-note">${sourcePriorityNote}</div>
+        <div class="policy-note" data-testid="ambient-local-light-summary">
+          Local lights checked for lux contamination: ${localLightSummary}
+        </div>
         ${ignoredLocalLuxMessage
           ? html`<div class="policy-note" data-testid="ambient-ignored-local-lux">${ignoredLocalLuxMessage}</div>`
           : ""}
@@ -5116,72 +5170,46 @@ export class HtLocationInspector extends LitElement {
           </div>
         </div>
 
-        <div class="config-row">
+        <div class="config-row ambient-light-selector-row">
           <div>
-            <div class="config-label">Fallback to sun</div>
-            <div class="config-help">Use sunrise/sunset state when no lux sensor reading is available.</div>
+            <div class="config-label">Local lights that affect this sensor</div>
+            <div class="config-help">Select lights that can make this location's lux sensor read artificially bright. When any selected light is on, Topomation ignores the local lux reading and uses parent lux or sunrise/sunset.</div>
           </div>
-          <div class="config-value">
-            <input
-              type="checkbox"
-              class="switch-input"
-              .checked=${Boolean(config.fallback_to_sun)}
-              ?disabled=${busy}
-              data-testid="ambient-fallback-to-sun-toggle"
-              @change=${(ev: Event) => {
-                this._setAmbientDraft({
-                  ...config,
-                  fallback_to_sun: (ev.target as HTMLInputElement).checked,
-                });
-                this._scheduleAmbientReadingReload();
-              }}
-            />
-          </div>
-        </div>
-
-        <div class="config-row">
-          <div>
-            <div class="config-label">Ignore local lux while lights are on</div>
-            <div class="config-help">Prevents this area's own lights from making the local lux sensor read artificially bright.</div>
-          </div>
-          <div class="config-value">
-            <input
-              type="checkbox"
-              class="switch-input"
-              .checked=${Boolean(config.ignore_local_lux_when_lights_on)}
-              ?disabled=${busy}
-              data-testid="ambient-ignore-local-lux-toggle"
-              @change=${(ev: Event) => {
-                this._setAmbientDraft({
-                  ...config,
-                  ignore_local_lux_when_lights_on: (ev.target as HTMLInputElement).checked,
-                });
-                this._scheduleAmbientReadingReload();
-              }}
-            />
-          </div>
-        </div>
-
-        <div class="config-row">
-          <div>
-            <div class="config-label">Assume dark on error</div>
-            <div class="config-help">When fallback to sun is disabled, treat unavailable readings as dark.</div>
-          </div>
-          <div class="config-value">
-            <input
-              type="checkbox"
-              class="switch-input"
-              .checked=${Boolean(config.assume_dark_on_error)}
-              ?disabled=${busy}
-              data-testid="ambient-assume-dark-on-error-toggle"
-              @change=${(ev: Event) => {
-                this._setAmbientDraft({
-                  ...config,
-                  assume_dark_on_error: (ev.target as HTMLInputElement).checked,
-                });
-                this._scheduleAmbientReadingReload();
-              }}
-            />
+          <div class="config-value ambient-light-selector" data-testid="ambient-local-light-selector">
+            ${localLightEntityIds.length === 0
+              ? html`<div class="text-muted">No local light entities are assigned to this location.</div>`
+              : localLightEntityIds.map((entityId) => {
+                  const checked = selectedLocalLightEntityIds.has(entityId);
+                  return html`
+                    <label class="ambient-light-option">
+                      <input
+                        type="checkbox"
+                        .checked=${checked}
+                        ?disabled=${busy}
+                        data-testid=${`ambient-local-light-${entityId}`}
+                        @change=${(ev: Event) => {
+                          const next = new Set(config.local_lux_light_entity_ids || []);
+                          if ((ev.target as HTMLInputElement).checked) {
+                            next.add(entityId);
+                          } else {
+                            next.delete(entityId);
+                          }
+                          const local_lux_light_entity_ids = [...next].sort((left, right) =>
+                            this._entityName(left).localeCompare(this._entityName(right))
+                          );
+                          this._setAmbientDraft({
+                            ...config,
+                            local_lux_light_entity_ids,
+                            fallback_to_sun: true,
+                          });
+                          this._scheduleAmbientReadingReload();
+                        }}
+                      />
+                      <span>${this._entityName(entityId)}</span>
+                      <span class="source-state-pill ${this._entityStateBadgeTone(entityId)}">${this._entityState(entityId)}</span>
+                    </label>
+                  `;
+                })}
           </div>
         </div>
       </div>

@@ -447,9 +447,8 @@ Additional save points:
 - Ambient module configs must persist with `auto_discover: false` in integration defaults.
 - Ambient reading and generated Lighting-rule source priority are the same
   effective-source chain (ADR-HA-097):
-  1. assigned location lux sensor, unless the location enables
-     `ignore_local_lux_when_lights_on` and one of its directly assigned local
-     `light.*` entities is currently `on`
+  1. assigned location lux sensor, unless one of the location's selected local
+     lux-contaminating `light.*` entities is currently `on`
   2. inherited ancestor lux sensor (when enabled)
   3. strict sun fallback (`sun.sun`) when the local lux sensor is ignored and no
      inherited lux source exists, or when no lux source is available and fallback
@@ -457,12 +456,10 @@ Additional save points:
 - Generated managed Lighting rules must wake from every source that can become
   effective under that chain and must include source-priority conditions so a
   contaminated local lux reading cannot pass a dark/bright rule by itself.
-- If a dark/bright condition cannot resolve any lux source and sun fallback is
-  disabled, the generated condition must fail closed rather than run unguarded.
-- `ignore_local_lux_when_lights_on` applies only to the configured location's
-  local lux source. It does not suppress inherited/ancestor lux sources, does
-  not scan descendant locations, and only considers directly assigned
-  `light.*` entities.
+- Local light contamination applies only to the configured location's local lux
+  source. It does not suppress inherited/ancestor lux sources, does not scan
+  descendant locations, and only considers the selected local `light.*`
+  entities.
 - Inspector header must expose ambient status at-a-glance:
   - show effective lux level on the top card
   - indicate inherited source state when applicable.
@@ -601,9 +598,9 @@ Additional save points:
   - condition controls only render when their trigger family is active.
   - Lighting may default condition values from the selected trigger set, but
     users retain explicit control of those condition rows.
-  - When Ambient config enables `ignore_local_lux_when_lights_on`, managed
+  - When Ambient config selects local lights that affect the lux sensor, managed
     Lighting dark/bright conditions may only trust the local lux sensor while
-    the location's directly assigned local `light.*` entities are `off`.
+    those selected `light.*` entities are `off`.
     If local lux is contaminated, generated rules may use inherited lux; if no
     inherited lux source exists and fallback is enabled, generated rules may use
     `sun.sun` sunrise/sunset state.

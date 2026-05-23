@@ -73,7 +73,7 @@ _VALID_AMBIENT_CONDITIONS = frozenset({"any", "dark", "bright"})
 _AUTOMATION_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_]+$")
 _RULE_UUID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{7,63}$")
 _RECENT_RULE_SNAPSHOT_TTL_SECONDS = 30.0
-_AUTOMATION_METADATA_VERSION = 9
+_AUTOMATION_METADATA_VERSION = 10
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -1412,11 +1412,10 @@ class TopomationManagedActions:
                     inherited_lux_sensor = candidate
                     break
 
-        local_light_entity_ids = [
-            entity_id
-            for entity_id in list(getattr(location, "entity_ids", []) or [])
-            if isinstance(entity_id, str) and entity_id.startswith("light.")
-        ]
+        local_light_entity_ids = self._ambient_local_lux_light_entity_ids(
+            ambient,
+            list(getattr(location, "entity_ids", []) or []),
+        )
 
         return {
             "lux_sensor": lux_sensor,
@@ -1424,11 +1423,23 @@ class TopomationManagedActions:
             "dark_threshold": dark_threshold,
             "bright_threshold": bright_threshold,
             "fallback_to_sun": bool(ambient.get("fallback_to_sun", True)),
-            "ignore_local_lux_when_lights_on": bool(
-                ambient.get("ignore_local_lux_when_lights_on", False)
-            ),
             "local_light_entity_ids": local_light_entity_ids,
         }
+
+    @staticmethod
+    def _ambient_local_lux_light_entity_ids(
+        ambient: Mapping[str, Any],
+        location_entity_ids: list[Any],
+    ) -> list[str]:
+        """Return local light entities that can contaminate a local lux sensor."""
+        configured = ambient.get("local_lux_light_entity_ids")
+        if isinstance(configured, list):
+            return [
+                entity_id
+                for entity_id in configured
+                if isinstance(entity_id, str) and entity_id.startswith("light.")
+            ]
+        return []
 
     def _build_trigger_definitions(
         self,
@@ -1542,7 +1553,7 @@ class TopomationManagedActions:
             return False
         local_lux_sensor = ambient_config.get("lux_sensor")
         if isinstance(local_lux_sensor, str) and local_lux_sensor:
-            return bool(ambient_config.get("ignore_local_lux_when_lights_on", False))
+            return bool(TopomationManagedActions._local_light_entity_ids(ambient_config))
         return True
 
     @staticmethod
@@ -1611,8 +1622,6 @@ class TopomationManagedActions:
         ambient_config: Mapping[str, Any],
     ) -> dict[str, Any] | None:
         """Build a condition requiring all local contaminating lights to be off."""
-        if not bool(ambient_config.get("ignore_local_lux_when_lights_on", False)):
-            return None
         local_light_entity_ids = self._local_light_entity_ids(ambient_config)
         if not local_light_entity_ids:
             return None
@@ -1628,8 +1637,6 @@ class TopomationManagedActions:
         ambient_config: Mapping[str, Any],
     ) -> dict[str, Any] | None:
         """Build a condition that is true when any contaminating local light is on."""
-        if not bool(ambient_config.get("ignore_local_lux_when_lights_on", False)):
-            return None
         local_light_entity_ids = self._local_light_entity_ids(ambient_config)
         if not local_light_entity_ids:
             return None
