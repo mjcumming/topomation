@@ -2466,16 +2466,121 @@ export class HtLocationInspector extends LitElement {
         --mdc-dialog-min-width: 540px;
       }
 
+      ha-dialog[data-testid="external-source-dialog"] {
+        --dialog-scroll-padding: 0;
+      }
+
       .external-source-dialog-content {
         display: grid;
         gap: 12px;
         min-width: min(520px, 100%);
+        box-sizing: border-box;
       }
 
       .external-source-dialog-copy {
         color: var(--text-secondary-color);
         font-size: 13px;
         line-height: 1.45;
+      }
+
+      .external-source-dialog-hint {
+        margin: 0;
+        color: var(--secondary-text-color);
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      .external-source-added-section {
+        display: grid;
+        gap: 8px;
+      }
+
+      .external-source-added-title {
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--text-secondary-color);
+      }
+
+      .external-source-added-list {
+        display: grid;
+        gap: 8px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .external-source-added-item {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 8px;
+        align-items: center;
+        border: 1px solid var(--divider-color);
+        border-radius: 8px;
+        padding: 10px 12px;
+        background: rgba(var(--rgb-primary-color), 0.03);
+      }
+
+      .external-source-added-meta {
+        display: grid;
+        gap: 4px;
+        min-width: 0;
+      }
+
+      .external-source-added-name {
+        font-weight: 600;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .external-source-added-empty {
+        color: var(--text-secondary-color);
+        font-size: 13px;
+      }
+
+      .external-source-dialog-actions {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 8px;
+        margin-top: 4px;
+        padding-top: 16px;
+        border-top: 1px solid var(--divider-color);
+      }
+
+      .external-source-dialog-actions .button {
+        min-width: 96px;
+      }
+
+      .external-source-dialog-actions .button-primary {
+        flex: 1 1 auto;
+        max-width: 100%;
+      }
+
+      @media (max-width: 600px) {
+        ha-dialog[data-testid="external-source-dialog"] {
+          --mdc-dialog-min-width: min(100vw, 100%);
+        }
+
+        .external-source-dialog-content {
+          min-width: 0;
+        }
+
+        .external-composer.is-dialog {
+          grid-template-columns: 1fr;
+        }
+
+        .external-source-dialog-actions {
+          flex-direction: column-reverse;
+          align-items: stretch;
+        }
+
+        .external-source-dialog-actions .button {
+          width: 100%;
+          min-width: 0;
+        }
       }
 
       .action-rule-rename-dialog-content {
@@ -5026,19 +5131,31 @@ export class HtLocationInspector extends LitElement {
     const ignoredLocalLuxLights = Array.isArray(reading?.ignored_local_lux_light_entity_ids)
       ? reading.ignored_local_lux_light_entity_ids
       : [];
-    const ignoredLocalLuxMessage = ignoredLocalLuxSensor
-      ? `Local lux ignored because ${ignoredLocalLuxLights.map((entityId) => this._entityName(entityId)).join(", ")} ${
-          ignoredLocalLuxLights.length === 1 ? "is" : "are"
-        } on.`
-      : "";
+    const hasLocalLuxSensor = Boolean(config.lux_sensor);
+    const ignoredLocalLuxMessage =
+      hasLocalLuxSensor && ignoredLocalLuxSensor
+        ? `Local lux ignored because ${ignoredLocalLuxLights.map((entityId) => this._entityName(entityId)).join(", ")} ${
+            ignoredLocalLuxLights.length === 1 ? "is" : "are"
+          } on.`
+        : "";
     const localLightEntityIds = this._localAmbientLightEntityIds();
     const selectedLocalLightEntityIds = new Set(config.local_lux_light_entity_ids || []);
     const localLightSummary =
       selectedLocalLightEntityIds.size > 0
         ? [...selectedLocalLightEntityIds].map((entityId) => this._entityName(entityId)).join(", ")
         : "No local lights are selected for local lux protection.";
-    const sourcePriorityNote =
-      "Effective source priority: use this location's lux sensor when it is available and the selected local lights are off; otherwise use inherited lux; otherwise use sunrise/sunset.";
+    const sourcePriorityNote = hasLocalLuxSensor
+      ? "Effective source priority: use this location's lux sensor when it is available and the selected local lights are off; otherwise use inherited lux; otherwise use sunrise/sunset."
+      : sourceMethod === "inherited_sensor" && sourceLocation !== "-"
+        ? `Using inherited lux from ${sourceLocation}. Sunrise and sunset are the final fallback when no usable lux source is available.`
+        : "Inheriting lux from the nearest parent with a sensor. Sunrise and sunset are the final fallback when no usable lux source is available.";
+    const inheritedSourceLocationId =
+      !hasLocalLuxSensor && sourceMethod === "inherited_sensor"
+        ? this._ambientInheritedSourceLocationId(reading)
+        : "";
+    const thresholdHelpSuffix = hasLocalLuxSensor
+      ? ""
+      : " These thresholds apply to this location even when lux is inherited from a parent.";
     const ambientStateLabel = this._ambientStateLabel(reading);
     const darkThreshold = Math.max(0, Number(config.dark_threshold) || 0);
     const brightThreshold = Math.max(darkThreshold + 1, Number(config.bright_threshold) || darkThreshold + 1);
@@ -5077,9 +5194,11 @@ export class HtLocationInspector extends LitElement {
           Choose a lux sensor for this location, or inherit from the nearest parent with one. Sunrise and sunset are always the final fallback when no usable lux source is available.
         </div>
         <div class="policy-note" data-testid="ambient-source-priority-note">${sourcePriorityNote}</div>
-        <div class="policy-note" data-testid="ambient-local-light-summary">
-          Local lights checked for lux contamination: ${localLightSummary}
-        </div>
+        ${hasLocalLuxSensor
+          ? html`<div class="policy-note" data-testid="ambient-local-light-summary">
+              Local lights checked for lux contamination: ${localLightSummary}
+            </div>`
+          : ""}
         ${ignoredLocalLuxMessage
           ? html`<div class="policy-note" data-testid="ambient-ignored-local-lux">${ignoredLocalLuxMessage}</div>`
           : ""}
@@ -5099,6 +5218,7 @@ export class HtLocationInspector extends LitElement {
                   ...config,
                   lux_sensor: value || null,
                   inherit_from_parent: value ? false : true,
+                  local_lux_light_entity_ids: value ? config.local_lux_light_entity_ids || [] : [],
                 });
                 this._scheduleAmbientReadingReload();
               }}
@@ -5117,7 +5237,7 @@ export class HtLocationInspector extends LitElement {
         <div class="config-row">
           <div>
             <div class="config-label">Dark threshold (lux)</div>
-            <div class="config-help">Dark when lux is below this value.</div>
+            <div class="config-help">Dark when lux is below this value.${thresholdHelpSuffix}</div>
           </div>
           <div class="config-value">
             <input
@@ -5144,7 +5264,7 @@ export class HtLocationInspector extends LitElement {
         <div class="config-row">
           <div>
             <div class="config-label">Bright threshold (lux)</div>
-            <div class="config-help">Bright when lux is above this value.</div>
+            <div class="config-help">Bright when lux is above this value.${thresholdHelpSuffix}</div>
           </div>
           <div class="config-value">
             <input
@@ -5170,50 +5290,102 @@ export class HtLocationInspector extends LitElement {
           </div>
         </div>
 
-        <div class="config-row ambient-light-selector-row">
-          <div>
-            <div class="config-label">Local lights that affect this sensor</div>
-            <div class="config-help">Select lights that can make this location's lux sensor read artificially bright. When any selected light is on, Topomation ignores the local lux reading and uses parent lux or sunrise/sunset.</div>
-          </div>
-          <div class="config-value ambient-light-selector" data-testid="ambient-local-light-selector">
-            ${localLightEntityIds.length === 0
-              ? html`<div class="text-muted">No local light entities are assigned to this location.</div>`
-              : localLightEntityIds.map((entityId) => {
-                  const checked = selectedLocalLightEntityIds.has(entityId);
-                  return html`
-                    <label class="ambient-light-option">
-                      <input
-                        type="checkbox"
-                        .checked=${checked}
-                        ?disabled=${busy}
-                        data-testid=${`ambient-local-light-${entityId}`}
-                        @change=${(ev: Event) => {
-                          const next = new Set(config.local_lux_light_entity_ids || []);
-                          if ((ev.target as HTMLInputElement).checked) {
-                            next.add(entityId);
-                          } else {
-                            next.delete(entityId);
-                          }
-                          const local_lux_light_entity_ids = [...next].sort((left, right) =>
-                            this._entityName(left).localeCompare(this._entityName(right))
-                          );
-                          this._setAmbientDraft({
-                            ...config,
-                            local_lux_light_entity_ids,
-                            fallback_to_sun: true,
-                          });
-                          this._scheduleAmbientReadingReload();
-                        }}
-                      />
-                      <span>${this._entityName(entityId)}</span>
-                      <span class="source-state-pill ${this._entityStateBadgeTone(entityId)}">${this._entityState(entityId)}</span>
-                    </label>
-                  `;
-                })}
-          </div>
-        </div>
+        ${hasLocalLuxSensor
+          ? html`
+              <div class="config-row ambient-light-selector-row">
+                <div>
+                  <div class="config-label">Local lights that affect this sensor</div>
+                  <div class="config-help">
+                    Select lights that can make this location's lux sensor read artificially bright. When any selected
+                    light is on, Topomation ignores the local lux reading and uses parent lux or sunrise/sunset.
+                  </div>
+                </div>
+                <div class="config-value ambient-light-selector" data-testid="ambient-local-light-selector">
+                  ${localLightEntityIds.length === 0
+                    ? html`<div class="text-muted">No local light entities are assigned to this location.</div>`
+                    : localLightEntityIds.map((entityId) => {
+                        const checked = selectedLocalLightEntityIds.has(entityId);
+                        return html`
+                          <label class="ambient-light-option">
+                            <input
+                              type="checkbox"
+                              .checked=${checked}
+                              ?disabled=${busy}
+                              data-testid=${`ambient-local-light-${entityId}`}
+                              @change=${(ev: Event) => {
+                                const next = new Set(config.local_lux_light_entity_ids || []);
+                                if ((ev.target as HTMLInputElement).checked) {
+                                  next.add(entityId);
+                                } else {
+                                  next.delete(entityId);
+                                }
+                                const local_lux_light_entity_ids = [...next].sort((left, right) =>
+                                  this._entityName(left).localeCompare(this._entityName(right))
+                                );
+                                this._setAmbientDraft({
+                                  ...config,
+                                  local_lux_light_entity_ids,
+                                  fallback_to_sun: true,
+                                });
+                                this._scheduleAmbientReadingReload();
+                              }}
+                            />
+                            <span>${this._entityName(entityId)}</span>
+                            <span class="source-state-pill ${this._entityStateBadgeTone(entityId)}"
+                              >${this._entityState(entityId)}</span
+                            >
+                          </label>
+                        `;
+                      })}
+                </div>
+              </div>
+            `
+          : html`
+              <div class="config-row" data-testid="ambient-local-light-unavailable">
+                <div>
+                  <div class="config-label">Local lights that affect this sensor</div>
+                  <div class="config-help text-muted">
+                    Choose a local lux sensor above to configure which lights can contaminate that reading.
+                  </div>
+                </div>
+                ${inheritedSourceLocationId
+                  ? html`
+                      <div class="config-value">
+                        <button
+                          type="button"
+                          class="button button-secondary"
+                          data-testid="ambient-use-parent-sensor"
+                          @click=${() => this._selectLocation(inheritedSourceLocationId)}
+                        >
+                          Use parent sensor
+                        </button>
+                      </div>
+                    `
+                  : ""}
+              </div>
+            `}
       </div>
     `;
+  }
+
+  private _ambientInheritedSourceLocationId(reading?: AmbientLightReading): string {
+    const sourceLocationId = typeof reading?.source_location === "string" ? reading.source_location.trim() : "";
+    if (sourceLocationId && sourceLocationId !== this.location?.id && this._locationById(sourceLocationId)) {
+      return sourceLocationId;
+    }
+    const parentId = typeof this.location?.parent_id === "string" ? this.location.parent_id : "";
+    return parentId && this._locationById(parentId) ? parentId : "";
+  }
+
+  private _selectLocation(locationId: string): void {
+    if (!locationId) return;
+    this.dispatchEvent(
+      new CustomEvent("location-selected", {
+        detail: { locationId },
+        bubbles: true,
+        composed: true,
+      })
+    );
   }
 
   private _isManagedShadowHost(): boolean {
@@ -6855,6 +7027,79 @@ export class HtLocationInspector extends LitElement {
     `;
   }
 
+  private _areaSourceCandidateKeys(config: OccupancyConfig): Set<string> {
+    if (!this.location) return new Set();
+    const areaEntityIdSet = new Set<string>(this.location.entity_ids || []);
+    if (this.location.ha_area_id) {
+      for (const entityId of this._entitiesForArea(this.location.ha_area_id)) {
+        areaEntityIdSet.add(entityId);
+      }
+    }
+    const candidateAreaEntityIds = [...areaEntityIdSet]
+      .filter((entityId) => this._isCoreAreaSourceEntity(entityId))
+      .sort((a, b) => this._entityName(a).localeCompare(this._entityName(b)));
+    const candidateItems = candidateAreaEntityIds.flatMap((entityId) =>
+      this._candidateItemsForEntity(entityId)
+    );
+    return new Set(candidateItems.map((item) => item.key));
+  }
+
+  private _externalDraftSources(config: OccupancyConfig): OccupancySource[] {
+    const candidateKeys = this._areaSourceCandidateKeys(config);
+    return this._workingSources(config).filter(
+      (source) => !candidateKeys.has(this._sourceKeyFromSource(source))
+    );
+  }
+
+  private _renderExternalSourceAddedList(config: OccupancyConfig) {
+    const externalSources = this._externalDraftSources(config);
+    if (!externalSources.length) {
+      return html`
+        <div class="external-source-added-section" data-testid="external-source-added-section">
+          <div class="external-source-added-title">Added sources</div>
+          <div class="external-source-added-empty" data-testid="external-source-added-empty">
+            No extra sources added yet.
+          </div>
+        </div>
+      `;
+    }
+
+    return html`
+      <div class="external-source-added-section" data-testid="external-source-added-section">
+        <div class="external-source-added-title">Added sources</div>
+        <ul class="external-source-added-list" data-testid="external-source-added-list">
+          ${externalSources.map((source) => {
+            const entityId = source.entity_id;
+            const sourceKey = this._sourceKeyFromSource(source);
+            return html`
+              <li class="external-source-added-item" data-testid="external-source-added-item">
+                <div class="external-source-added-meta">
+                  <div class="external-source-added-name">${this._entityName(entityId)}</div>
+                  <div class="candidate-submeta">
+                    Current state:
+                    <span class=${`source-state-pill ${this._entityStateBadgeTone(entityId)}`}>
+                      ${this._entityState(entityId)}
+                    </span>
+                  </div>
+                </div>
+                <button
+                  class="button button-secondary"
+                  type="button"
+                  data-testid="remove-external-source"
+                  data-source-key=${sourceKey}
+                  ?disabled=${this._savingOccupancyDraft}
+                  @click=${() => this._removeSourcesByKey([sourceKey], this._getOccupancyConfig())}
+                >
+                  Remove
+                </button>
+              </li>
+            `;
+          })}
+        </ul>
+      </div>
+    `;
+  }
+
   private _renderExternalSourceComposer(config: OccupancyConfig) {
     const areas = this._availableSourceAreas();
     const siblingAreaSourceScope = this._isSiblingAreaSourceScope();
@@ -6949,6 +7194,7 @@ export class HtLocationInspector extends LitElement {
     const config = this._getOccupancyConfig();
     const siblingAreaSourceScope = this._isSiblingAreaSourceScope();
     const hasHaAreaLink = Boolean(this.location.ha_area_id);
+    const canAdd = this._canAddSelectedExternalSource(config);
 
     return html`
       <ha-dialog
@@ -6965,27 +7211,31 @@ export class HtLocationInspector extends LitElement {
                 : "Add another occupancy contributor from another area or include another compatible entity from this area."
               : "Add another occupancy contributor from any Home Assistant area, including unassigned entities."}
           </div>
+          <p class="external-source-dialog-hint" data-testid="external-source-dialog-hint">
+            Sources added here are staged locally. Use Save changes on the Occupancy tab to persist.
+          </p>
           ${this._renderExternalSourceComposer(config)}
+          ${this._renderExternalSourceAddedList(config)}
+          <div class="external-source-dialog-actions">
+            <button
+              class="button button-secondary"
+              type="button"
+              data-testid="close-external-source-dialog"
+              @click=${() => this._closeExternalSourceDialog()}
+            >
+              Done
+            </button>
+            <button
+              class="button button-primary"
+              type="button"
+              data-testid="confirm-add-external-source"
+              ?disabled=${this._savingOccupancyDraft || !canAdd}
+              @click=${() => this._confirmExternalSourceSelection()}
+            >
+              Add Source
+            </button>
+          </div>
         </div>
-        <button
-          slot="secondaryAction"
-          class="button button-secondary"
-          type="button"
-          data-testid="close-external-source-dialog"
-          @click=${() => this._closeExternalSourceDialog()}
-        >
-          Cancel
-        </button>
-        <button
-          slot="primaryAction"
-          class="button button-primary"
-          type="button"
-          data-testid="confirm-add-external-source"
-          ?disabled=${this._savingOccupancyDraft || !this._canAddSelectedExternalSource(config)}
-          @click=${() => this._confirmExternalSourceSelection(config)}
-        >
-          Add Source
-        </button>
       </ha-dialog>
     `;
   }
@@ -10813,7 +11063,8 @@ export class HtLocationInspector extends LitElement {
     return !existing.has(this._sourceKey(entityId, this._defaultSignalKeyForEntity(entityId)));
   }
 
-  private _confirmExternalSourceSelection(config: OccupancyConfig): void {
+  private _confirmExternalSourceSelection(): void {
+    const config = this._getOccupancyConfig();
     const entityId = this._externalEntityId.trim();
     if (!entityId) return;
     const added = this._addSourceWithDefaults(entityId, config, {
@@ -10821,7 +11072,6 @@ export class HtLocationInspector extends LitElement {
       signalKey: this._defaultSignalKeyForEntity(entityId),
     });
     if (!added) return;
-    this._externalSourceDialogOpen = false;
     this.requestUpdate();
   }
 

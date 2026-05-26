@@ -37,7 +37,9 @@ async def _ws_command(
     *,
     expect_success: bool = True,
 ) -> Any:
-    async with session.ws_connect(ws_url) as ws:
+    # WebSocket URLs must not be opened through a ClientSession that sets base_url.
+    _ = session
+    async with aiohttp.ClientSession() as ws_session, ws_session.ws_connect(ws_url) as ws:
         auth_required = await ws.receive_json(timeout=10)
         assert auth_required.get("type") == "auth_required"
 

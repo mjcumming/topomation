@@ -48,7 +48,7 @@ def test_descendant_occupancy_refreshes_property_recent_activity() -> None:
         EventFilter(event_type=EVENT_RECENT_ACTIVITY_CHANGED),
     )
 
-    now = datetime(2026, 5, 22, 4, 0, tzinfo=UTC)
+    now = datetime.now(UTC).replace(microsecond=0)
     bus.publish(
         Event(
             type="occupancy.changed",
@@ -71,7 +71,7 @@ def test_descendant_occupancy_refreshes_property_recent_activity() -> None:
 def test_recent_activity_expiry_does_not_vacate_occupancy() -> None:
     """Recent activity expires independently from occupancy state."""
     _loc_mgr, _bus, module = _manager_with_property()
-    now = datetime(2026, 5, 22, 4, 0, tzinfo=UTC)
+    now = datetime.now(UTC).replace(microsecond=0)
 
     module.refresh(
         "home",

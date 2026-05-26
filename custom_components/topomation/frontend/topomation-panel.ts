@@ -941,6 +941,7 @@ export class TopomationPanel extends LitElement {
             .handoffTraces=${selectedLocation
               ? this._handoffTraceByLocation[selectedLocation.id] || []
               : []}
+            @location-selected=${this._handleLocationSelected}
             @adjacency-changed=${this._handleAdjacencyChanged}
             @location-meta-changed=${this._handleLocationMetaChanged}
           ></ht-location-inspector>

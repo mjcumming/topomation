@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.18] - 2026-05-25
+
+### Changed
+
+- **Add Source dialog**: source additions now use an explicit staged draft flow
+  with in-dialog Add/Done controls, an Added sources list, and per-source Remove
+  actions so mobile users can add or back out sensors before using the
+  Occupancy tab's `Save changes` button.
+- **Ambient inherited sensor UX**: the Ambient tab now hides local-light
+  contamination controls while a location inherits lux from a parent sensor,
+  explains that thresholds still apply locally, and adds a `Use parent sensor`
+  shortcut to jump to the inherited source location.
+
 ## [0.3.17] - 2026-05-23
 
 ### Changed

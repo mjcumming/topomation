@@ -81,6 +81,41 @@ Run the rows that match the touched workflow.
 
 ## 6. Release Records
 
+### 2026-05-25 - v0.3.18 ambient inherited-sensor UX gate
+
+1. Commit under test: release-candidate worktree for Topomation `0.3.18`.
+2. Frontend bundle rebuilt from that commit: yes; `npm run build` published the
+   updated runtime bundle before release validation.
+3. Touched workflow list:
+   - Ambient page inherited lux sensor guidance and local-light control
+     visibility.
+   - Ambient page `Use parent sensor` navigation from an inherited sensor
+     location to the source location.
+   - Add Source dialog staged draft flow from the existing unreleased changelog
+     entry.
+   - Release metadata/version synchronization for Topomation `0.3.18`.
+4. Commands run:
+   - `cd custom_components/topomation/frontend && npm run build`
+   - `python scripts/verify-version-sync.py`
+   - `./scripts/test-comprehensive.sh`
+   - `make test-release-live`
+5. Outcome:
+   - Release metadata/version sync: **PASS** (`Version sync ok: 0.3.18`;
+     2026-05-25).
+   - Ambient inherited sensor guidance and `Use parent sensor` navigation:
+     **PASS** (frontend component coverage in `ht-location-inspector.test.ts`;
+     2026-05-25).
+   - Local comprehensive gate: **PASS** (`./scripts/test-comprehensive.sh`;
+     backend `366 passed, 22 skipped`; Vitest `265 passed`; Web Test Runner
+     `206 passed`; Playwright `34 passed`; 2026-05-25).
+   - Live HA managed-action contract: **PASS** (`tests/test-live-managed-actions-contract.py`
+     `2 passed`; 2026-05-25).
+   - Live HA browser workflow: **PASS** (`playwright/live-automation-ui.spec.ts`
+     `6 passed`; 2026-05-25).
+   - Live HA setup notes: dev `tests/ha-config.env` created, Topomation
+     integration loaded via config flow, and local topology seeded with kitchen
+     lights plus a floor with two child areas for the live browser matrix.
+
 ### 2026-05-23 - v0.3.17 ambient local-light selection and recent activity tab gate
 
 1. Commit under test: final release commit containing this record for

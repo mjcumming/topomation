@@ -940,11 +940,22 @@ describe("HtLocationInspector occupancy source composer", () => {
     addButton.click();
     await element.updateComplete;
 
+    expect(
+      element.shadowRoot?.querySelector('[data-testid="external-source-dialog"]')
+    ).to.exist;
+
     const saveButton = element.shadowRoot!.querySelector(
       '[data-testid="detection-save-button"]'
     ) as HTMLButtonElement;
     expect(saveButton).to.exist;
     expect(saveButton.disabled).to.equal(false);
+
+    const doneButton = element.shadowRoot!.querySelector(
+      '[data-testid="close-external-source-dialog"]'
+    ) as HTMLButtonElement;
+    doneButton.click();
+    await element.updateComplete;
+
     saveButton.click();
     await element.updateComplete;
 
@@ -963,6 +974,210 @@ describe("HtLocationInspector occupancy source composer", () => {
     });
     expect(persisted).to.not.equal(undefined);
     expect(persisted!.config.occupancy_sources[0].entity_id).to.equal("binary_sensor.kitchen_motion");
+  });
+
+  it("keeps Add Source dialog open, lists added sources, and supports remove before save", async () => {
+    const sourceUpdates: Array<Record<string, any>> = [];
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>): Promise<T> => {
+        if (request.type === "config/entity_registry/list") {
+          return [
+            {
+              entity_id: "binary_sensor.kitchen_motion",
+              area_id: "kitchen",
+              device_id: null,
+            },
+            {
+              entity_id: "binary_sensor.hallway_motion",
+              area_id: "hallway",
+              device_id: null,
+            },
+          ] as T;
+        }
+        if (request.type === "config/device_registry/list") {
+          return [] as T;
+        }
+        if (request.type === "topomation/locations/set_module_config") {
+          sourceUpdates.push(request);
+          return { success: true } as T;
+        }
+        return {} as T;
+      },
+      connection: {},
+      states: {
+        "binary_sensor.kitchen_motion": {
+          entity_id: "binary_sensor.kitchen_motion",
+          state: "off",
+          attributes: {
+            friendly_name: "Kitchen Motion",
+            device_class: "motion",
+          },
+        },
+        "binary_sensor.hallway_motion": {
+          entity_id: "binary_sensor.hallway_motion",
+          state: "off",
+          attributes: {
+            friendly_name: "Hallway Motion",
+            device_class: "motion",
+          },
+        },
+      },
+      areas: {
+        kitchen: { area_id: "kitchen", name: "Kitchen" },
+        hallway: { area_id: "hallway", name: "Hallway" },
+      },
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_kitchen";
+    location.name = "Kitchen";
+    location.ha_area_id = "kitchen";
+    location.modules._meta = { type: "area" };
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${location}
+        .allLocations=${[location]}
+      ></ht-location-inspector>
+    `);
+
+    await openExternalSourceDialog(element);
+
+    const dialog = () =>
+      element.shadowRoot?.querySelector('[data-testid="external-source-dialog"]') as HTMLElement | null;
+    expect(dialog()).to.exist;
+    expect(
+      element.shadowRoot?.querySelector('[data-testid="external-source-dialog-hint"]')?.textContent || ""
+    ).to.include("Save changes");
+
+    const areaSelect = element.shadowRoot!.querySelector(
+      '[data-testid="external-source-area-select"]'
+    ) as HTMLSelectElement;
+    areaSelect.value = "hallway";
+    areaSelect.dispatchEvent(new Event("change"));
+    await element.updateComplete;
+
+    await waitUntil(() => {
+      const entitySelect = element.shadowRoot!.querySelector(
+        '[data-testid="external-source-entity-select"]'
+      ) as HTMLSelectElement;
+      return Array.from(entitySelect.options).some(
+        (option) => option.value === "binary_sensor.hallway_motion"
+      );
+    }, "hallway entity option did not appear");
+
+    const entitySelect = element.shadowRoot!.querySelector(
+      '[data-testid="external-source-entity-select"]'
+    ) as HTMLSelectElement;
+    entitySelect.value = "binary_sensor.hallway_motion";
+    entitySelect.dispatchEvent(new Event("change"));
+    await element.updateComplete;
+
+    const addButton = element.shadowRoot!.querySelector(
+      '[data-testid="confirm-add-external-source"]'
+    ) as HTMLButtonElement;
+    expect(addButton.disabled).to.equal(false);
+    addButton.click();
+    await element.updateComplete;
+
+    expect(dialog()).to.exist;
+    await waitUntil(() => {
+      const items = element.shadowRoot?.querySelectorAll('[data-testid="external-source-added-item"]');
+      return (items?.length || 0) === 1;
+    }, "added source did not appear in dialog list");
+    expect(
+      element.shadowRoot?.querySelector('[data-testid="external-source-added-item"]')?.textContent || ""
+    ).to.include("Hallway Motion");
+
+    const removeButton = element.shadowRoot!.querySelector(
+      '[data-testid="remove-external-source"]'
+    ) as HTMLButtonElement;
+    expect(removeButton).to.exist;
+    removeButton.click();
+    await element.updateComplete;
+
+    await waitUntil(() => {
+      const items = element.shadowRoot?.querySelectorAll('[data-testid="external-source-added-item"]');
+      return (items?.length || 0) === 0;
+    }, "removed source still listed in dialog");
+    expect(element.shadowRoot?.querySelector('[data-testid="external-source-added-empty"]')).to.exist;
+
+    const areaSelectAgain = element.shadowRoot!.querySelector(
+      '[data-testid="external-source-area-select"]'
+    ) as HTMLSelectElement;
+    areaSelectAgain.value = "hallway";
+    areaSelectAgain.dispatchEvent(new Event("change"));
+    await element.updateComplete;
+
+    await waitUntil(() => {
+      const entitySelectReady = element.shadowRoot?.querySelector(
+        '[data-testid="external-source-entity-select"]'
+      ) as HTMLSelectElement | null;
+      return (
+        !!entitySelectReady &&
+        !entitySelectReady.disabled &&
+        Array.from(entitySelectReady.options).some(
+          (option) => option.value === "binary_sensor.hallway_motion"
+        )
+      );
+    }, "hallway entity option did not reappear after remove");
+
+    const entitySelectAgain = element.shadowRoot!.querySelector(
+      '[data-testid="external-source-entity-select"]'
+    ) as HTMLSelectElement;
+    entitySelectAgain.value = "binary_sensor.hallway_motion";
+    entitySelectAgain.dispatchEvent(new Event("change"));
+    await element.updateComplete;
+
+    await waitUntil(() => {
+      const addButtonAgain = element.shadowRoot?.querySelector(
+        '[data-testid="confirm-add-external-source"]'
+      ) as HTMLButtonElement | null;
+      return !!addButtonAgain && addButtonAgain.disabled === false;
+    }, "Add Source button did not re-enable after re-selecting sensor");
+
+    const addButtonAgain = element.shadowRoot!.querySelector(
+      '[data-testid="confirm-add-external-source"]'
+    ) as HTMLButtonElement;
+    addButtonAgain.click();
+    await element.updateComplete;
+
+    const doneButton = element.shadowRoot!.querySelector(
+      '[data-testid="close-external-source-dialog"]'
+    ) as HTMLButtonElement;
+    expect(doneButton.textContent?.trim()).to.equal("Done");
+    doneButton.click();
+    await element.updateComplete;
+    expect(dialog()).to.equal(null);
+
+    await waitUntil(() => {
+      const saveButton = element.shadowRoot?.querySelector(
+        '[data-testid="detection-save-button"]'
+      ) as HTMLButtonElement | null;
+      return !!saveButton && saveButton.disabled === false;
+    }, "Save changes button did not become enabled");
+
+    const saveButton = element.shadowRoot!.querySelector(
+      '[data-testid="detection-save-button"]'
+    ) as HTMLButtonElement;
+    saveButton.click();
+    await element.updateComplete;
+
+    await waitUntil(
+      () =>
+        sourceUpdates.some((request) => {
+          const sources = request?.config?.occupancy_sources;
+          return (
+            Array.isArray(sources) &&
+            sources.some((source: any) => source.entity_id === "binary_sensor.hallway_motion")
+          );
+        }),
+      "source update was not persisted after Done + Save changes",
+      { timeout: 5000 }
+    );
+    expect(sourceUpdates.length).to.be.greaterThan(0);
   });
 
   it("shows external occupancy-class entities but excludes Topomation occupancy outputs", async () => {
@@ -4928,6 +5143,7 @@ describe("HtLocationInspector WIAB configuration", () => {
     const location = structuredClone(baseLocation);
     location.id = "area_kitchen";
     location.name = "Kitchen";
+    location.parent_id = "building_home";
     location.ha_area_id = "kitchen";
     location.modules._meta = { type: "area" };
     location.modules.ambient = {
@@ -4938,9 +5154,16 @@ describe("HtLocationInspector WIAB configuration", () => {
       bright_threshold: 500,
       fallback_to_sun: true,
     };
+    const parentLocation = structuredClone(baseLocation);
+    parentLocation.id = "building_home";
+    parentLocation.name = "Building Home";
 
     const element = await fixture<HtLocationInspector>(html`
-      <ht-location-inspector .hass=${hass} .location=${location}></ht-location-inspector>
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${location}
+        .allLocations=${[parentLocation, location]}
+      ></ht-location-inspector>
     `);
 
     await waitUntil(
@@ -4976,6 +5199,24 @@ describe("HtLocationInspector WIAB configuration", () => {
     expect(ambientStateText).to.equal("Dark");
     expect(sourceMethodText).to.equal("Inherited sensor");
     expect(element.shadowRoot?.querySelector('[data-testid="ambient-refresh-button"]')).to.not.exist;
+    expect(element.shadowRoot?.querySelector('[data-testid="ambient-local-light-selector"]')).to.equal(null);
+    expect(element.shadowRoot?.querySelector('[data-testid="ambient-local-light-summary"]')).to.equal(null);
+    const priorityNote =
+      element.shadowRoot?.querySelector('[data-testid="ambient-source-priority-note"]')?.textContent || "";
+    expect(priorityNote).to.include("Using inherited lux from");
+    expect(
+      element.shadowRoot?.querySelector('[data-testid="ambient-local-light-unavailable"]')?.textContent || ""
+    ).to.include("Choose a local lux sensor");
+    const selectedLocationIds: string[] = [];
+    element.addEventListener("location-selected", ((event: CustomEvent) => {
+      selectedLocationIds.push(event.detail.locationId);
+    }) as EventListener);
+    const useParentSensorButton = element.shadowRoot?.querySelector(
+      '[data-testid="ambient-use-parent-sensor"]'
+    ) as HTMLButtonElement | null;
+    expect(useParentSensorButton).to.exist;
+    useParentSensorButton!.click();
+    expect(selectedLocationIds).to.deep.equal(["building_home"]);
 
     await waitUntil(() => Boolean(stateChangedHandler), "state_changed subscription not established");
     stateChangedHandler?.({
@@ -5452,13 +5693,13 @@ describe("HtLocationInspector WIAB configuration", () => {
       '[data-testid="ambient-lux-sensor-select"]'
     ) as HTMLSelectElement | null;
     expect(sensorSelect).to.exist;
-    sensorSelect!.value = "sensor.patio_lux";
-    sensorSelect!.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
-    await element.updateComplete;
-
     expect(element.shadowRoot?.querySelector('[data-testid="ambient-fallback-to-sun-toggle"]')).to.equal(null);
     expect(element.shadowRoot?.querySelector('[data-testid="ambient-assume-dark-on-error-toggle"]')).to.equal(null);
     expect(element.shadowRoot?.querySelector('[data-testid="ambient-ignore-local-lux-toggle"]')).to.equal(null);
+
+    sensorSelect!.value = "sensor.patio_lux";
+    sensorSelect!.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+    await element.updateComplete;
 
     const localLightSelector = element.shadowRoot?.querySelector(
       '[data-testid="ambient-local-light-selector"]'

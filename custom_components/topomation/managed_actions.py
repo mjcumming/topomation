@@ -1018,7 +1018,7 @@ class TopomationManagedActions:
         seen: set[ActionTriggerType] = set()
 
         raw_values: list[str] = []
-        if isinstance(trigger_types, (list, tuple)):
+        if isinstance(trigger_types, list | tuple):
             raw_values.extend(str(value or "") for value in trigger_types)
         if fallback_trigger_type:
             raw_values.append(str(fallback_trigger_type))
@@ -1940,7 +1940,7 @@ class TopomationManagedActions:
             raw_trigger_types = parsed.get("trigger_types")
             try:
                 trigger_types = self._normalize_trigger_types(
-                    raw_trigger_types if isinstance(raw_trigger_types, (list, tuple)) else None,
+                    raw_trigger_types if isinstance(raw_trigger_types, list | tuple) else None,
                     fallback_trigger_type=str(raw_trigger_type or ""),
                 )
             except ValueError:
