@@ -312,6 +312,41 @@ describe("buildOccupancyReasonLine", () => {
     expect(explanation.summary).not.to.include(":Floor");
   });
 
+  it("keeps display-form occupancy group ids out of occupied summaries", () => {
+    const mainFloor = makeLocation({
+      id: "floor_main_floor",
+      name: "Main Floor",
+      modules: { _meta: { type: "floor" } },
+    });
+
+    const explanation = buildOccupancyExplanation({
+      location: mainFloor,
+      locations: [mainFloor],
+      hass: makeHass(),
+      occupancyStates: { floor_main_floor: true },
+      occupancyTransitions: {},
+      occupancyRuntimeStates: {
+        floor_main_floor: runtimeState("floor_main_floor", "on", tMinus(18), {
+          contributions: [
+            {
+              source_id: "Occupancy Group :Floor Main Floor Group Morphyb6 Lahara",
+              state: "active",
+              expires_at: null,
+              updated_at: tMinus(18),
+            },
+          ],
+        }),
+      },
+      status: "occupied",
+      nowMs: NOW,
+    });
+
+    expect(explanation.summary).to.equal("Occupied because the occupancy group is occupied.");
+    expect(explanation.summary).not.to.include("Morphyb6");
+    expect(explanation.summary).not.to.include("Lahara");
+    expect(explanation.summary).not.to.include(":Floor");
+  });
+
   it("describes vacancy timeouts", () => {
     const location = makeLocation({ id: "kitchen" });
     const line = buildOccupancyReasonLine({

@@ -1,4 +1,5 @@
 import type { HomeAssistant, Location } from "./types";
+import { effectiveDailyGatingEnabled } from "./vacuum-rule-utils";
 
 export type ActionTriggerType = "on_occupied" | "on_vacant" | "on_dark" | "on_bright";
 export type ActionAmbientCondition = "any" | "dark" | "bright";
@@ -31,6 +32,9 @@ export interface TopomationActionRule {
   start_time?: string;
   end_time?: string;
   run_on_startup?: boolean;
+  user_named?: boolean;
+  /** ADR-HA-091: once-per-day gating for vacuum.start rules only. */
+  daily_gating_enabled?: boolean;
   enabled: boolean;
 }
 
@@ -164,6 +168,24 @@ function actionSupportsOnlyIfOff(entityId: string, service: string): boolean {
   return entityId.startsWith("light.") && service === "turn_on";
 }
 
+function defaultActionServiceForTrigger(
+  entityId: string,
+  triggerType: ActionTriggerType
+): string {
+  const domain = String(entityId || "").split(".", 1)[0];
+  const prefersOff = triggerType === "on_vacant" || triggerType === "on_bright";
+  if (domain === "media_player") {
+    return prefersOff ? "media_stop" : "media_play";
+  }
+  if (domain === "switch" || domain === "light") {
+    return prefersOff ? "turn_off" : "turn_on";
+  }
+  if (domain === "vacuum") {
+    return triggerType === "on_occupied" ? "pause" : "start";
+  }
+  return prefersOff ? "turn_off" : "turn_on";
+}
+
 function normalizeRuleActionsFromPayload(
   rule: Partial<TopomationActionRule>,
   fallbackTriggerType: ActionTriggerType
@@ -248,6 +270,11 @@ export async function listTopomationActionRules(
                 : undefined,
             run_on_startup:
               typeof rule.run_on_startup === "boolean" ? rule.run_on_startup : undefined,
+            user_named: typeof rule.user_named === "boolean" ? rule.user_named : undefined,
+            daily_gating_enabled:
+              typeof rule.daily_gating_enabled === "boolean"
+                ? rule.daily_gating_enabled
+                : undefined,
           } satisfies TopomationActionRule;
         })
         .filter((rule): rule is TopomationActionRule => !!rule)
@@ -297,6 +324,10 @@ export async function createTopomationActionRule(
   }
   const runOnStartup =
     typeof args.run_on_startup === "boolean" ? args.run_on_startup : undefined;
+  const sendDailyGating = effectiveDailyGatingEnabled(
+    args.daily_gating_enabled,
+    normalizedActions
+  );
 
   try {
     const response = await hass.callWS<{ rule?: TopomationActionRule }>({
@@ -316,7 +347,7 @@ export async function createTopomationActionRule(
       end_time: args.end_time,
       ...(typeof runOnStartup === "boolean" ? { run_on_startup: runOnStartup } : {}),
       ...(typeof args.user_named === "boolean" ? { user_named: args.user_named } : {}),
-      ...(args.daily_gating_enabled ? { daily_gating_enabled: true } : {}),
+      ...(sendDailyGating ? { daily_gating_enabled: true } : {}),
       ...(args.automation_id ? { automation_id: args.automation_id } : {}),
       ...(args.rule_uuid ? { rule_uuid: args.rule_uuid } : {}),
       ...(entryId ? { entry_id: entryId } : {}),
@@ -361,7 +392,7 @@ export async function createTopomationActionRule(
         daily_gating_enabled:
           typeof response.rule.daily_gating_enabled === "boolean"
             ? response.rule.daily_gating_enabled
-            : Boolean(args.daily_gating_enabled),
+            : sendDailyGating,
       };
     }
   } catch (err) {

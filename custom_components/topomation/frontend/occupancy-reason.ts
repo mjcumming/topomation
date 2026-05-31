@@ -362,14 +362,13 @@ function structuralRelationshipSourceId(sourceId: string): boolean {
     raw.startsWith("__follow_parent__.") ||
     raw.startsWith("__follow__:") ||
     raw.startsWith("__follow__.") ||
-    raw.startsWith("occupancy_group:") ||
-    raw.startsWith("occupancy_group.")
+    rawOccupancyGroupSourceId(raw)
   );
 }
 
 function rawOccupancyGroupSourceId(sourceId: string): boolean {
   const raw = String(sourceId || "").trim();
-  return raw.startsWith("occupancy_group:") || raw.startsWith("occupancy_group.");
+  return /^occupancy[\s_]*group\s*[:.]/i.test(raw);
 }
 
 function getOccupancySources(location: Location): OccupancySource[] {
@@ -415,7 +414,7 @@ function contributorSentence(
     return `${displayNameForLocationOrAreaId(locationId, ctx)} is occupied through the group`;
   }
 
-  if (raw.startsWith("occupancy_group:") || raw.startsWith("occupancy_group.")) {
+  if (rawOccupancyGroupSourceId(raw)) {
     return "the occupancy group is occupied";
   }
 
@@ -465,6 +464,7 @@ function structuralSourceLabel(
 
   return (
     groupMemberStructuralLabel(raw, ctx) ||
+    (rawOccupancyGroupSourceId(raw) ? "occupancy group" : undefined) ||
     prefixedLabel("__child__", ":", (n) => `${n} is occupied`) ||
     prefixedLabel("__child__", ".", (n) => `${n} is occupied`) ||
     prefixedLabel("__follow_parent__", ":", (n) => `linked to ${n}`) ||

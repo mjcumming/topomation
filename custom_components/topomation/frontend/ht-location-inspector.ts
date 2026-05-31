@@ -34,6 +34,12 @@ import {
   deleteTopomationActionRule,
   listTopomationActionRules,
 } from "./ha-automation-rules";
+import {
+  automationEntityIdForRule,
+  effectiveDailyGatingEnabled,
+  vacuumDailyRunStatusLabel,
+  vacuumRuleUsesStartAction,
+} from "./vacuum-rule-utils";
 import { humanReadableLockSource } from "./lock-source-utils";
 
 type SourceSignalKey = OccupancySource["signal_key"];
@@ -9159,7 +9165,7 @@ export class HtLocationInspector extends LitElement {
       const candidates = this._actionRuleTargetEntities(tab);
       const actionEntityId = candidates[0] || "";
       const defaultEdge: TopomationActionRule["trigger_type"] =
-        tab === "media" ? "on_vacant" : "on_occupied";
+        tab === "media" || tab === "vacuum" ? "on_vacant" : "on_occupied";
       const triggerTypes: TopomationActionRule["trigger_type"][] =
         tab === "lighting" ? [] : [defaultEdge];
       const triggerType = this._primaryActionTriggerType(triggerTypes);
@@ -9561,7 +9567,10 @@ export class HtLocationInspector extends LitElement {
           end_time: rule.end_time,
           run_on_startup: ruleTab === "lighting" ? Boolean(rule.run_on_startup) : false,
           user_named: Boolean(rule.user_named),
-          daily_gating_enabled: Boolean(rule.daily_gating_enabled),
+          daily_gating_enabled: effectiveDailyGatingEnabled(
+            rule.daily_gating_enabled,
+            ruleTargets
+          ),
         },
         this.entryId
       );
@@ -10539,7 +10548,7 @@ export class HtLocationInspector extends LitElement {
                             selectedActionEntityId,
                             triggerType
                           );
-                          this._updateActionRule(ruleId, {
+                          const patch: Partial<TopomationActionRule> = {
                             actions: [
                               {
                                 entity_id: selectedActionEntityId,
@@ -10547,7 +10556,15 @@ export class HtLocationInspector extends LitElement {
                                 ...(nextAction.data ? { data: nextAction.data } : {}),
                               },
                             ],
-                          });
+                          };
+                          if (
+                            variant === "vacuum" &&
+                            nextAction.service !== "start" &&
+                            rule.daily_gating_enabled
+                          ) {
+                            patch.daily_gating_enabled = false;
+                          }
+                          this._updateActionRule(ruleId, patch);
                         }
                       )
                     )}
@@ -10688,14 +10705,30 @@ export class HtLocationInspector extends LitElement {
             `
           : ""}
       </div>
-      ${tab === "vacuum"
-        ? this._renderDailyGatingPills(ruleId, rule, busy)
+      ${tab === "vacuum" && vacuumRuleUsesStartAction(this._actionTargetsForRule(rule))
+        ? html`
+            ${this._renderDailyGatingPills(ruleId, rule, busy)}
+            ${this._renderVacuumDailyRunStatus(rule)}
+          `
         : ""}
       ${this._renderOccupancyOnlyActionsBlock(tab, ruleId, rule, busy, entityOptions)}
     `;
   }
 
-  /** ADR-HA-091: opt-in "Run at most once per day" toggle on Vacuum rules. */
+  /** ADR-HA-091: opt-in once-per-day gating for vacuum.start rules only. */
+  private _renderVacuumDailyRunStatus(rule: TopomationActionRule) {
+    if (!effectiveDailyGatingEnabled(rule.daily_gating_enabled, this._actionTargetsForRule(rule))) {
+      return html``;
+    }
+    const automationEntityId = automationEntityIdForRule(rule);
+    const status = vacuumDailyRunStatusLabel(this.hass, automationEntityId);
+    return html`
+      <p class="text-muted vacuum-daily-run-status" data-testid="vacuum-daily-run-status">
+        ${status}
+      </p>
+    `;
+  }
+
   private _renderDailyGatingPills(
     ruleId: string,
     rule: TopomationActionRule,
@@ -10704,7 +10737,7 @@ export class HtLocationInspector extends LitElement {
     const enabled = Boolean(rule.daily_gating_enabled);
     return html`
       <div class="dusk-inline-heading-row">
-        <div class="dusk-rule-section-title">Daily run gating</div>
+        <div class="dusk-rule-section-title">Daily run gating (start cleaning only)</div>
         <div class="choice-pill-group">
           ${this._renderTogglePill(
             "Run every time",

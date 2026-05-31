@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.19] - 2026-05-31
+
+### Added
+
+- **Vacuum daily run status**: when a vacuum **Start** rule uses “Run at most once per
+  day,” the Vacuum tab shows read-only status (eligible vs already ran today) from
+  the managed automation’s `last_triggered` timestamp.
+
+### Changed
+
+- **Vacuum daily gating (start only)**: once-per-day limiting applies only to
+  `vacuum.start` rules. Pause, return to dock, and other commands always run when
+  triggered. The daily gating control appears only for Start commands.
+- **New vacuum rules**: default trigger is **On vacant** with **Start**, matching
+  the intended “clean when the room is empty” workflow.
+
+### Fixed
+
+- **Occupancy group explanations**: generated occupancy group IDs no longer leak
+  into occupied summaries, so structural headers describe group occupancy
+  without random suffixes like `Morphyb6 Lahara`.
+
 ## [0.3.18] - 2026-05-25
 
 ### Changed

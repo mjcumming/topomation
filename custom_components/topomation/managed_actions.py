@@ -466,6 +466,11 @@ class TopomationManagedActions:
         if not triggers:
             raise ValueError("Unable to build automation triggers for this rule")
 
+        effective_daily_gating = self._effective_daily_gating_enabled(
+            bool(daily_gating_enabled),
+            normalized_actions,
+        )
+
         conditions = self._build_condition_definitions(
             ambient_condition=normalized_ambient_condition,
             must_be_occupied=must_be_occupied,
@@ -474,7 +479,7 @@ class TopomationManagedActions:
             start_time=normalized_start_time,
             end_time=normalized_end_time,
             ambient_config=ambient_config,
-            daily_gating_enabled=bool(daily_gating_enabled),
+            daily_gating_enabled=effective_daily_gating,
             automation_id=automation_id,
             property_activity_entity_id=compiled_rule.property_activity_entity_id,
             require_property_activity=compiled_rule.require_property_activity,
@@ -505,7 +510,7 @@ class TopomationManagedActions:
             "user_named": bool(user_named),
             "ha_area_id": compiled_rule.ha_area_id,
             "icon": compiled_rule.icon,
-            **({"daily_gating_enabled": True} if bool(daily_gating_enabled) else {}),
+            **({"daily_gating_enabled": True} if effective_daily_gating else {}),
         }
         description = "Managed by Topomation.\n" + self._metadata_line(metadata_payload)
         config_actions: list[dict[str, Any]] = []
@@ -586,7 +591,7 @@ class TopomationManagedActions:
             rule_uuid=normalized_rule_uuid,
             actions=normalized_actions,
             user_named=bool(user_named),
-            daily_gating_enabled=bool(daily_gating_enabled),
+            daily_gating_enabled=effective_daily_gating,
         )
 
         entity_id = await self._resolve_created_entity_id(
@@ -654,7 +659,7 @@ class TopomationManagedActions:
             "rule_uuid": normalized_rule_uuid,
             "ha_area_id": compiled_rule.ha_area_id,
             "icon": compiled_rule.icon,
-            "daily_gating_enabled": bool(daily_gating_enabled),
+            "daily_gating_enabled": effective_daily_gating,
             "enabled": True,
         }
 
@@ -1818,6 +1823,23 @@ class TopomationManagedActions:
             )
 
         return conditions
+
+    @staticmethod
+    def _effective_daily_gating_enabled(
+        daily_gating_enabled: bool,
+        actions: list[Mapping[str, Any]] | list[dict[str, Any]],
+    ) -> bool:
+        """ADR-HA-091: once-per-day gating applies only to vacuum.start actions."""
+        if not daily_gating_enabled:
+            return False
+        for raw_action in actions:
+            if not isinstance(raw_action, Mapping):
+                continue
+            entity_id = str(raw_action.get("entity_id", "")).strip()
+            service = str(raw_action.get("service", "")).strip()
+            if entity_id.startswith("vacuum.") and service == "start":
+                return True
+        return False
 
     @staticmethod
     def _build_daily_gating_condition(

@@ -1259,9 +1259,23 @@ async def test_cleanup_legacy_grouping_reapplies_grouping_to_existing_rules(
     ]
 
 
-def test_daily_gating_condition_emitted_for_vacuum_target_without_paused_carveout() -> None:
-    """Daily-gated vacuum targets use a strict once-per-day date check."""
+def test_effective_daily_gating_enabled_only_for_vacuum_start() -> None:
+    """ADR-HA-091: once-per-day applies only when the action is vacuum.start."""
     manager = TopomationManagedActions(cast(HomeAssistant, SimpleNamespace()))
+    start_actions = [{"entity_id": "vacuum.main", "service": "start"}]
+    pause_actions = [{"entity_id": "vacuum.main", "service": "pause"}]
+    switch_actions = [{"entity_id": "switch.coffee", "service": "turn_on"}]
+
+    assert manager._effective_daily_gating_enabled(True, start_actions) is True  # noqa: SLF001
+    assert manager._effective_daily_gating_enabled(True, pause_actions) is False  # noqa: SLF001
+    assert manager._effective_daily_gating_enabled(True, switch_actions) is False  # noqa: SLF001
+    assert manager._effective_daily_gating_enabled(False, start_actions) is False  # noqa: SLF001
+
+
+def test_daily_gating_condition_emitted_for_vacuum_start() -> None:
+    """Daily-gated vacuum.start rules use a strict once-per-day date check."""
+    manager = TopomationManagedActions(cast(HomeAssistant, SimpleNamespace()))
+    actions = [{"entity_id": "vacuum.main", "service": "start"}]
     conditions = manager._build_condition_definitions(  # noqa: SLF001
         ambient_condition="any",
         must_be_occupied=None,
@@ -1270,7 +1284,7 @@ def test_daily_gating_condition_emitted_for_vacuum_target_without_paused_carveou
         start_time="00:00",
         end_time="23:59",
         ambient_config={},
-        daily_gating_enabled=True,
+        daily_gating_enabled=manager._effective_daily_gating_enabled(True, actions),
         automation_id="topomation_main_floor_vacant_vacuum_main",
     )
     template_clauses = [c for c in conditions if c.get("condition") == "template"]
@@ -1283,9 +1297,10 @@ def test_daily_gating_condition_emitted_for_vacuum_target_without_paused_carveou
     assert "is_state(" not in body
 
 
-def test_daily_gating_condition_emitted_for_non_vacuum_target() -> None:
-    """Non-vacuum daily-gated rules get the same date check."""
+def test_daily_gating_condition_omitted_for_vacuum_pause() -> None:
+    """vacuum.pause rules never get the once-per-day template even if the flag is set."""
     manager = TopomationManagedActions(cast(HomeAssistant, SimpleNamespace()))
+    actions = [{"entity_id": "vacuum.main", "service": "pause"}]
     conditions = manager._build_condition_definitions(  # noqa: SLF001
         ambient_condition="any",
         must_be_occupied=None,
@@ -1294,15 +1309,28 @@ def test_daily_gating_condition_emitted_for_non_vacuum_target() -> None:
         start_time="00:00",
         end_time="23:59",
         ambient_config={},
-        daily_gating_enabled=True,
+        daily_gating_enabled=manager._effective_daily_gating_enabled(True, actions),
+        automation_id="topomation_main_floor_vacant_vacuum_main",
+    )
+    assert all(c.get("condition") != "template" for c in conditions)
+
+
+def test_daily_gating_condition_omitted_for_non_vacuum_target() -> None:
+    """Non-vacuum actions do not get daily gating even when the UI flag is set."""
+    manager = TopomationManagedActions(cast(HomeAssistant, SimpleNamespace()))
+    actions = [{"entity_id": "switch.coffee", "service": "turn_on"}]
+    conditions = manager._build_condition_definitions(  # noqa: SLF001
+        ambient_condition="any",
+        must_be_occupied=None,
+        occupancy_entity_id=None,
+        time_condition_enabled=False,
+        start_time="00:00",
+        end_time="23:59",
+        ambient_config={},
+        daily_gating_enabled=manager._effective_daily_gating_enabled(True, actions),
         automation_id="topomation_kitchen_vacant_switch_x",
     )
-    template_clauses = [c for c in conditions if c.get("condition") == "template"]
-    assert len(template_clauses) == 1
-    body = template_clauses[0]["value_template"]
-    assert "as_local(now()).date()" in body
-    assert "paused" not in body
-    assert "is_state(" not in body
+    assert all(c.get("condition") != "template" for c in conditions)
 
 
 def test_daily_gating_condition_omitted_when_automation_id_missing() -> None:
@@ -1325,6 +1353,7 @@ def test_daily_gating_condition_omitted_when_automation_id_missing() -> None:
 def test_daily_gating_condition_appears_after_time_condition() -> None:
     """Daily-gating clause is appended after time-window clause for stable order."""
     manager = TopomationManagedActions(cast(HomeAssistant, SimpleNamespace()))
+    actions = [{"entity_id": "vacuum.main", "service": "start"}]
     conditions = manager._build_condition_definitions(  # noqa: SLF001
         ambient_condition="any",
         must_be_occupied=None,
@@ -1333,7 +1362,7 @@ def test_daily_gating_condition_appears_after_time_condition() -> None:
         start_time="10:00",
         end_time="16:00",
         ambient_config={},
-        daily_gating_enabled=True,
+        daily_gating_enabled=manager._effective_daily_gating_enabled(True, actions),
         automation_id="topomation_main_floor_vacant_vacuum_main",
     )
     kinds = [c.get("condition") for c in conditions]
