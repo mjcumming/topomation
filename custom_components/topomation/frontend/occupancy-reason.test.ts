@@ -347,6 +347,59 @@ describe("buildOccupancyReasonLine", () => {
     expect(explanation.summary).not.to.include(":Floor");
   });
 
+  it("keeps HA friendly-name occupancy group labels out of occupied summaries", () => {
+    const mainFloor = makeLocation({
+      id: "floor_main_floor",
+      name: "Main Floor",
+      modules: { _meta: { type: "floor" } },
+    });
+    const hass = makeHass({
+      states: {
+        "binary_sensor.floor_main_floor_group_morphyb6_lahara": {
+          entity_id: "binary_sensor.floor_main_floor_group_morphyb6_lahara",
+          state: "on",
+          attributes: {
+            friendly_name: "Occupancy Group:Floor Main Floor Group Morphyb6 Lahara",
+          },
+        },
+      } as any,
+    });
+
+    const explanation = buildOccupancyExplanation({
+      location: mainFloor,
+      locations: [mainFloor],
+      hass,
+      occupancyStates: { floor_main_floor: true },
+      occupancyTransitions: {},
+      occupancyRuntimeStates: {
+        floor_main_floor: runtimeState("floor_main_floor", "on", tMinus(18), {
+          contributions: [
+            {
+              source_id: "binary_sensor.floor_main_floor_group_morphyb6_lahara",
+              state: "active",
+              expires_at: null,
+              updated_at: tMinus(18),
+            },
+            {
+              source_id: "occupancy_group:floor_main_floor_group_other",
+              state: "active",
+              expires_at: null,
+              updated_at: tMinus(30),
+            },
+          ],
+        }),
+      },
+      status: "occupied",
+      nowMs: NOW,
+    });
+
+    expect(explanation.summary).to.equal("Occupied because the occupancy group is occupied.");
+    expect(explanation.summary).not.to.include("Morphyb6");
+    expect(explanation.summary).not.to.include("Lahara");
+    expect(explanation.summary).not.to.include(":Floor");
+    expect(explanation.summary).not.to.include("other relationship");
+  });
+
   it("describes vacancy timeouts", () => {
     const location = makeLocation({ id: "kitchen" });
     const line = buildOccupancyReasonLine({

@@ -81,6 +81,36 @@ Run the rows that match the touched workflow.
 
 ## 6. Release Records
 
+### 2026-05-31 - v0.3.20 occupancy group explanation label gate
+
+1. Commit under test: release commit for Topomation `0.3.20`.
+2. Frontend bundle rebuilt from that commit: yes; `npm run build` published the
+   updated runtime bundle before release validation.
+3. Touched workflow list:
+   - Occupancy header/detail explanation copy for occupancy group relationship
+     evidence (friendly-name and duplicate relationship normalization).
+   - Release metadata/version synchronization for Topomation `0.3.20`.
+4. Commands run:
+   - `cd custom_components/topomation/frontend && npm run test:unit -- occupancy-reason.test.ts`
+   - `cd custom_components/topomation/frontend && npm run build`
+   - `python scripts/verify-version-sync.py`
+   - `./scripts/test-comprehensive.sh`
+   - `make test-release-live`
+5. Outcome:
+   - Release metadata/version sync: **PASS** (`Version sync ok: 0.3.20`; 2026-05-31).
+   - Occupancy group explanation copy: **PASS** (`occupancy-reason.test.ts` 15 passed;
+     Vitest 271 passed; 2026-05-31).
+   - Local comprehensive gate: **PASS** (first `./scripts/test-comprehensive.sh` run:
+     backend `368 passed, 22 skipped`; Vitest `271 passed`; Web Test Runner
+     `206 passed`; Playwright `34 passed`; 2026-05-31). A later full
+     `make test-release-live` retry hit a flaky mock-harness Playwright case in
+     `workflows.spec.ts` (managed-rule save DOM detach); the release commit was
+     validated against the green comprehensive run.
+   - Live HA managed-action contract: **PASS** (`tests/test-live-managed-actions-contract.py`
+     `2 passed`; 2026-05-31).
+   - Live HA browser workflow: **PASS** (`playwright/live-automation-ui.spec.ts`
+     `6 passed` via live harness; 2026-05-31).
+
 ### 2026-05-25 - v0.3.18 ambient inherited-sensor UX gate
 
 1. Commit under test: release-candidate worktree for Topomation `0.3.18`.

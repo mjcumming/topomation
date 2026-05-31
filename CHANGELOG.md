@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.20] - 2026-05-31
+
+### Fixed
+
+- **Occupancy group explanations**: occupied summaries no longer leak internal
+  occupancy group labels when the runtime exposes them as Home Assistant entity
+  friendly names (for example `Occupancy Group:Floor ...`) or duplicate group
+  relationship evidence.
+
 ## [0.3.19] - 2026-05-31
 
 ### Added

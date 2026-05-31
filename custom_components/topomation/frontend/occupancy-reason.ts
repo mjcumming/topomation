@@ -290,10 +290,12 @@ function contributionSourceContext(
 
   const parsed = contributionOrigin(contribution, sourceId);
   if (!parsed) {
-    const structuralKind = structuralRelationshipSourceId(sourceId) ? "relationship" : "source";
     const lineLabel = sourceLabelForSourceId(sourceId, sources, ctx);
+    const groupReference = lineLabel === "occupancy group" || rawOccupancyGroupSourceId(sourceId);
+    const structuralKind =
+      structuralRelationshipSourceId(sourceId) || groupReference ? "relationship" : "source";
     const sentence =
-      rawOccupancyGroupSourceId(sourceId) ? "the occupancy group is occupied" : lineLabel;
+      groupReference ? "the occupancy group is occupied" : lineLabel;
     return {
       kind: structuralKind,
       lineLabel,
@@ -371,6 +373,10 @@ function rawOccupancyGroupSourceId(sourceId: string): boolean {
   return /^occupancy[\s_]*group\s*[:.]/i.test(raw);
 }
 
+function displaySafeSourceLabel(label: string): string {
+  return rawOccupancyGroupSourceId(label) ? "occupancy group" : label;
+}
+
 function getOccupancySources(location: Location): OccupancySource[] {
   const raw = (location?.modules?.occupancy as any) || {};
   return Array.isArray(raw.occupancy_sources) ? raw.occupancy_sources : [];
@@ -433,14 +439,14 @@ function sourceLabelForSourceId(
   const exact = sources.find(
     (s) => s.source_id === sourceId || s.entity_id === sourceId,
   );
-  if (exact) return entityFriendlyName(exact.entity_id, ctx.hass);
+  if (exact) return displaySafeSourceLabel(entityFriendlyName(exact.entity_id, ctx.hass));
 
   if (sourceId.includes("::")) {
     const [entityId] = sourceId.split("::");
-    return entityFriendlyName(entityId, ctx.hass);
+    return displaySafeSourceLabel(entityFriendlyName(entityId, ctx.hass));
   }
 
-  return entityFriendlyName(sourceId, ctx.hass);
+  return displaySafeSourceLabel(entityFriendlyName(sourceId, ctx.hass));
 }
 
 function structuralSourceLabel(
@@ -551,6 +557,9 @@ function formatOccupancyReason(
   if (lower.startsWith("occupancy:")) {
     return mode === "occupied" ? lower.slice("occupancy:".length) || undefined : undefined;
   }
+  if (rawOccupancyGroupSourceId(raw)) {
+    return mode === "occupied" ? "the occupancy group is occupied" : undefined;
+  }
 
   return raw;
 }
@@ -597,9 +606,13 @@ function occupiedSummary(
     return `Occupied because ${first} and ${contributors.length - 1} other source${contributors.length === 2 ? "" : "s"} are active.`;
   }
   if (relationships.length) {
-    const first = relationships[0].sentence;
-    if (relationships.length === 1) return `Occupied because ${first}.`;
-    return `Occupied because ${first} and ${relationships.length - 1} other relationship${relationships.length === 2 ? "" : "s"} are active.`;
+    const uniqueSentences = [...new Set(relationships.map((row) => row.sentence))];
+    const first = uniqueSentences[0];
+    if (uniqueSentences.length === 1) return `Occupied because ${first}.`;
+    if (uniqueSentences.includes("the occupancy group is occupied")) {
+      return "Occupied because the occupancy group is occupied.";
+    }
+    return `Occupied because ${first} and ${uniqueSentences.length - 1} other relationship${uniqueSentences.length === 2 ? "" : "s"} are active.`;
   }
   if (!detail) return "Occupied. No active holder is exposed by the runtime yet.";
   if (detail.endsWith(".")) return `Occupied because ${detail}`;
