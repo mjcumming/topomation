@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.21] - 2026-06-18
+
+### Fixed
+
+- **Vacuum once-per-day gating**: daily-gated `vacuum.start` rules restarted on
+  every vacancy instead of at most once per day. The gating condition referenced
+  a hard-coded `automation.<config_id>` entity that never existed (Home Assistant
+  derives an automation's entity id from its alias, not its config id), so the
+  `last_triggered` lookup always returned `None` and the gate never blocked. The
+  condition now self-references the automation via the `this` template variable,
+  so it works regardless of the entity id.
+
+### Changed
+
+- **Automatic stale-rule rebuild**: managed automations now carry a generation
+  fingerprint (`gen_hash`) of their behavior-affecting output. On startup,
+  Topomation recomputes each rule's fingerprint and rewrites only rules whose
+  generated configuration has drifted from current code, leaving unchanged rules
+  (and their `last_triggered` history) untouched. Rule-generation fixes such as
+  the vacuum gating fix above now propagate to existing installations
+  automatically, without a hand-maintained metadata version bump.
+
 ## [0.3.20] - 2026-05-31
 
 ### Fixed

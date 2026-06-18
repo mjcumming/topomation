@@ -695,14 +695,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     @callback
     def _schedule_managed_rule_contract_rebuild(_: Any) -> None:
-        """One-shot rewrite for managed automations created by older contracts.
+        """One-shot rewrite for managed automations whose generated YAML has drifted.
 
-        Keep this startup rebuild enabled while managed-rule metadata versions
-        roll forward so existing production environments converge automatically
-        after generated automation contracts change.
+        Detection is automatic: each rule's generation fingerprint (``gen_hash``)
+        is recomputed and the rule is rewritten only when current codegen would
+        produce different output than what is stored, so production environments
+        converge after rule generation changes without a hand-maintained version.
         """
         async def _run_managed_rule_startup_cleanup() -> None:
-            await managed_action_rules.async_rebuild_rules_before_metadata_version()
+            await managed_action_rules.async_rebuild_stale_rules()
             await managed_action_rules.async_cleanup_legacy_grouping()
 
         hass.async_create_task(_run_managed_rule_startup_cleanup())

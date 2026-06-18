@@ -7,6 +7,7 @@ handles validation, file write, and reload. No direct file I/O.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import re
@@ -73,7 +74,12 @@ _VALID_AMBIENT_CONDITIONS = frozenset({"any", "dark", "bright"})
 _AUTOMATION_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_]+$")
 _RULE_UUID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{7,63}$")
 _RECENT_RULE_SNAPSHOT_TTL_SECONDS = 30.0
-_AUTOMATION_METADATA_VERSION = 10
+# Coarse generation-contract version stamped into rule metadata. Stale-rule
+# detection is automatic via `gen_hash` (see _compute_generation_hash), so this
+# no longer needs a bump per codegen change; it remains only as a manual override
+# knob (async_rebuild_stale_rules(min_version=...)) for forcing rebuilds the hash
+# cannot detect — e.g. a change in how rule inputs are reconstructed on rebuild.
+_AUTOMATION_METADATA_VERSION = 11
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -96,6 +102,7 @@ class _TopomationMetadata:
     rule_uuid: str
     user_named: bool
     daily_gating_enabled: bool = False
+    gen_hash: str = ""
 
 
 @dataclass(slots=True)
@@ -119,6 +126,7 @@ class _RecentRuleSnapshot:
     user_named: bool
     actions: list[dict[str, Any]]
     daily_gating_enabled: bool = False
+    gen_hash: str = ""
 
 
 @dataclass(slots=True)
@@ -134,6 +142,36 @@ class _CompiledManagedRule:
     icon: str
     ha_area_id: str
     property_activity_entity_id: str | None = None
+
+
+@dataclass(slots=True)
+class _ComposedRuleConfig:
+    """Fully built (but not yet written) managed automation config.
+
+    Produced by :meth:`TopomationManagedActions._compose_rule_config` so the same
+    generation path feeds both rule writes and the stale-rule detector. ``gen_hash``
+    fingerprints the behavior-affecting output; reconcile compares it against the
+    hash stored in a live rule's metadata to decide whether codegen has drifted.
+    """
+
+    automation_id: str
+    location_id: str
+    name: str
+    config_payload: dict[str, Any]
+    gen_hash: str
+    trigger_type: ActionTriggerType
+    trigger_types: tuple[ActionTriggerType, ...]
+    ambient_condition: ActionAmbientCondition
+    must_be_occupied: bool | None
+    actions: list[dict[str, Any]]
+    time_condition_enabled: bool
+    start_time: str
+    end_time: str
+    run_on_startup: bool | None
+    rule_uuid: str
+    user_named: bool
+    effective_daily_gating: bool
+    compiled_rule: _CompiledManagedRule
 
 
 class TopomationManagedActions:
@@ -291,6 +329,7 @@ class TopomationManagedActions:
                         "rule_uuid": recent_snapshot.rule_uuid,
                         "user_named": recent_snapshot.user_named,
                         "daily_gating_enabled": recent_snapshot.daily_gating_enabled,
+                        "gen_hash": recent_snapshot.gen_hash,
                         "enabled": enabled,
                     }
                 )
@@ -368,6 +407,7 @@ class TopomationManagedActions:
                     or self._rule_uuid_from_automation_id(automation_id or entity_id),
                     "user_named": metadata.user_named,
                     "daily_gating_enabled": metadata.daily_gating_enabled,
+                    "gen_hash": metadata.gen_hash,
                     "enabled": enabled,
                 }
             )
@@ -396,6 +436,53 @@ class TopomationManagedActions:
         daily_gating_enabled: bool = False,
     ) -> dict[str, Any]:
         """Create or replace one managed action automation (HA config/automation.py pattern)."""
+        composed = self._compose_rule_config(
+            location=location,
+            name=name,
+            trigger_type=trigger_type,
+            trigger_types=trigger_types,
+            actions=actions,
+            ambient_condition=ambient_condition,
+            must_be_occupied=must_be_occupied,
+            require_property_activity=require_property_activity,
+            time_condition_enabled=time_condition_enabled,
+            start_time=start_time,
+            end_time=end_time,
+            run_on_startup=run_on_startup,
+            automation_id=automation_id,
+            rule_uuid=rule_uuid,
+            user_named=user_named,
+            daily_gating_enabled=daily_gating_enabled,
+        )
+        return await self._write_composed_rule(composed)
+
+    def _compose_rule_config(
+        self,
+        *,
+        location: Any,
+        name: str,
+        trigger_type: str,
+        trigger_types: list[str] | tuple[str, ...] | None = None,
+        actions: list[Mapping[str, Any]] | None = None,
+        ambient_condition: str | None = None,
+        must_be_occupied: bool | None = None,
+        require_property_activity: bool = False,
+        time_condition_enabled: bool = False,
+        start_time: str | None = None,
+        end_time: str | None = None,
+        run_on_startup: bool | None = None,
+        automation_id: str | None = None,
+        rule_uuid: str | None = None,
+        user_named: bool = False,
+        daily_gating_enabled: bool = False,
+    ) -> _ComposedRuleConfig:
+        """Build a managed automation config without writing it.
+
+        Pure (no I/O): the single generation path shared by rule writes and the
+        stale-rule detector. The returned ``gen_hash`` fingerprints the generated
+        triggers/conditions/actions so reconcile can tell whether current codegen
+        would produce different output than what a live rule already stores.
+        """
         location_id = str(getattr(location, "id", "")).strip()
         location_name = str(getattr(location, "name", "Location")).strip() or "Location"
         if not location_id:
@@ -486,33 +573,6 @@ class TopomationManagedActions:
             trigger_types=normalized_trigger_types,
         )
 
-        metadata_payload = {
-            "version": _AUTOMATION_METADATA_VERSION,
-            "location_id": location_id,
-            "trigger_type": normalized_trigger,
-            "trigger_types": list(normalized_trigger_types),
-            "ambient_condition": normalized_ambient_condition,
-            **(
-                {"must_be_occupied": must_be_occupied} if isinstance(must_be_occupied, bool) else {}
-            ),
-            **(
-                {"require_property_activity": True}
-                if compiled_rule.require_property_activity
-                else {}
-            ),
-            "time_condition_enabled": bool(time_condition_enabled),
-            "start_time": normalized_start_time,
-            "end_time": normalized_end_time,
-            **(
-                {"run_on_startup": bool(run_on_startup)} if isinstance(run_on_startup, bool) else {}
-            ),
-            "rule_uuid": normalized_rule_uuid,
-            "user_named": bool(user_named),
-            "ha_area_id": compiled_rule.ha_area_id,
-            "icon": compiled_rule.icon,
-            **({"daily_gating_enabled": True} if effective_daily_gating else {}),
-        }
-        description = "Managed by Topomation.\n" + self._metadata_line(metadata_payload)
         config_actions: list[dict[str, Any]] = []
         for action_target in normalized_actions:
             action_entity = str(action_target["entity_id"])
@@ -552,6 +612,44 @@ class TopomationManagedActions:
             else:
                 config_actions.append(action_step)
 
+        # Fingerprint the behavior-affecting output before the metadata line is
+        # rendered (the hash is stored *inside* metadata, so it must not hash it).
+        gen_hash = self._compute_generation_hash(
+            triggers=triggers,
+            conditions=conditions,
+            actions=config_actions,
+            mode="single",
+        )
+
+        metadata_payload = {
+            "version": _AUTOMATION_METADATA_VERSION,
+            "location_id": location_id,
+            "trigger_type": normalized_trigger,
+            "trigger_types": list(normalized_trigger_types),
+            "ambient_condition": normalized_ambient_condition,
+            **(
+                {"must_be_occupied": must_be_occupied} if isinstance(must_be_occupied, bool) else {}
+            ),
+            **(
+                {"require_property_activity": True}
+                if compiled_rule.require_property_activity
+                else {}
+            ),
+            "time_condition_enabled": bool(time_condition_enabled),
+            "start_time": normalized_start_time,
+            "end_time": normalized_end_time,
+            **(
+                {"run_on_startup": bool(run_on_startup)} if isinstance(run_on_startup, bool) else {}
+            ),
+            "rule_uuid": normalized_rule_uuid,
+            "user_named": bool(user_named),
+            "ha_area_id": compiled_rule.ha_area_id,
+            "icon": compiled_rule.icon,
+            **({"daily_gating_enabled": True} if effective_daily_gating else {}),
+            "gen_hash": gen_hash,
+        }
+        description = "Managed by Topomation.\n" + self._metadata_line(metadata_payload)
+
         config_payload: dict[str, Any] = {
             CONF_ID: automation_id,
             "alias": name,
@@ -561,6 +659,75 @@ class TopomationManagedActions:
             "actions": config_actions,
             "mode": "single",
         }
+
+        return _ComposedRuleConfig(
+            automation_id=automation_id,
+            location_id=location_id,
+            name=name,
+            config_payload=config_payload,
+            gen_hash=gen_hash,
+            trigger_type=normalized_trigger,
+            trigger_types=normalized_trigger_types,
+            ambient_condition=normalized_ambient_condition,
+            must_be_occupied=must_be_occupied,
+            actions=normalized_actions,
+            time_condition_enabled=bool(time_condition_enabled),
+            start_time=normalized_start_time,
+            end_time=normalized_end_time,
+            run_on_startup=run_on_startup if isinstance(run_on_startup, bool) else None,
+            rule_uuid=normalized_rule_uuid,
+            user_named=bool(user_named),
+            effective_daily_gating=effective_daily_gating,
+            compiled_rule=compiled_rule,
+        )
+
+    @staticmethod
+    def _compute_generation_hash(
+        *,
+        triggers: list[dict[str, Any]],
+        conditions: list[dict[str, Any]],
+        actions: list[dict[str, Any]],
+        mode: str,
+    ) -> str:
+        """Stable fingerprint of the behavior-affecting generated config.
+
+        Covers everything that drives runtime behavior (triggers, conditions,
+        actions, mode) but deliberately excludes identity/metadata (id, alias,
+        description) so the hash changes exactly when generation logic changes
+        for a given set of rule inputs. This is what makes stale-rule detection
+        automatic: no hand-maintained version integer to forget bumping.
+        """
+        canonical = json.dumps(
+            {
+                "triggers": triggers,
+                "conditions": conditions,
+                "actions": actions,
+                "mode": mode,
+            },
+            sort_keys=True,
+            default=str,
+        )
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
+
+    async def _write_composed_rule(self, composed: _ComposedRuleConfig) -> dict[str, Any]:
+        """Validate, POST, and register a composed managed automation config."""
+        automation_id = composed.automation_id
+        location_id = composed.location_id
+        name = composed.name
+        config_payload = composed.config_payload
+        normalized_trigger = composed.trigger_type
+        normalized_trigger_types = composed.trigger_types
+        normalized_ambient_condition = composed.ambient_condition
+        must_be_occupied = composed.must_be_occupied
+        normalized_actions = composed.actions
+        time_condition_enabled = composed.time_condition_enabled
+        normalized_start_time = composed.start_time
+        normalized_end_time = composed.end_time
+        run_on_startup = composed.run_on_startup
+        normalized_rule_uuid = composed.rule_uuid
+        user_named = composed.user_named
+        effective_daily_gating = composed.effective_daily_gating
+        compiled_rule = composed.compiled_rule
 
         _LOGGER.info(
             "[managed_actions] Creating rule via REST API automation_id=%s location=%s",
@@ -592,6 +759,7 @@ class TopomationManagedActions:
             actions=normalized_actions,
             user_named=bool(user_named),
             daily_gating_enabled=effective_daily_gating,
+            gen_hash=composed.gen_hash,
         )
 
         entity_id = await self._resolve_created_entity_id(
@@ -743,12 +911,22 @@ class TopomationManagedActions:
 
         return deleted_automation_ids
 
-    async def async_rebuild_rules_before_metadata_version(
+    async def async_rebuild_stale_rules(
         self,
         *,
-        min_version: int = _AUTOMATION_METADATA_VERSION,
+        min_version: int = 0,
     ) -> dict[str, int]:
-        """Rewrite older managed rules so generated HA YAML matches current contracts."""
+        """Rewrite managed rules whose generated YAML has drifted from current codegen.
+
+        Detection is automatic via ``gen_hash``: each rule is recomposed from its
+        stored inputs and rebuilt only if the freshly generated fingerprint differs
+        from the one saved in its metadata (rules created before fingerprinting have
+        an empty stored hash and rebuild once). ``min_version`` is an optional manual
+        override that additionally forces any rule below that metadata version to
+        rebuild — a sledgehammer for cases the hash cannot see (e.g. a change in how
+        inputs are reconstructed). Untouched rules are never rewritten, so their
+        ``last_triggered`` (and thus daily gating) is preserved.
+        """
         if self._loc_mgr is None:
             return {"checked": 0, "rebuilt": 0, "failed": 0}
 
@@ -778,63 +956,15 @@ class TopomationManagedActions:
 
             for rule in rules:
                 checked += 1
-                raw_version = rule.get("metadata_version")
-                metadata_version = raw_version if isinstance(raw_version, int) else 0
-                if metadata_version >= min_version:
-                    continue
                 try:
-                    rebuilt_rule = await self.async_create_rule(
-                        location=location,
-                        name=str(rule.get("name", "") or "Topomation rule"),
-                        trigger_type=str(rule.get("trigger_type", "") or "on_occupied"),
-                        trigger_types=(
-                            rule.get("trigger_types")
-                            if isinstance(rule.get("trigger_types"), list)
-                            else None
-                        ),
-                        actions=(
-                            rule.get("actions") if isinstance(rule.get("actions"), list) else None
-                        ),
-                        ambient_condition=(
-                            str(rule.get("ambient_condition"))
-                            if isinstance(rule.get("ambient_condition"), str)
-                            else None
-                        ),
-                        must_be_occupied=(
-                            rule.get("must_be_occupied")
-                            if isinstance(rule.get("must_be_occupied"), bool)
-                            else None
-                        ),
-                        require_property_activity=bool(
-                            rule.get("require_property_activity", False)
-                        ),
-                        time_condition_enabled=bool(rule.get("time_condition_enabled", False)),
-                        start_time=(
-                            str(rule.get("start_time"))
-                            if isinstance(rule.get("start_time"), str)
-                            else None
-                        ),
-                        end_time=(
-                            str(rule.get("end_time"))
-                            if isinstance(rule.get("end_time"), str)
-                            else None
-                        ),
-                        run_on_startup=(
-                            rule.get("run_on_startup")
-                            if isinstance(rule.get("run_on_startup"), bool)
-                            else None
-                        ),
-                        automation_id=(
-                            str(rule.get("id")) if isinstance(rule.get("id"), str) else None
-                        ),
-                        rule_uuid=(
-                            str(rule.get("rule_uuid"))
-                            if isinstance(rule.get("rule_uuid"), str)
-                            else None
-                        ),
-                        user_named=bool(rule.get("user_named", False)),
-                        daily_gating_enabled=bool(rule.get("daily_gating_enabled", False)),
-                    )
+                    compose_kwargs = self._rebuild_compose_kwargs(location, rule)
+                    composed = self._compose_rule_config(**compose_kwargs)
+                    stored_hash = str(rule.get("gen_hash") or "")
+                    raw_version = rule.get("metadata_version")
+                    metadata_version = raw_version if isinstance(raw_version, int) else 0
+                    if composed.gen_hash == stored_hash and metadata_version >= min_version:
+                        continue
+                    rebuilt_rule = await self._write_composed_rule(composed)
                     if rule.get("enabled") is False:
                         entity_id = rebuilt_rule.get("entity_id")
                         if isinstance(entity_id, str) and entity_id:
@@ -851,13 +981,53 @@ class TopomationManagedActions:
 
         if checked:
             _LOGGER.info(
-                "Managed rule metadata rebuild checked=%d rebuilt=%d failed=%d target_version=%d",
+                "Managed rule stale-rebuild checked=%d rebuilt=%d failed=%d min_version=%d",
                 checked,
                 rebuilt,
                 failed,
                 min_version,
             )
         return {"checked": checked, "rebuilt": rebuilt, "failed": failed}
+
+    @staticmethod
+    def _rebuild_compose_kwargs(location: Any, rule: Mapping[str, Any]) -> dict[str, Any]:
+        """Map a listed rule dict back to _compose_rule_config kwargs for rebuild."""
+        return {
+            "location": location,
+            "name": str(rule.get("name", "") or "Topomation rule"),
+            "trigger_type": str(rule.get("trigger_type", "") or "on_occupied"),
+            "trigger_types": (
+                rule.get("trigger_types") if isinstance(rule.get("trigger_types"), list) else None
+            ),
+            "actions": rule.get("actions") if isinstance(rule.get("actions"), list) else None,
+            "ambient_condition": (
+                str(rule.get("ambient_condition"))
+                if isinstance(rule.get("ambient_condition"), str)
+                else None
+            ),
+            "must_be_occupied": (
+                rule.get("must_be_occupied")
+                if isinstance(rule.get("must_be_occupied"), bool)
+                else None
+            ),
+            "require_property_activity": bool(rule.get("require_property_activity", False)),
+            "time_condition_enabled": bool(rule.get("time_condition_enabled", False)),
+            "start_time": (
+                str(rule.get("start_time")) if isinstance(rule.get("start_time"), str) else None
+            ),
+            "end_time": (
+                str(rule.get("end_time")) if isinstance(rule.get("end_time"), str) else None
+            ),
+            "run_on_startup": (
+                rule.get("run_on_startup") if isinstance(rule.get("run_on_startup"), bool) else None
+            ),
+            "automation_id": str(rule.get("id")) if isinstance(rule.get("id"), str) else None,
+            "rule_uuid": (
+                str(rule.get("rule_uuid")) if isinstance(rule.get("rule_uuid"), str) else None
+            ),
+            "user_named": bool(rule.get("user_named", False)),
+            "daily_gating_enabled": bool(rule.get("daily_gating_enabled", False)),
+        }
 
     async def async_cleanup_legacy_grouping(self) -> dict[str, int]:
         """Reapply current HA grouping to existing managed rules.
@@ -1297,6 +1467,7 @@ class TopomationManagedActions:
         actions: list[dict[str, Any]],
         user_named: bool,
         daily_gating_enabled: bool = False,
+        gen_hash: str = "",
     ) -> None:
         """Persist short-lived rule state after POST for immediate list consistency."""
         if not automation_id:
@@ -1335,6 +1506,7 @@ class TopomationManagedActions:
             user_named=bool(user_named),
             actions=normalized_actions,
             daily_gating_enabled=bool(daily_gating_enabled),
+            gen_hash=gen_hash,
         )
         self._recent_rule_snapshots[automation_id] = snapshot
 
@@ -1846,10 +2018,18 @@ class TopomationManagedActions:
         *,
         automation_id: str,
     ) -> dict[str, Any]:
-        """Build the daily-gating template condition for strict once-per-day firing."""
-        automation_entity_id = f"automation.{automation_id}"
+        """Build the daily-gating template condition for strict once-per-day firing.
+
+        Self-references the automation via the ``this`` variable rather than a
+        hard-coded ``automation.<id>`` entity id. Home Assistant derives an
+        automation's entity id from its alias slug, not from the config ``id``,
+        so ``state_attr('automation.<config_id>', ...)`` resolved to ``None`` and
+        the gate never blocked (vacuum restarted on every vacancy). ``this`` is
+        the automation's own state object, so it works regardless of entity id.
+        """
+        _ = automation_id  # retained so callers gate on a real automation id
         value_template = (
-            "{%- set last = state_attr('" + automation_entity_id + "', 'last_triggered') -%}\n"
+            "{%- set last = this.attributes.last_triggered -%}\n"
             "{{ last is none\n"
             "   or as_local(last).date() != as_local(now()).date() }}"
         )
@@ -2006,6 +2186,7 @@ class TopomationManagedActions:
             raw_daily_gating_enabled = (
                 parsed.get("daily_gating_enabled") if isinstance(parsed, Mapping) else None
             )
+            raw_gen_hash = parsed.get("gen_hash") if isinstance(parsed, Mapping) else None
             return _TopomationMetadata(
                 version=version,
                 location_id=location_id,
@@ -2029,6 +2210,7 @@ class TopomationManagedActions:
                     if isinstance(raw_daily_gating_enabled, bool)
                     else False
                 ),
+                gen_hash=raw_gen_hash if isinstance(raw_gen_hash, str) else "",
             )
         return None
 

@@ -13,7 +13,10 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar
 
 from custom_components.topomation.const import TOPOMATION_AUTOMATION_METADATA_PREFIX
-from custom_components.topomation.managed_actions import TopomationManagedActions
+from custom_components.topomation.managed_actions import (
+    _AUTOMATION_METADATA_VERSION,
+    TopomationManagedActions,
+)
 
 
 def test_automation_api_bases_include_loopback_fallback(
@@ -1066,67 +1069,132 @@ def test_ambient_trigger_arbitration_preserves_combined_occupancy_trigger_path()
     ]
 
 
-@pytest.mark.asyncio
-async def test_rebuild_rules_before_metadata_version_rewrites_only_old_rules(
+def _stub_rebuild_manager(
     hass: HomeAssistant,
     monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Versioned rebuild rewrites old managed rules and preserves disabled state."""
+    rules: list[dict[str, object]],
+) -> tuple[
+    TopomationManagedActions,
+    SimpleNamespace,
+    list[SimpleNamespace],
+    list[tuple[str, bool]],
+]:
+    """Wire a manager whose compose/write are stubbed for stale-rebuild tests.
+
+    ``_compose_rule_config`` returns a lightweight stand-in whose ``gen_hash`` is
+    the rule's ``expected_gen_hash`` (defaulting to "current"), so a test controls
+    drift purely via the stored ``gen_hash`` on each listed rule.
+    """
     location = SimpleNamespace(id="kitchen", name="Kitchen", modules={})
     loc_mgr = SimpleNamespace(all_locations=lambda: [location])
     manager = TopomationManagedActions(hass, loc_mgr)
-    created: list[dict[str, object]] = []
+    written: list[SimpleNamespace] = []
     enabled_updates: list[tuple[str, bool]] = []
 
     async def _fake_list_rules(location_id: str) -> list[dict[str, object]]:
         assert location_id == "kitchen"
-        return [
-            {
-                "id": "topomation_kitchen_old",
-                "entity_id": "automation.topomation_kitchen_old",
-                "name": "Kitchen old",
-                "metadata_version": 4,
-                "trigger_type": "on_dark",
-                "trigger_types": ["on_dark"],
-                "actions": [{"entity_id": "light.kitchen", "service": "turn_on"}],
-                "ambient_condition": "dark",
-                "must_be_occupied": True,
-                "time_condition_enabled": False,
-                "start_time": "18:00",
-                "end_time": "23:59",
-                "run_on_startup": True,
-                "rule_uuid": "rule-old-001",
-                "user_named": True,
-                "enabled": False,
-            },
-            {
-                "id": "topomation_kitchen_new",
-                "metadata_version": 10,
-                "trigger_type": "on_dark",
-                "actions": [{"entity_id": "light.kitchen", "service": "turn_on"}],
-            },
-        ]
+        return rules
 
-    async def _fake_create_rule(**kwargs: object) -> dict[str, object]:
-        created.append(kwargs)
-        return {"entity_id": "automation.topomation_kitchen_old"}
+    def _fake_compose(**kwargs: object) -> SimpleNamespace:
+        automation_id = str(kwargs.get("automation_id") or "")
+        match = next((r for r in rules if str(r.get("id")) == automation_id), {})
+        return SimpleNamespace(
+            automation_id=automation_id,
+            gen_hash=str(match.get("expected_gen_hash", "current")),
+        )
+
+    async def _fake_write(composed: SimpleNamespace) -> dict[str, object]:
+        written.append(composed)
+        return {"entity_id": f"automation.{composed.automation_id}"}
 
     async def _fake_set_enabled(*, entity_id: str, enabled: bool) -> None:
         enabled_updates.append((entity_id, enabled))
 
     monkeypatch.setattr(manager, "async_list_rules", _fake_list_rules)
-    monkeypatch.setattr(manager, "async_create_rule", _fake_create_rule)
+    monkeypatch.setattr(manager, "_compose_rule_config", _fake_compose)
+    monkeypatch.setattr(manager, "_write_composed_rule", _fake_write)
     monkeypatch.setattr(manager, "async_set_rule_enabled", _fake_set_enabled)
+    return manager, location, written, enabled_updates
 
-    summary = await manager.async_rebuild_rules_before_metadata_version()
 
-    assert summary == {"checked": 2, "rebuilt": 1, "failed": 0}
-    assert len(created) == 1
-    assert created[0]["location"] is location
-    assert created[0]["automation_id"] == "topomation_kitchen_old"
-    assert created[0]["trigger_types"] == ["on_dark"]
-    assert created[0]["ambient_condition"] == "dark"
-    assert enabled_updates == [("automation.topomation_kitchen_old", False)]
+@pytest.mark.asyncio
+async def test_rebuild_stale_rules_rewrites_only_drifted_rules(
+    hass: HomeAssistant,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Hash-driven rebuild rewrites drifted/unfingerprinted rules and preserves disabled state."""
+    rules: list[dict[str, object]] = [
+        {
+            # Stored hash differs from what codegen now produces -> drifted.
+            "id": "topomation_kitchen_drift",
+            "entity_id": "automation.topomation_kitchen_drift",
+            "name": "Kitchen drift",
+            "metadata_version": _AUTOMATION_METADATA_VERSION,
+            "gen_hash": "stale000",
+            "expected_gen_hash": "current",
+            "enabled": False,
+        },
+        {
+            # No stored hash (created before fingerprinting) -> rebuild once.
+            "id": "topomation_kitchen_legacy",
+            "entity_id": "automation.topomation_kitchen_legacy",
+            "name": "Kitchen legacy",
+            "metadata_version": _AUTOMATION_METADATA_VERSION,
+            "gen_hash": "",
+            "expected_gen_hash": "current",
+            "enabled": True,
+        },
+        {
+            # Stored hash matches current codegen -> untouched.
+            "id": "topomation_kitchen_fresh",
+            "entity_id": "automation.topomation_kitchen_fresh",
+            "name": "Kitchen fresh",
+            "metadata_version": _AUTOMATION_METADATA_VERSION,
+            "gen_hash": "current",
+            "expected_gen_hash": "current",
+            "enabled": True,
+        },
+    ]
+    manager, _location, written, enabled_updates = _stub_rebuild_manager(hass, monkeypatch, rules)
+
+    summary = await manager.async_rebuild_stale_rules()
+
+    assert summary == {"checked": 3, "rebuilt": 2, "failed": 0}
+    assert [c.automation_id for c in written] == [
+        "topomation_kitchen_drift",
+        "topomation_kitchen_legacy",
+    ]
+    # Only the disabled rule's state is re-applied after its rewrite.
+    assert enabled_updates == [("automation.topomation_kitchen_drift", False)]
+
+
+@pytest.mark.asyncio
+async def test_rebuild_stale_rules_min_version_forces_rebuild(
+    hass: HomeAssistant,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """min_version override rebuilds even when the generation hash is unchanged."""
+    rules: list[dict[str, object]] = [
+        {
+            "id": "topomation_kitchen_old",
+            "entity_id": "automation.topomation_kitchen_old",
+            "name": "Kitchen old",
+            "metadata_version": _AUTOMATION_METADATA_VERSION - 1,
+            "gen_hash": "current",
+            "expected_gen_hash": "current",
+            "enabled": True,
+        },
+    ]
+    manager, _location, written, _enabled = _stub_rebuild_manager(hass, monkeypatch, rules)
+
+    # Without the override the matching hash means no rebuild.
+    assert await manager.async_rebuild_stale_rules() == {"checked": 1, "rebuilt": 0, "failed": 0}
+    assert written == []
+
+    # The override forces any rule below the target version to rebuild regardless.
+    summary = await manager.async_rebuild_stale_rules(min_version=_AUTOMATION_METADATA_VERSION)
+    assert summary == {"checked": 1, "rebuilt": 1, "failed": 0}
+    assert [c.automation_id for c in written] == ["topomation_kitchen_old"]
 
 
 def test_managed_rule_area_resolution_uses_direct_room_area(
@@ -1212,6 +1280,38 @@ def test_generated_icon_selection(action: dict[str, str], expected_icon: str) ->
     assert manager._select_generated_icon([action]) == expected_icon  # noqa: SLF001
 
 
+def test_compute_generation_hash_is_stable_and_sensitive() -> None:
+    """gen_hash ignores key order but changes when generated structure changes."""
+    manager = TopomationManagedActions(cast(HomeAssistant, SimpleNamespace()))
+    triggers = [{"platform": "state", "entity_id": "binary_sensor.x", "to": "off"}]
+    conditions = [{"condition": "template", "value_template": "{{ true }}"}]
+    actions = [{"action": "vacuum.start", "target": {"entity_id": "vacuum.main"}}]
+
+    base = manager._compute_generation_hash(  # noqa: SLF001
+        triggers=triggers, conditions=conditions, actions=actions, mode="single"
+    )
+    # 64-bit hex fingerprint.
+    assert len(base) == 16 and int(base, 16) >= 0
+
+    # Key order within a trigger must not change the fingerprint.
+    reordered_triggers = [{"to": "off", "entity_id": "binary_sensor.x", "platform": "state"}]
+    assert (
+        manager._compute_generation_hash(  # noqa: SLF001
+            triggers=reordered_triggers, conditions=conditions, actions=actions, mode="single"
+        )
+        == base
+    )
+
+    # A behavioral change (here, the daily-gating template) must change it.
+    changed_conditions = [{"condition": "template", "value_template": "{{ false }}"}]
+    assert (
+        manager._compute_generation_hash(  # noqa: SLF001
+            triggers=triggers, conditions=changed_conditions, actions=actions, mode="single"
+        )
+        != base
+    )
+
+
 @pytest.mark.asyncio
 async def test_cleanup_legacy_grouping_reapplies_grouping_to_existing_rules(
     hass: HomeAssistant,
@@ -1290,7 +1390,12 @@ def test_daily_gating_condition_emitted_for_vacuum_start() -> None:
     template_clauses = [c for c in conditions if c.get("condition") == "template"]
     assert len(template_clauses) == 1
     body = template_clauses[0]["value_template"]
-    assert "automation.topomation_main_floor_vacant_vacuum_main" in body
+    # Self-reference via `this` so the gate works regardless of the automation's
+    # alias-derived entity id (a hard-coded automation.<config_id> resolved to
+    # None and the gate never blocked). See _build_daily_gating_condition.
+    assert "this.attributes.last_triggered" in body
+    assert "automation." not in body
+    assert "state_attr(" not in body
     assert "last_triggered" in body
     assert "as_local(now()).date()" in body
     assert "paused" not in body
