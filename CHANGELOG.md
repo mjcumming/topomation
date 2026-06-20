@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.22] - 2026-06-20
+
+### Fixed
+
+- **Ambient lux sensor selection**: the Ambient tab no longer treats an
+  auto-resolved runtime lux source as if it were a saved selection. Locations
+  with no explicit saved sensor now keep `Inherit from parent` selected until
+  the user chooses a direct sensor and saves, so sensor changes can be staged
+  and persisted predictably.
+- **Ambient sensor websocket persistence**: the legacy
+  `topomation/ambient/set_sensor` command now schedules autosave and publishes
+  the standard panel refresh event after changing a lux sensor, so direct API
+  updates persist across reloads and restarts.
+
 ## [0.3.21] - 2026-06-18
 
 ### Fixed

@@ -4402,26 +4402,13 @@ const De = class De extends ft {
         })
       );
       if (t !== this._ambientReadingLoadSeq) return;
-      this._ambientReading = i, this._hydrateAmbientDraftFromReading(i), this._ambientReadingError = void 0;
+      this._ambientReading = i, this._ambientReadingError = void 0;
     } catch (e) {
       if (t !== this._ambientReadingLoadSeq) return;
       this._ambientReading = void 0, this._ambientReadingError = (e == null ? void 0 : e.message) || "Failed to load ambient reading";
     } finally {
       t === this._ambientReadingLoadSeq && (this._loadingAmbientReading = !1, this.requestUpdate());
     }
-  }
-  _hydrateAmbientDraftFromReading(t) {
-    if (this._ambientDraftDirty) return;
-    const e = this._persistedAmbientConfig();
-    if (e.lux_sensor) return;
-    const i = typeof t.source_sensor == "string" ? t.source_sensor.trim() : "";
-    if (!i || t.is_inherited === !0 || !this._isSelectableLuxSensor(i)) return;
-    const n = this._sanitizeAmbientConfig({
-      ...e,
-      lux_sensor: i,
-      inherit_from_parent: !1
-    });
-    this._ambientDraft = n, this._ambientDraftDirty = !1, this._ambientSaveError = void 0;
   }
   _ambientSourceMethod(t) {
     if (!t) return "unknown";
@@ -4495,11 +4482,8 @@ const De = class De extends ft {
     const e = this._managedShadowAreaById(t);
     return Array.isArray(e == null ? void 0 : e.entity_ids) ? [...e.entity_ids] : [];
   }
-  _selectedAmbientSensorId(t, e) {
-    const i = typeof t.lux_sensor == "string" ? t.lux_sensor.trim() : "";
-    if (i) return i;
-    const n = typeof (e == null ? void 0 : e.source_sensor) == "string" ? e.source_sensor.trim() : "";
-    return n && (e == null ? void 0 : e.is_inherited) !== !0 ? n : "";
+  _selectedAmbientSensorId(t) {
+    return typeof t.lux_sensor == "string" ? t.lux_sensor.trim() : "";
   }
   _isLuxSensorEntity(t) {
     var i, n;
@@ -5300,7 +5284,7 @@ const De = class De extends ft {
   }
   _renderAmbientSection() {
     if (!this.location) return "";
-    const t = this._getAmbientConfig(), e = this._ambientReading, i = this._ambientSensorCandidates(), n = this._ambientSourceMethod(e), o = this._ambientSourceMethodLabel(n), a = (e == null ? void 0 : e.source_sensor) || "-", r = typeof (e == null ? void 0 : e.source_location) == "string" && e.source_location ? this._locationName(e.source_location) : "-", c = typeof (e == null ? void 0 : e.ignored_local_lux_sensor) == "string" ? e.ignored_local_lux_sensor : "", l = Array.isArray(e == null ? void 0 : e.ignored_local_lux_light_entity_ids) ? e.ignored_local_lux_light_entity_ids : [], d = !!t.lux_sensor, u = d && c ? `Local lux ignored because ${l.map((S) => this._entityName(S)).join(", ")} ${l.length === 1 ? "is" : "are"} on.` : "", h = this._localAmbientLightEntityIds(), _ = new Set(t.local_lux_light_entity_ids || []), p = _.size > 0 ? [..._].map((S) => this._entityName(S)).join(", ") : "No local lights are selected for local lux protection.", f = d ? "Effective source priority: use this location's lux sensor when it is available and the selected local lights are off; otherwise use inherited lux; otherwise use sunrise/sunset." : n === "inherited_sensor" && r !== "-" ? `Using inherited lux from ${r}. Sunrise and sunset are the final fallback when no usable lux source is available.` : "Inheriting lux from the nearest parent with a sensor. Sunrise and sunset are the final fallback when no usable lux source is available.", m = !d && n === "inherited_sensor" ? this._ambientInheritedSourceLocationId(e) : "", y = d ? "" : " These thresholds apply to this location even when lux is inherited from a parent.", $ = this._ambientStateLabel(e), x = Math.max(0, Number(t.dark_threshold) || 0), b = Math.max(x + 1, Number(t.bright_threshold) || x + 1), C = this._selectedAmbientSensorId(t, e), I = "Inherit from parent", D = this._savingAmbientConfig;
+    const t = this._getAmbientConfig(), e = this._ambientReading, i = this._ambientSensorCandidates(), n = this._ambientSourceMethod(e), o = this._ambientSourceMethodLabel(n), a = (e == null ? void 0 : e.source_sensor) || "-", r = typeof (e == null ? void 0 : e.source_location) == "string" && e.source_location ? this._locationName(e.source_location) : "-", c = typeof (e == null ? void 0 : e.ignored_local_lux_sensor) == "string" ? e.ignored_local_lux_sensor : "", l = Array.isArray(e == null ? void 0 : e.ignored_local_lux_light_entity_ids) ? e.ignored_local_lux_light_entity_ids : [], d = !!t.lux_sensor, u = d && c ? `Local lux ignored because ${l.map((S) => this._entityName(S)).join(", ")} ${l.length === 1 ? "is" : "are"} on.` : "", h = this._localAmbientLightEntityIds(), _ = new Set(t.local_lux_light_entity_ids || []), p = _.size > 0 ? [..._].map((S) => this._entityName(S)).join(", ") : "No local lights are selected for local lux protection.", f = d ? "Effective source priority: use this location's lux sensor when it is available and the selected local lights are off; otherwise use inherited lux; otherwise use sunrise/sunset." : n === "inherited_sensor" && r !== "-" ? `Using inherited lux from ${r}. Sunrise and sunset are the final fallback when no usable lux source is available.` : "Inheriting lux from the nearest parent with a sensor. Sunrise and sunset are the final fallback when no usable lux source is available.", m = !d && n === "inherited_sensor" ? this._ambientInheritedSourceLocationId(e) : "", y = d ? "" : " These thresholds apply to this location even when lux is inherited from a parent.", $ = this._ambientStateLabel(e), x = Math.max(0, Number(t.dark_threshold) || 0), b = Math.max(x + 1, Number(t.bright_threshold) || x + 1), C = this._selectedAmbientSensorId(t), I = "Inherit from parent", D = this._savingAmbientConfig;
     return g`
       <div class="card-section" data-testid="ambient-section">
         <div class="section-title-row">

@@ -81,6 +81,40 @@ Run the rows that match the touched workflow.
 
 ## 6. Release Records
 
+### 2026-06-20 - v0.3.22 ambient lux sensor persistence gate
+
+1. Commit under test: release-candidate worktree for Topomation `0.3.22`.
+2. Frontend bundle rebuilt from that commit: yes; `npm run build` and the
+   release gate republished `custom_components/topomation/frontend/topomation-panel.js`.
+3. Touched workflow list:
+   - Ambient tab lux sensor picker save/persist behavior when a local lux source
+     is auto-resolved but no explicit sensor is saved.
+   - Legacy `topomation/ambient/set_sensor` websocket persistence and panel
+     refresh behavior.
+   - Release metadata/version synchronization for Topomation `0.3.22`.
+4. Commands run:
+   - `pytest -q --no-cov tests/test-ambient.py::TestAmbientWebSocketAPI::test_set_sensor_command`
+   - `cd custom_components/topomation/frontend && npm test -- --files ht-location-inspector.test.ts`
+   - `cd custom_components/topomation/frontend && npm run build`
+   - `python scripts/verify-version-sync.py`
+   - `make test-release-live`
+5. Outcome:
+   - Ambient websocket persistence: **PASS** (focused pytest command; 1 passed;
+     2026-06-20).
+   - Ambient picker explicit-save behavior: **PASS** (`ht-location-inspector.test.ts`
+     97 passed; 2026-06-20).
+   - Release metadata/version sync: **PASS** (`Version sync ok: 0.3.22`;
+     2026-06-20).
+   - First `make test-release-live` attempt: **FAIL / environment** after the
+     comprehensive matrix passed; local Home Assistant was not running at
+     `http://localhost:8123`.
+   - Local Home Assistant dev runtime started with `./scripts/ha-dev-up.sh`,
+     then `make test-release-live` was rerun and completed: **PASS**.
+   - Final full gate: backend `370 passed, 22 skipped`, coverage `79.04%`;
+     Vitest `272 passed`; Web Test Runner `209 passed`, coverage `72.31%`;
+     Playwright mock/production workflow `34 passed`; live HA managed-action
+     contract `2 passed`; live HA browser workflow `6 passed` (2026-06-20).
+
 ### 2026-05-31 - v0.3.20 occupancy group explanation label gate
 
 1. Commit under test: release commit for Topomation `0.3.20`.

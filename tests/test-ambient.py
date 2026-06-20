@@ -6,7 +6,7 @@ import pytest
 from homeassistant.core import HomeAssistant
 
 from custom_components.topomation import HAPlatformAdapter
-from custom_components.topomation.const import DOMAIN
+from custom_components.topomation.const import DOMAIN, EVENT_TOPOMATION_UPDATED
 
 
 @pytest.fixture
@@ -252,9 +252,15 @@ class TestAmbientWebSocketAPI:
         # Setup
         mock_connection = Mock()
         mock_ambient_module = Mock()
+        mock_schedule_persist = Mock()
 
         mock_hass.data = {
-            DOMAIN: {"test_entry": {"modules": {"ambient": mock_ambient_module}}}
+            DOMAIN: {
+                "test_entry": {
+                    "modules": {"ambient": mock_ambient_module},
+                    "schedule_persist": mock_schedule_persist,
+                }
+            }
         }
 
         msg = {
@@ -270,6 +276,15 @@ class TestAmbientWebSocketAPI:
         # Assert
         mock_ambient_module.set_lux_sensor.assert_called_once_with(
             "kitchen", "sensor.kitchen_lux"
+        )
+        mock_schedule_persist.assert_called_once_with("ambient/set_sensor")
+        mock_hass.bus.async_fire.assert_called_once_with(
+            EVENT_TOPOMATION_UPDATED,
+            {
+                "reason": "ambient_sensor",
+                "location_id": "kitchen",
+                "module_id": "ambient",
+            },
         )
         mock_connection.send_result.assert_called_once()
 

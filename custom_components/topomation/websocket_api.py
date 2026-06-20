@@ -2638,6 +2638,17 @@ def handle_ambient_set_sensor(
 
     try:
         ambient_module.set_lux_sensor(location_id, entity_id)
+        schedule_persist = kernel.get("schedule_persist")
+        if callable(schedule_persist):
+            schedule_persist("ambient/set_sensor")
+
+        _fire_topomation_updated(
+            hass,
+            kernel,
+            "ambient_sensor",
+            location_id=location_id,
+            module_id="ambient",
+        )
         connection.send_result(msg["id"], {"success": True})
     except (ValueError, KeyError) as e:
         connection.send_error(msg["id"], "set_sensor_failed", str(e))

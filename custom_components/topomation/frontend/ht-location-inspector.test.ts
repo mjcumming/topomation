@@ -5969,6 +5969,102 @@ describe("HtLocationInspector WIAB configuration", () => {
     expect(element.shadowRoot?.querySelector('[data-testid="ambient-inherit-toggle"]')).to.equal(null);
   });
 
+  it("does not treat an auto-resolved ambient source as a saved lux selection", async () => {
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>): Promise<T> => {
+        if (request.type === "config/entity_registry/list") {
+          return [
+            {
+              entity_id: "sensor.living_room_ambient_lux",
+              area_id: "living_room",
+            },
+          ] as T;
+        }
+        if (request.type === "config/device_registry/list") return [] as T;
+        if (request.type === "topomation/ambient/get_reading") {
+          return {
+            lux: 120,
+            source_sensor: "sensor.living_room_ambient_lux",
+            source_location: "area_living_room",
+            is_inherited: false,
+            is_dark: false,
+            is_bright: false,
+            dark_threshold: 50,
+            bright_threshold: 500,
+            fallback_method: null,
+            timestamp: new Date().toISOString(),
+          } as T;
+        }
+        return {} as T;
+      },
+      connection: {},
+      states: {
+        "sensor.living_room_ambient_lux": {
+          entity_id: "sensor.living_room_ambient_lux",
+          state: "120",
+          attributes: {
+            friendly_name: "Living Room Ambient Lux",
+            device_class: "illuminance",
+            unit_of_measurement: "lx",
+            area_id: "living_room",
+          },
+        },
+      },
+      areas: {
+        living_room: { area_id: "living_room", name: "Living Room" },
+      },
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "area_living_room";
+    location.name = "Living Room";
+    location.ha_area_id = "living_room";
+    location.modules._meta = { type: "area" };
+    location.modules.ambient = {
+      lux_sensor: null,
+      auto_discover: true,
+      inherit_from_parent: true,
+      dark_threshold: 50,
+      bright_threshold: 500,
+      fallback_to_sun: true,
+    };
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector .hass=${hass} .location=${location}></ht-location-inspector>
+    `);
+
+    await switchTopTab(element, "Ambient");
+    await waitUntil(
+      () =>
+        Array.from(
+          (element.shadowRoot?.querySelector('[data-testid="ambient-lux-sensor-select"]') as HTMLSelectElement | null)
+            ?.options || []
+        )
+          .map((option) => option.value)
+          .includes("sensor.living_room_ambient_lux"),
+      "auto-resolved lux source did not appear as an explicit selectable option"
+    );
+
+    const sensorSelect = element.shadowRoot?.querySelector(
+      '[data-testid="ambient-lux-sensor-select"]'
+    ) as HTMLSelectElement | null;
+    expect(sensorSelect).to.exist;
+    expect(sensorSelect!.value).to.equal("");
+    expect(
+      element.shadowRoot?.querySelector('[data-testid="ambient-sticky-draft-bar"]')
+    ).to.equal(null);
+
+    sensorSelect!.value = "sensor.living_room_ambient_lux";
+    sensorSelect!.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+    await element.updateComplete;
+
+    expect(
+      element.shadowRoot?.querySelector('[data-testid="ambient-sticky-save-button"]')
+    ).to.exist;
+  });
+
   it("shows the ambient draft bar after selecting a different lux sensor", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>): Promise<T> => {

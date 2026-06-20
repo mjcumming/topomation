@@ -3746,7 +3746,6 @@ export class HtLocationInspector extends LitElement {
       );
       if (loadSeq !== this._ambientReadingLoadSeq) return;
       this._ambientReading = reading;
-      this._hydrateAmbientDraftFromReading(reading);
       this._ambientReadingError = undefined;
     } catch (err: any) {
       if (loadSeq !== this._ambientReadingLoadSeq) return;
@@ -3758,23 +3757,6 @@ export class HtLocationInspector extends LitElement {
         this.requestUpdate();
       }
     }
-  }
-
-  private _hydrateAmbientDraftFromReading(reading: AmbientLightReading): void {
-    if (this._ambientDraftDirty) return;
-    const persisted = this._persistedAmbientConfig();
-    if (persisted.lux_sensor) return;
-    const sourceSensor = typeof reading.source_sensor === "string" ? reading.source_sensor.trim() : "";
-    if (!sourceSensor || reading.is_inherited === true) return;
-    if (!this._isSelectableLuxSensor(sourceSensor)) return;
-    const nextConfig = this._sanitizeAmbientConfig({
-      ...persisted,
-      lux_sensor: sourceSensor,
-      inherit_from_parent: false,
-    });
-    this._ambientDraft = nextConfig;
-    this._ambientDraftDirty = false;
-    this._ambientSaveError = undefined;
   }
 
   private _ambientSourceMethod(reading?: AmbientLightReading): string {
@@ -3896,17 +3878,9 @@ export class HtLocationInspector extends LitElement {
     return Array.isArray(shadow?.entity_ids) ? [...shadow.entity_ids] : [];
   }
 
-  private _selectedAmbientSensorId(
-    config: AmbientConfig,
-    reading: AmbientLightReading | undefined
-  ): string {
+  private _selectedAmbientSensorId(config: AmbientConfig): string {
     const explicitSensor = typeof config.lux_sensor === "string" ? config.lux_sensor.trim() : "";
-    if (explicitSensor) return explicitSensor;
-    const effectiveSensor = typeof reading?.source_sensor === "string" ? reading.source_sensor.trim() : "";
-    if (effectiveSensor && reading?.is_inherited !== true) {
-      return effectiveSensor;
-    }
-    return "";
+    return explicitSensor;
   }
 
   private _isLuxSensorEntity(entityId: string): boolean {
@@ -5165,7 +5139,7 @@ export class HtLocationInspector extends LitElement {
     const ambientStateLabel = this._ambientStateLabel(reading);
     const darkThreshold = Math.max(0, Number(config.dark_threshold) || 0);
     const brightThreshold = Math.max(darkThreshold + 1, Number(config.bright_threshold) || darkThreshold + 1);
-    const selectedLuxSensor = this._selectedAmbientSensorId(config, reading);
+    const selectedLuxSensor = this._selectedAmbientSensorId(config);
     const emptyLuxSensorLabel = "Inherit from parent";
     const busy = this._savingAmbientConfig;
 
