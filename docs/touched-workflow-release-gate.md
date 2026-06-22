@@ -833,6 +833,40 @@ Notes:
 - After push to `main`, confirm CI and **Auto Release** are green for the
   release commit before considering the release complete.
 
+## Gate Record: 2026-06-22 — Ambient duplicate save affordance cleanup (`0.3.24`)
+
+Commit under test: **release-candidate worktree for Topomation `0.3.24`**
+
+Touched workflows:
+- **Ambient lux sensor configuration**: Ambient now uses the in-card `Discard`
+  and `Update` controls as the only save affordance for staged ambient changes,
+  removing the duplicate sticky draft bar from the Ambient tab.
+- **Release metadata**: version sync across `manifest.json`, `const.py`, and
+  `pyproject.toml`; changelog section for `0.3.24`; rebuilt frontend runtime
+  bundle.
+
+Validation:
+- `python scripts/verify-version-sync.py` — **PASS** (`0.3.24`; 2026-06-22)
+- `cd custom_components/topomation/frontend && npm test -- --files ht-location-inspector.test.ts`
+  — **PASS** (97 passed; 2026-06-22)
+- `cd custom_components/topomation/frontend && npm run build` — **PASS**
+  (rebuilt `topomation-panel.js`; 2026-06-22)
+- `./scripts/check-docs-consistency.sh` — **PASS** (2026-06-22)
+- `make test-release-live` — **PASS** (full local + live release gate;
+  2026-06-22)
+
+Outcome:
+- Ambient duplicate save affordance cleanup: **PASS**
+- Frontend bundle parity: **PASS**
+- Release metadata/version sync: **PASS**
+- Local comprehensive gate: **PASS**
+- Live HA managed-action contract: **PASS**
+- Live HA browser workflows: **PASS**
+
+Notes:
+- After push to `main`, confirm CI and **Auto Release** are green for the
+  release commit before considering `0.3.24` complete.
+
 ## Gate Record: 2026-06-22 — Ambient update affordance + occupancy group label cleanup (`0.3.23`)
 
 Commit under test: **release-candidate worktree for Topomation `0.3.23`**

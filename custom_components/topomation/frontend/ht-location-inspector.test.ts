@@ -5862,9 +5862,10 @@ describe("HtLocationInspector WIAB configuration", () => {
     await element.updateComplete;
 
     const saveButton = element.shadowRoot?.querySelector(
-      '[data-testid="ambient-sticky-save-button"]'
+      '[data-testid="ambient-section-save-button"]'
     ) as HTMLButtonElement | null;
     expect(saveButton).to.exist;
+    expect(saveButton!.disabled).to.equal(false);
     saveButton!.click();
     await element.updateComplete;
 
@@ -6066,8 +6067,8 @@ describe("HtLocationInspector WIAB configuration", () => {
     await element.updateComplete;
 
     expect(
-      element.shadowRoot?.querySelector('[data-testid="ambient-sticky-save-button"]')
-    ).to.exist;
+      element.shadowRoot?.querySelector('[data-testid="ambient-sticky-draft-bar"]')
+    ).to.equal(null);
     expect(
       (element.shadowRoot?.querySelector('[data-testid="ambient-section-save-button"]') as HTMLButtonElement | null)
         ?.disabled
@@ -6162,13 +6163,10 @@ describe("HtLocationInspector WIAB configuration", () => {
     sensorSelect!.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
     await element.updateComplete;
 
-    const stickyBar = element.shadowRoot?.querySelector(
-      '[data-testid="ambient-sticky-draft-bar"]'
-    ) as HTMLElement | null;
     const saveButton = element.shadowRoot?.querySelector(
-      '[data-testid="ambient-sticky-save-button"]'
+      '[data-testid="ambient-section-save-button"]'
     ) as HTMLButtonElement | null;
-    expect(stickyBar).to.exist;
+    expect(element.shadowRoot?.querySelector('[data-testid="ambient-sticky-draft-bar"]')).to.equal(null);
     expect(saveButton).to.exist;
     expect(saveButton?.disabled).to.equal(false);
   });

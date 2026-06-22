@@ -4264,13 +4264,6 @@ export class HtLocationInspector extends LitElement {
             onSave: () => this._saveDetectionDraft(),
           })
         : "";
-    const ambientSticky = this._renderStickyDraftBar("ambient", {
-      hasUnsaved: this._ambientDraftDirty,
-      busy: this._savingAmbientConfig,
-      error: this._ambientSaveError,
-      onDiscard: () => this._discardAmbientDraft(),
-      onSave: () => this._saveAmbientDraft(),
-    });
     return html`
       <div class="tab-content">
         ${activeTab === "detection"
@@ -4278,7 +4271,7 @@ export class HtLocationInspector extends LitElement {
           : activeTab === "recent_activity"
             ? this._renderRecentActivitySection()
           : activeTab === "ambient"
-            ? html`${ambientSticky}${this._renderAmbientTab()}`
+            ? this._renderAmbientTab()
           : activeTab === "lighting"
               ? this._renderDeviceAutomationTab("lighting")
             : activeTab === "appliances"

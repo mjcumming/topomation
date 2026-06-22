@@ -4772,16 +4772,10 @@ const De = class De extends ft {
       error: this._occupancySaveError,
       onDiscard: () => this._discardDetectionDraft(),
       onSave: () => this._saveDetectionDraft()
-    }) : "", n = this._renderStickyDraftBar("ambient", {
-      hasUnsaved: this._ambientDraftDirty,
-      busy: this._savingAmbientConfig,
-      error: this._ambientSaveError,
-      onDiscard: () => this._discardAmbientDraft(),
-      onSave: () => this._saveAmbientDraft()
-    });
+    }) : "";
     return g`
       <div class="tab-content">
-        ${t === "detection" ? g`${i}${this._renderOccupancyTab()} ${this._renderAdvancedTab()}` : t === "recent_activity" ? this._renderRecentActivitySection() : t === "ambient" ? g`${n}${this._renderAmbientTab()}` : t === "lighting" ? this._renderDeviceAutomationTab("lighting") : t === "appliances" ? this._renderDeviceAutomationTab("appliances") : t === "media" ? this._renderDeviceAutomationTab("media") : t === "hvac" ? this._renderDeviceAutomationTab("hvac") : t === "vacuum" ? this._renderDeviceAutomationTab("vacuum") : ""}
+        ${t === "detection" ? g`${i}${this._renderOccupancyTab()} ${this._renderAdvancedTab()}` : t === "recent_activity" ? this._renderRecentActivitySection() : t === "ambient" ? this._renderAmbientTab() : t === "lighting" ? this._renderDeviceAutomationTab("lighting") : t === "appliances" ? this._renderDeviceAutomationTab("appliances") : t === "media" ? this._renderDeviceAutomationTab("media") : t === "hvac" ? this._renderDeviceAutomationTab("hvac") : t === "vacuum" ? this._renderDeviceAutomationTab("vacuum") : ""}
       </div>
     `;
   }

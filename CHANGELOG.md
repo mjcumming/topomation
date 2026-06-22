@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.24] - 2026-06-22
+
+### Fixed
+
+- **Ambient lux sensor updates**: the Ambient tab now uses only the in-card
+  `Discard` and `Update` actions for staged ambient changes, removing the
+  duplicate sticky `Unsaved changes` / `Save changes` bar from that tab.
+
 ## [0.3.23] - 2026-06-22
 
 ### Fixed
