@@ -5971,7 +5971,7 @@ describe("HtLocationInspector WIAB configuration", () => {
     expect(element.shadowRoot?.querySelector('[data-testid="ambient-inherit-toggle"]')).to.equal(null);
   });
 
-  it("does not treat an auto-resolved ambient source as a saved lux selection", async () => {
+  it("keeps inherited ambient configuration distinct from the effective source", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>): Promise<T> => {
         if (request.type === "config/entity_registry/list") {
@@ -5986,9 +5986,9 @@ describe("HtLocationInspector WIAB configuration", () => {
         if (request.type === "topomation/ambient/get_reading") {
           return {
             lux: 120,
-            source_sensor: "sensor.living_room_ambient_lux",
-            source_location: "area_living_room",
-            is_inherited: false,
+            source_sensor: "sensor.parent_ambient_lux",
+            source_location: "building_home",
+            is_inherited: true,
             is_dark: false,
             is_bright: false,
             dark_threshold: 50,
@@ -6009,6 +6009,15 @@ describe("HtLocationInspector WIAB configuration", () => {
             device_class: "illuminance",
             unit_of_measurement: "lx",
             area_id: "living_room",
+          },
+        },
+        "sensor.parent_ambient_lux": {
+          entity_id: "sensor.parent_ambient_lux",
+          state: "120",
+          attributes: {
+            friendly_name: "Parent Ambient Lux",
+            device_class: "illuminance",
+            unit_of_measurement: "lx",
           },
         },
       },
@@ -6054,6 +6063,15 @@ describe("HtLocationInspector WIAB configuration", () => {
     ) as HTMLSelectElement | null;
     expect(sensorSelect).to.exist;
     expect(sensorSelect!.value).to.equal("");
+    expect(
+      element.shadowRoot?.querySelector('[data-testid="ambient-configured-source"]')?.textContent?.trim()
+    ).to.equal("Inherit from parent");
+    expect(
+      element.shadowRoot?.querySelector('[data-testid="ambient-source-method"]')?.textContent?.trim()
+    ).to.equal("Inherited sensor");
+    expect(
+      element.shadowRoot?.querySelector('[data-testid="ambient-source-sensor"]')?.textContent?.trim()
+    ).to.equal("sensor.parent_ambient_lux");
     expect(
       element.shadowRoot?.querySelector('[data-testid="ambient-sticky-draft-bar"]')
     ).to.equal(null);

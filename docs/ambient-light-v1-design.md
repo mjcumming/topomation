@@ -81,17 +81,22 @@ Ambient UI should show:
 
 1. Effective lux value (`lux_level`, number or null)
 2. Effective `is_dark` and `is_bright` results
-3. Source sensor entity ID
-4. Source location (local vs inherited)
-5. Source method classification:
+3. Configured source (`Inherit from parent` or explicit sensor)
+4. Effective source sensor entity ID
+5. Effective source location (local vs inherited)
+6. Effective source method classification:
    - `sensor`
    - `inherited_sensor`
    - `sun_fallback`
    - `assume_dark`
    - `assume_bright`
-6. Thresholds in effect
-7. Local lux ignore diagnostics when an enabled location skips its local lux sensor because local lights are on
-8. Source-priority explanation naming which direct local `light.*` entities can contaminate the local lux sensor
+7. Thresholds in effect
+8. Local lux ignore diagnostics when an enabled location skips its local lux sensor because local lights are on
+9. Source-priority explanation naming which direct local `light.*` entities can contaminate the local lux sensor
+
+When the configured source is `Inherit from parent`, same-location lux
+candidates remain selectable options only; they must not appear as the effective
+source unless explicitly assigned.
 
 ### 5.5 Output contract (v1)
 

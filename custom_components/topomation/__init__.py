@@ -328,7 +328,7 @@ class TopomationAmbientLightModule(AmbientLightModule):
         if self._has_local_lux_light_guard(location_id):
             ignored_lights = self._local_on_light_entity_ids(location_id)
 
-        sensor = self._find_lux_sensor_for_location(location_id)
+        sensor = self._configured_lux_sensor_for_location(location_id)
         if sensor and ignored_lights:
             ignored_sensor = sensor
         elif sensor:
@@ -351,7 +351,7 @@ class TopomationAmbientLightModule(AmbientLightModule):
 
         if inherit and config.inherit_from_parent:
             for ancestor in self._require_location_manager().ancestors_of(location_id):
-                sensor = self._find_lux_sensor_for_location(ancestor.id)
+                sensor = self._configured_lux_sensor_for_location(ancestor.id)
                 if sensor:
                     lux = self._get_sensor_value(sensor)
                     if lux is not None:
@@ -384,6 +384,14 @@ class TopomationAmbientLightModule(AmbientLightModule):
         self._annotate_ignored_local_lux(reading, ignored_sensor, ignored_lights)
         self._last_readings[location_id] = reading
         return reading
+
+    def _configured_lux_sensor_for_location(self, location_id: str) -> str | None:
+        """Return only the explicitly configured lux sensor for a location."""
+        config = self._get_location_config(location_id)
+        sensor = config.lux_sensor
+        if isinstance(sensor, str) and sensor.strip():
+            return sensor.strip()
+        return None
 
     def _has_local_lux_light_guard(self, location_id: str) -> bool:
         """Return true when the local-light contamination guard is enabled."""

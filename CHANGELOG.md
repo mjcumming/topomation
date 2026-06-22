@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.25] - 2026-06-22
+
+### Fixed
+
+- **Ambient inherit source handling**: locations saved as `Inherit from parent`
+  no longer use same-location lux candidates as the effective source. Ambient
+  diagnostics now separate the configured source from the effective source so
+  inherited and fallback readings are clear.
+
 ## [0.3.24] - 2026-06-22
 
 ### Fixed

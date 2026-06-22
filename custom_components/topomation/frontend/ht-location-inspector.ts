@@ -5134,6 +5134,9 @@ export class HtLocationInspector extends LitElement {
     const brightThreshold = Math.max(darkThreshold + 1, Number(config.bright_threshold) || darkThreshold + 1);
     const selectedLuxSensor = this._selectedAmbientSensorId(config);
     const emptyLuxSensorLabel = "Inherit from parent";
+    const configuredSourceLabel = hasLocalLuxSensor
+      ? this._entityName(String(config.lux_sensor))
+      : emptyLuxSensorLabel;
     const busy = this._savingAmbientConfig;
 
     return html`
@@ -5179,6 +5182,8 @@ export class HtLocationInspector extends LitElement {
           <div class="ambient-value" data-testid="ambient-lux-level">${this._formatAmbientLux(reading)}</div>
           <div class="ambient-key">Ambient state</div>
           <div class="ambient-value" data-testid="ambient-state">${ambientStateLabel}</div>
+          <div class="ambient-key">Configured source</div>
+          <div class="ambient-value" data-testid="ambient-configured-source">${configuredSourceLabel}</div>
           <div class="ambient-key">Source method</div>
           <div class="ambient-value" data-testid="ambient-source-method">${sourceMethodLabel}</div>
           <div class="ambient-key">Source sensor</div>

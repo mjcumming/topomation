@@ -833,6 +833,46 @@ Notes:
 - After push to `main`, confirm CI and **Auto Release** are green for the
   release commit before considering the release complete.
 
+## Gate Record: 2026-06-22 — Ambient inherit effective-source cleanup (`0.3.25`)
+
+Commit under test: **release-candidate worktree for Topomation `0.3.25`**
+
+Touched workflows:
+- **Ambient inherited lux source resolution**: locations saved as `Inherit from
+  parent` skip same-location lux candidates as effective sources and resolve to
+  explicitly configured ancestor lux or fallback instead.
+- **Ambient diagnostics**: Ambient view separates configured source from
+  effective source method/sensor/location.
+- **Release metadata**: version sync across `manifest.json`, `const.py`, and
+  `pyproject.toml`; changelog section for `0.3.25`; rebuilt frontend runtime
+  bundle.
+
+Validation:
+- `pytest -q --no-cov tests/test_ambient_extra_lux_hook.py` — **PASS** (8
+  passed; 2026-06-22)
+- `cd custom_components/topomation/frontend && npm test -- --files ht-location-inspector.test.ts`
+  — **PASS** (97 passed; 2026-06-22)
+- `cd custom_components/topomation/frontend && npm run build` — **PASS**
+  (rebuilt `topomation-panel.js`; 2026-06-22)
+- `ruff check custom_components/topomation/__init__.py tests/test_ambient_extra_lux_hook.py`
+  — **PASS** (2026-06-22)
+- `./scripts/check-docs-consistency.sh` — **PASS** (2026-06-22)
+- `make test-release-live` — **PASS** (full local + live release gate;
+  2026-06-22)
+
+Outcome:
+- Ambient inherited effective-source behavior: **PASS**
+- Ambient configured/effective source diagnostics: **PASS**
+- Frontend bundle parity: **PASS**
+- Release metadata/version sync: **PASS**
+- Local comprehensive gate: **PASS**
+- Live HA managed-action contract: **PASS**
+- Live HA browser workflows: **PASS**
+
+Notes:
+- After push to `main`, confirm CI and **Auto Release** are green for the
+  release commit before considering `0.3.25` complete.
+
 ## Gate Record: 2026-06-22 — Ambient duplicate save affordance cleanup (`0.3.24`)
 
 Commit under test: **release-candidate worktree for Topomation `0.3.24`**

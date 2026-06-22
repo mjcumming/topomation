@@ -25,7 +25,9 @@ Ambient reading diagnostics and generated managed Lighting automations must use
 the same effective-source priority for every topology location, including
 structural hosts:
 
-1. Use the location's configured local lux sensor when it is usable.
+1. Use the location's explicitly configured local lux sensor when it is usable.
+   A same-location lux candidate is not an effective local source while the
+   location is configured to inherit from parent.
 2. When any selected local lux-contaminating `light.*` entity is `on`, treat the
    local lux sensor as unusable.
 3. If the local lux sensor is unusable and inherited ambient is enabled, use the

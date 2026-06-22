@@ -447,12 +447,15 @@ Additional save points:
 - Ambient module configs must persist with `auto_discover: false` in integration defaults.
 - Ambient reading and generated Lighting-rule source priority are the same
   effective-source chain (ADR-HA-097):
-  1. assigned location lux sensor, unless one of the location's selected local
-     lux-contaminating `light.*` entities is currently `on`
+  1. explicitly assigned location lux sensor, unless one of the location's
+     selected local lux-contaminating `light.*` entities is currently `on`
   2. inherited ancestor lux sensor (when enabled)
   3. strict sun fallback (`sun.sun`) when the local lux sensor is ignored and no
      inherited lux source exists, or when no lux source is available and fallback
      is enabled
+- A same-location lux candidate must not become effective when the Ambient
+  selector is saved as `Inherit from parent`; candidates are only selectable
+  options until explicitly assigned.
 - Generated managed Lighting rules must wake from every source that can become
   effective under that chain and must include source-priority conditions so a
   contaminated local lux reading cannot pass a dark/bright rule by itself.
@@ -464,7 +467,8 @@ Additional save points:
   - show effective lux level on the top card
   - indicate inherited source state when applicable.
 - Inspector Ambient view must expose ambient diagnostics/config:
-  - current lux, `is_dark`, `is_bright`, source sensor/location, source method
+  - current lux, `is_dark`, `is_bright`, configured source, effective source
+    sensor/location, and effective source method
   - one lux sensor selector whose empty/default option is `Inherit from parent`
   - dark/bright threshold controls
   - fallback-to-sun and assume-dark-on-error toggles.
