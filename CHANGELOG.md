@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.23] - 2026-06-22
+
+### Fixed
+
+- **Ambient lux sensor updates**: the Ambient tab now shows an explicit
+  section-level `Update` action whenever lux sensor or threshold changes are
+  staged, so changing the selected lux sensor has a visible save path in the
+  same card.
+- **Occupancy group summaries**: generated occupancy group entity IDs and
+  friendly names are collapsed to "the occupancy group" in header summaries
+  and Details, preventing random group suffixes from leaking into the UI.
+
 ## [0.3.22] - 2026-06-20
 
 ### Fixed

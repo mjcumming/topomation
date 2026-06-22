@@ -370,7 +370,14 @@ function structuralRelationshipSourceId(sourceId: string): boolean {
 
 function rawOccupancyGroupSourceId(sourceId: string): boolean {
   const raw = String(sourceId || "").trim();
-  return /^occupancy[\s_]*group\s*[:.]/i.test(raw);
+  return /^occupancy[\s_]*group(?:\s*[:.]|\b)/i.test(raw);
+}
+
+function generatedOccupancyGroupSourceId(sourceId: string): boolean {
+  const raw = String(sourceId || "").trim().toLowerCase();
+  if (!raw) return false;
+  const withoutDomain = raw.replace(/^[a-z_]+\./, "");
+  return /(?:^|[_\-.])(?:occupancy[_\-.])?group[_\-.][a-z0-9]+/.test(withoutDomain);
 }
 
 function displaySafeSourceLabel(label: string): string {
@@ -455,6 +462,7 @@ function structuralSourceLabel(
 ): string | undefined {
   const raw = String(sourceId || "").trim();
   if (!raw) return undefined;
+  if (generatedOccupancyGroupSourceId(raw)) return "occupancy group";
 
   const prefixedLabel = (
     prefix: string,

@@ -345,6 +345,9 @@ describe("buildOccupancyReasonLine", () => {
     expect(explanation.summary).not.to.include("Morphyb6");
     expect(explanation.summary).not.to.include("Lahara");
     expect(explanation.summary).not.to.include(":Floor");
+    expect(explanation.details.join(" ")).not.to.include("Morphyb6");
+    expect(explanation.details.join(" ")).not.to.include("Lahara");
+    expect(explanation.details.join(" ")).not.to.include(":Floor");
   });
 
   it("keeps HA friendly-name occupancy group labels out of occupied summaries", () => {
@@ -355,11 +358,11 @@ describe("buildOccupancyReasonLine", () => {
     });
     const hass = makeHass({
       states: {
-        "binary_sensor.floor_main_floor_group_morphyb6_lahara": {
-          entity_id: "binary_sensor.floor_main_floor_group_morphyb6_lahara",
+        "binary_sensor.floor_main_floor_group_mntrhne7_cxmpt8": {
+          entity_id: "binary_sensor.floor_main_floor_group_mntrhne7_cxmpt8",
           state: "on",
           attributes: {
-            friendly_name: "Occupancy Group:Floor Main Floor Group Morphyb6 Lahara",
+            friendly_name: "Occupancy Group :Floor Main Floor Group Mntrhne7 Cxmpt8",
           },
         },
       } as any,
@@ -375,7 +378,7 @@ describe("buildOccupancyReasonLine", () => {
         floor_main_floor: runtimeState("floor_main_floor", "on", tMinus(18), {
           contributions: [
             {
-              source_id: "binary_sensor.floor_main_floor_group_morphyb6_lahara",
+              source_id: "binary_sensor.floor_main_floor_group_mntrhne7_cxmpt8",
               state: "active",
               expires_at: null,
               updated_at: tMinus(18),
@@ -394,10 +397,13 @@ describe("buildOccupancyReasonLine", () => {
     });
 
     expect(explanation.summary).to.equal("Occupied because the occupancy group is occupied.");
-    expect(explanation.summary).not.to.include("Morphyb6");
-    expect(explanation.summary).not.to.include("Lahara");
+    expect(explanation.summary).not.to.include("Mntrhne7");
+    expect(explanation.summary).not.to.include("Cxmpt8");
     expect(explanation.summary).not.to.include(":Floor");
     expect(explanation.summary).not.to.include("other relationship");
+    expect(explanation.details.join(" ")).not.to.include("Mntrhne7");
+    expect(explanation.details.join(" ")).not.to.include("Cxmpt8");
+    expect(explanation.details.join(" ")).not.to.include(":Floor");
   });
 
   it("describes vacancy timeouts", () => {

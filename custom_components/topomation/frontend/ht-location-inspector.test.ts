@@ -5716,9 +5716,10 @@ describe("HtLocationInspector WIAB configuration", () => {
     await element.updateComplete;
 
     const saveButton = element.shadowRoot?.querySelector(
-      '[data-testid="ambient-sticky-save-button"]'
+      '[data-testid="ambient-section-save-button"]'
     ) as HTMLButtonElement | null;
     expect(saveButton).to.exist;
+    expect(saveButton!.disabled).to.equal(false);
     saveButton!.click();
     await element.updateComplete;
 
@@ -6055,6 +6056,10 @@ describe("HtLocationInspector WIAB configuration", () => {
     expect(
       element.shadowRoot?.querySelector('[data-testid="ambient-sticky-draft-bar"]')
     ).to.equal(null);
+    expect(
+      (element.shadowRoot?.querySelector('[data-testid="ambient-section-save-button"]') as HTMLButtonElement | null)
+        ?.disabled
+    ).to.equal(true);
 
     sensorSelect!.value = "sensor.living_room_ambient_lux";
     sensorSelect!.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
@@ -6063,6 +6068,10 @@ describe("HtLocationInspector WIAB configuration", () => {
     expect(
       element.shadowRoot?.querySelector('[data-testid="ambient-sticky-save-button"]')
     ).to.exist;
+    expect(
+      (element.shadowRoot?.querySelector('[data-testid="ambient-section-save-button"]') as HTMLButtonElement | null)
+        ?.disabled
+    ).to.equal(false);
   });
 
   it("shows the ambient draft bar after selecting a different lux sensor", async () => {

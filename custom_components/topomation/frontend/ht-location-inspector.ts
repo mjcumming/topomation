@@ -5150,6 +5150,30 @@ export class HtLocationInspector extends LitElement {
             <ha-icon .icon=${"mdi:weather-sunny"}></ha-icon>
             Ambient
           </div>
+          <div class="section-title-actions">
+            ${this._ambientDraftDirty
+              ? html`
+                  <button
+                    type="button"
+                    class="button button-secondary"
+                    data-testid="ambient-section-discard-button"
+                    ?disabled=${busy}
+                    @click=${() => this._discardAmbientDraft()}
+                  >
+                    Discard
+                  </button>
+                `
+              : html`<span class="text-muted" data-testid="ambient-section-save-state">Saved</span>`}
+            <button
+              type="button"
+              class="button button-primary"
+              data-testid="ambient-section-save-button"
+              ?disabled=${busy || !this._ambientDraftDirty}
+              @click=${() => this._saveAmbientDraft()}
+            >
+              ${busy ? "Updating..." : "Update"}
+            </button>
+          </div>
         </div>
 
         ${this._ambientReadingError

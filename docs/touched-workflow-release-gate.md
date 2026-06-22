@@ -833,6 +833,56 @@ Notes:
 - After push to `main`, confirm CI and **Auto Release** are green for the
   release commit before considering the release complete.
 
+## Gate Record: 2026-06-22 — Ambient update affordance + occupancy group label cleanup (`0.3.23`)
+
+Commit under test: **release-candidate worktree for Topomation `0.3.23`**
+
+Touched workflows:
+- **Ambient lux sensor configuration**: changing the selected lux sensor now
+  exposes an explicit section-level `Update` action in the Ambient card, with
+  `Discard` while staged and `Saved` while clean.
+- **Occupancy reason rendering**: generated occupancy group entity IDs and HA
+  friendly names are collapsed to "the occupancy group" in summaries and
+  Details.
+- **Release metadata**: version sync across `manifest.json`, `const.py`, and
+  `pyproject.toml`; changelog section for `0.3.23`; rebuilt frontend runtime
+  bundle.
+
+Validation:
+- `python scripts/verify-version-sync.py` — **PASS** (`0.3.23`; 2026-06-22)
+- `cd custom_components/topomation/frontend && npm test -- --files occupancy-reason.test.ts`
+  — **PASS** (15 passed; 2026-06-22)
+- `cd custom_components/topomation/frontend && npm test -- --files ht-location-inspector.test.ts`
+  — **PASS** (97 passed; 2026-06-22)
+- `cd custom_components/topomation/frontend && npm run build` — **PASS**
+  (rebuilt `topomation-panel.js`; 2026-06-22)
+- `make test-release-live` — **FAIL / environment**: local comprehensive
+  matrix passed, but the default local HA endpoint `http://localhost:8123` was
+  offline before live tests started (2026-06-22).
+- `./scripts/ha-dev-up.sh` — **PASS** (HA dev runtime ready at
+  `http://127.0.0.1:8123`; 2026-06-22)
+- `make test-release-live` — **PASS** (version sync, Ruff, Mypy, backend
+  pytest `370 passed, 22 skipped`, Vitest `272 passed`, Web Test Runner
+  `209 passed`, Playwright mock/production workflows `34 passed`, live HA
+  managed-action contract `2 passed`, live HA browser workflows `6 passed`;
+  2026-06-22)
+
+Outcome:
+- Ambient lux sensor visible update action: **PASS**
+- Occupancy group generated-name cleanup: **PASS**
+- Frontend bundle parity: **PASS**
+- Release metadata/version sync: **PASS**
+- Local comprehensive gate: **PASS**
+- Live HA managed-action contract: **PASS**
+- Live HA browser workflows: **PASS**
+
+Notes:
+- The first `make test-release-live` failure was not a product failure; it
+  stopped before live tests because the local HA endpoint was offline. The HA
+  dev runtime was started and the full release gate was rerun successfully.
+- After push to `main`, confirm CI and **Auto Release** are green for the
+  release commit before considering `0.3.23` complete.
+
 ## Gate Record: 2026-04-28 — Action state badge readability + occupancy details layout (`0.2.77`)
 
 Commit under test: **release-candidate worktree for Topomation `0.2.77`**
