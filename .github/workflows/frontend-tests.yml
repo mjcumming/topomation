@@ -15,8 +15,8 @@ env:
   NODE_VERSION: "20"
 
 jobs:
-  backend:
-    name: Backend checks
+  home-assistant-quality:
+    name: Home Assistant quality checks
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -25,6 +25,20 @@ jobs:
 
       - name: Validate with hassfest
         uses: home-assistant/actions/hassfest@master
+
+      - name: Validate with HACS
+        uses: hacs/action@22.5.0
+        with:
+          category: "integration"
+          ignore: "topics brands"
+
+  backend:
+    name: Backend checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v5
 
       - name: Set up Python
         uses: actions/setup-python@v6

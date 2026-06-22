@@ -5,16 +5,34 @@
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
 [![Installations](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fanalytics.home-assistant.io%2Fcustom_integrations.json&query=%24.topomation.total&label=installs&color=41BDF5&logo=home-assistant&cacheSeconds=3600)](https://analytics.home-assistant.io/custom_integrations.json)
 [![GitHub Release](https://img.shields.io/github/release/mjcumming/topomation.svg)](https://github.com/mjcumming/topomation/releases)
-[![CI](https://img.shields.io/github/actions/workflow/status/mjcumming/topomation/frontend-tests.yml?branch=main&label=CI)](https://github.com/mjcumming/topomation/actions/workflows/frontend-tests.yml)
 [![License](https://img.shields.io/github/license/mjcumming/topomation.svg)](https://github.com/mjcumming/topomation/blob/main/LICENSE)
+[![GitHub Stars](https://img.shields.io/github/stars/mjcumming/topomation.svg?style=flat&label=stars)](https://github.com/mjcumming/topomation/stargazers)
+[![Home Assistant](https://img.shields.io/badge/home%20assistant-2024.1.0%2B-41BDF5.svg)](https://www.home-assistant.io/)
+[![IoT Class](https://img.shields.io/badge/iot%20class-local%20push-success.svg)](https://developers.home-assistant.io/docs/core/integration-quality-scale/rules/iot-class/)
+[![HA Quality](https://img.shields.io/github/actions/workflow/status/mjcumming/topomation/frontend-tests.yml?branch=main&label=HA%20quality)](https://github.com/mjcumming/topomation/actions/workflows/frontend-tests.yml)
+[![Python](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/)
+[![Maintenance](https://img.shields.io/maintenance/yes/2026.svg)](https://github.com/mjcumming/topomation)
+[![Project Status](https://img.shields.io/badge/project%20status-beta-yellow.svg)](https://github.com/mjcumming/topomation)
+[![CI](https://img.shields.io/github/actions/workflow/status/mjcumming/topomation/frontend-tests.yml?branch=main&label=CI)](https://github.com/mjcumming/topomation/actions/workflows/frontend-tests.yml)
+[![Auto Release](https://img.shields.io/github/actions/workflow/status/mjcumming/topomation/auto-release.yml?branch=main&label=release)](https://github.com/mjcumming/topomation/actions/workflows/auto-release.yml)
+[![GitHub Issues](https://img.shields.io/github/issues/mjcumming/topomation.svg)](https://github.com/mjcumming/topomation/issues)
+[![GitHub Pull Requests](https://img.shields.io/github/issues-pr/mjcumming/topomation.svg)](https://github.com/mjcumming/topomation/pulls)
 
-> TopoMation is a one-person beta project. It started as occupancy automation for my own homes, and I'm sharing it because the same shape of problem may exist in other Home Assistant installs. There's no company behind it and no support contract. The core has a real test suite and runs in my houses every day, but outside installs are still young. Expect rough edges, UI changes, and slow or selective responses to issues and feature requests. If that trade-off is fair to you, start small and read on.
+TopoMation is a Home Assistant integration for people whose occupancy automations have outgrown one-room-at-a-time logic.
 
-TopoMation is a Home Assistant integration for occupancy-driven automation across a whole house. You arrange your home as a hierarchy (properties, buildings, grounds, floors, and areas), assign the sensors that imply someone is around, and let it generate common-case lighting, appliance, media, HVAC fan, and vacuum automations from there.
+You arrange your home as a real hierarchy: property, buildings, grounds, floors, rooms, and subareas. Then you assign the sensors and devices that imply someone is around, and TopoMation gives every level its own occupancy state. From that shared model it can generate common-case lighting, appliance, media, HVAC fan, and vacuum automations that remain normal Home Assistant automations you can open, trace, disable, and inspect.
 
-I built it because I kept running into the same practical gap: Home Assistant areas are flat, floors are mostly labels, and a device that belongs to a whole floor, a building, or the grounds has nowhere especially natural to live. TopoMation sits on top of your existing floors and areas and adds a real hierarchy where every level can participate in occupancy and automation. Configuration happens in the TopoMation panel, and the rules it generates are normal Home Assistant automations you can open, read, disable, and trace.
+It is built for the kinds of homes where simple motion-light examples stop being enough:
 
-In practice, here's what's different about a TopoMation-driven house:
+- A bathroom has no dedicated motion sensor, but the light switch is a strong occupancy signal.
+- A pantry needs a short hold time, while a bedroom presence sensor should hold indefinitely.
+- The kitchen and family room are separate rooms, but people move through them like one open space.
+- A floor-level fan, building-wide alarm panel, driveway light, or pool device does not really belong to a single room.
+- "Is anyone upstairs?", "is anyone outside?", and "is anyone on the property?" should be real entities you can use anywhere in HA.
+
+I built TopoMation because I kept running into the same practical gap in my own homes: the house has structure, but most automation logic only sees individual areas. TopoMation sits on top of your existing Home Assistant floors and areas and adds a model where every level can participate in occupancy and automation.
+
+In practice, here's what's different in a TopoMation-driven house:
 
 - **Every level of your home has its own occupancy entity.** "Is anyone home", "is anyone upstairs", "is anyone outside" can each become a single HA binary sensor you can use elsewhere.
 - **Lights, fans, and TVs all respond to who's actually in the room.** One configuration per location, no per-room automations to maintain.
@@ -22,6 +40,22 @@ In practice, here's what's different about a TopoMation-driven house:
 - **Hold a room's state when you need to.** Click the lock icon on a row to freeze that location and its subtree. Useful for keeping lights on during a party or stopping things from triggering while you're testing.
 - **Reorganize a room or swap a sensor in one place.** The rules regenerate. You don't go hunting through twenty automations.
 - **Open-plan rooms and outdoor space have a model.** A kitchen flowing into the family room can share occupancy, and driveway, porch, and yard locations can use the same managed-rule surfaces when they have compatible entities assigned.
+
+## Looking for beta testers
+
+TopoMation is useful today, but public installs are still young. The best beta testers are Home Assistant users who are comfortable with custom integrations, willing to start small, and interested in giving specific feedback from real homes.
+
+I'm especially interested in feedback from setups with:
+
+- Open-plan spaces where adjacent rooms should sometimes share occupancy.
+- Bathrooms, closets, pantries, garages, sheds, or outdoor zones with odd sensor mixes.
+- Whole-floor, whole-building, or whole-property automations.
+- Rooms that combine motion, mmWave / presence, contact sensors, switches, media players, or camera detections.
+- Existing automation sprawl that would be easier to manage from a shared occupancy model.
+
+Good feedback does not need to be elaborate. The most useful reports include your Home Assistant version, TopoMation version, the location/sensor setup you tried, what you expected, what happened, and logs or screenshots when something broke. Please use [GitHub Issues](https://github.com/mjcumming/topomation/issues) for bugs, install problems, behavior reports, and focused feature ideas.
+
+If TopoMation helps you, please consider starring the [GitHub repo](https://github.com/mjcumming/topomation). Stars help other Home Assistant users discover the project and give me a useful signal that the integration is worth continuing to polish.
 
 ## Beta expectations
 
@@ -103,6 +137,8 @@ A few examples to make this concrete:
 
 **Open-plan kitchen and family room.** Keep them as separate locations so per-room rules still work, but put both into one occupancy group on their parent floor so they share occupancy state.
 
+More scenarios are in [docs/examples.md](docs/examples.md).
+
 The full rule contract is in [docs/automation-ui-guide.md](docs/automation-ui-guide.md).
 
 ## More screenshots
@@ -178,6 +214,7 @@ Lock workflows are explained in [docs/occupancy-lock-workflows.md](docs/occupanc
 ## Documentation
 
 - [Installation](docs/installation.md)
+- [Examples](docs/examples.md)
 - [Support expectations](SUPPORT.md)
 - [Occupancy lock workflows](docs/occupancy-lock-workflows.md)
 - [Automation UI guide](docs/automation-ui-guide.md)
