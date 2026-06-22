@@ -18,6 +18,8 @@
 [![GitHub Issues](https://img.shields.io/github/issues/mjcumming/topomation.svg)](https://github.com/mjcumming/topomation/issues)
 [![GitHub Pull Requests](https://img.shields.io/github/issues-pr/mjcumming/topomation.svg)](https://github.com/mjcumming/topomation/pulls)
 
+> Love this integration? Please star the [GitHub repo](https://github.com/mjcumming/topomation) if you use TopoMation. It helps other Home Assistant users discover the project and gives me a useful signal that the integration is worth continuing to polish.
+
 TopoMation is a Home Assistant integration for people whose occupancy automations have outgrown one-room-at-a-time logic.
 
 You arrange your home as a real hierarchy: property, buildings, grounds, floors, rooms, and subareas. Then you assign the sensors and devices that imply someone is around, and TopoMation gives every level its own occupancy state. From that shared model it can generate common-case lighting, appliance, media, HVAC fan, and vacuum automations that remain normal Home Assistant automations you can open, trace, disable, and inspect.
@@ -54,8 +56,6 @@ I'm especially interested in feedback from setups with:
 - Existing automation sprawl that would be easier to manage from a shared occupancy model.
 
 Good feedback does not need to be elaborate. The most useful reports include your Home Assistant version, TopoMation version, the location/sensor setup you tried, what you expected, what happened, and logs or screenshots when something broke. Please use [GitHub Issues](https://github.com/mjcumming/topomation/issues) for bugs, install problems, behavior reports, and focused feature ideas.
-
-If TopoMation helps you, please consider starring the [GitHub repo](https://github.com/mjcumming/topomation). Stars help other Home Assistant users discover the project and give me a useful signal that the integration is worth continuing to polish.
 
 ## Beta expectations
 
