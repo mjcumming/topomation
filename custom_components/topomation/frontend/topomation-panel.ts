@@ -2501,7 +2501,7 @@ export class TopomationPanel extends LitElement {
 
       if (!replace && nextRuntimeStates[locationId]) {
         const previousState = nextRuntimeStates[locationId];
-        nextRuntimeStates[locationId] = {
+        const mergedState = {
           ...previousState,
           ...stateLike,
           attributes: {
@@ -2509,6 +2509,28 @@ export class TopomationPanel extends LitElement {
             ...((stateLike as any).attributes || {}),
           },
         };
+        const previousStateValue = typeof (previousState as any).state === "string"
+          ? (previousState as any).state
+          : undefined;
+        const incomingStateValue = typeof (stateLike as any).state === "string"
+          ? (stateLike as any).state
+          : undefined;
+        const previousChangedAtMs = Date.parse(String((previousState as any).last_changed || ""));
+        const incomingChangedAtMs = Date.parse(String((stateLike as any).last_changed || ""));
+        const sameOccupancyState =
+          typeof occupied === "boolean" &&
+          runtimeState.previous_occupied === occupied &&
+          Boolean(previousStateValue) &&
+          previousStateValue === incomingStateValue;
+        if (
+          sameOccupancyState &&
+          Number.isFinite(previousChangedAtMs) &&
+          Number.isFinite(incomingChangedAtMs) &&
+          incomingChangedAtMs > previousChangedAtMs
+        ) {
+          (mergedState as any).last_changed = (previousState as any).last_changed;
+        }
+        nextRuntimeStates[locationId] = mergedState;
       } else {
         nextRuntimeStates[locationId] = stateLike;
       }

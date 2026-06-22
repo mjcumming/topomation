@@ -80,6 +80,7 @@ type OccupancyExplainabilityChange = {
   signalKey?: string;
   reason?: string;
   occupied?: boolean;
+  previousOccupied?: boolean;
   changedAt?: string;
 };
 type EntityRegistryMeta = {
@@ -5146,9 +5147,9 @@ export class HtLocationInspector extends LitElement {
             <ha-icon .icon=${"mdi:weather-sunny"}></ha-icon>
             Ambient
           </div>
-          <div class="section-title-actions">
-            ${this._ambientDraftDirty
-              ? html`
+          ${this._ambientDraftDirty
+            ? html`
+                <div class="section-title-actions">
                   <button
                     type="button"
                     class="button button-secondary"
@@ -5158,18 +5159,18 @@ export class HtLocationInspector extends LitElement {
                   >
                     Discard
                   </button>
-                `
-              : html`<span class="text-muted" data-testid="ambient-section-save-state">Saved</span>`}
-            <button
-              type="button"
-              class="button button-primary"
-              data-testid="ambient-section-save-button"
-              ?disabled=${busy || !this._ambientDraftDirty}
-              @click=${() => this._saveAmbientDraft()}
-            >
-              ${busy ? "Updating..." : "Update"}
-            </button>
-          </div>
+                  <button
+                    type="button"
+                    class="button button-primary"
+                    data-testid="ambient-section-save-button"
+                    ?disabled=${busy}
+                    @click=${() => this._saveAmbientDraft()}
+                  >
+                    ${busy ? "Updating..." : "Update"}
+                  </button>
+                </div>
+              `
+            : ""}
         </div>
 
         ${this._ambientReadingError
@@ -11487,7 +11488,10 @@ export class HtLocationInspector extends LitElement {
     | { directChildren: number; descendantRooms: number; occupiedDescendants: number }
     | undefined {
     if (!this.location || !this._isStructuralSummaryLocation()) return undefined;
-    const descendants = this._descendantLocations(this.location.id);
+    const managedShadowIds = this._managedShadowLocationIds();
+    const descendants = this._descendantLocations(this.location.id).filter(
+      (candidate) => !this._isManagedShadowLocation(candidate, managedShadowIds)
+    );
     const directChildren = descendants.filter((candidate) => candidate.parent_id === this.location?.id).length;
     const descendantRooms = descendants.filter((candidate) => {
       const type = getLocationType(candidate);
@@ -11819,12 +11823,20 @@ export class HtLocationInspector extends LitElement {
         typeof item.signal_key === "string" && item.signal_key.trim() ? item.signal_key.trim() : undefined,
       reason: typeof item.reason === "string" && item.reason.trim() ? item.reason.trim() : undefined,
       occupied: typeof item.occupied === "boolean" ? item.occupied : undefined,
+      previousOccupied:
+        typeof item.previous_occupied === "boolean" ? item.previous_occupied : undefined,
       changedAt: typeof item.changed_at === "string" && item.changed_at.trim() ? item.changed_at : undefined,
     };
   }
 
   private _explainabilityChangeTitle(item: OccupancyExplainabilityChange): string {
     if (item.kind === "state") {
+      if (item.event === "occupied" && item.previousOccupied === true) {
+        return "Occupancy refreshed";
+      }
+      if (item.event === "vacant" && item.previousOccupied === false) {
+        return "Still vacant";
+      }
       return item.event === "occupied" ? "Location became occupied" : "Location became vacant";
     }
     if (item.event === "trigger") return "Source triggered";
@@ -11839,7 +11851,14 @@ export class HtLocationInspector extends LitElement {
   ): string {
     if (item.kind === "state") {
       const reason = this._formatOccupancyReason(item.reason);
-      return reason || (item.event === "occupied" ? "Occupancy turned on" : "Occupancy turned off");
+      if (reason) return reason;
+      if (item.event === "occupied" && item.previousOccupied === true) {
+        return "Occupancy was refreshed while already occupied";
+      }
+      if (item.event === "vacant" && item.previousOccupied === false) {
+        return "Occupancy remained vacant";
+      }
+      return item.event === "occupied" ? "Occupancy turned on" : "Occupancy turned off";
     }
 
     const sourceText = sourceLabel

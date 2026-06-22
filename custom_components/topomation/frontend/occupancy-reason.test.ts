@@ -234,6 +234,38 @@ describe("buildOccupancyReasonLine", () => {
     );
   });
 
+  it("describes stayed-occupied state rows as refreshes, not new occupancy starts", () => {
+    const location = makeLocation({ id: "kitchen" });
+
+    const explanation = buildOccupancyExplanation({
+      location,
+      locations: [location],
+      hass: makeHass(),
+      occupancyStates: { kitchen: true },
+      occupancyTransitions: {},
+      occupancyRuntimeStates: {
+        kitchen: runtimeState("kitchen", "on", tMinus(600), {
+          recent_changes: [
+            {
+              kind: "state",
+              event: "occupied",
+              occupied: true,
+              previous_occupied: true,
+              changed_at: tMinus(36),
+            },
+          ],
+        }),
+      },
+      status: "occupied",
+      nowMs: NOW,
+    });
+
+    expect(explanation.detailSections.find((section) => section.title === "Recent event")?.note).to.equal(
+      "Occupancy refreshed 36s ago."
+    );
+    expect(explanation.details.join(" ")).not.to.include("Became occupied 36s ago");
+  });
+
   it("shows legacy linked contributors as relationship context", () => {
     const familyRoom = makeLocation({
       id: "area_family_room",

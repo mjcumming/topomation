@@ -725,9 +725,15 @@ function latestRecentChange(
     return `Recent event: ${sourceLabel || "A source"} cleared${suffix}.`;
   }
   if (kind === "state" && event === "occupied") {
+    if (isSameStateRefresh(latest, true)) {
+      return `Recent event: Occupancy refreshed${suffix}.`;
+    }
     return `Recent event: Became occupied${suffix}.`;
   }
   if (kind === "state" && event === "vacant") {
+    if (isSameStateRefresh(latest, false)) {
+      return `Recent event: Still vacant${suffix}.`;
+    }
     return `Recent event: Became vacant${suffix}.`;
   }
   if (event) return `Recent event: ${humanizeTechnicalId(event)}${suffix}.`;
@@ -747,16 +753,32 @@ function latestTransitionChange(
   const suffix = age ? ` ${age} ago` : "";
   const sourceLabel = transitionSourceLabel(transition, ctx);
   if (event === "occupied") {
+    if (!sourceLabel && isSameStateRefresh(transition, true)) {
+      return `Recent event: Occupancy refreshed${suffix}.`;
+    }
     return sourceLabel
       ? `Recent event: ${sourceLabel} reported activity${suffix}.`
       : `Recent event: Became occupied${suffix}.`;
   }
   if (event === "vacant") {
+    if (!sourceLabel && isSameStateRefresh(transition, false)) {
+      return `Recent event: Still vacant${suffix}.`;
+    }
     return sourceLabel
       ? `Recent event: ${sourceLabel} cleared${suffix}.`
       : `Recent event: Became vacant${suffix}.`;
   }
   return `Recent event: ${humanizeTechnicalId(event)}${suffix}.`;
+}
+
+function isSameStateRefresh(row: Record<string, any>, occupied: boolean): boolean {
+  const previous =
+    typeof row.previous_occupied === "boolean"
+      ? row.previous_occupied
+      : typeof row.previousOccupied === "boolean"
+        ? row.previousOccupied
+        : undefined;
+  return previous === occupied;
 }
 
 function transitionSourceLabel(

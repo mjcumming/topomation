@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.26] - 2026-06-22
+
+### Changed
+
+- **Ambient configuration UI**: hide the Ambient tab `Discard` / `Update`
+  controls while there are no unsaved changes, keeping the save affordance
+  consistent with the rest of the automation UI.
+
+### Fixed
+
+- **Occupancy explainability**: distinguish same-state occupancy refreshes from
+  true occupied/vacant transitions so recent events no longer read like the
+  current state only started seconds ago.
+- **Structural summaries**: exclude managed shadow areas from direct-child,
+  descendant-room, and occupied-descendant counts.
+
 ## [0.3.25] - 2026-06-22
 
 ### Fixed

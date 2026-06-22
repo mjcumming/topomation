@@ -2891,6 +2891,83 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(managedShadowCheckbox).to.equal(null);
   });
 
+  it("structure summary excludes managed shadow child areas", async () => {
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>) => {
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        return {} as T;
+      },
+      connection: {},
+      states: {},
+      areas: {},
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "floor_main";
+    location.name = "Main Floor";
+    location.parent_id = "building_main";
+    location.modules._meta = {
+      type: "floor",
+      shadow_area_id: "area_main_floor_shadow",
+    };
+
+    const allLocations: Location[] = [
+      location,
+      {
+        ...structuredClone(baseLocation),
+        id: "area_kitchen",
+        name: "Kitchen",
+        parent_id: "floor_main",
+        modules: { _meta: { type: "area" } },
+      },
+      {
+        ...structuredClone(baseLocation),
+        id: "area_office",
+        name: "Office",
+        parent_id: "floor_main",
+        modules: { _meta: { type: "area" } },
+      },
+      {
+        ...structuredClone(baseLocation),
+        id: "area_main_floor_shadow",
+        name: "Main Floor",
+        parent_id: "floor_main",
+        modules: {
+          _meta: {
+            type: "area",
+            role: "managed_shadow",
+            shadow_for_location_id: "floor_main",
+          },
+        },
+      },
+    ];
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector
+        .hass=${hass}
+        .location=${location}
+        .allLocations=${allLocations}
+        .occupancyStates=${{
+          area_kitchen: true,
+          area_office: false,
+          area_main_floor_shadow: true,
+        }}
+      ></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    const summaryValues = Array.from(
+      element.shadowRoot!.querySelectorAll(
+        '[data-testid="structure-summary-panel"] .occupancy-summary-value'
+      )
+    ).map((value) => value.textContent?.trim());
+
+    expect(summaryValues).to.deep.equal(["2", "2", "1"]);
+  });
+
   it("shows occupancy groups for direct child areas on a building host only", async () => {
     const hass: HomeAssistant = {
       callWS: async <T>(request: Record<string, any>) => {
@@ -6076,9 +6153,11 @@ describe("HtLocationInspector WIAB configuration", () => {
       element.shadowRoot?.querySelector('[data-testid="ambient-sticky-draft-bar"]')
     ).to.equal(null);
     expect(
-      (element.shadowRoot?.querySelector('[data-testid="ambient-section-save-button"]') as HTMLButtonElement | null)
-        ?.disabled
-    ).to.equal(true);
+      element.shadowRoot?.querySelector('[data-testid="ambient-section-save-state"]')
+    ).to.equal(null);
+    expect(
+      element.shadowRoot?.querySelector('[data-testid="ambient-section-save-button"]')
+    ).to.equal(null);
 
     sensorSelect!.value = "sensor.living_room_ambient_lux";
     sensorSelect!.dispatchEvent(new Event("change", { bubbles: true, composed: true }));

@@ -81,6 +81,50 @@ Run the rows that match the touched workflow.
 
 ## 6. Release Records
 
+### 2026-06-22 - v0.3.26 ambient clean controls, structural summaries, and occupancy explainability gate
+
+1. Commit under test: release-candidate worktree for Topomation `0.3.26`.
+2. Frontend bundle rebuilt from that commit: yes; `npm run build` republished
+   `custom_components/topomation/frontend/topomation-panel.js`.
+3. Touched workflow list:
+   - Ambient tab clean-state controls: hide section-level `Discard` / `Update`
+     controls while there are no unsaved Ambient changes.
+   - Structural property summaries: exclude managed shadow areas from direct
+     child, descendant room, and occupied descendant counts.
+   - Occupancy explainability: distinguish same-state occupancy refreshes from
+     true occupied/vacant transitions, and keep live same-state updates from
+     resetting the displayed occupancy duration.
+   - Release metadata/version synchronization for Topomation `0.3.26`.
+4. Commands run:
+   - `python scripts/verify-version-sync.py`
+   - `cd custom_components/topomation/frontend && npm test -- occupancy-reason.test.ts topomation-panel.test.ts`
+   - `cd custom_components/topomation/frontend && npm test -- ht-location-inspector.test.ts`
+   - `cd custom_components/topomation/frontend && npm run build`
+   - `make test-release-live`
+5. Outcome:
+   - Release metadata/version sync: **PASS** (`Version sync ok: 0.3.26`;
+     2026-06-22).
+   - Focused occupancy/panel frontend coverage: **PASS**
+     (`occupancy-reason.test.ts` + `topomation-panel.test.ts`, 56 passed;
+     2026-06-22).
+   - Inspector coverage for Ambient controls, structural summaries, and recent
+     event list: **PASS** (`ht-location-inspector.test.ts`, 98 passed;
+     2026-06-22).
+   - Frontend bundle rebuild: **PASS** (`npm run build` republished
+     `topomation-panel.js`; 2026-06-22).
+   - Full release gate: **PASS** (`make test-release-live`; version sync,
+     Ruff, Mypy, backend pytest `371 passed, 22 skipped`, Vitest `275 passed`,
+     Web Test Runner `212 passed`, Playwright mock/production workflows
+     `34 passed`, live HA managed-action contract `2 passed`, live HA browser
+     workflows `6 passed`; 2026-06-22).
+   - Ambient clean-state controls: **PASS**
+   - Structural summary managed-shadow exclusion: **PASS**
+   - Occupancy explainability same-state refresh wording and duration anchoring:
+     **PASS**
+   - Frontend bundle parity: **PASS**
+   - Live HA managed-action contract: **PASS**
+   - Live HA browser workflows: **PASS**
+
 ### 2026-06-20 - v0.3.22 ambient lux sensor persistence gate
 
 1. Commit under test: release-candidate worktree for Topomation `0.3.22`.

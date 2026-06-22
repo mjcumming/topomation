@@ -1792,6 +1792,32 @@ describe('TopomationPanel integration (fake hass)', () => {
     ]);
   });
 
+  it("keeps occupied duration anchored when live events refresh the same state", async () => {
+    const element = document.createElement("topomation-panel") as any;
+    const detailed = occupancyProjection("kitchen", true, {
+      previous_occupied: false,
+      changed_at: "2026-03-18T04:00:00+00:00",
+      reason: "event:trigger",
+    });
+
+    element._applyOccupancyRuntimeStates([detailed], true);
+    element._applyOccupancyRuntimeStates([
+      {
+        location_id: "kitchen",
+        occupied: true,
+        previous_occupied: true,
+        reason: "event:child",
+        changed_at: "2026-03-18T04:05:00+00:00",
+      },
+    ]);
+
+    const stateLike = element._occupancyRuntimeStateByLocation.kitchen;
+    expect(stateLike.state).to.equal("on");
+    expect(stateLike.last_changed).to.equal("2026-03-18T04:00:00+00:00");
+    expect(stateLike.last_updated).to.equal("2026-03-18T04:05:00+00:00");
+    expect(stateLike.attributes.reason).to.equal("event:child");
+  });
+
   it("does not resubscribe live event handlers on same-connection hass churn", async () => {
     const subscriptionCounts = new Map<string, number>();
     const eventCallbacks = new Map<string, (event: any) => void>();
