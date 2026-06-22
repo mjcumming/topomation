@@ -1,18 +1,18 @@
-# Reddit Discussion Draft
+# Reddit Post Draft
 
-Post to `r/homeassistant` as a discussion, not as a pure launch announcement.
+Post to `r/homeassistant` as an image post with the screenshots attached in order. Put the repo link in the post body or first comment.
 
-## Title options
+## Title
 
-- How are you handling occupancy when rooms do not map cleanly to HA areas?
-- Occupancy automations for open-plan rooms, bathrooms, pantries, and whole floors?
-- People with messy occupancy setups: how are you modeling your house?
+TopoMation: model your whole home, then automate occupancy from that
 
 ## Draft
 
-I am curious how other people are handling occupancy once the setup gets past the simple "motion sensor turns on one room light" stage.
+I built TopoMation because my Home Assistant occupancy automations stopped fitting the simple "one room, one motion sensor, one light" model.
 
-The cases that pushed my own setup into awkward territory were things like:
+TopoMation is a custom Home Assistant integration where you model the home as a hierarchy: property, buildings, grounds, floors, areas, and subareas. Each level can have its own occupancy entity, and the integration can generate normal Home Assistant automations from that model.
+
+The cases that pushed me toward this were things like:
 
 - bathrooms without dedicated motion sensors, where the light switch is still a useful occupancy signal
 - pantries/closets that need very short hold times
@@ -21,9 +21,14 @@ The cases that pushed my own setup into awkward territory were things like:
 - devices that belong to a floor, building, driveway, yard, or whole property instead of one room
 - wanting simple entities like "anyone upstairs", "anyone outside", or "anyone on the property"
 
-I ended up building a custom integration called TopoMation around that model. You arrange the home as a hierarchy, assign occupancy sources at each location, and it can generate normal Home Assistant automations for common lighting/fan/media/HVAC fan/vacuum cases. The generated automations are still visible and traceable in HA.
+The screenshots show:
 
-It is still beta, and I am mainly looking for feedback from people with occupancy-heavy setups or weird real-house edge cases.
+1. The TopoMation hierarchy/tree.
+2. A Basement Hallway lighting rule: room becomes occupied, only if it is dark, turn on the hallway light.
+3. Ambient config: inherited lux source and dark/bright thresholds.
+4. Generated Home Assistant automation: normal trigger, condition, and action.
+
+It is still beta, and I am looking for feedback from people with occupancy-heavy setups or weird real-house edge cases.
 
 Repo:
 
@@ -35,3 +40,11 @@ https://github.com/mjcumming/topomation/blob/main/docs/examples.md
 
 If you have solved this another way, I would love to hear how you are modeling it. If this looks useful, stars are appreciated too because discovery is rough for small custom integrations.
 
+## Attachments
+
+Attach these images in order:
+
+1. `project/promotion/assets/topomation-tree.png`
+2. `project/promotion/assets/ha-automation-details-basement-hallway-light-rule.png`
+3. `project/promotion/assets/ha-automation-details-basement-hallway-ambient.png`
+4. `project/promotion/assets/ha-automation-details-basement-hallway.png`

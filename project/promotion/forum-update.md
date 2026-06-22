@@ -8,7 +8,16 @@ https://community.home-assistant.io/t/topomation-beta-custom-integration-for-occ
 
 Quick update on TopoMation.
 
-I tightened up the README, added a set of real-house examples, and added Home Assistant/HACS validation to CI. The goal is still the same: help with occupancy automation setups that have outgrown one-room-at-a-time logic.
+I tightened up the README, added a set of real-house examples, added repository topics for discovery, and added Home Assistant/HACS validation to CI. The goal is still the same: help with occupancy automation setups that have outgrown one-room-at-a-time logic.
+
+The main idea is still the hierarchy: model the home as property, buildings, grounds, floors, areas, and subareas, then let occupancy roll up through that model.
+
+Here is one small example flow from my own setup:
+
+1. The TopoMation hierarchy/tree.
+2. A Basement Hallway lighting rule in TopoMation: when the room becomes occupied, only if it is dark, turn on the Basement Hallway light.
+3. The Ambient tab showing where the inherited lux source and dark/bright thresholds come from.
+4. The generated Home Assistant automation. It is a normal HA automation with a trigger, condition, and action, so it can be opened, inspected, disabled, and traced like anything else in HA.
 
 The kinds of setups I am especially looking for beta feedback on:
 
@@ -29,3 +38,11 @@ If you try it, please start with one boring room, one occupancy source, one ligh
 
 And if TopoMation looks useful, a GitHub star is genuinely appreciated. It helps other Home Assistant users discover the project.
 
+## Attachments
+
+Attach these images in order:
+
+1. `project/promotion/assets/topomation-tree.png`
+2. `project/promotion/assets/ha-automation-details-basement-hallway-light-rule.png`
+3. `project/promotion/assets/ha-automation-details-basement-hallway-ambient.png`
+4. `project/promotion/assets/ha-automation-details-basement-hallway.png`
