@@ -81,6 +81,47 @@ Run the rows that match the touched workflow.
 
 ## 6. Release Records
 
+### 2026-06-23 - v0.3.27 occupancy status explainability gate
+
+1. Commit under test: release-candidate worktree for Topomation `0.3.27`.
+2. Frontend bundle rebuilt from that commit: yes; `npm run build` republished
+   `custom_components/topomation/frontend/topomation-panel.js`.
+3. Touched workflow list:
+   - Occupancy header status details: rewrite the expandable explanation around
+     `Held by`, `Occupied until`, `Last event`, and `Sensor note` sections.
+   - Occupied hold-timer summaries: show the expected vacancy timestamp when a
+     timer is available.
+   - Vacant with still-on configured source: explain that a physical sensor can
+     be on while not holding occupancy after a manual/explicit vacate, and that
+     a fresh off-to-on transition or another source trigger will reoccupy.
+   - Release metadata/version synchronization for Topomation `0.3.27`.
+4. Commands run:
+   - `python scripts/verify-version-sync.py`
+   - `cd custom_components/topomation/frontend && npm test -- --files occupancy-reason.test.ts ht-location-inspector.test.ts topomation-panel.test.ts`
+   - `cd custom_components/topomation/frontend && npm run build`
+   - `make test-release-live`
+5. Outcome:
+   - Release metadata/version sync: **PASS** (`Version sync ok: 0.3.27`;
+     2026-06-23).
+   - Focused occupancy status frontend coverage: **PASS**
+     (`occupancy-reason.test.ts` + `ht-location-inspector.test.ts` +
+     `topomation-panel.test.ts`, 155 passed; 2026-06-23).
+   - Frontend bundle rebuild: **PASS** (`npm run build` republished
+     `topomation-panel.js`; 2026-06-23).
+   - Full local gate: **PASS** (`./scripts/test-comprehensive.sh`; version
+     sync, Ruff, Mypy, backend pytest `371 passed, 22 skipped`, Vitest
+     `276 passed`, Web Test Runner `213 passed`, Playwright mock/production
+     workflows `34 passed`; 2026-06-23).
+   - Full release gate: **PASS** (`make test-release-live`; repeated local
+     comprehensive matrix passed, live HA managed-action contract `2 passed`,
+     live HA browser workflows `6 passed`; 2026-06-23).
+   - Occupancy header status details: **PASS**
+   - Occupied hold-timer summaries: **PASS**
+   - Vacant with still-on configured source explanation: **PASS**
+   - Frontend bundle parity: **PASS**
+   - Live HA managed-action contract: **PASS**
+   - Live HA browser workflows: **PASS**
+
 ### 2026-06-22 - v0.3.26 ambient clean controls, structural summaries, and occupancy explainability gate
 
 1. Commit under test: release-candidate worktree for Topomation `0.3.26`.

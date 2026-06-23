@@ -224,11 +224,12 @@ describe("buildOccupancyReasonLine", () => {
     });
 
     expect(explanation.summary).to.equal("Occupied because Kitchen Motion in Kitchen is active.");
-    expect(explanation.detailSections[0].title).to.equal("Relationship");
-    expect(explanation.detailSections[0].items?.[0]).to.equal(
+    expect(explanation.detailSections[0].title).to.equal("Held by");
+    expect(explanation.detailSections[0].items).to.include("Kitchen Motion in Kitchen");
+    expect(explanation.detailSections[0].items).to.include(
       "Front Entry is occupied because Kitchen is in the same occupancy group."
     );
-    expect(explanation.details.join(" ")).to.include("Active holder: Kitchen Motion in Kitchen");
+    expect(explanation.details.join(" ")).to.include("Held by: Kitchen Motion in Kitchen");
     expect(explanation.details.join(" ")).to.include(
       "Recent event: Kitchen Motion in Kitchen reported activity"
     );
@@ -260,7 +261,7 @@ describe("buildOccupancyReasonLine", () => {
       nowMs: NOW,
     });
 
-    expect(explanation.detailSections.find((section) => section.title === "Recent event")?.note).to.equal(
+    expect(explanation.detailSections.find((section) => section.title === "Last event")?.note).to.equal(
       "Occupancy refreshed 36s ago."
     );
     expect(explanation.details.join(" ")).not.to.include("Became occupied 36s ago");
@@ -302,7 +303,7 @@ describe("buildOccupancyReasonLine", () => {
     expect(explanation.summary).to.equal(
       "Occupied because Kitchen is in the same occupancy group."
     );
-    expect(explanation.detailSections[0].title).to.equal("Relationship");
+    expect(explanation.detailSections[0].title).to.equal("Held by");
     expect(explanation.detailSections[0].items?.[0]).to.equal(
       "Family Room is occupied because Kitchen is in the same occupancy group."
     );
@@ -338,7 +339,9 @@ describe("buildOccupancyReasonLine", () => {
       nowMs: NOW,
     });
 
-    expect(explanation.summary).to.equal("Occupied because the occupancy group is occupied.");
+    expect(explanation.summary).to.equal(
+      "Occupied because an occupancy group member is holding this location."
+    );
     expect(explanation.reasonLine).to.include("occupancy group");
     expect(explanation.summary).not.to.include("Mnx5tasf");
     expect(explanation.summary).not.to.include(":Floor");
@@ -373,7 +376,9 @@ describe("buildOccupancyReasonLine", () => {
       nowMs: NOW,
     });
 
-    expect(explanation.summary).to.equal("Occupied because the occupancy group is occupied.");
+    expect(explanation.summary).to.equal(
+      "Occupied because an occupancy group member is holding this location."
+    );
     expect(explanation.summary).not.to.include("Morphyb6");
     expect(explanation.summary).not.to.include("Lahara");
     expect(explanation.summary).not.to.include(":Floor");
@@ -428,7 +433,9 @@ describe("buildOccupancyReasonLine", () => {
       nowMs: NOW,
     });
 
-    expect(explanation.summary).to.equal("Occupied because the occupancy group is occupied.");
+    expect(explanation.summary).to.equal(
+      "Occupied because an occupancy group member is holding this location."
+    );
     expect(explanation.summary).not.to.include("Mntrhne7");
     expect(explanation.summary).not.to.include("Cxmpt8");
     expect(explanation.summary).not.to.include(":Floor");
@@ -575,12 +582,14 @@ describe("buildOccupancyReasonLine", () => {
       nowMs: NOW,
     });
 
-    expect(explanation.summary).to.equal("Occupied because Kitchen Motion is active.");
-    expect(explanation.details.join(" ")).to.include("Active source: Kitchen Motion");
-    expect(explanation.details.join(" ")).to.include("hold timer expires in 4m");
-    expect(explanation.detailSections[0].title).to.equal("Active source");
+    expect(explanation.summary).to.equal(
+      "Occupied until Apr 23, 2026, 12:04 PM because Kitchen Motion is active."
+    );
+    expect(explanation.details.join(" ")).to.include("Held by: Kitchen Motion");
+    expect(explanation.details.join(" ")).to.include("Expected to become vacant at Apr 23, 2026, 12:04 PM, in 4m");
+    expect(explanation.detailSections[0].title).to.equal("Held by");
     expect(explanation.detailSections[0].items?.[0]).to.include("Kitchen Motion");
-    expect(explanation.detailSections[1].title).to.equal("Next change");
+    expect(explanation.detailSections[1].title).to.equal("Occupied until");
   });
 
   it("keeps crowded active source details structured without hiding rows", () => {
@@ -621,7 +630,7 @@ describe("buildOccupancyReasonLine", () => {
       nowMs: NOW,
     });
 
-    expect(explanation.detailSections[0].title).to.equal("Active sources");
+    expect(explanation.detailSections[0].title).to.equal("Held by");
     expect(explanation.detailSections[0].items).to.have.length(6);
     expect(explanation.detailSections[0].note).to.equal(undefined);
   });
@@ -645,5 +654,51 @@ describe("buildOccupancyReasonLine", () => {
 
     expect(explanation.summary).to.equal("Vacant because the hold timer expired.");
     expect(explanation.details.join(" ")).to.include("No active occupancy sources");
+  });
+
+  it("explains a vacant room with a still-on configured source", () => {
+    const location = makeLocation({
+      id: "office",
+      modules: {
+        _meta: { type: "area" },
+        occupancy: {
+          enabled: true,
+          occupancy_sources: [
+            {
+              entity_id: "binary_sensor.office_presence",
+              mode: "specific_states",
+            },
+          ],
+        },
+      },
+    });
+    const hass = makeHass({
+      states: {
+        "binary_sensor.office_presence": {
+          entity_id: "binary_sensor.office_presence",
+          state: "on",
+          attributes: { friendly_name: "Office Presence" },
+        },
+      } as any,
+    });
+
+    const explanation = buildOccupancyExplanation({
+      location,
+      locations: [location],
+      hass,
+      occupancyStates: { office: false },
+      occupancyTransitions: {},
+      occupancyRuntimeStates: {
+        office: runtimeState("office", "off", tMinus(25), {
+          reason: "event:vacate",
+        }),
+      },
+      status: "vacant",
+      nowMs: NOW,
+    });
+
+    const sensorNote = explanation.detailSections.find((section) => section.title === "Sensor note");
+    expect(sensorNote?.note).to.include("Office Presence is currently on");
+    expect(sensorNote?.note).to.include("after it turns off and back on");
   });
 });

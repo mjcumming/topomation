@@ -1876,8 +1876,8 @@ describe("HtLocationInspector occupancy source composer", () => {
       ".header-reason-panel"
     ) as HTMLElement | null;
     expect(panel).to.exist;
-    expect(panel!.textContent || "").to.include("Why occupied?");
-    expect(panel!.textContent || "").to.include("Active sources");
+    expect(panel!.textContent || "").to.include("Occupied status");
+    expect(panel!.textContent || "").to.include("Held by");
     const activeItems = Array.from(
       element.shadowRoot!.querySelectorAll(".header-reason-item")
     ) as HTMLElement[];

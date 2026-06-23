@@ -101,40 +101,45 @@ export function buildOccupancyExplanation(ctx: OccupancyReasonContext): Occupanc
   const reasonLine = timeLabel ? `${line} (${timeLabel})` : line;
 
   const relationshipItems = relationshipDetailItems(ctx, kernelExplanation, currentHolders);
-  if (relationshipItems.length) {
-    details.push(`Relationship: ${relationshipItems.join(" ")}`);
-    detailSections.push({
-      title: "Relationship",
-      items: relationshipItems,
-    });
-  }
-
-  if (activeRows.length) {
-    const shown = activeRows.map((row) => row.detailLabel);
-    const holderKind = activeContributors.length ? "source" : "holder";
-    const holderKindLabel = activeRows.length === 1 ? holderKind : `${holderKind}s`;
-    details.push(
-      `Active ${holderKindLabel}: ${shown.join(", ")}.`
-    );
-    detailSections.push({
-      title: `Active ${holderKindLabel}`,
-      items: shown,
-    });
+  if (ctx.status === "occupied") {
+    const heldByItems = [
+      ...activeRows.map((row) => row.detailLabel),
+      ...relationshipItems,
+    ];
+    if (heldByItems.length) {
+      details.push(`Held by: ${heldByItems.map(stripTrailingPeriod).join(", ")}.`);
+      detailSections.push({
+        title: "Held by",
+        items: heldByItems,
+      });
+    }
   } else if (ctx.status === "vacant") {
     const noSources = "No active occupancy sources are currently holding this location.";
     details.push(noSources);
     detailSections.push({
-      title: "Current evidence",
+      title: "Why vacant",
       note: noSources,
     });
+    const stillOnSources = configuredSourcesCurrentlyOn(ctx, currentHolders);
+    if (stillOnSources.length) {
+      const sensorNote =
+        stillOnSources.length === 1
+          ? `${stillOnSources[0]} is currently on, but it is not holding occupancy. TopoMation will mark occupied again after it turns off and back on, or another source triggers.`
+          : `${stillOnSources.join(", ")} are currently on, but they are not holding occupancy. TopoMation will mark occupied again after one turns off and back on, or another source triggers.`;
+      details.push(`Sensor note: ${sensorNote}`);
+      detailSections.push({
+        title: "Sensor note",
+        note: sensorNote,
+      });
+    }
   }
 
   const nextChange = nextChangeDetail(attrs, currentHolders, ctx);
   if (nextChange) {
-    details.push(nextChange);
+    details.push(nextChange.note);
     detailSections.push({
-      title: "Next change",
-      note: nextChange,
+      title: nextChange.title,
+      note: nextChange.note,
     });
   }
 
@@ -142,7 +147,7 @@ export function buildOccupancyExplanation(ctx: OccupancyReasonContext): Occupanc
   if (latestChange) {
     details.push(latestChange);
     detailSections.push({
-      title: "Recent event",
+      title: "Last event",
       note: stripDetailPrefix(latestChange, "Recent event"),
     });
   }
@@ -175,7 +180,7 @@ export function buildOccupancyExplanation(ctx: OccupancyReasonContext): Occupanc
     statusLabel: header,
     summary:
       ctx.status === "occupied"
-        ? occupiedSummary(detail, activeRows, relationshipRows)
+        ? occupiedSummary(detail, activeRows, relationshipRows, nextChange)
         : vacantSummary(detail),
     reasonLine,
     details,
@@ -193,6 +198,12 @@ type ContributorRow = {
   ts: number;
   expiresMs?: number;
   indefinite: boolean;
+};
+
+type OccupancyNextChange = {
+  title: string;
+  note: string;
+  untilLabel?: string;
 };
 
 function activeContributorRows(
@@ -269,6 +280,31 @@ function explanationHolderRows(
   const heldBy = Array.isArray(explanation?.held_by) ? explanation?.held_by : [];
   if (!heldBy.length) return [];
   return activeContributorRows({ contributions: heldBy }, ctx);
+}
+
+function configuredSourcesCurrentlyOn(
+  ctx: OccupancyReasonContext,
+  currentHolders: ContributorRow[],
+): string[] {
+  const holdingSourceIds = new Set(currentHolders.map((row) => row.sourceId));
+  const labels: string[] = [];
+  const seen = new Set<string>();
+  for (const source of getOccupancySources(ctx.location)) {
+    const entityId = typeof source.entity_id === "string" ? source.entity_id.trim() : "";
+    if (!entityId || holdingSourceIds.has(entityId)) continue;
+    const state = ctx.hass?.states?.[entityId];
+    if (!state || !isCurrentlyActiveSourceState(state.state)) continue;
+    const label = sourceLabelForSourceId(entityId, getOccupancySources(ctx.location), ctx);
+    if (seen.has(label)) continue;
+    seen.add(label);
+    labels.push(label);
+  }
+  return labels;
+}
+
+function isCurrentlyActiveSourceState(value: unknown): boolean {
+  const state = String(value || "").toLowerCase();
+  return ["on", "active", "occupied", "detected", "home", "playing"].includes(state);
 }
 
 function contributionSourceContext(
@@ -607,24 +643,50 @@ function occupiedSummary(
   detail: string | undefined,
   contributors: ContributorRow[],
   relationships: ContributorRow[] = [],
+  nextChange: OccupancyNextChange | undefined,
 ): string {
+  const reason = occupiedReasonPhrase(detail, contributors, relationships);
+  if (nextChange?.untilLabel) {
+    return reason
+      ? `Occupied until ${nextChange.untilLabel} because ${reason}.`
+      : `Occupied until ${nextChange.untilLabel}.`;
+  }
+  if (reason) return `Occupied because ${reason}.`;
+  return "Occupied. No active holder is exposed by the runtime yet.";
+}
+
+function occupiedReasonPhrase(
+  detail: string | undefined,
+  contributors: ContributorRow[],
+  relationships: ContributorRow[] = [],
+): string | undefined {
   if (contributors.length) {
     const first = contributors[0].sentence;
-    if (contributors.length === 1) return `Occupied because ${first}.`;
-    return `Occupied because ${first} and ${contributors.length - 1} other source${contributors.length === 2 ? "" : "s"} are active.`;
+    if (contributors.length === 1) return first;
+    return `${first} and ${contributors.length - 1} other source${contributors.length === 2 ? "" : "s"} are active`;
   }
   if (relationships.length) {
     const uniqueSentences = [...new Set(relationships.map((row) => row.sentence))];
     const first = uniqueSentences[0];
-    if (uniqueSentences.length === 1) return `Occupied because ${first}.`;
+    if (uniqueSentences.length === 1) return clearerRelationshipReason(first);
     if (uniqueSentences.includes("the occupancy group is occupied")) {
-      return "Occupied because the occupancy group is occupied.";
+      return "an occupancy group member is holding this location";
     }
-    return `Occupied because ${first} and ${uniqueSentences.length - 1} other relationship${uniqueSentences.length === 2 ? "" : "s"} are active.`;
+    return `${clearerRelationshipReason(first)} and ${uniqueSentences.length - 1} other relationship${uniqueSentences.length === 2 ? "" : "s"} are active`;
   }
-  if (!detail) return "Occupied. No active holder is exposed by the runtime yet.";
-  if (detail.endsWith(".")) return `Occupied because ${detail}`;
-  return `Occupied because ${detail}.`;
+  if (!detail) return undefined;
+  return stripTrailingPeriod(clearerRelationshipReason(detail));
+}
+
+function clearerRelationshipReason(reason: string): string {
+  if (reason === "the occupancy group is occupied") {
+    return "an occupancy group member is holding this location";
+  }
+  return reason;
+}
+
+function stripTrailingPeriod(value: string): string {
+  return value.endsWith(".") ? value.slice(0, -1) : value;
 }
 
 function vacantSummary(detail: string | undefined): string {
@@ -673,16 +735,20 @@ function nextChangeDetail(
   attrs: Record<string, any>,
   contributors: ContributorRow[],
   ctx: OccupancyReasonContext,
-): string | undefined {
+): OccupancyNextChange | undefined {
   if (ctx.status !== "occupied") return undefined;
   const now = ctx.nowMs ?? Date.now();
   const explicitVacantAt =
     parseDateMs(attrs.vacant_at) ?? parseDateMs(attrs.effective_timeout_at);
   if (explicitVacantAt && explicitVacantAt > now) {
     const remaining = formatRemaining(explicitVacantAt, now);
-    return remaining
-      ? `Expected to become vacant when the hold timer expires in ${remaining}.`
-      : "Expected to become vacant when the hold timer expires.";
+    const untilLabel = formatAbsoluteDateTime(explicitVacantAt);
+    const suffix = remaining ? `, in ${remaining}` : "";
+    return {
+      title: "Occupied until",
+      untilLabel,
+      note: `Expected to become vacant at ${untilLabel}${suffix}, unless another source refreshes the hold.`,
+    };
   }
 
   const latestContributionExpiry = contributors
@@ -691,13 +757,20 @@ function nextChangeDetail(
     .sort((a, b) => b - a)[0];
   if (latestContributionExpiry) {
     const remaining = formatRemaining(latestContributionExpiry, now);
-    return remaining
-      ? `Expected to become vacant after active source holds expire in ${remaining}.`
-      : "Expected to become vacant after active source holds expire.";
+    const untilLabel = formatAbsoluteDateTime(latestContributionExpiry);
+    const suffix = remaining ? `, in ${remaining}` : "";
+    return {
+      title: "Occupied until",
+      untilLabel,
+      note: `Expected to become vacant at ${untilLabel}${suffix}, after active source holds expire.`,
+    };
   }
 
   if (contributors.some((row) => row.indefinite)) {
-    return "Stays occupied until the active source clears.";
+    return {
+      title: "Occupied while",
+      note: "Stays occupied until the active source clears.",
+    };
   }
   return undefined;
 }
@@ -883,4 +956,14 @@ function formatRemaining(targetMs: number, nowMs: number): string | undefined {
   if (minutes > 0 && parts.length < 2) parts.push(`${minutes}m`);
   if (!parts.length) parts.push(`${seconds}s`);
   return parts.slice(0, 2).join(" ");
+}
+
+function formatAbsoluteDateTime(ms: number): string {
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(ms));
 }

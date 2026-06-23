@@ -4071,8 +4071,8 @@ export class HtLocationInspector extends LitElement {
             note: detail,
           }));
     const panelTitle = explanation.statusLabel
-      ? `Why ${explanation.statusLabel.toLowerCase()}?`
-      : "Why this state?";
+      ? `${explanation.statusLabel} status`
+      : "Occupancy status";
     return html`
       <details class="header-occupancy-reason" data-testid="header-occupancy-reason">
         <summary

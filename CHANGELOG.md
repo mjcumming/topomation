@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.27] - 2026-06-23
+
+### Changed
+
+- **Occupancy status explainability**: rewrite the header details panel around
+  clearer status sections: `Held by`, `Occupied until`, `Last event`, and
+  `Sensor note`. Occupied summaries now lead with the expected vacancy time
+  when a hold timer is known.
+
+### Fixed
+
+- **Vacant with active sensor clarity**: when a location is vacant but a
+  configured occupancy source is still physically `on`, the details panel now
+  explains that the source is not currently holding occupancy and that
+  Topomation is waiting for a fresh off-to-on transition or another trigger.
+
 ## [0.3.26] - 2026-06-22
 
 ### Changed
