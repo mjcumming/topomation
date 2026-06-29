@@ -585,7 +585,8 @@ export class HtLocationDialog extends LitElement {
             location_id: this.location.id,
             module_id: "_meta",
             config: {
-              type: this._config.type
+              type: this._config.type,
+              icon: this._config.icon
             }
           })
         );
@@ -597,7 +598,8 @@ export class HtLocationDialog extends LitElement {
             name: this._config.name,
             parent_id: this._submitParentId(),
             meta: {
-              type: this._config.type
+              type: this._config.type,
+              icon: this._config.icon
             }
           })
         );
@@ -610,7 +612,8 @@ export class HtLocationDialog extends LitElement {
           type: this._config.type,
           parent_id: this._config.parent_id,
           meta: {
-            type: this._config.type
+            type: this._config.type,
+            icon: this._config.icon
           }
         },
         bubbles: true,

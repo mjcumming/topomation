@@ -257,13 +257,40 @@ test("lighting media and appliances tabs each save managed rules", async ({ page
   await selectKitchen(page);
 
   const inspector = page.locator("ht-location-inspector");
+  const actionRows = inspector.locator(".dusk-block-row[data-testid^='action-rule-']");
+  const waitForActionRulesIdle = async () => {
+    await expect
+      .poll(async () =>
+        page.evaluate(() => {
+          const panel = document.querySelector("topomation-panel") as any;
+          const locationInspector = panel?.shadowRoot?.querySelector("ht-location-inspector") as any;
+          return Boolean(locationInspector && !locationInspector._loadingActionRules);
+        })
+      )
+      .toBe(true);
+  };
+  const addActionRule = async () => {
+    await waitForActionRulesIdle();
+    const previousCount = await actionRows.count();
+    await inspector.getByTestId("action-rule-add").click({ force: true });
+    await expect.poll(async () => await actionRows.count()).toBeGreaterThan(previousCount);
+    const rule = actionRows.nth(previousCount);
+    await expect(rule).toBeVisible();
+    const testId = await rule.getAttribute("data-testid");
+    if (!testId) {
+      throw new Error("New action rule row did not expose a data-testid");
+    }
+    return {
+      row: inspector.getByTestId(testId),
+      save: inspector.getByTestId(`${testId}-save`),
+    };
+  };
 
   await openLightingTab(page);
-  await inspector.getByRole("button", { name: "Add rule" }).click();
-  const lightingRule = inspector.locator(".dusk-block-row[data-testid^='action-rule-']").last();
-  await expect(lightingRule).toBeVisible();
+  await waitForActionRulesIdle();
+  const { row: lightingRule, save: lightingSave } = await addActionRule();
   await lightingRule.getByRole("button", { name: "Room becomes occupied" }).click();
-  await lightingRule.getByRole("button", { name: "Save rule" }).click();
+  await lightingSave.click({ force: true });
   await expect
     .poll(async () => {
       const rules = await kitchenManagedRules(page);
@@ -276,14 +303,11 @@ test("lighting media and appliances tabs each save managed rules", async ({ page
     .toBe(true);
 
   await openActionsTab(page);
-  await inspector.getByRole("button", { name: "Add rule" }).click();
-  const mediaRule = inspector.locator(".dusk-block-row[data-testid^='action-rule-']").last();
-  await expect(mediaRule).toBeVisible();
-  await mediaRule
-    .locator('input[type="radio"][name^="media-target-"][value="media_player.kitchen_speaker"]')
-    .check();
-  await mediaRule.locator('input[type="radio"][name^="media-cmd-"][value="media_pause"]').check();
-  await mediaRule.getByRole("button", { name: "Save rule" }).click();
+  await waitForActionRulesIdle();
+  const { row: mediaRule, save: mediaSave } = await addActionRule();
+  await mediaRule.getByText("Kitchen Speaker", { exact: true }).click({ force: true });
+  await mediaRule.getByText("Pause", { exact: true }).click({ force: true });
+  await mediaSave.click({ force: true });
   await expect
     .poll(async () => {
       const rules = await kitchenManagedRules(page);
@@ -300,14 +324,13 @@ test("lighting media and appliances tabs each save managed rules", async ({ page
     .toBe(true);
 
   await inspector.getByRole("button", { name: "Appliances" }).click();
-  await inspector.getByRole("button", { name: "Add rule" }).click();
-  const appliancesRule = inspector.locator(".dusk-block-row[data-testid^='action-rule-']").last();
-  await expect(appliancesRule).toBeVisible();
+  await waitForActionRulesIdle();
+  const { row: appliancesRule, save: appliancesSave } = await addActionRule();
   await appliancesRule
     .locator('input[type="radio"][name^="appl-equip-target-"][value="fan.kitchen_bathroom_exhaust"]')
     .check();
   await appliancesRule.locator('input[type="radio"][name^="appl-equip-cmd-"][value="turn_on"]').check();
-  await appliancesRule.getByRole("button", { name: "Save rule" }).click();
+  await appliancesSave.click({ force: true });
   await expect
     .poll(async () => {
       const rules = await kitchenManagedRules(page);

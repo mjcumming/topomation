@@ -2142,36 +2142,40 @@ st(Ci, {
 $.mount(new ca());
 $.mount(Ci, Di);
 function la(s) {
-  const t = s.toLowerCase(), e = {
-    kitchen: ["kitchen", "kitchenette"],
-    bedroom: ["bedroom", "bed", "master bedroom", "guest room", "kids room"],
-    bathroom: ["bathroom", "bath", "half bath", "powder room"],
-    living: ["living room", "family room", "den"],
-    dining: ["dining room", "dining"],
-    office: ["office", "study", "home office"],
-    garage: ["garage", "carport"],
-    patio: ["patio", "deck", "porch"],
-    utility: ["laundry", "utility room"],
-    storage: ["closet", "pantry", "attic"],
-    gym: ["gym", "exercise room"],
-    theater: ["media room", "theater"]
-  }, i = {
-    kitchen: "mdi:silverware-fork-knife",
-    bedroom: "mdi:bed",
-    bathroom: "mdi:shower",
-    living: "mdi:sofa",
-    dining: "mdi:table-furniture",
-    office: "mdi:desk",
-    garage: "mdi:garage",
-    patio: "mdi:flower",
-    utility: "mdi:washing-machine",
-    storage: "mdi:package-variant",
-    gym: "mdi:dumbbell",
-    theater: "mdi:theater"
-  };
-  for (const [n, o] of Object.entries(e))
-    if (o.some((a) => t.includes(a)))
-      return i[n] ?? null;
+  const t = s.toLowerCase(), e = [
+    ["mdi:toilet", ["toilet", "powder room", "half bath", "wc"]],
+    ["mdi:shower", ["bathroom", "bath room", "bath", "ensuite", "en suite"]],
+    ["mdi:bed-king", ["primary bedroom", "master bedroom", "owner suite"]],
+    ["mdi:bed", ["bedroom", "guest room", "kids room", "kid room", "nursery"]],
+    ["mdi:silverware-fork-knife", ["kitchen", "kitchenette"]],
+    ["mdi:sofa", ["living room", "family room", "great room", "den", "lounge"]],
+    ["mdi:table-chair", ["dining room", "dining"]],
+    ["mdi:desk", ["office", "study", "library"]],
+    ["mdi:washing-machine", ["laundry", "utility room", "mudroom", "mud room"]],
+    ["mdi:garage", ["garage", "carport"]],
+    ["mdi:stairs", ["stairs", "stair", "stairway", "stairwell"]],
+    ["mdi:door-open", ["entry", "entrance", "foyer", "vestibule", "hallway", "hall"]],
+    ["mdi:wardrobe", ["closet", "wardrobe"]],
+    ["mdi:food-apple-outline", ["pantry"]],
+    ["mdi:archive", ["storage", "store room"]],
+    ["mdi:home-floor-a", ["attic", "loft"]],
+    ["mdi:home-floor-b", ["basement", "cellar"]],
+    ["mdi:dumbbell", ["gym", "exercise", "fitness"]],
+    ["mdi:theater", ["media room", "theater", "cinema"]],
+    ["mdi:gamepad-variant", ["game room", "play room", "playroom"]],
+    ["mdi:pool", ["pool", "spa", "hot tub"]],
+    ["mdi:grill", ["patio", "deck", "porch", "terrace", "balcony", "lanai"]],
+    ["mdi:flower", ["garden", "yard", "courtyard"]],
+    ["mdi:greenhouse", ["greenhouse"]],
+    ["mdi:car", ["driveway", "parking"]],
+    ["mdi:tools", ["workshop", "shop"]],
+    ["mdi:server", ["server", "network", "rack"]],
+    ["mdi:music", ["music", "studio"]],
+    ["mdi:baby-carriage", ["baby", "nursery"]]
+  ];
+  for (const [i, n] of e)
+    if (n.some((o) => t.includes(o)))
+      return i;
   return null;
 }
 function da(s) {
@@ -13286,7 +13290,8 @@ const Le = class Le extends ft {
           location_id: this.location.id,
           module_id: "_meta",
           config: {
-            type: this._config.type
+            type: this._config.type,
+            icon: this._config.icon
           }
         })
       )) : await this.hass.callWS(
@@ -13295,7 +13300,8 @@ const Le = class Le extends ft {
           name: this._config.name,
           parent_id: this._submitParentId(),
           meta: {
-            type: this._config.type
+            type: this._config.type,
+            icon: this._config.icon
           }
         })
       ), this.dispatchEvent(new CustomEvent("saved", {
@@ -13304,7 +13310,8 @@ const Le = class Le extends ft {
           type: this._config.type,
           parent_id: this._config.parent_id,
           meta: {
-            type: this._config.type
+            type: this._config.type,
+            icon: this._config.icon
           }
         },
         bubbles: !0,

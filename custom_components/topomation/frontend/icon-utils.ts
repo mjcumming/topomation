@@ -3,39 +3,41 @@ import type { Location, LocationType } from "./types";
 export function inferCategoryIcon(name: string): string | null {
   const lowerName = name.toLowerCase();
 
-  const categoryKeywords: Record<string, string[]> = {
-    kitchen: ["kitchen", "kitchenette"],
-    bedroom: ["bedroom", "bed", "master bedroom", "guest room", "kids room"],
-    bathroom: ["bathroom", "bath", "half bath", "powder room"],
-    living: ["living room", "family room", "den"],
-    dining: ["dining room", "dining"],
-    office: ["office", "study", "home office"],
-    garage: ["garage", "carport"],
-    patio: ["patio", "deck", "porch"],
-    utility: ["laundry", "utility room"],
-    storage: ["closet", "pantry", "attic"],
-    gym: ["gym", "exercise room"],
-    theater: ["media room", "theater"],
-  };
+  const keywordIcons: Array<[string, string[]]> = [
+    ["mdi:toilet", ["toilet", "powder room", "half bath", "wc"]],
+    ["mdi:shower", ["bathroom", "bath room", "bath", "ensuite", "en suite"]],
+    ["mdi:bed-king", ["primary bedroom", "master bedroom", "owner suite"]],
+    ["mdi:bed", ["bedroom", "guest room", "kids room", "kid room", "nursery"]],
+    ["mdi:silverware-fork-knife", ["kitchen", "kitchenette"]],
+    ["mdi:sofa", ["living room", "family room", "great room", "den", "lounge"]],
+    ["mdi:table-chair", ["dining room", "dining"]],
+    ["mdi:desk", ["office", "study", "library"]],
+    ["mdi:washing-machine", ["laundry", "utility room", "mudroom", "mud room"]],
+    ["mdi:garage", ["garage", "carport"]],
+    ["mdi:stairs", ["stairs", "stair", "stairway", "stairwell"]],
+    ["mdi:door-open", ["entry", "entrance", "foyer", "vestibule", "hallway", "hall"]],
+    ["mdi:wardrobe", ["closet", "wardrobe"]],
+    ["mdi:food-apple-outline", ["pantry"]],
+    ["mdi:archive", ["storage", "store room"]],
+    ["mdi:home-floor-a", ["attic", "loft"]],
+    ["mdi:home-floor-b", ["basement", "cellar"]],
+    ["mdi:dumbbell", ["gym", "exercise", "fitness"]],
+    ["mdi:theater", ["media room", "theater", "cinema"]],
+    ["mdi:gamepad-variant", ["game room", "play room", "playroom"]],
+    ["mdi:pool", ["pool", "spa", "hot tub"]],
+    ["mdi:grill", ["patio", "deck", "porch", "terrace", "balcony", "lanai"]],
+    ["mdi:flower", ["garden", "yard", "courtyard"]],
+    ["mdi:greenhouse", ["greenhouse"]],
+    ["mdi:car", ["driveway", "parking"]],
+    ["mdi:tools", ["workshop", "shop"]],
+    ["mdi:server", ["server", "network", "rack"]],
+    ["mdi:music", ["music", "studio"]],
+    ["mdi:baby-carriage", ["baby", "nursery"]],
+  ];
 
-  const categoryIcons: Record<string, string> = {
-    kitchen: "mdi:silverware-fork-knife",
-    bedroom: "mdi:bed",
-    bathroom: "mdi:shower",
-    living: "mdi:sofa",
-    dining: "mdi:table-furniture",
-    office: "mdi:desk",
-    garage: "mdi:garage",
-    patio: "mdi:flower",
-    utility: "mdi:washing-machine",
-    storage: "mdi:package-variant",
-    gym: "mdi:dumbbell",
-    theater: "mdi:theater",
-  };
-
-  for (const [category, keywords] of Object.entries(categoryKeywords)) {
+  for (const [icon, keywords] of keywordIcons) {
     if (keywords.some((keyword) => lowerName.includes(keyword))) {
-      return categoryIcons[category] ?? null;
+      return icon;
     }
   }
 

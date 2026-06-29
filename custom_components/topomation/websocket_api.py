@@ -47,6 +47,11 @@ from .const import (
     WS_TYPE_SYNC_IMPORT,
     WS_TYPE_SYNC_STATUS,
 )
+from .icon_inference import (
+    infer_location_icon,
+    is_missing_or_default_icon,
+    normalize_ha_icon,
+)
 
 _LOGGER = logging.getLogger(__name__)
 _CONNECTION_ENTRY_HINTS: WeakKeyDictionary[object, str] = WeakKeyDictionary()
@@ -1551,6 +1556,7 @@ def handle_locations_create(
 
     area_registry: ar.AreaRegistry | None = None
     created_ha_area_id: str | None = None
+    requested_icon = normalize_ha_icon(meta.get("icon"))
 
     try:
         ha_area_id = msg.get("ha_area_id")
@@ -1569,9 +1575,22 @@ def handle_locations_create(
                     return
             else:
                 nearest_floor_id = _nearest_floor_id(loc_mgr, parent_id)
-                created_area = area_registry.async_create(name=name, floor_id=nearest_floor_id)
+                created_area = area_registry.async_create(
+                    name=name,
+                    floor_id=nearest_floor_id,
+                    icon=requested_icon or infer_location_icon(name, location_type),
+                )
                 ha_area_id = str(created_area.id)
                 created_ha_area_id = ha_area_id
+            if isinstance(ha_area_id, str) and ha_area_id:
+                area = area_registry.async_get_area(ha_area_id)
+                if area is not None and requested_icon:
+                    area_registry.async_update(area.id, icon=requested_icon)
+                elif area is not None and is_missing_or_default_icon(getattr(area, "icon", None)):
+                    area_registry.async_update(
+                        area.id,
+                        icon=infer_location_icon(name, location_type),
+                    )
             location_id = f"area_{ha_area_id}"
 
         existing = loc_mgr.get_location(location_id)
@@ -1606,6 +1625,9 @@ def handle_locations_create(
         }
         if location_type == "area" and ha_area_id:
             merged_meta["ha_area_id"] = ha_area_id
+            merged_meta.pop("icon", None)
+        elif is_missing_or_default_icon(merged_meta.get("icon")):
+            merged_meta["icon"] = infer_location_icon(name, location_type)
         loc_mgr.set_module_config(location_id, "_meta", merged_meta)
         _reconcile_managed_shadow_areas(kernel)
 
@@ -2068,6 +2090,27 @@ def handle_locations_set_module_config(
             if normalized_meta is None:
                 connection.send_error(msg["id"], "invalid_config", "Invalid _meta config")
                 return
+            requested_icon = normalize_ha_icon(config.get("icon"))
+            ha_area_id = _location_ha_area_id(location)
+            if ha_area_id:
+                area_registry = ar.async_get(hass)
+                area = area_registry.async_get_area(ha_area_id)
+                if area is not None and requested_icon:
+                    area_registry.async_update(area.id, icon=requested_icon)
+                elif area is not None and is_missing_or_default_icon(getattr(area, "icon", None)):
+                    area_registry.async_update(
+                        area.id,
+                        icon=infer_location_icon(
+                            getattr(location, "name", ""),
+                            normalized_meta.get("type"),
+                        ),
+                    )
+                normalized_meta.pop("icon", None)
+            elif is_missing_or_default_icon(normalized_meta.get("icon")):
+                normalized_meta["icon"] = infer_location_icon(
+                    getattr(location, "name", ""),
+                    normalized_meta.get("type"),
+                )
             config = normalized_meta
 
         # Set config in LocationManager

@@ -81,6 +81,45 @@ Run the rows that match the touched workflow.
 
 ## 6. Release Records
 
+### 2026-06-29 - v0.3.28 location icon inference gate
+
+1. Commit under test: release commit for Topomation `0.3.28`.
+2. Frontend bundle rebuilt from that commit: yes; `npm run build` published the
+   updated runtime bundle before release validation.
+3. Touched workflow list:
+   - Add/Edit Location icon selection payload persistence.
+   - HA area import/startup icon reconciliation for missing or generic default
+     location icons.
+   - Frontend location icon fallback inference.
+   - Managed-rule Playwright workflow stabilization around asynchronous action
+     rule loads.
+   - Release metadata/version synchronization for Topomation `0.3.28`.
+4. Commands run:
+   - `pytest tests/test_sync_manager.py tests/test_websocket_contract.py -q --no-cov`
+   - `./scripts/test-comprehensive.sh`
+   - `cd custom_components/topomation/frontend && npm run test`
+   - `cd custom_components/topomation/frontend && npx playwright test playwright/workflows.spec.ts -g "lighting media and appliances tabs each save managed rules"`
+   - `cd custom_components/topomation/frontend && npm run test:e2e`
+   - `python scripts/verify-version-sync.py`
+5. Outcome:
+   - Targeted backend contract coverage: **PASS** (`108 passed`; 2026-06-29).
+   - Local comprehensive gate on the rebased release commit: **PASS** end-to-end
+     after browser prerequisites were installed and the workflow test waited for
+     action-rule loads to settle (backend `372 passed, 22 skipped`, coverage
+     `79.09%`; Vitest `276 passed`; build and bundle publish succeeded; Web
+     Test Runner `213 passed`, coverage `72.8%`; Playwright `34 passed`;
+     2026-06-29).
+   - Targeted Playwright workflow rerun: **PASS** (`1 passed`; 2026-06-29).
+   - Standalone Playwright workflow/production smoke suite: **PASS** (`34 passed`;
+     2026-06-29).
+   - Release metadata/version sync: **PASS** (`Version sync ok: 0.3.28`;
+     2026-06-29).
+   - Live HA gate: **NOT RUN** in this container because no
+     `tests/ha-config.env` or `ha_long_lived_token` was present. This release
+     changes HA area registry writes and location dialog persistence; run
+     `make test-release-live` against a configured Home Assistant instance
+     before claiming `Live-validated`.
+
 ### 2026-06-23 - v0.3.27 occupancy status explainability gate
 
 1. Commit under test: release-candidate worktree for Topomation `0.3.27`.
@@ -199,7 +238,6 @@ Run the rows that match the touched workflow.
      Vitest `272 passed`; Web Test Runner `209 passed`, coverage `72.31%`;
      Playwright mock/production workflow `34 passed`; live HA managed-action
      contract `2 passed`; live HA browser workflow `6 passed` (2026-06-20).
-
 ### 2026-05-31 - v0.3.20 occupancy group explanation label gate
 
 1. Commit under test: release commit for Topomation `0.3.20`.

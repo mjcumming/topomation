@@ -238,7 +238,7 @@ async def test_locations_create_allows_floor_and_area(hass: HomeAssistant) -> No
         {
             "id": 3,
             "type": WS_TYPE_LOCATIONS_CREATE,
-            "name": "Bonus Room",
+            "name": "Game Room",
             "parent_id": floor_payload["location"]["id"],
             "meta": {"type": "area"},
         },
@@ -254,7 +254,8 @@ async def test_locations_create_allows_floor_and_area(hass: HomeAssistant) -> No
     area_registry = ar.async_get(hass)
     created_area = area_registry.async_get_area(area_payload["location"]["ha_area_id"])
     assert created_area is not None
-    assert created_area.name == "Bonus Room"
+    assert created_area.name == "Game Room"
+    assert created_area.icon == "mdi:gamepad-variant"
 
 
 @pytest.mark.asyncio

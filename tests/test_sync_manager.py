@@ -134,6 +134,7 @@ class TestInitialImport:
         assert location is not None
         assert location.name == "Kitchen"
         assert location.parent_id is None
+        assert area_reg.async_get_area(kitchen.id).icon == "mdi:silverware-fork-knife"
 
         # Check metadata
         meta = location.modules.get("_meta", {})
@@ -142,6 +143,22 @@ class TestInitialImport:
         assert meta["type"] == "area"
         assert meta["sync_source"] == "homeassistant"
         assert meta["sync_enabled"] is True
+
+    async def test_import_replaces_default_area_icon_and_preserves_custom_icon(
+        self,
+        hass: HomeAssistant,
+        sync_manager: SyncManager,
+        clean_registries,
+    ):
+        """Startup icon reconciliation should only replace blanks/generic defaults."""
+        area_reg = ar.async_get(hass)
+        kitchen = area_reg.async_create("Kitchen", icon="mdi:map-marker")
+        office = area_reg.async_create("Office", icon="mdi:laptop")
+
+        await sync_manager.import_all_areas_and_floors()
+
+        assert area_reg.async_get_area(kitchen.id).icon == "mdi:silverware-fork-knife"
+        assert area_reg.async_get_area(office.id).icon == "mdi:laptop"
 
     async def test_import_multiple_areas(
         self,

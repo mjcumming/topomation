@@ -22,6 +22,8 @@ from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
+from .icon_inference import infer_location_icon, is_missing_or_default_icon
+
 fr: Any | None
 try:
     from homeassistant.helpers import floor_registry as fr
@@ -188,6 +190,7 @@ class SyncManager:
         await self._map_entities()
         self.reconcile_missing_ha_area_wrappers(run_shadow_reconcile=False)
         self._reconcile_managed_shadow_areas()
+        self.reconcile_location_icons()
 
         _LOGGER.info(
             "Import complete: %d locations created",
@@ -322,6 +325,7 @@ class SyncManager:
     async def _import_area(self, area: AreaEntry) -> None:
         """Import a single HA area as a location."""
         location_id = f"area_{area.id}"
+        self._ensure_area_icon(area, "area")
 
         # Determine parent based on floor assignment
         parent_id = None
@@ -485,6 +489,7 @@ class SyncManager:
         area = self.area_registry.async_get_area(area_id)
         if not area:
             return
+        self._ensure_area_icon(area, "area")
 
         # Schedule async import without blocking the event callback.
         async def _import_and_reconcile() -> None:
@@ -501,6 +506,7 @@ class SyncManager:
 
         if not area or not location:
             return
+        self._ensure_area_icon(area, _location_type(location))
 
         if not self._can_sync_from_ha(location):
             _LOGGER.debug("Skipping HA area update for location %s due to sync policy", location_id)
@@ -765,7 +771,11 @@ class SyncManager:
         for attempt in range(_MANAGED_SHADOW_NAME_MAX_ATTEMPTS):
             candidate_name = _managed_shadow_name_candidate(base_name, attempt)
             try:
-                created_area = self.area_registry.async_create(name=candidate_name, floor_id=floor_id)
+                created_area = self.area_registry.async_create(
+                    name=candidate_name,
+                    floor_id=floor_id,
+                    icon=infer_location_icon(base_name, _location_type(host_location)),
+                )
                 break
             except ValueError as err:
                 if "already in use" not in str(err):
@@ -866,10 +876,12 @@ class SyncManager:
             candidate_name = _managed_shadow_name_candidate(host_name, attempt)
             if shadow_area.name == candidate_name:
                 resolved_name = candidate_name
+                self._ensure_area_icon(shadow_area, _location_type(host_location), name=host_name)
                 break
             try:
                 shadow_area = self.area_registry.async_update(shadow_area.id, name=candidate_name)
                 resolved_name = shadow_area.name
+                self._ensure_area_icon(shadow_area, _location_type(host_location), name=host_name)
                 break
             except ValueError as err:
                 if "already in use" not in str(err):
@@ -1161,6 +1173,10 @@ class SyncManager:
             self.loc_mgr.update_location(location_id, name=resolved_name)
 
         floor_meta = self.loc_mgr.get_location(location_id).modules.get("_meta", {})
+        if not isinstance(floor_meta, dict):
+            floor_meta = {}
+        if is_missing_or_default_icon(floor_meta.get("icon")):
+            floor_meta["icon"] = infer_location_icon(resolved_name, "floor")
         floor_meta.update(
             {
                 "type": "floor",
@@ -1172,6 +1188,55 @@ class SyncManager:
         )
         self.loc_mgr.set_module_config(location_id, "_meta", floor_meta)
         return location_id
+
+    def reconcile_location_icons(self) -> None:
+        """Fill blank/default icons on HA areas and topology-only locations."""
+        for location in self.loc_mgr.all_locations():
+            location_type = _location_type(location)
+            meta = location.modules.get("_meta", {})
+            if not isinstance(meta, dict):
+                meta = {}
+
+            ha_area_id = str(getattr(location, "ha_area_id", "") or meta.get("ha_area_id", "") or "").strip()
+            if ha_area_id:
+                area = self.area_registry.async_get_area(ha_area_id)
+                if area is not None:
+                    self._ensure_area_icon(area, location_type, name=location.name)
+                    continue
+
+            icon = infer_location_icon(location.name, location_type)
+            current_icon = meta.get("icon")
+            if is_missing_or_default_icon(current_icon) and current_icon != icon:
+                next_meta = dict(meta)
+                next_meta["icon"] = icon
+                self.loc_mgr.set_module_config(location.id, "_meta", next_meta)
+
+    def _ensure_area_icon(
+        self,
+        area: AreaEntry,
+        location_type: str,
+        *,
+        name: str | None = None,
+    ) -> AreaEntry:
+        """Set a best-guess HA area icon when the registry icon is blank/default."""
+        current_icon = getattr(area, "icon", None)
+        if not is_missing_or_default_icon(current_icon):
+            return area
+
+        icon = infer_location_icon(name or area.name, location_type)
+        if current_icon == icon:
+            return area
+
+        try:
+            return self.area_registry.async_update(area.id, icon=icon)
+        except Exception as err:  # pragma: no cover - registry defensive logging
+            _LOGGER.debug(
+                "Failed to reconcile icon for HA area %s: %s",
+                getattr(area, "id", ""),
+                err,
+                exc_info=True,
+            )
+            return area
 
     def _default_floor_parent_id(self) -> str | None:
         """Resolve default parent for new floors (Home building when present)."""

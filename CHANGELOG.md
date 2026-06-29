@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.28] - 2026-06-29
+
+### Fixed
+
+- **Location icons**: new and existing Home Assistant-backed locations now get
+  best-guess `mdi:` icons from their names when the HA area icon is missing or
+  still using a generic default. Custom HA area icons are preserved, and manual
+  icon selections from the Add/Edit Location dialog are persisted through the
+  HA area registry.
+
 ## [0.3.27] - 2026-06-23
 
 ### Changed
