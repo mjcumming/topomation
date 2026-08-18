@@ -47,7 +47,7 @@ Status markers:
 | Registration verification hardening | active | Done | Implemented | Create now fails+rolls back when HA does not register automation after reload. |
 | Docs/rules hardening for faster agent startup | active | Done | Implemented | Added quickstart/contracts/current-work and instruction routing. |
 | Occupancy tree strip (ADR-HA-080) | active | Done | Released | Tree dock is compact **Occupancy** (chip + latest note); **C-021** + docs updated; v0.2.44. |
-| Split-pane independent scroll | active | Done | Live-validated | Desktop tree vs inspector body scroll independently; `make test-release-live` passed for `0.3.29`. |
+| Split-pane independent scroll | active | Done | Released | Desktop tree vs inspector body scroll independently; `v0.3.29` shipped after `make test-release-live`. |
 
 ## Parallel-work guardrails
 
