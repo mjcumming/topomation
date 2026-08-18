@@ -81,6 +81,40 @@ Run the rows that match the touched workflow.
 
 ## 6. Release Records
 
+### 2026-08-18 - v0.3.29 split-pane independent scroll gate
+
+1. Commit under test: release-candidate worktree for Topomation `0.3.29`.
+2. Frontend bundle rebuilt from that commit: yes; `npm run build` republished
+   `custom_components/topomation/frontend/topomation-panel.js`.
+3. Touched workflow list:
+   - Desktop split-pane scrolling: location tree and inspector settings scroll
+     independently under the cursor.
+   - Inspector hero/tabs stay pinned outside `.inspector-body`.
+   - Panel wheel routing to the pane under the cursor, including right-side
+     chrome, without chaining to the other pane or the outer HA view.
+   - Release metadata/version synchronization for Topomation `0.3.29`.
+4. Commands run:
+   - `python scripts/verify-version-sync.py`
+   - `cd custom_components/topomation/frontend && npm run build`
+   - `cd custom_components/topomation/frontend && npx playwright test playwright/panel.spec.ts -g "scroll"`
+   - `make test-release-live`
+5. Outcome:
+   - Release metadata/version sync: **PASS** (`Version sync ok: 0.3.29`;
+     2026-08-18).
+   - Frontend bundle rebuild: **PASS** (`npm run build` republished
+     `topomation-panel.js`; 2026-08-18).
+   - Full local gate: **PASS** (`./scripts/test-comprehensive.sh`; version
+     sync, Ruff, Mypy, backend pytest `372 passed, 22 skipped`, Vitest
+     `277 passed`, Web Test Runner `214 passed`, Playwright mock/production
+     workflows `35 passed`; 2026-08-18).
+   - Full release gate: **PASS** (`make test-release-live`; local
+     comprehensive matrix passed, live HA managed-action contract `2 passed`,
+     live HA browser workflows `6 passed`; 2026-08-18).
+   - Desktop split-pane independent scrolling: **PASS**
+   - Inspector hero/tabs pinned outside `.inspector-body`: **PASS**
+   - Panel wheel routing to the pane under the cursor: **PASS**
+   - Release-gate HA bootstrap wait for Topomation load: **PASS**
+
 ### 2026-06-29 - v0.3.28 location icon inference gate
 
 1. Commit under test: release commit for Topomation `0.3.28`.

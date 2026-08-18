@@ -3218,7 +3218,10 @@ De.properties = {
       :host {
         display: block;
         height: 100%;
+        min-height: 0;
+        overflow-x: hidden;
         overflow-y: auto;
+        overscroll-behavior: contain;
       }
 
       .tree-list {
@@ -10253,7 +10256,8 @@ Ce.properties = {
   Pe,
   oe`
       :host {
-        display: block;
+        display: flex;
+        flex-direction: column;
         height: 100%;
         min-height: 0;
         overflow: hidden;
@@ -10261,18 +10265,24 @@ Ce.properties = {
       }
 
       .inspector-container {
+        display: flex;
+        flex-direction: column;
+        flex: 1 1 auto;
         height: 100%;
         min-height: 0;
+        overflow: hidden;
         padding: 0 var(--spacing-md);
       }
 
       .inspector-main {
-        height: 100%;
-        min-height: 0;
         display: flex;
         flex-direction: column;
-        gap: 0;
+        flex: 1 1 auto;
+        height: 100%;
+        min-height: 0;
         min-width: 0;
+        overflow: hidden;
+        gap: 0;
       }
 
       .inspector-top,
@@ -12794,6 +12804,7 @@ Ce.properties = {
 
       .empty-state {
         color: var(--text-secondary-color, #757575) !important;
+        flex: 1 1 auto;
       }
 
       .empty-state .button {
@@ -13490,6 +13501,15 @@ const Ie = class Ie extends ft {
           detail: { location: e }
         })
       );
+    }, this._handlePanelWheel = (t) => {
+      if (t.defaultPrevented || t.deltaY === 0) return;
+      for (const n of t.composedPath())
+        if (!(!(n instanceof HTMLElement) || n === this) && !this._isOwnedPaneScrollport(n) && this._verticalScrollportCanConsume(n, t.deltaY))
+          return;
+      const e = this._paneScrollportAt(t.clientX, t.clientY);
+      if (!e) return;
+      const i = e.scrollHeight - e.clientHeight;
+      i > 1 && (e.scrollTop = Math.min(i, Math.max(0, e.scrollTop + t.deltaY))), t.preventDefault();
     }, this._handleKeyDown = (t) => {
       (t.ctrlKey || t.metaKey) && t.key === "s" && (t.preventDefault(), this._pendingChanges.size > 0 && !this._saving && this._handleSaveChanges()), (t.ctrlKey || t.metaKey) && t.key === "z" && !t.shiftKey && t.preventDefault(), (t.ctrlKey || t.metaKey) && (t.key === "y" || t.key === "z" && t.shiftKey) && t.preventDefault(), t.key === "Escape" && this._pendingChanges.size > 0 && !this._saving && confirm("Discard all pending changes?") && this._handleDiscardChanges(), t.key === "?" && !t.ctrlKey && !t.metaKey && this._showKeyboardShortcutsHelp();
     }, this._handleOpenSidebar = () => {
@@ -13568,7 +13588,7 @@ const Ie = class Ie extends ft {
     }, 0));
   }
   connectedCallback() {
-    super.connectedCallback(), this._restorePanelSplitPreference(), this._restoreRightPanelModePreference(), this._scheduleInitialLoad(), this._handleKeyDown = this._handleKeyDown.bind(this), document.addEventListener("keydown", this._handleKeyDown), document.addEventListener("visibilitychange", this._handleVisibilityChange), window.addEventListener("focus", this._handleWindowFocus), window.addEventListener("pageshow", this._handlePageShow), window.addEventListener("online", this._handleOnline);
+    super.connectedCallback(), this._restorePanelSplitPreference(), this._restoreRightPanelModePreference(), this._scheduleInitialLoad(), this.addEventListener("wheel", this._handlePanelWheel, { passive: !1 }), this._handleKeyDown = this._handleKeyDown.bind(this), document.addEventListener("keydown", this._handleKeyDown), document.addEventListener("visibilitychange", this._handleVisibilityChange), window.addEventListener("focus", this._handleWindowFocus), window.addEventListener("pageshow", this._handlePageShow), window.addEventListener("online", this._handleOnline);
   }
   updated(t) {
     if (super.updated(t), t.has("_selectedId")) {
@@ -13577,7 +13597,7 @@ const Ie = class Ie extends ft {
     }
   }
   disconnectedCallback() {
-    super.disconnectedCallback(), document.removeEventListener("keydown", this._handleKeyDown), document.removeEventListener("visibilitychange", this._handleVisibilityChange), window.removeEventListener("focus", this._handleWindowFocus), window.removeEventListener("pageshow", this._handlePageShow), window.removeEventListener("online", this._handleOnline), this._stopPanelSplitterDrag(), this._pendingLoadTimer && (clearTimeout(this._pendingLoadTimer), this._pendingLoadTimer = void 0), this._reloadTimer && (clearTimeout(this._reloadTimer), this._reloadTimer = void 0), this._resumeRetryTimer && (clearTimeout(this._resumeRetryTimer), this._resumeRetryTimer = void 0), this._registryRefreshTimer && (clearTimeout(this._registryRefreshTimer), this._registryRefreshTimer = void 0), this._teardownUpdateSubscriptions(), this._updatesSubscriptionConnection = void 0;
+    super.disconnectedCallback(), this.removeEventListener("wheel", this._handlePanelWheel), document.removeEventListener("keydown", this._handleKeyDown), document.removeEventListener("visibilitychange", this._handleVisibilityChange), window.removeEventListener("focus", this._handleWindowFocus), window.removeEventListener("pageshow", this._handlePageShow), window.removeEventListener("online", this._handleOnline), this._stopPanelSplitterDrag(), this._pendingLoadTimer && (clearTimeout(this._pendingLoadTimer), this._pendingLoadTimer = void 0), this._reloadTimer && (clearTimeout(this._reloadTimer), this._reloadTimer = void 0), this._resumeRetryTimer && (clearTimeout(this._resumeRetryTimer), this._resumeRetryTimer = void 0), this._registryRefreshTimer && (clearTimeout(this._registryRefreshTimer), this._registryRefreshTimer = void 0), this._teardownUpdateSubscriptions(), this._updatesSubscriptionConnection = void 0;
   }
   /**
    * CRITICAL PERFORMANCE: Filter hass updates to prevent unnecessary re-renders.
@@ -14412,6 +14432,30 @@ const Ie = class Ie extends ft {
       console.error("Failed to reload locations:", n), this._showToast(`Failed to reload: ${n.message}`, "error");
     }
   }
+  _verticalScrollportCanConsume(t, e) {
+    const i = getComputedStyle(t).overflowY;
+    if (i !== "auto" && i !== "scroll") return !1;
+    const n = t.scrollHeight - t.clientHeight;
+    return n <= 1 ? !1 : e > 0 ? t.scrollTop < n - 1 : e < 0 ? t.scrollTop > 1 : !1;
+  }
+  _pointInElement(t, e, i) {
+    if (!t) return !1;
+    const n = t.getBoundingClientRect();
+    return e >= n.left && e <= n.right && i >= n.top && i <= n.bottom;
+  }
+  _paneScrollportAt(t, e) {
+    var r;
+    const i = this.renderRoot.querySelector(".device-assignment-panel");
+    if (this._pointInElement(i, t, e)) return i;
+    const n = this.renderRoot.querySelector("ht-location-inspector"), o = (r = n == null ? void 0 : n.shadowRoot) == null ? void 0 : r.querySelector(".inspector-body");
+    if (this._pointInElement(o, t, e) || this._pointInElement(n, t, e) || this._pointInElement(this.renderRoot.querySelector(".panel-right"), t, e))
+      return o;
+    const a = this.renderRoot.querySelector("ht-location-tree");
+    return this._pointInElement(a, t, e) || this._pointInElement(this.renderRoot.querySelector(".panel-left"), t, e) ? a : null;
+  }
+  _isOwnedPaneScrollport(t) {
+    return t.classList.contains("inspector-body") || t.classList.contains("device-assignment-panel") ? !0 : t.tagName === "HT-LOCATION-TREE";
+  }
   _queueResumeRefresh() {
     this._resumeRefreshQueued || !this.isConnected || !this.hass || (this._resumeRefreshQueued = !0, window.setTimeout(() => {
       this._resumeRefreshQueued = !1, !(!this.isConnected || !this.hass) && (this._subscribeToUpdates(), this._scheduleReload(!0), this._resumeRetryTimer && window.clearTimeout(this._resumeRetryTimer), this._resumeRetryTimer = window.setTimeout(() => {
@@ -14805,17 +14849,22 @@ Ie.properties = {
   Pe,
   oe`
       :host {
-        display: block;
+        display: flex;
+        flex-direction: column;
         height: 100%;
-        min-height: 100%;
+        max-height: calc(100vh - var(--header-height, 0px));
+        overflow: hidden;
         background: var(--primary-background-color);
       }
 
       .panel-container {
         --tree-panel-basis: 40%;
         display: flex;
+        flex: 1 1 auto;
         height: 100%;
+        min-height: 0;
         min-width: 0;
+        overflow: hidden;
       }
 
       /* Tree Panel defaults to ~40%, now user-resizable via splitter */
@@ -14884,6 +14933,8 @@ Ie.properties = {
       @media (max-width: 768px) {
         :host {
           height: auto;
+          max-height: none;
+          overflow: visible;
           padding-left: env(safe-area-inset-left);
           padding-right: env(safe-area-inset-right);
           padding-bottom: env(safe-area-inset-bottom);
@@ -14891,7 +14942,9 @@ Ie.properties = {
 
         .panel-container {
           flex-direction: column;
+          flex: 0 0 auto;
           height: auto;
+          overflow: visible;
         }
 
         .panel-left,
@@ -14991,6 +15044,7 @@ Ie.properties = {
         flex: 1 1 auto;
         min-height: 0;
         overflow: auto;
+        overscroll-behavior: contain;
         padding: 0 var(--spacing-md) var(--spacing-md);
       }
 
@@ -15155,7 +15209,9 @@ Ie.properties = {
         display: flex;
         align-items: center;
         justify-content: center;
+        flex: 1 1 auto;
         height: 100%;
+        min-height: 0;
         flex-direction: column;
         gap: var(--spacing-md);
       }

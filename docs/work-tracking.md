@@ -1,6 +1,6 @@
 # Work Tracking - topomation
 
-**Last Updated**: 2026-05-23
+**Last Updated**: 2026-08-18
 **Purpose**: operational execution tracker for the active sprint.
 
 Status markers:
@@ -28,6 +28,14 @@ Canonical separation:
   than floating to the top.
 - Touched workflow: Occupancy source cards and Lighting rule device rows in
   `custom_components/topomation/frontend/ht-location-inspector.ts`.
+
+### 2026-08-18 — Split-pane independent scrolling
+
+- Desktop panel locks to the viewport so the location tree and inspector
+  settings are independent overflow containers.
+- Inspector banner/tabs stay pinned; `.inspector-body` is the settings
+  scrollport. Wheel over the right pane must not require the tree.
+- Release candidate `0.3.29` passed `make test-release-live` on 2026-08-18.
 
 ### 2026-05-23 — Release asset repair hardening
 

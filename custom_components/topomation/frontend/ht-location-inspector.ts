@@ -235,7 +235,8 @@ export class HtLocationInspector extends LitElement {
     sharedStyles,
     css`
       :host {
-        display: block;
+        display: flex;
+        flex-direction: column;
         height: 100%;
         min-height: 0;
         overflow: hidden;
@@ -243,18 +244,24 @@ export class HtLocationInspector extends LitElement {
       }
 
       .inspector-container {
+        display: flex;
+        flex-direction: column;
+        flex: 1 1 auto;
         height: 100%;
         min-height: 0;
+        overflow: hidden;
         padding: 0 var(--spacing-md);
       }
 
       .inspector-main {
-        height: 100%;
-        min-height: 0;
         display: flex;
         flex-direction: column;
-        gap: 0;
+        flex: 1 1 auto;
+        height: 100%;
+        min-height: 0;
         min-width: 0;
+        overflow: hidden;
+        gap: 0;
       }
 
       .inspector-top,
@@ -2776,6 +2783,7 @@ export class HtLocationInspector extends LitElement {
 
       .empty-state {
         color: var(--text-secondary-color, #757575) !important;
+        flex: 1 1 auto;
       }
 
       .empty-state .button {

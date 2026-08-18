@@ -1,6 +1,6 @@
 # Contracts
 
-**Last reviewed**: 2026-05-22
+**Last reviewed**: 2026-08-18
 **Purpose**: canonical behavior contracts for Topomation runtime and panel actions.
 
 Use this file as the quick contract surface. Keep it synchronized with:
@@ -509,6 +509,14 @@ Additional save points:
     longer exposes separate `Configure` / `Assign Devices` tabs.
   - the dedicated assignment workflow is currently mothballed: retaining code
     for future reuse is allowed, but the active UI must not surface it.
+- Desktop split-pane scrolling:
+  - the location tree and inspector settings are independent scrollports
+  - wheel over the tree scrolls only the tree; wheel over inspector content
+    scrolls only the inspector body
+  - inspector banner and tab row stay pinned; `.inspector-body` is the settings
+    scrollport
+  - neither pane chain-scrolls the other pane or the outer Home Assistant view
+    (`overscroll-behavior: contain` on both scrollports)
 - Save/update behavior is explicit across editable automation surfaces:
   - `Occupancy` and `Ambient` use tab-level draft state + explicit
     save/discard controls.

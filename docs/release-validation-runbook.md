@@ -147,8 +147,11 @@ make test-release-live
 That command now runs:
 
 1. `./scripts/test-comprehensive.sh`
-2. `./tests/run-live-tests.sh tests/test-live-managed-actions-contract.py`
-3. `cd custom_components/topomation/frontend && HA_URL=... HA_TOKEN=... npx playwright test --config playwright.live.config.ts playwright/live-automation-ui.spec.ts`
+2. For `HA_TARGET=dev`, if local Home Assistant is unreachable after the
+   comprehensive suite, `make test-ha-up`, then wait until Topomation appears
+   in `/api/config`
+3. `./tests/run-live-tests.sh tests/test-live-managed-actions-contract.py`
+4. `cd custom_components/topomation/frontend && HA_URL=... HA_TOKEN=... npx playwright test --config playwright.live.config.ts playwright/live-automation-ui.spec.ts`
    - When running against production (`HA_TARGET=prod`), the script sets `LIVE_PANEL_PATH=/topomation` so the browser uses the real panel URL (e.g. `http://homeassistant:8123/topomation`) instead of the static live harness, avoiding "Download is starting" on instances that serve the harness as a download.
 
 ## 4) Release cut checklist

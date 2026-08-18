@@ -2677,6 +2677,50 @@ describe('TopomationPanel integration (fake hass)', () => {
     expect(element._managerView()).to.equal("location");
   });
 
+  it("locks split panes behind independent overflow containers", async () => {
+    const hass: HomeAssistant = {
+      callWS: async <T>(req: Record<string, any>): Promise<T> => {
+        if (req.type === "topomation/locations/list") {
+          return { locations } as T;
+        }
+        if (req.type === "config/entity_registry/list") {
+          return [] as T;
+        }
+        if (req.type === "config/device_registry/list") {
+          return [] as T;
+        }
+        return [] as T;
+      },
+      connection: {},
+      states: {},
+      areas: {},
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const element = await fixture<HTMLElement>(html`
+      <topomation-panel
+        .hass=${hass}
+        .panel=${{ config: { topomation_view: "location", entry_id: "entry_123" } }}
+      ></topomation-panel>
+    `);
+    await waitUntil(() => (element as any)._loading === false, "panel did not finish loading");
+
+    const left = element.shadowRoot!.querySelector(".panel-left") as HTMLElement | null;
+    const right = element.shadowRoot!.querySelector(".panel-right") as HTMLElement | null;
+    const tree = element.shadowRoot!.querySelector("ht-location-tree") as HTMLElement | null;
+    const inspector = element.shadowRoot!.querySelector("ht-location-inspector") as HTMLElement | null;
+    expect(left).to.exist;
+    expect(right).to.exist;
+    expect(tree).to.exist;
+    expect(inspector).to.exist;
+    expect(["", "hidden"]).to.include(getComputedStyle(element).overflow);
+    expect(["", "hidden"]).to.include(getComputedStyle(left!).overflow);
+    expect(["", "hidden"]).to.include(getComputedStyle(right!).overflow);
+    expect(["", "auto"]).to.include(getComputedStyle(tree!).overflowY);
+    expect(["", "hidden"]).to.include(getComputedStyle(inspector!).overflow);
+  });
+
   it("clamps and persists panel split preference", () => {
     const element = document.createElement("topomation-panel") as any;
 

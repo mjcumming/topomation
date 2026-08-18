@@ -1767,6 +1767,14 @@ describe("HtLocationInspector occupancy source composer", () => {
     const bodyOverflowY = getComputedStyle(inspectorBody!).overflowY;
     // jsdom may omit overflow when stylesheets are not fully applied.
     expect(["", "auto"]).to.include(bodyOverflowY);
+    const inspectorContainer = element.shadowRoot!.querySelector(".inspector-container") as HTMLElement | null;
+    const inspectorMain = element.shadowRoot!.querySelector(".inspector-main") as HTMLElement | null;
+    expect(inspectorContainer).to.exist;
+    expect(inspectorMain).to.exist;
+    const containerOverflow = getComputedStyle(inspectorContainer!).overflow;
+    const mainOverflow = getComputedStyle(inspectorMain!).overflow;
+    expect(["", "hidden"]).to.include(containerOverflow);
+    expect(["", "hidden"]).to.include(mainOverflow);
   });
 
   it("shows a human vacancy reason in the header with expandable details", async () => {

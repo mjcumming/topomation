@@ -639,6 +639,95 @@ test("occupancy inspector keeps the hero shell outside the scroll body", async (
   expect(Math.abs((after?.y ?? 0) - (before?.y ?? 0))).toBeLessThanOrEqual(1);
 });
 
+test("tree and inspector scroll independently under the cursor", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 520 });
+  await page.goto("/mock-harness.html");
+  await expandTreeNodes(page, [
+    "main-building",
+    "main-floor",
+    "second-floor",
+    "basement",
+    "grounds",
+    "kitchen",
+  ]);
+  await selectKitchen(page);
+
+  const tree = page.locator("ht-location-tree");
+  const inspectorBody = page.locator("ht-location-inspector").locator(".inspector-body");
+  await expect(tree).toBeVisible();
+  await expect(inspectorBody).toBeVisible();
+
+  const readPaneMetrics = async () =>
+    page.evaluate(() => {
+      const panel = document.querySelector("topomation-panel") as HTMLElement | null;
+      const treeNode = panel?.shadowRoot?.querySelector("ht-location-tree") as HTMLElement | null;
+      const inspector = panel?.shadowRoot?.querySelector("ht-location-inspector") as HTMLElement | null;
+      const body = inspector?.shadowRoot?.querySelector(".inspector-body") as HTMLElement | null;
+      if (!panel || !treeNode || !inspector || !body) {
+        throw new Error("split panes not found");
+      }
+      return {
+        panelOverflow: getComputedStyle(panel).overflow,
+        treeOverflowY: getComputedStyle(treeNode).overflowY,
+        inspectorOverflow: getComputedStyle(inspector).overflow,
+        bodyOverflowY: getComputedStyle(body).overflowY,
+        treeScrollTop: treeNode.scrollTop,
+        bodyScrollTop: body.scrollTop,
+        treeCanScroll: treeNode.scrollHeight - treeNode.clientHeight > 8,
+        bodyCanScroll: body.scrollHeight - body.clientHeight > 8,
+        treeClientHeight: treeNode.clientHeight,
+        bodyClientHeight: body.clientHeight,
+      };
+    });
+
+  await page.evaluate(() => {
+    const panel = document.querySelector("topomation-panel") as HTMLElement | null;
+    const treeNode = panel?.shadowRoot?.querySelector("ht-location-tree") as HTMLElement | null;
+    const body = panel?.shadowRoot
+      ?.querySelector("ht-location-inspector")
+      ?.shadowRoot?.querySelector(".inspector-body") as HTMLElement | null;
+    if (treeNode) treeNode.scrollTop = 0;
+    if (body) body.scrollTop = 0;
+  });
+
+  const initial = await readPaneMetrics();
+  expect(initial.panelOverflow).toBe("hidden");
+  expect(initial.treeOverflowY).toBe("auto");
+  expect(initial.inspectorOverflow).toBe("hidden");
+  expect(initial.bodyOverflowY).toBe("auto");
+  expect(initial.bodyCanScroll).toBe(true);
+  expect(initial.treeCanScroll).toBe(true);
+  expect(initial.bodyClientHeight).toBeGreaterThan(80);
+  expect(initial.treeClientHeight).toBeGreaterThan(80);
+
+  const wheelAt = async (box: { x: number; y: number; width: number; height: number }) => {
+    await page.mouse.move(box.x + box.width / 2, box.y + Math.min(40, box.height / 2));
+    await page.mouse.wheel(0, 600);
+  };
+
+  const bodyBox = await inspectorBody.boundingBox();
+  expect(bodyBox).not.toBeNull();
+  await wheelAt(bodyBox!);
+  const afterRight = await readPaneMetrics();
+  expect(afterRight.bodyScrollTop).toBeGreaterThan(0);
+  expect(afterRight.treeScrollTop).toBe(0);
+
+  await page.evaluate(() => {
+    const panel = document.querySelector("topomation-panel") as HTMLElement | null;
+    const body = panel?.shadowRoot
+      ?.querySelector("ht-location-inspector")
+      ?.shadowRoot?.querySelector(".inspector-body") as HTMLElement | null;
+    if (body) body.scrollTop = 0;
+  });
+
+  const treeBox = await tree.boundingBox();
+  expect(treeBox).not.toBeNull();
+  await wheelAt(treeBox!);
+  const afterLeft = await readPaneMetrics();
+  expect(afterLeft.treeScrollTop).toBeGreaterThan(0);
+  expect(afterLeft.bodyScrollTop).toBe(0);
+});
+
 test("panel header shows read-only lifecycle guidance", async ({ page }) => {
   await page.goto("/mock-harness.html");
 

@@ -39,6 +39,29 @@ fi
 echo "==> Release gate: local comprehensive matrix"
 "${ROOT_DIR}/scripts/test-comprehensive.sh"
 
+if [[ "${HA_TARGET}" == "dev" ]]; then
+  echo "==> Release gate: ensure local Home Assistant is reachable"
+  if ! curl -sS -f --max-time 2 -H "Authorization: Bearer ${HA_TOKEN}" "${HA_URL}/api/" >/dev/null 2>&1; then
+    echo "==> Local HA unreachable after comprehensive suite; starting via make test-ha-up"
+    make -C "${ROOT_DIR}" test-ha-up
+  fi
+  echo "==> Release gate: wait until Topomation is loaded"
+  LOADED=0
+  for _ in $(seq 1 90); do
+    if curl -sS -f --max-time 5 -H "Authorization: Bearer ${HA_TOKEN}" "${HA_URL}/api/config" 2>/dev/null \
+      | grep -q '"topomation"'; then
+      LOADED=1
+      break
+    fi
+    sleep 1
+  done
+  if [[ "${LOADED}" -ne 1 ]]; then
+    echo "Local HA is reachable but Topomation is not loaded after 90s" >&2
+    exit 1
+  fi
+  echo "==> Topomation is loaded"
+fi
+
 echo "==> Release gate: real Home Assistant managed-action contract (local/test)"
 "${ROOT_DIR}/tests/run-live-tests.sh" tests/test-live-managed-actions-contract.py
 

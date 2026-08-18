@@ -1,6 +1,6 @@
 # Current work
 
-**Last updated**: 2026-05-22
+**Last updated**: 2026-08-18
 **Purpose**: short live context for parallel work, handoff, and branch safety.
 
 Status markers:
@@ -47,6 +47,7 @@ Status markers:
 | Registration verification hardening | active | Done | Implemented | Create now fails+rolls back when HA does not register automation after reload. |
 | Docs/rules hardening for faster agent startup | active | Done | Implemented | Added quickstart/contracts/current-work and instruction routing. |
 | Occupancy tree strip (ADR-HA-080) | active | Done | Released | Tree dock is compact **Occupancy** (chip + latest note); **C-021** + docs updated; v0.2.44. |
+| Split-pane independent scroll | active | Done | Live-validated | Desktop tree vs inspector body scroll independently; `make test-release-live` passed for `0.3.29`. |
 
 ## Parallel-work guardrails
 

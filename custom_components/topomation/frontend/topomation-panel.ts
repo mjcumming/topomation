@@ -248,6 +248,7 @@ export class TopomationPanel extends LitElement {
     this._restorePanelSplitPreference();
     this._restoreRightPanelModePreference();
     this._scheduleInitialLoad();
+    this.addEventListener("wheel", this._handlePanelWheel, { passive: false });
 
     // Keyboard shortcuts
     this._handleKeyDown = this._handleKeyDown.bind(this);
@@ -270,6 +271,7 @@ export class TopomationPanel extends LitElement {
 
   disconnectedCallback(): void {
     super.disconnectedCallback();
+    this.removeEventListener("wheel", this._handlePanelWheel);
     document.removeEventListener('keydown', this._handleKeyDown);
     document.removeEventListener("visibilitychange", this._handleVisibilityChange);
     window.removeEventListener("focus", this._handleWindowFocus);
@@ -332,17 +334,22 @@ export class TopomationPanel extends LitElement {
     sharedStyles,
     css`
       :host {
-        display: block;
+        display: flex;
+        flex-direction: column;
         height: 100%;
-        min-height: 100%;
+        max-height: calc(100vh - var(--header-height, 0px));
+        overflow: hidden;
         background: var(--primary-background-color);
       }
 
       .panel-container {
         --tree-panel-basis: 40%;
         display: flex;
+        flex: 1 1 auto;
         height: 100%;
+        min-height: 0;
         min-width: 0;
+        overflow: hidden;
       }
 
       /* Tree Panel defaults to ~40%, now user-resizable via splitter */
@@ -411,6 +418,8 @@ export class TopomationPanel extends LitElement {
       @media (max-width: 768px) {
         :host {
           height: auto;
+          max-height: none;
+          overflow: visible;
           padding-left: env(safe-area-inset-left);
           padding-right: env(safe-area-inset-right);
           padding-bottom: env(safe-area-inset-bottom);
@@ -418,7 +427,9 @@ export class TopomationPanel extends LitElement {
 
         .panel-container {
           flex-direction: column;
+          flex: 0 0 auto;
           height: auto;
+          overflow: visible;
         }
 
         .panel-left,
@@ -518,6 +529,7 @@ export class TopomationPanel extends LitElement {
         flex: 1 1 auto;
         min-height: 0;
         overflow: auto;
+        overscroll-behavior: contain;
         padding: 0 var(--spacing-md) var(--spacing-md);
       }
 
@@ -682,7 +694,9 @@ export class TopomationPanel extends LitElement {
         display: flex;
         align-items: center;
         justify-content: center;
+        flex: 1 1 auto;
         height: 100%;
+        min-height: 0;
         flex-direction: column;
         gap: var(--spacing-md);
       }
@@ -2035,6 +2049,69 @@ export class TopomationPanel extends LitElement {
       this._showToast(`Failed to reload: ${error.message}`, 'error');
     }
   }
+
+  private _verticalScrollportCanConsume(element: HTMLElement, deltaY: number): boolean {
+    const overflowY = getComputedStyle(element).overflowY;
+    if (overflowY !== "auto" && overflowY !== "scroll") return false;
+    const max = element.scrollHeight - element.clientHeight;
+    if (max <= 1) return false;
+    if (deltaY > 0) return element.scrollTop < max - 1;
+    if (deltaY < 0) return element.scrollTop > 1;
+    return false;
+  }
+
+  private _pointInElement(element: HTMLElement | null | undefined, x: number, y: number): boolean {
+    if (!element) return false;
+    const rect = element.getBoundingClientRect();
+    return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+  }
+
+  private _paneScrollportAt(x: number, y: number): HTMLElement | null {
+    const assign = this.renderRoot.querySelector(".device-assignment-panel") as HTMLElement | null;
+    if (this._pointInElement(assign, x, y)) return assign;
+
+    const inspector = this.renderRoot.querySelector("ht-location-inspector") as HTMLElement | null;
+    const inspectorBody = inspector?.shadowRoot?.querySelector(".inspector-body") as HTMLElement | null;
+    if (
+      this._pointInElement(inspectorBody, x, y) ||
+      this._pointInElement(inspector, x, y) ||
+      this._pointInElement(this.renderRoot.querySelector(".panel-right") as HTMLElement | null, x, y)
+    ) {
+      return inspectorBody;
+    }
+
+    const tree = this.renderRoot.querySelector("ht-location-tree") as HTMLElement | null;
+    if (
+      this._pointInElement(tree, x, y) ||
+      this._pointInElement(this.renderRoot.querySelector(".panel-left") as HTMLElement | null, x, y)
+    ) {
+      return tree;
+    }
+    return null;
+  }
+
+  private _isOwnedPaneScrollport(element: HTMLElement): boolean {
+    if (element.classList.contains("inspector-body")) return true;
+    if (element.classList.contains("device-assignment-panel")) return true;
+    return element.tagName === "HT-LOCATION-TREE";
+  }
+
+  private _handlePanelWheel = (event: WheelEvent): void => {
+    if (event.defaultPrevented || event.deltaY === 0) return;
+    for (const entry of event.composedPath()) {
+      if (!(entry instanceof HTMLElement) || entry === this) continue;
+      if (this._isOwnedPaneScrollport(entry)) continue;
+      if (this._verticalScrollportCanConsume(entry, event.deltaY)) return;
+    }
+
+    const scrollport = this._paneScrollportAt(event.clientX, event.clientY);
+    if (!scrollport) return;
+    const max = scrollport.scrollHeight - scrollport.clientHeight;
+    if (max > 1) {
+      scrollport.scrollTop = Math.min(max, Math.max(0, scrollport.scrollTop + event.deltaY));
+    }
+    event.preventDefault();
+  };
 
   private _handleKeyDown = (e: KeyboardEvent): void => {
     // Ctrl+S (or Cmd+S) - Save changes

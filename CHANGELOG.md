@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.29] - 2026-08-18
+
+### Fixed
+
+- **Split-pane scrolling**: the location tree and inspector settings now
+  scroll independently. Wheel over the right pane moves settings only, and
+  the inspector banner and tab row stay pinned.
+
 ## [0.3.28] - 2026-06-29
 
 ### Fixed

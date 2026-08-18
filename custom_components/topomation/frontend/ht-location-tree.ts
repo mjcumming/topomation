@@ -126,7 +126,10 @@ export class HtLocationTree extends LitElement {
       :host {
         display: block;
         height: 100%;
+        min-height: 0;
+        overflow-x: hidden;
         overflow-y: auto;
+        overscroll-behavior: contain;
       }
 
       .tree-list {
