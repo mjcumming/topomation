@@ -21,6 +21,15 @@
 
 ## Active Decisions
 
+### ADR-HA-098: Idempotent Panel Registration on Reload (2026-08-22)
+
+**Status**: APPROVED
+**Full ADR**: [docs/adr/ADR-HA-098-idempotent-panel-registration.md](adr/ADR-HA-098-idempotent-panel-registration.md)
+
+**Decision summary**: Panel registration must use `update=True` and last-entry
+unload must remove the routes so a reload leftover cannot abort setup before
+occupancy/lock platforms load.
+
 ### ADR-HA-097: Effective Ambient Source Parity (2026-05-22)
 
 **Status**: APPROVED

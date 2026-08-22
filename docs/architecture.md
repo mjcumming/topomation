@@ -1,7 +1,7 @@
 # Topomation Integration Architecture
 
 **Version**: 1.0
-**Date**: 2026-03-18
+**Date**: 2026-08-22
 **Purpose**: Define the architecture of the Home Assistant integration for Topomation
 
 > **Note**: This document focuses on **integration-specific** architecture. For core kernel architecture (LocationManager, EventBus, Modules), see the Topomation core library documentation.
@@ -91,6 +91,12 @@ The `topomation` integration is a **thin adapter layer** that bridges Home Assis
 
 1. `async_setup_entry()` - Initialize everything
 2. `async_unload_entry()` - Clean shutdown, save state
+
+Panel registration is idempotent (C-025 / ADR-HA-098): routes are registered
+with `frontend.async_register_built_in_panel(..., update=True)` so a reload
+cannot fail with `Overwriting panel topomation` and skip platform setup.
+Last-entry unload removes the panel routes. Occupancy binary sensors and lock
+switches are created only after that registration succeeds.
 
 ### 3.2 Event Bridge (`event_bridge.py`)
 
@@ -803,5 +809,5 @@ loc_mgr.set_module_config(
 ---
 
 **Document Status**: Active
-**Last Updated**: 2026-02-24
+**Last Updated**: 2026-08-22
 **Maintainer**: Mike

@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.30] - 2026-08-22
+
+### Fixed
+
+- **Reload leftover panel routes**: re-registering the Topomation sidebar after
+  a config-entry reload no longer raises `Overwriting panel topomation` and
+  abort setup. That failure left occupancy binary sensors and lock switches as
+  restored `unavailable` stubs, so occupancy-triggered managed rules failed
+  with `No occupancy binary sensor found` even when the inspector still showed
+  vacant/occupied from the kernel projection. Panel registration now uses
+  `update=True`, registers static assets once, and removes routes on last-entry
+  unload (C-025 / ADR-HA-098).
+
 ## [0.3.29] - 2026-08-18
 
 ### Fixed

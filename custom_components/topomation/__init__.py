@@ -39,7 +39,7 @@ from .const import (
 from .coordinator import TopomationCoordinator
 from .event_bridge import EventBridge
 from .managed_actions import TopomationManagedActions
-from .panel import async_register_panel
+from .panel import async_register_panel, async_unregister_panel
 from .recent_activity import (
     EVENT_RECENT_ACTIVITY_CHANGED,
     TopomationRecentActivityModule,
@@ -902,6 +902,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.data[DOMAIN].pop(entry.entry_id)
         if not hass.data[DOMAIN]:
             async_unregister_services(hass)
+            async_unregister_panel(hass)
 
     return unload_ok
 

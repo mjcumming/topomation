@@ -1,6 +1,6 @@
 # Current work
 
-**Last updated**: 2026-08-18
+**Last updated**: 2026-08-22
 **Purpose**: short live context for parallel work, handoff, and branch safety.
 
 Status markers:
@@ -9,6 +9,8 @@ Status markers:
 
 ## Snapshot
 
+- In-repo **C-025 / ADR-HA-098**: panel re-register is idempotent so a reload
+  leftover cannot abort setup and leave occupancy/lock entities unrestored.
 - Shipped **0.2.54**: panel automation UX (scrollable inspector tabs; pill-based
   Media/HVAC/Appliances actions; Lighting draft triggers + default brightness;
   occupancy source ordering); ADR-HA-082 captures future climate vs fans-first
@@ -48,6 +50,7 @@ Status markers:
 | Docs/rules hardening for faster agent startup | active | Done | Implemented | Added quickstart/contracts/current-work and instruction routing. |
 | Occupancy tree strip (ADR-HA-080) | active | Done | Released | Tree dock is compact **Occupancy** (chip + latest note); **C-021** + docs updated; v0.2.44. |
 | Split-pane independent scroll | active | Done | Released | Desktop tree vs inspector body scroll independently; `v0.3.29` shipped after `make test-release-live`. |
+| Idempotent panel registration (C-025 / ADR-HA-098) | active | Done | Live-validated | `0.3.30` passed `make test-release-live` on 2026-08-22; reload leftover `/topomation` routes no longer abort setup before occupancy/lock platforms load. |
 
 ## Parallel-work guardrails
 

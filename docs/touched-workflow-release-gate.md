@@ -81,6 +81,39 @@ Run the rows that match the touched workflow.
 
 ## 6. Release Records
 
+### 2026-08-22 - v0.3.30 idempotent panel registration gate
+
+1. Commit under test: release-candidate worktree for Topomation `0.3.30`.
+2. Frontend bundle rebuilt from that commit: no; this change is backend
+   setup/lifecycle only (`panel.py`, `__init__.py`, contracts/ADR).
+3. Touched workflow list:
+   - Integration reload leftover `/topomation` panel routes do not abort
+     `async_setup_entry`.
+   - Occupancy binary sensors and lock switches load after config-entry reload.
+   - Occupancy-triggered managed rule create can resolve the live location
+     occupancy entity (`location_id` attribute present).
+   - Release metadata/version synchronization for Topomation `0.3.30`.
+4. Commands run:
+   - `python scripts/verify-version-sync.py`
+   - `pytest tests/test_panel.py --no-cov`
+   - `make test-release-live`
+5. Outcome:
+   - Release metadata/version sync: **PASS** (`Version sync ok: 0.3.30`;
+     2026-08-22).
+   - Targeted panel reload contract: **PASS** (`tests/test_panel.py`, 3 passed;
+     2026-08-22).
+   - Full local gate: **PASS** (`./scripts/test-comprehensive.sh`; version
+     sync, Ruff, Mypy, backend pytest `374 passed, 22 skipped`, Vitest
+     `277 passed`, Web Test Runner `214 passed`, Playwright mock/production
+     workflows `35 passed`; 2026-08-22).
+   - Full release gate: **PASS** (`make test-release-live`; local
+     comprehensive matrix passed, live HA managed-action contract `2 passed`,
+     live HA browser workflows `6 passed`; 2026-08-22).
+   - Reload leftover panel routes do not abort setup: **PASS**
+   - Occupancy/lock platforms remain loadable after reload: **PASS**
+   - Live managed-action create/list/delete against local HA: **PASS**
+   - Release-gate HA bootstrap wait for Topomation load: **PASS**
+
 ### 2026-08-18 - v0.3.29 split-pane independent scroll gate
 
 1. Commit under test: release-candidate worktree for Topomation `0.3.29`.

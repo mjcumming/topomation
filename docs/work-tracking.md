@@ -1,6 +1,6 @@
 # Work Tracking - topomation
 
-**Last Updated**: 2026-08-18
+**Last Updated**: 2026-08-22
 **Purpose**: operational execution tracker for the active sprint.
 
 Status markers:
@@ -28,6 +28,12 @@ Canonical separation:
   than floating to the top.
 - Touched workflow: Occupancy source cards and Lighting rule device rows in
   `custom_components/topomation/frontend/ht-location-inspector.ts`.
+
+### 2026-08-22 — Idempotent panel registration
+
+- Config-entry reload leftover `/topomation` routes no longer abort setup
+  before occupancy binary sensors and lock switches load (C-025 / ADR-HA-098).
+- Release candidate `0.3.30` passed `make test-release-live` on 2026-08-22.
 
 ### 2026-08-18 — Split-pane independent scrolling
 

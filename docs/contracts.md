@@ -1,6 +1,6 @@
 # Contracts
 
-**Last reviewed**: 2026-08-18
+**Last reviewed**: 2026-08-22
 **Purpose**: canonical behavior contracts for Topomation runtime and panel actions.
 
 Use this file as the quick contract surface. Keep it synchronized with:
@@ -205,6 +205,22 @@ Additional save points:
 - Topomation panel routes are admin-only (`require_admin=True`).
 - Managed action create/update/delete depends on HA config APIs that require admin;
   non-admin sessions must not be routed into a write-capable panel state.
+
+## C-025 Integration reload panel registration
+
+- `async_setup_entry` must remain idempotent with respect to Topomation panel
+  routes (`/topomation` plus alias routes). Re-registering an already-present
+  route must not raise `Overwriting panel`.
+- Implementation uses Home Assistant
+  `frontend.async_register_built_in_panel(..., update=True)`.
+- Frontend static asset paths are registered once per Home Assistant process.
+- Unload of the last Topomation config entry removes those panel routes
+  (`warn_if_unknown=False`).
+- A leftover or already-registered panel must not abort setup before platforms
+  are forwarded. Occupancy binary sensors (`unique_id` `occupancy_{location_id}`)
+  and lock switches are the live HA surface used by occupancy-triggered managed
+  rules; restored `unavailable` stubs without `location_id` are not a valid
+  substitute.
 
 ## C-011 Tree drag-and-drop contract (target state)
 
