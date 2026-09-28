@@ -1,6 +1,6 @@
 # Current work
 
-**Last updated**: 2026-08-22
+**Last updated**: 2026-09-28
 **Purpose**: short live context for parallel work, handoff, and branch safety.
 
 Status markers:
@@ -9,6 +9,9 @@ Status markers:
 
 ## Snapshot
 
+- Shipped **0.3.31**: subarea occupancy sources follow the sensor even when
+  the entity stays on the parent area, and a Scenes tab activates a Home
+  Assistant scene on occupied or vacant (`v0.3.31`, issues #3 and #4).
 - Shipped **0.3.30**: panel re-register is idempotent so a reload leftover
   cannot abort setup and leave occupancy/lock entities unrestored.
 - Shipped **0.2.54**: panel automation UX (scrollable inspector tabs; pill-based
@@ -50,6 +53,7 @@ Status markers:
 | Docs/rules hardening for faster agent startup | active | Done | Implemented | Added quickstart/contracts/current-work and instruction routing. |
 | Occupancy tree strip (ADR-HA-080) | active | Done | Released | Tree dock is compact **Occupancy** (chip + latest note); **C-021** + docs updated; v0.2.44. |
 | Split-pane independent scroll | active | Done | Released | Desktop tree vs inspector body scroll independently; `v0.3.29` shipped after `make test-release-live`. |
+| Subarea occupancy routing + Scenes tab (ADR-HA-099) | active | Done | Released | `v0.3.31` Auto Release succeeded (`11a2f7c`). Occupancy signals reach every location that lists the entity; Scenes rules call `scene.turn_on` on occupied and vacant. |
 | Idempotent panel registration (C-025 / ADR-HA-098) | active | Done | Released | `v0.3.30` Auto Release succeeded; reload leftover `/topomation` routes no longer abort setup before occupancy/lock platforms load. |
 
 ## Parallel-work guardrails

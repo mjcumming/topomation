@@ -55,7 +55,7 @@ Bad examples:
 
 ### 2026-09-28 - v0.3.31 subarea occupancy routing and scene rules gate
 
-1. Commit under test: release-candidate worktree for Topomation `0.3.31`.
+1. Commit under test: `11a2f7c` (`Release v0.3.31`).
 2. Frontend bundle rebuilt from that commit: yes; `npm run build` republished
    `custom_components/topomation/frontend/topomation-panel.js`.
 3. Touched workflow list:
