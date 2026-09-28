@@ -21,6 +21,16 @@
 
 ## Active Decisions
 
+### ADR-HA-099: Scene Action Tab (2026-09-28)
+
+**Status**: APPROVED
+**Full ADR**: [docs/adr/ADR-HA-099-scene-action-tab.md](adr/ADR-HA-099-scene-action-tab.md)
+
+**Decision summary**: Locations can activate a Home Assistant scene when they
+become occupied or vacant. Scene rules always call `scene.turn_on`. Occupancy
+signals also reach every location that lists the source entity, so a subarea
+source works when the entity stays assigned to its parent area.
+
 ### ADR-HA-098: Idempotent Panel Registration on Reload (2026-08-22)
 
 **Status**: APPROVED

@@ -126,6 +126,7 @@ Rules live in focused categories on each location:
 - **HVAC**: `fan.*` targets linked to `climate.*` equipment through the HA device graph
 - **Media**: common `media_player.*` power, playback, volume, and mute actions
 - **Vacuum**: `vacuum.*` start, pause, and return-to-dock actions, with optional once-per-day run gating
+- **Scenes**: activate a Home Assistant `scene.*` when the location becomes occupied or vacant
 
 Lighting rules can use one occupancy edge and one ambient edge in the same rule, with cross-conditions such as "room becomes occupied only if it is dark" or "it becomes dark only if the room is occupied." Non-lighting rules are simpler on purpose: occupancy edge, optional time window, and compatible target command. The lighting rule shown above fires when the storage room becomes occupied and it's dark. The paired vacant rule turns it off again.
 
@@ -208,7 +209,7 @@ Lock workflows are explained in [docs/occupancy-lock-workflows.md](docs/occupanc
 - Lux sensor assignment is explicit. There is no v1 automatic ambient discovery workflow in the panel.
 - Admin access is required for the panel routes and managed-automation writes.
 - TopoMation-managed automations may be rebuilt by the integration. Treat the TopoMation panel as the owner of those rules.
-- The Appliance, Media, HVAC, and Vacuum editors are intentionally narrower than full HA automation editing. If you need something more elaborate, write it as a normal HA automation against the location's occupancy entity.
+- The Appliance, Media, HVAC, Vacuum, and Scenes editors are intentionally narrower than full HA automation editing. If you need something more elaborate, write it as a normal HA automation against the location's occupancy entity.
 - Rich `climate.*` thermostat workflows are deferred for now.
 
 ## Documentation

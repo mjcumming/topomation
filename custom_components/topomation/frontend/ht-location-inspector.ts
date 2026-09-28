@@ -53,9 +53,10 @@ type InspectorTab =
   | "appliances"
   | "media"
   | "hvac"
-  | "vacuum";
+  | "vacuum"
+  | "scenes";
 type InspectorTabRequest = InspectorTab | "occupancy";
-type DeviceAutomationTab = "lighting" | "appliances" | "media" | "hvac" | "vacuum";
+type DeviceAutomationTab = "lighting" | "appliances" | "media" | "hvac" | "vacuum" | "scenes";
 type OccupancyLockDirective = {
   sourceId: string;
   mode: string;
@@ -3332,6 +3333,7 @@ export class HtLocationInspector extends LitElement {
       "media",
       "hvac",
       "vacuum",
+      "scenes",
     ]);
   }
 
@@ -4197,6 +4199,12 @@ export class HtLocationInspector extends LitElement {
               >
                 Vacuum
               </button>
+              <button
+                class="tab ${this._activeTab === "scenes" ? "active" : ""}"
+                @click=${() => this._handleTabChange("scenes")}
+              >
+                Scenes
+              </button>
             `}
       </div>
     `;
@@ -4256,6 +4264,12 @@ export class HtLocationInspector extends LitElement {
         >
           Vacuum
         </button>
+        <button
+          class="tab ${this._activeTab === "scenes" ? "active" : ""}"
+          @click=${() => this._handleTabChange("scenes")}
+        >
+          Scenes
+        </button>
       </div>
     `;
   }
@@ -4291,6 +4305,8 @@ export class HtLocationInspector extends LitElement {
               ? this._renderDeviceAutomationTab("hvac")
             : activeTab === "vacuum"
               ? this._renderDeviceAutomationTab("vacuum")
+            : activeTab === "scenes"
+              ? this._renderDeviceAutomationTab("scenes")
             : ""}
       </div>
     `;
@@ -4367,6 +4383,7 @@ export class HtLocationInspector extends LitElement {
     if (requested === "media") return "media";
     if (requested === "hvac") return "hvac";
     if (requested === "vacuum") return "vacuum";
+    if (requested === "scenes") return "scenes";
     if (requested === "occupancy") return "detection";
     return undefined;
   }
@@ -8354,12 +8371,17 @@ export class HtLocationInspector extends LitElement {
       const entityId = String((rawTarget as { entity_id?: unknown }).entity_id || "").trim();
       if (!entityId || seenEntityIds.has(entityId)) continue;
       const serviceRaw = String((rawTarget as { service?: unknown }).service || "").trim();
-      const service = serviceRaw || this._defaultActionServiceForTrigger(entityId, triggerType);
-      const data = this._normalizeActionDataForRule(
-        (rawTarget as { data?: unknown }).data,
-        entityId,
-        service
-      );
+      const isScene = entityId.startsWith("scene.");
+      const service = isScene
+        ? "turn_on"
+        : serviceRaw || this._defaultActionServiceForTrigger(entityId, triggerType);
+      const data = isScene
+        ? undefined
+        : this._normalizeActionDataForRule(
+            (rawTarget as { data?: unknown }).data,
+            entityId,
+            service
+          );
       const onlyIfOff =
         this._actionSupportsOnlyIfOff(entityId, service) &&
         typeof (rawTarget as { only_if_off?: unknown }).only_if_off === "boolean"
@@ -8467,6 +8489,10 @@ export class HtLocationInspector extends LitElement {
       // politely with pause. Inverse of switch/fan/light "prefers_off on vacancy".
       return triggerType === "on_occupied" ? "pause" : "start";
     }
+    if (domain === "scene") {
+      // Scenes only activate. Leaving a room runs a different scene, not scene.turn_off.
+      return "turn_on";
+    }
     if (prefersOff) {
       return "turn_off";
     }
@@ -8494,7 +8520,7 @@ export class HtLocationInspector extends LitElement {
   }
 
   private _occupancyOnlyAutomationTab(tab: DeviceAutomationTab | undefined): boolean {
-    return tab === "media" || tab === "hvac" || tab === "appliances" || tab === "vacuum";
+    return tab === "media" || tab === "hvac" || tab === "appliances" || tab === "vacuum" || tab === "scenes";
   }
 
   /** Strip ambient triggers for Media/HVAC/Appliances before persisting to HA. */
@@ -8686,6 +8712,9 @@ export class HtLocationInspector extends LitElement {
         { value: "toggle", label: "Toggle", service: "toggle" },
       ];
     }
+    if (domain === "scene") {
+      return [{ value: "turn_on", label: "Activate", service: "turn_on" }];
+    }
     if (domain === "vacuum") {
       // ADR-HA-091 §5: three verbs only. vacuum.stop is intentionally omitted.
       const options = [
@@ -8762,6 +8791,7 @@ export class HtLocationInspector extends LitElement {
     if (tab === "media") return ["media_player"];
     if (tab === "appliances") return ["fan", "switch"];
     if (tab === "vacuum") return ["vacuum"];
+    if (tab === "scenes") return ["scene"];
     return ["fan"];
   }
 
@@ -8771,6 +8801,7 @@ export class HtLocationInspector extends LitElement {
     if (domain === "media_player") return "media";
     if (domain === "switch") return "appliances";
     if (domain === "vacuum") return "vacuum";
+    if (domain === "scene") return "scenes";
     if (domain === "fan") {
       void this._climateDeviceLinkRevision;
       return this._fanEntityLinkedToClimate(entityId) ? "hvac" : "appliances";
@@ -8789,6 +8820,7 @@ export class HtLocationInspector extends LitElement {
         || domain === "media_player"
         || domain === "fan"
         || domain === "vacuum"
+        || domain === "scene"
       );
     }
     if (tab === "hvac") {
@@ -8834,6 +8866,15 @@ export class HtLocationInspector extends LitElement {
     for (const entityId of this._deviceEnumerationExtraEntityIds()) {
       if (!this._isCandidateEntity(entityId)) continue;
       if (this._isActionRuleEntity(entityId, tab)) {
+        ids.add(entityId);
+      }
+    }
+    // Scenes are often created without an area. A location rule still needs to
+    // activate any Home Assistant scene, including ones that cover this subarea.
+    if (tab === "scenes") {
+      for (const entityId of Object.keys(this.hass?.states || {})) {
+        if (!entityId.startsWith("scene.")) continue;
+        if (!this._isCandidateEntity(entityId)) continue;
         ids.add(entityId);
       }
     }
@@ -9726,6 +9767,13 @@ export class HtLocationInspector extends LitElement {
         emptyMessage: "No vacuum rules configured yet.",
       };
     }
+    if (tab === "scenes") {
+      return {
+        icon: "mdi:palette",
+        label: "Scene Rules",
+        emptyMessage: "No scene rules configured yet.",
+      };
+    }
     return {
       icon: "mdi:thermostat",
       label: "HVAC Rules",
@@ -10444,7 +10492,7 @@ export class HtLocationInspector extends LitElement {
    * HVAC / appliances: enumerate entities and commands as choice pills (same interaction model as media).
    */
   private _renderEquipmentPillActionsBlock(
-    variant: "hvac" | "appliances" | "vacuum",
+    variant: "hvac" | "appliances" | "vacuum" | "scenes",
     ruleId: string,
     rule: TopomationActionRule,
     busy: boolean,
@@ -10471,27 +10519,49 @@ export class HtLocationInspector extends LitElement {
         ? "hvac-rule-actions"
         : variant === "vacuum"
           ? "vacuum-rule-actions"
-          : "appliances-rule-actions";
+          : variant === "scenes"
+            ? "scenes-rule-actions"
+            : "appliances-rule-actions";
     const targetGroupName =
       variant === "hvac"
         ? `hvac-equip-target-${ruleId}`
         : variant === "vacuum"
           ? `vacuum-equip-target-${ruleId}`
-          : `appl-equip-target-${ruleId}`;
+          : variant === "scenes"
+            ? `scenes-equip-target-${ruleId}`
+            : `appl-equip-target-${ruleId}`;
     const cmdGroupName =
       variant === "hvac"
         ? `hvac-equip-cmd-${ruleId}`
         : variant === "vacuum"
           ? `vacuum-equip-cmd-${ruleId}`
-          : `appl-equip-cmd-${ruleId}`;
+          : variant === "scenes"
+            ? `scenes-equip-cmd-${ruleId}`
+            : `appl-equip-cmd-${ruleId}`;
     const deviceLabel =
-      variant === "hvac" ? "Equipment" : variant === "vacuum" ? "Vacuum" : "Device";
+      variant === "hvac"
+        ? "Equipment"
+        : variant === "vacuum"
+          ? "Vacuum"
+          : variant === "scenes"
+            ? "Scene"
+            : "Device";
     const emptyPool =
       variant === "hvac"
         ? "No HVAC-linked fans in this location."
         : variant === "vacuum"
           ? "No vacuums in this location."
-          : "No fans or switches in this location.";
+          : variant === "scenes"
+            ? "No Home Assistant scenes found."
+            : "No fans or switches in this location.";
+    const chooseFirst =
+      variant === "hvac"
+        ? "equipment"
+        : variant === "vacuum"
+          ? "a vacuum"
+          : variant === "scenes"
+            ? "a scene"
+            : "a device";
     return html`
       <div class="dusk-equipment-actions" data-testid=${testId}>
         <div class="dusk-rule-section-title">Actions</div>
@@ -10503,7 +10573,14 @@ export class HtLocationInspector extends LitElement {
                 vacant.
               </p>
             `
-          : ""}
+          : variant === "scenes"
+            ? html`
+                <p class="dusk-equipment-actions-hint">
+                  Activating a scene applies that Home Assistant scene. Add a second rule to activate a
+                  different scene when the room becomes vacant. Zigbee scenes still run on the devices.
+                </p>
+              `
+            : ""}
         <div class="dusk-rule-row dusk-media-actions-row">
           <span class="config-label">${deviceLabel}</span>
           <div class="config-value">
@@ -10536,7 +10613,7 @@ export class HtLocationInspector extends LitElement {
           <span class="config-label">Command</span>
           <div class="config-value">
             ${!selectedActionEntityId
-              ? html`<div class="text-muted">Choose ${variant === "hvac" ? "equipment" : variant === "vacuum" ? "a vacuum" : "a device"} first.</div>`
+              ? html`<div class="text-muted">Choose ${chooseFirst} first.</div>`
               : html`
                   <div class="choice-pill-group" role="radiogroup" aria-label="Command">
                     ${serviceOptions.map((option) =>
@@ -10634,6 +10711,9 @@ export class HtLocationInspector extends LitElement {
     }
     if (tab === "vacuum") {
       return this._renderEquipmentPillActionsBlock("vacuum", ruleId, rule, busy, entityOptions);
+    }
+    if (tab === "scenes") {
+      return this._renderEquipmentPillActionsBlock("scenes", ruleId, rule, busy, entityOptions);
     }
     return html``;
   }
@@ -11256,7 +11336,7 @@ export class HtLocationInspector extends LitElement {
     const attrs = stateObj.attributes || {};
     if (this._isTopomationOccupancyOutput(attrs)) return false;
     const domain = entityId.split(".", 1)[0];
-    if (["person", "device_tracker", "light", "switch", "fan", "media_player", "vacuum"].includes(domain)) {
+    if (["person", "device_tracker", "light", "switch", "fan", "media_player", "vacuum", "scene"].includes(domain)) {
       return true;
     }
     if (domain === "binary_sensor") {

@@ -1416,6 +1416,8 @@ class TopomationManagedActions:
             if service in {"return_to_base", "dock"}:
                 return "mdi:robot-vacuum-variant"
             return "mdi:robot-vacuum"
+        if domain == "scene":
+            return "mdi:palette"
         return "mdi:home-automation"
 
     def _prune_recent_rule_snapshots(self) -> None:
@@ -2327,6 +2329,9 @@ class TopomationManagedActions:
             # ADR-HA-091: vacancy is the safe time to clean; occupancy
             # interrupts politely with pause. Inverse of the switch/fan default.
             return "pause" if trigger_type == "on_occupied" else "start"
+        if domain == "scene":
+            # scene.turn_on is the only scene service. Vacancy activates another scene.
+            return "turn_on"
         return "turn_off" if prefers_off else "turn_on"
 
     def _normalize_rule_actions(
@@ -2348,7 +2353,11 @@ class TopomationManagedActions:
             service = raw_service or self._default_action_service_for_trigger(
                 entity_id, trigger_type
             )
-            data = self._normalize_action_data(raw_action.get("data"))
+            if entity_id.startswith("scene."):
+                service = "turn_on"
+            data = None if entity_id.startswith("scene.") else self._normalize_action_data(
+                raw_action.get("data")
+            )
             only_if_off = (
                 raw_action.get("only_if_off")
                 if self._action_supports_only_if_off(entity_id, service)

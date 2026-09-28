@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.31] - 2026-09-28
+
+### Added
+
+- **Scenes**: a Scenes tab activates a Home Assistant scene when a location
+  becomes occupied or vacant. The command is always `scene.turn_on`, including
+  on vacancy, so a second rule can run a different scene when the room is left.
+  Zigbee scenes still execute on the devices. Scenes are listed even when they
+  have no Home Assistant area (ADR-HA-099).
+
+### Fixed
+
+- **Subarea occupancy sources**: a sensor configured on a subarea now updates
+  that subarea even when the entity remains assigned to the parent area.
+  Previously the state change was delivered only to the mapped area, so the
+  subarea stayed vacant while its source was on.
+
 ## [0.3.30] - 2026-08-22
 
 ### Fixed

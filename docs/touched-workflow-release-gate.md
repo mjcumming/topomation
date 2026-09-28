@@ -53,6 +53,39 @@ Bad examples:
 - `automation`
 - `misc fixes`
 
+### 2026-09-28 - v0.3.31 subarea occupancy routing and scene rules gate
+
+1. Commit under test: release-candidate worktree for Topomation `0.3.31`.
+2. Frontend bundle rebuilt from that commit: yes; `npm run build` republished
+   `custom_components/topomation/frontend/topomation-panel.js`.
+3. Touched workflow list:
+   - Subarea occupancy source whose entity stays mapped to the parent area
+     becomes occupied on off-to-on and clears on off.
+   - Scenes tab: add a rule, activate any Home Assistant scene, including one
+     with no area, on an occupancy edge (`scene.turn_on` for both occupied and
+     vacant).
+   - Live HA browser path: create a scene, save a Scenes rule, assert
+     `scene.turn_on`, delete the rule and scene.
+   - Release metadata/version synchronization for Topomation `0.3.31`.
+4. Commands run:
+   - `python scripts/verify-version-sync.py`
+   - `make test-release-live`
+5. Outcome:
+   - Release metadata/version sync: **PASS** (`Version sync ok: 0.3.31`;
+     2026-09-28).
+   - Full local gate: **PASS** (`./scripts/test-comprehensive.sh` inside
+     `make test-release-live`; version sync, Ruff, Mypy, backend pytest
+     `377 passed, 22 skipped`, Vitest `278 passed`, Web Test Runner
+     `215 passed`, Playwright mock/production workflows `35 passed`;
+     2026-09-28).
+   - Full release gate: **PASS** (`make test-release-live`; local
+     comprehensive matrix passed, live HA managed-action contract `2 passed`,
+     live HA browser workflows `7 passed`, including the new scene-rule
+     workflow; 2026-09-28).
+   - Subarea source routing: **PASS**
+   - Scene activate on occupied and vacant: **PASS**
+   - Live scene rule save against local HA: **PASS**
+
 ## 4. Validation Matrix
 
 Run the rows that match the touched workflow.

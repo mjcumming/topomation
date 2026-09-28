@@ -2,7 +2,7 @@
 
 **Last reviewed**: 2026-05-22
 **Status**: Active (design baseline)  
-**Authority**: ADR-HA-055, ADR-HA-056, ADR-HA-060, ADR-HA-066, ADR-HA-068, ADR-HA-069, ADR-HA-080, ADR-HA-087, ADR-HA-089, ADR-HA-091, ADR-HA-096, ADR-HA-097 + `docs/contracts.md`
+**Authority**: ADR-HA-055, ADR-HA-056, ADR-HA-060, ADR-HA-066, ADR-HA-068, ADR-HA-069, ADR-HA-080, ADR-HA-087, ADR-HA-089, ADR-HA-091, ADR-HA-096, ADR-HA-097, ADR-HA-099 + `docs/contracts.md`
 
 This guide defines the intended user interaction model for Topomation's
 automation workspace and inspector tabs.
@@ -26,6 +26,7 @@ automation workspace and inspector tabs.
    - `Media`
    - `HVAC`
    - `Vacuum`
+   - `Scenes`
 
 ## 1.1 Structural aggregate hosts (`property`, `floor`, `building`, `grounds`)
 
@@ -37,11 +38,11 @@ ADR-HA-073 (initial intent) as superseded by **ADR-HA-087** (current tab policy)
    surface. It shows `Occupancy Groups`, `Recent Activity`, and `Ambient`.
    The `Occupancy Groups` tab also carries the structure/rollup summary. It
    does **not** show direct managed-action tabs (`Lighting`, `Appliances`,
-   `Media`, `HVAC`, `Vacuum`).
+   `Media`, `HVAC`, `Vacuum`, `Scenes`).
 2. **Non-property structural tabs shown**: `Occupancy Groups`, `Ambient`,
-   `Lighting`, `Appliances`, `Media`, `HVAC`, `Vacuum`.
+   `Lighting`, `Appliances`, `Media`, `HVAC`, `Vacuum`, `Scenes`.
 3. **Device and lux enumeration** (Ambient selector, Ambient local-light
-   contamination list, Lighting/Appliances/Media/HVAC/Vacuum
+   contamination list, Lighting/Appliances/Media/HVAC/Vacuum/Scenes
    action targets): the host’s `entity_ids` and `ha_area_id` plus the **managed
    shadow** wrapper’s `ha_area_id` and `entity_ids` (`_meta.shadow_area_id` on the
    host). **No descendant walk** — devices in child-room HA areas are authored
@@ -113,7 +114,7 @@ Top-to-bottom layout order:
    `light.*` entities that can contaminate the local lux sensor and explains that
    managed Lighting rules use inherited lux or sunrise/sunset fallback while the
    local lux source is ignored.
-6. Rule-authoring tabs (`Lighting`, `Appliances`, `Media`, `HVAC`, `Vacuum`) use
+6. Rule-authoring tabs (`Lighting`, `Appliances`, `Media`, `HVAC`, `Vacuum`, `Scenes`) use
    per-rule card controls for rule lifecycle edits.
 7. Do not mix tab-level `Save changes` / `Discard changes` with per-card
    `Delete rule` for the same rule workflow.
@@ -140,7 +141,7 @@ Top-to-bottom layout order:
    - occupancy edge triggers only (choice pills; no ambient rows)
    - optional time window (same pill pattern as Lighting)
    - `Set volume` exposes a percentage control only when selected
-4. `Appliances`, `Media`, `HVAC`, and `Vacuum` do not expose ambient-light triggers or
+4. `Appliances`, `Media`, `HVAC`, `Vacuum`, and `Scenes` do not expose ambient-light triggers or
    ambient condition filters in v1.
 5. Do not present `climate.*` thermostat/preset editing until a narrower common
    occupancy contract is agreed and documented.
@@ -158,6 +159,11 @@ Top-to-bottom layout order:
    - daily gating is offered on every Vacuum rule regardless of action verb;
      enabling it on `Pause` or `Return to dock` is permitted but rarely
      meaningful and not blocked.
+7. `Scenes` (v1, ADR-HA-099): any Home Assistant `scene.*` target.
+   - occupancy edge triggers only; same time-window pill pattern
+   - the only command is **Activate** (`scene.turn_on`), including when the room becomes vacant
+   - use a second rule to activate a different scene on the other occupancy edge
+   - scene entities are listed even when they have no Home Assistant area
 
 ## 7. Rule Lifecycle Controls
 

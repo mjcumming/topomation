@@ -497,6 +497,90 @@ async def test_replayed_group_member_active_state_does_not_reoccupy_after_vacate
     assert occupancy.get_location_state("area_family")["occupied"] is False
 
 
+async def test_subarea_source_updates_when_entity_stays_mapped_to_parent(
+    hass: HomeAssistant,
+) -> None:
+    """Explicit subarea sources receive signals even when the entity area is the parent.
+
+    Subareas are topology nodes. Adding a presence sensor there stores it in
+    occupancy_sources without moving the entity off the parent area.
+    """
+    bus = EventBus()
+    loc_mgr = LocationManager()
+    bus.set_location_manager(loc_mgr)
+    loc_mgr.set_event_bus(bus)
+
+    loc_mgr.create_location(id="area_living_room", name="Living Room")
+    loc_mgr.create_location(
+        id="subarea_reading_nook",
+        name="Reading Nook",
+        parent_id="area_living_room",
+    )
+    loc_mgr.create_location(id="area_kitchen", name="Kitchen")
+    loc_mgr.add_entity_to_location("binary_sensor.living_room_presence", "area_living_room")
+
+    presence_source = {
+        "entity_id": "binary_sensor.living_room_presence",
+        "source_id": "binary_sensor.living_room_presence",
+        "mode": "specific_states",
+        "on_event": "trigger",
+        "on_timeout": None,
+        "off_event": "clear",
+        "off_trailing": 0,
+    }
+    loc_mgr.set_module_config(
+        "area_living_room",
+        "occupancy",
+        {"enabled": True, "occupancy_sources": []},
+    )
+    loc_mgr.set_module_config(
+        "subarea_reading_nook",
+        "occupancy",
+        {"enabled": True, "occupancy_sources": [presence_source]},
+    )
+    loc_mgr.set_module_config(
+        "area_kitchen",
+        "occupancy",
+        {"enabled": True, "occupancy_sources": []},
+    )
+
+    occupancy = OccupancyModule()
+    occupancy.attach(bus, loc_mgr)
+    bridge = EventBridge(hass, bus, loc_mgr, occupancy_module=occupancy)
+
+    bridge._state_changed_listener(
+        Mock(
+            data={
+                "entity_id": "binary_sensor.living_room_presence",
+                "old_state": State("binary_sensor.living_room_presence", STATE_OFF),
+                "new_state": State("binary_sensor.living_room_presence", STATE_ON),
+            }
+        )
+    )
+
+    subarea = occupancy.get_location_state("subarea_reading_nook")
+    assert subarea is not None
+    assert subarea["occupied"] is True
+    assert {row["source_id"] for row in subarea["contributions"]} == {
+        "binary_sensor.living_room_presence"
+    }
+    assert occupancy.get_location_state("area_kitchen")["occupied"] is False
+
+    bridge._state_changed_listener(
+        Mock(
+            data={
+                "entity_id": "binary_sensor.living_room_presence",
+                "old_state": State("binary_sensor.living_room_presence", STATE_ON),
+                "new_state": State("binary_sensor.living_room_presence", STATE_OFF),
+            }
+        )
+    )
+
+    cleared = occupancy.get_location_state("subarea_reading_nook")
+    assert cleared is not None
+    assert cleared["occupied"] is False
+
+
 async def test_light_power_clear_with_zero_trailing_sets_authoritative_vacant(
     event_bridge: EventBridge,
     event_bus: Mock,

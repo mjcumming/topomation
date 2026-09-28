@@ -742,3 +742,82 @@ test("live occupancy inspector keeps the hero shell outside the scroll body", as
   expect(after).not.toBeNull();
   expect(Math.abs((after?.y ?? 0) - (before?.y ?? 0))).toBeLessThanOrEqual(1);
 });
+
+test("live scene rule activates a scene on an occupancy edge", async ({ page }) => {
+  const sceneEntityId = "scene.topomation_release_gate_scene";
+  await callHaWs({
+    type: "call_service",
+    domain: "scene",
+    service: "create",
+    service_data: {
+      scene_id: "topomation_release_gate_scene",
+      snapshot_entities: ["sun.sun"],
+    },
+  });
+
+  const locations = await listLocations();
+  const location = locations.find((candidate) => {
+    const meta = (candidate?.modules?._meta || {}) as Record<string, unknown>;
+    const locationType = String(meta.type || "");
+    const role = String(meta.role || "");
+    return (locationType === "area" || locationType === "subarea") && role !== "managed_shadow";
+  });
+  if (!location) {
+    throw new Error("No live area or subarea was found for the scene rule");
+  }
+  const locationId = String(location.id);
+
+  let createdRuleId = "";
+  try {
+    await openLiveHarness(page);
+    await selectLocationById(page, locationId);
+    const inspector = page.locator("ht-location-inspector");
+    await inspector.getByRole("button", { name: "Scenes" }).click();
+    await expect(inspector.locator('[data-testid="actions-rules-section"]')).toBeVisible();
+
+    const existingRules = await listLocationRules(locationId);
+    const existingRuleIds = new Set(
+      existingRules.map((rule) => String(rule.id || "").trim()).filter(Boolean)
+    );
+
+    await inspector.getByRole("button", { name: "Add rule" }).click();
+    const draftRule = inspector.locator(".dusk-block-row[data-testid^='action-rule-']").last();
+    await expect(draftRule).toBeVisible();
+    await draftRule.locator(`input[type="radio"][value="${sceneEntityId}"]`).check();
+    await expect(draftRule.getByText("Activate", { exact: true })).toBeVisible();
+    await draftRule.getByRole("button", { name: "Save rule" }).click();
+
+    const deadline = Date.now() + 15_000;
+    let createdRule: any;
+    while (Date.now() < deadline) {
+      const rules = await listLocationRules(locationId);
+      createdRule = rules.find((rule) => {
+        const ruleId = String(rule?.id || "").trim();
+        const action = Array.isArray(rule?.actions) ? rule.actions[0] : undefined;
+        return (
+          ruleId &&
+          !existingRuleIds.has(ruleId) &&
+          action?.entity_id === sceneEntityId &&
+          action?.service === "turn_on"
+        );
+      });
+      if (createdRule) break;
+      await page.waitForTimeout(250);
+    }
+    if (!createdRule) {
+      throw new Error("Timed out waiting for the live scene rule");
+    }
+    createdRuleId = String(createdRule.id || "").trim();
+    expect(createdRule.actions[0].service).toBe("turn_on");
+  } finally {
+    if (createdRuleId) {
+      await deleteRuleById(createdRuleId);
+    }
+    await callHaWs({
+      type: "call_service",
+      domain: "scene",
+      service: "delete",
+      target: { entity_id: sceneEntityId },
+    }).catch(() => undefined);
+  }
+});

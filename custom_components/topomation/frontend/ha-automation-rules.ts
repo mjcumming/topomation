@@ -183,6 +183,9 @@ function defaultActionServiceForTrigger(
   if (domain === "vacuum") {
     return triggerType === "on_occupied" ? "pause" : "start";
   }
+  if (domain === "scene") {
+    return "turn_on";
+  }
   return prefersOff ? "turn_off" : "turn_on";
 }
 
@@ -197,7 +200,11 @@ function normalizeRuleActionsFromPayload(
       const entityId = String((action as any).entity_id || "").trim();
       if (!entityId) return undefined;
       const serviceRaw = String((action as any).service || "").trim();
-      const service = serviceRaw || defaultActionServiceForTrigger(entityId, fallbackTriggerType);
+      const isScene = entityId.startsWith("scene.");
+      const service = isScene
+        ? "turn_on"
+        : serviceRaw || defaultActionServiceForTrigger(entityId, fallbackTriggerType);
+      const actionData = isScene ? undefined : normalizeActionData((action as any).data);
       const onlyIfOff =
         actionSupportsOnlyIfOff(entityId, service) && typeof (action as any).only_if_off === "boolean"
           ? Boolean((action as any).only_if_off)
@@ -205,7 +212,7 @@ function normalizeRuleActionsFromPayload(
       return {
         entity_id: entityId,
         service,
-        ...(normalizeActionData((action as any).data) ? { data: normalizeActionData((action as any).data) } : {}),
+        ...(actionData ? { data: actionData } : {}),
         ...(typeof onlyIfOff === "boolean" ? { only_if_off: onlyIfOff } : {}),
       } satisfies TopomationRuleAction;
     })

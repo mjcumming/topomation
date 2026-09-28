@@ -1590,6 +1590,7 @@ describe("HtLocationInspector occupancy source composer", () => {
     expect(tabLabels).to.include("Appliances");
     expect(tabLabels).to.include("Media");
     expect(tabLabels).to.include("HVAC");
+    expect(tabLabels).to.include("Scenes");
   });
 
   it("groups light power source with level source in one card", async () => {
@@ -2780,6 +2781,7 @@ describe("HtLocationInspector occupancy source composer", () => {
       "Media",
       "HVAC",
       "Vacuum",
+      "Scenes",
     ]);
     expect(groupsSection).to.exist;
     expect(kitchenCheckbox).to.exist;
@@ -3082,6 +3084,7 @@ describe("HtLocationInspector occupancy source composer", () => {
       "Media",
       "HVAC",
       "Vacuum",
+      "Scenes",
     ]);
     expect(
       element.shadowRoot!.querySelector('[data-testid="occupancy-group-create-location-area_entry"]')
@@ -3973,6 +3976,78 @@ describe("HtLocationInspector occupancy source composer", () => {
       },
       "vacuum entity did not appear in Vacuum tab target picker"
     );
+  });
+
+  it("activates any Home Assistant scene on occupied and vacant edges", async () => {
+    const hass: HomeAssistant = {
+      callWS: async <T>(request: Record<string, any>) => {
+        if (request.type === "topomation/actions/rules/list") {
+          return { rules: [] } as T;
+        }
+        if (request.type === "config/entity_registry/list") return [] as T;
+        if (request.type === "config/device_registry/list") return [] as T;
+        return [] as T;
+      },
+      connection: {},
+      states: {
+        "scene.reading_nook": {
+          entity_id: "scene.reading_nook",
+          state: "unknown",
+          attributes: { friendly_name: "Reading Nook" },
+        },
+      },
+      areas: {},
+      floors: {},
+      localize: (key: string) => key,
+    };
+
+    const location = structuredClone(baseLocation);
+    location.id = "subarea_reading_nook";
+    location.name = "Reading Nook";
+    location.modules._meta = { type: "subarea" };
+    location.entity_ids = [];
+
+    const element = await fixture<HtLocationInspector>(html`
+      <ht-location-inspector .hass=${hass} .location=${location} .forcedTab=${"scenes"}></ht-location-inspector>
+    `);
+    await element.updateComplete;
+
+    const addRuleButton = element.shadowRoot?.querySelector(
+      '[data-testid="action-rule-add"]'
+    ) as HTMLButtonElement | null;
+    expect(addRuleButton, "Scenes add-rule button did not render").to.exist;
+    addRuleButton!.click();
+    await element.updateComplete;
+
+    await waitUntil(
+      () => {
+        const row = element.shadowRoot!.querySelector(".dusk-block-row") as HTMLElement | null;
+        if (!row) return false;
+        const scene = row.querySelector(
+          'input[type="radio"][name^="scenes-equip-target-"][value="scene.reading_nook"]'
+        ) as HTMLInputElement | null;
+        const activate = row.querySelector(
+          'input[type="radio"][name^="scenes-equip-cmd-"][value="turn_on"]'
+        ) as HTMLInputElement | null;
+        return Boolean(scene?.checked && activate?.checked);
+      },
+      "unassigned scene did not become the Activate target"
+    );
+
+    const vacant = Array.from(element.shadowRoot!.querySelectorAll("button, label, span")).find(
+      (node) => (node.textContent || "").trim() === "Room becomes vacant"
+    ) as HTMLElement | undefined;
+    expect(vacant, "vacant trigger pill did not render").to.exist;
+    vacant!.click();
+    await element.updateComplete;
+
+    const activate = element.shadowRoot!.querySelector(
+      'input[type="radio"][name^="scenes-equip-cmd-"][value="turn_on"]'
+    ) as HTMLInputElement | null;
+    expect(activate?.checked, "vacant scene rule stopped activating the scene").to.equal(true);
+    expect(
+      element.shadowRoot!.querySelector('input[type="radio"][name^="scenes-equip-cmd-"][value="turn_off"]')
+    ).to.equal(null);
   });
 
   it("filters Appliances target entities to standalone fans and switches", async () => {
@@ -5104,7 +5179,7 @@ describe("HtLocationInspector WIAB configuration", () => {
     const buildingTabs = Array.from(element.shadowRoot?.querySelectorAll(".tabs > .tab") || []).map((t) =>
       (t.textContent || "").trim()
     );
-    expect(buildingTabs).to.deep.equal(["Occupancy Groups", "Ambient", "Lighting", "Appliances", "Media", "HVAC", "Vacuum"]);
+    expect(buildingTabs).to.deep.equal(["Occupancy Groups", "Ambient", "Lighting", "Appliances", "Media", "HVAC", "Vacuum", "Scenes"]);
     expect(element.shadowRoot?.querySelector('[data-testid="occupancy-groups-section"]')).to.exist;
     expect(element.shadowRoot?.querySelector('[data-testid="structure-summary-panel"]')).to.exist;
     expect(element.shadowRoot?.querySelector('[data-testid="open-external-source-dialog"]')).to.equal(null);
@@ -5154,7 +5229,7 @@ describe("HtLocationInspector WIAB configuration", () => {
     const groundsTabs = Array.from(element.shadowRoot?.querySelectorAll(".tabs > .tab") || []).map((t) =>
       (t.textContent || "").trim()
     );
-    expect(groundsTabs).to.deep.equal(["Occupancy Groups", "Ambient", "Lighting", "Appliances", "Media", "HVAC", "Vacuum"]);
+    expect(groundsTabs).to.deep.equal(["Occupancy Groups", "Ambient", "Lighting", "Appliances", "Media", "HVAC", "Vacuum", "Scenes"]);
     expect(element.shadowRoot?.querySelector('[data-testid="occupancy-groups-section"]')).to.exist;
     expect(element.shadowRoot?.querySelector('[data-testid="structure-summary-panel"]')).to.exist;
     expect(element.shadowRoot?.querySelector('[data-testid="open-external-source-dialog"]')).to.equal(null);

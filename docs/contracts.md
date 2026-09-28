@@ -340,8 +340,9 @@ Additional save points:
   - `property` is a site-context surface and follows **C-024**: it does not expose
     direct managed-action tabs in the target v1 recent-activity design.
   - `floor`, `building`, and `grounds` may expose **Lighting**, **Appliances**,
-    **Media**, and **HVAC** alongside **Occupancy** (summary or groups) and
-    **Ambient** when they have managed-shadow device containers.
+    **Media**, **HVAC**, **Vacuum**, and **Scenes** alongside **Occupancy**
+    (summary or groups) and **Ambient** when they have managed-shadow device
+    containers.
   - `property`, `floor`, `building`, and `grounds` use the same managed-shadow
     HA area as the device container for aggregate automation targets when action
     tabs are allowed on that host (ADR-HA-049, ADR-HA-087).
@@ -367,7 +368,7 @@ Additional save points:
   - the sticky bar remains visible and `Save changes` shows `Saving...`.
 - Save errors:
   - the sticky bar remains visible and an inline warning is shown above it.
-- Device-automation rule tabs (`Appliances`, `HVAC`, `Lighting`, `Media`) do not use this sticky draft bar; they keep per-rule lifecycle controls.
+- Device-automation rule tabs (`Appliances`, `HVAC`, `Lighting`, `Media`, `Vacuum`, `Scenes`) do not use this sticky draft bar; they keep per-rule lifecycle controls.
 
 ## C-014A Lighting Rule Authoring Contract
 
@@ -865,8 +866,8 @@ ADR-HA-096 and is not an implementation or release claim.
   - property rows retain occupancy rollup, occupancy groups where applicable,
     and structure summary/diagnostics.
   - property rows do not expose direct managed-action tabs:
-    **Lighting**, **Appliances**, **Media**, **HVAC**, and **Vacuum** are hidden
-    on `property`.
+    **Lighting**, **Appliances**, **Media**, **HVAC**, **Vacuum**, and **Scenes**
+    are hidden on `property`.
   - controllable devices that belong to the site should be authored from a
     concrete descendant location such as `grounds`, `building`, exterior,
     pathway, garage, room, or another modeled area/subarea.
@@ -897,7 +898,7 @@ ADR-HA-096 and is not an implementation or release claim.
     option.
 - V1 managed-rule consumption:
   - only Lighting rules may consume property recent activity in v1.
-  - Appliance, Media, HVAC, and Vacuum rule editors must not expose or persist
+  - Appliance, Media, HVAC, Vacuum, and Scenes rule editors must not expose or persist
     property-activity conditions in this slice.
   - non-lighting inactive-property workflows, such as turning off water pumps,
     hot water heaters, ice makers, or similar equipment, are future work and

@@ -1272,12 +1272,24 @@ def test_managed_rule_area_resolution_fails_when_area_missing(
         ({"entity_id": "climate.hall", "service": "set_hvac_mode"}, "mdi:thermostat"),
         ({"entity_id": "vacuum.main", "service": "start"}, "mdi:robot-vacuum"),
         ({"entity_id": "vacuum.main", "service": "pause"}, "mdi:pause"),
+        ({"entity_id": "scene.reading", "service": "turn_on"}, "mdi:palette"),
     ],
 )
 def test_generated_icon_selection(action: dict[str, str], expected_icon: str) -> None:
     """Generated automation icons come from target domain and primary action."""
     manager = TopomationManagedActions(cast(HomeAssistant, SimpleNamespace()))
     assert manager._select_generated_icon([action]) == expected_icon  # noqa: SLF001
+
+
+def test_scene_actions_always_activate() -> None:
+    """Scene rules activate a scene on both occupied and vacant edges."""
+    manager = TopomationManagedActions(cast(HomeAssistant, SimpleNamespace()))
+    assert manager._default_action_service_for_trigger("scene.reading", "on_vacant") == "turn_on"  # noqa: SLF001
+    normalized = manager._normalize_rule_actions(  # noqa: SLF001
+        actions=[{"entity_id": "scene.reading", "service": "turn_off", "data": {"brightness_pct": 10}}],
+        trigger_type="on_vacant",
+    )
+    assert normalized == [{"entity_id": "scene.reading", "service": "turn_on"}]
 
 
 def test_compute_generation_hash_is_stable_and_sensitive() -> None:

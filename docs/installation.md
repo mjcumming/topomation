@@ -67,6 +67,7 @@ The main workspace is split into:
   - `Media`
   - `HVAC`
   - `Vacuum`
+  - `Scenes`
 
 Admin access is required for panel use and managed automation writes.
 
@@ -137,6 +138,7 @@ Use the rule tabs to create native Home Assistant automations:
 - `HVAC` for `fan.*` entities linked to a `climate.*` device on the same device chain
 - `Media` for `media_player.*` targets (power, playback, volume, mute)
 - `Vacuum` for `vacuum.*` targets (start, pause, return to dock, optional daily run gating)
+- `Scenes` for `scene.*` targets (`scene.turn_on` when the location becomes occupied or vacant)
 
 Rules created here are stored as Home Assistant automations and appear in:
 

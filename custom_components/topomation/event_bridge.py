@@ -131,89 +131,93 @@ class EventBridge:
             event_time=event_time,
         )
 
-        # Get location for entity
-        location_id = self.loc_mgr.get_entity_location(entity_id)
-        if not location_id:
-            # Entity not mapped to any location
+        # Area mapping is not the only assignment. A subarea (or any other
+        # location) can list this entity in occupancy_sources while the entity
+        # remains mapped to a parent area.
+        targets = self._occupancy_targets_for_entity(entity_id)
+        if not targets:
             return
 
-        occupancy_config = self.loc_mgr.get_module_config(location_id, "occupancy")
-        if not isinstance(occupancy_config, dict):
-            return
-        configured_sources = occupancy_config.get("occupancy_sources")
-        if not isinstance(configured_sources, list) or not configured_sources:
-            return
+        mapped_location_id = self.loc_mgr.get_entity_location(entity_id)
+        if not isinstance(mapped_location_id, str) or not mapped_location_id:
+            mapped_location_id = None
 
-        source_events = self._resolve_source_events(
-            configured_sources=configured_sources,
-            entity_id=entity_id,
-            signal_type=signal_type,
-            signal_key=signal_key,
-        )
-        if not source_events:
-            return
+        for location_id, occupancy_config in targets:
+            configured_sources = occupancy_config.get("occupancy_sources")
+            if not isinstance(configured_sources, list) or not configured_sources:
+                continue
 
-        group_id_for_log = occupancy_config.get("occupancy_group_id")
-        for source_event in source_events:
-            if _LOGGER.isEnabledFor(logging.INFO) and source_event["event_type"] in (
-                "trigger",
-                "clear",
-            ):
-                _LOGGER.info(
-                    "occupancy.signal entity=%s location=%s group=%s event=%s source=%s old=%s new=%s",
-                    entity_id,
-                    location_id,
-                    group_id_for_log or "-",
-                    source_event["event_type"],
-                    source_event["source_id"],
-                    normalized_old,
-                    normalized_new,
-                )
-            payload = {
-                "event_type": source_event["event_type"],
-                "source_id": source_event["source_id"],
-                "signal_key": signal_key,
-                "old_state": normalized_old,
-                "new_state": normalized_new,
-                "attributes": dict(new_state.attributes),
-            }
-            if source_event["timeout_set"]:
-                payload["timeout"] = source_event["timeout"]
-            if (
-                source_event["event_type"] == "clear"
-                and source_event["timeout_set"]
-                and int(source_event["timeout"] or 0) == 0
-            ):
-                # Whole-room vacate when HA "off" is configured with zero trailing (see ADR-HA-075).
-                payload["authoritative_vacant"] = True
-
-            kernel_event = Event(
-                type="occupancy.signal",
-                source="ha",
+            source_events = self._resolve_source_events(
+                configured_sources=configured_sources,
                 entity_id=entity_id,
-                location_id=location_id,
-                payload=payload,
-                timestamp=event_time,
+                signal_type=signal_type,
+                signal_key=signal_key,
             )
+            if not source_events:
+                continue
 
-            try:
-                self.bus.publish(kernel_event)
-                self._maybe_publish_handoff_signal(
-                    event_time=event_time,
-                    source_location_id=location_id,
+            group_id_for_log = occupancy_config.get("occupancy_group_id")
+            for source_event in source_events:
+                if _LOGGER.isEnabledFor(logging.INFO) and source_event["event_type"] in (
+                    "trigger",
+                    "clear",
+                ):
+                    _LOGGER.info(
+                        "occupancy.signal entity=%s location=%s group=%s event=%s source=%s old=%s new=%s",
+                        entity_id,
+                        location_id,
+                        group_id_for_log or "-",
+                        source_event["event_type"],
+                        source_event["source_id"],
+                        normalized_old,
+                        normalized_new,
+                    )
+                payload = {
+                    "event_type": source_event["event_type"],
+                    "source_id": source_event["source_id"],
+                    "signal_key": signal_key,
+                    "old_state": normalized_old,
+                    "new_state": normalized_new,
+                    "attributes": dict(new_state.attributes),
+                }
+                if source_event["timeout_set"]:
+                    payload["timeout"] = source_event["timeout"]
+                if (
+                    source_event["event_type"] == "clear"
+                    and source_event["timeout_set"]
+                    and int(source_event["timeout"] or 0) == 0
+                ):
+                    # Whole-room vacate when HA "off" is configured with zero trailing (see ADR-HA-075).
+                    payload["authoritative_vacant"] = True
+
+                kernel_event = Event(
+                    type="occupancy.signal",
+                    source="ha",
                     entity_id=entity_id,
-                    source_event=source_event,
-                    normalized_old=normalized_old,
-                    normalized_new=normalized_new,
-                    state_attributes=dict(new_state.attributes),
+                    location_id=location_id,
+                    payload=payload,
+                    timestamp=event_time,
                 )
-            except Exception as e:  # noqa: BLE001
-                _LOGGER.error(
-                    "Error publishing event for %s: %s",
-                    entity_id,
-                    e,
-                    exc_info=True,
-                )
+
+                try:
+                    self.bus.publish(kernel_event)
+                    if location_id == mapped_location_id:
+                        self._maybe_publish_handoff_signal(
+                            event_time=event_time,
+                            source_location_id=location_id,
+                            entity_id=entity_id,
+                            source_event=source_event,
+                            normalized_old=normalized_old,
+                            normalized_new=normalized_new,
+                            state_attributes=dict(new_state.attributes),
+                        )
+                except Exception as e:  # noqa: BLE001
+                    _LOGGER.error(
+                        "Error publishing event for %s: %s",
+                        entity_id,
+                        e,
+                        exc_info=True,
+                    )
 
     def _execute_wiab_actions(
         self,
@@ -791,6 +795,40 @@ class EventBridge:
                     return ("trigger", "color")
 
         return None
+
+    def _occupancy_targets_for_entity(self, entity_id: str) -> list[tuple[str, dict[str, Any]]]:
+        """Return locations that configure this entity as an occupancy source.
+
+        The mapped area is checked first so area-local sources keep their
+        existing delivery order. Other locations are included when they list
+        the same entity explicitly, which is how subarea sources are assigned.
+        """
+        targets: list[tuple[str, dict[str, Any]]] = []
+        seen: set[str] = set()
+
+        def consider(location_id: str | None) -> None:
+            if not isinstance(location_id, str) or not location_id or location_id in seen:
+                return
+            config = self.loc_mgr.get_module_config(location_id, "occupancy")
+            if not isinstance(config, dict):
+                return
+            sources = config.get("occupancy_sources")
+            if not isinstance(sources, list):
+                return
+            if not any(
+                isinstance(source, dict) and source.get("entity_id") == entity_id
+                for source in sources
+            ):
+                return
+            seen.add(location_id)
+            targets.append((location_id, config))
+
+        mapped_location_id = self.loc_mgr.get_entity_location(entity_id)
+        consider(mapped_location_id if isinstance(mapped_location_id, str) else None)
+        for location in self._all_locations():
+            location_id = getattr(location, "id", None)
+            consider(location_id if isinstance(location_id, str) else None)
+        return targets
 
     def _resolve_source_events(
         self,
