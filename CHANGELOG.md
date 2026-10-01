@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.32] - 2026-10-01
+
+### Fixed
+
+- **Manifest**: the code owner is now `@mjcumming`.
+- **Validation**: CI and Auto Release run the current HACS action with every
+  check enabled, including brands, which now passes from the integration's own
+  `brand` folder.
+
 ## [0.3.31] - 2026-09-28
 
 ### Added

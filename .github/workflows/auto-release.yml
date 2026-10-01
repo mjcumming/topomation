@@ -89,10 +89,9 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Validate repository with HACS Action
-        uses: hacs/action@22.5.0
+        uses: hacs/action@1ebf01c408f29afcb6406bd431bc98fd8cbb15aa # main
         with:
           category: "integration"
-          ignore: "brands"
 
   release:
     needs: [check-version, hacs-validation]
