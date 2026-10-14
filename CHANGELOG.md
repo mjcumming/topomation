@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.33] - 2026-10-14
+
+### Fixed
+
+- An occupancy source turning off, or its hold expiring, releases only that
+  source. Another sensor's hold keeps the location occupied. Whole-room vacate
+  remains an explicit policy action (`vacate_area`), including a target list so
+  one entity can vacate several areas.
+
 ## [0.3.32] - 2026-10-01
 
 ### Fixed

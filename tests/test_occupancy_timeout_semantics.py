@@ -116,8 +116,38 @@ def test_presence_clear_does_not_cancel_active_motion_hold() -> None:
     assert state_after_motion_timeout["occupied"] is False
 
 
+def test_source_clear_keeps_other_sensor_holds() -> None:
+    """A zero-trailing source clear drops only that source."""
+    occupancy, bus = _build_occupancy_module()
+    base = datetime(2026, 10, 14, 18, 0, tzinfo=UTC)
+
+    occupancy.trigger("area_test", "presence", None, now=base)
+    occupancy.trigger("area_test", "motion", 1800, now=base)
+    assert occupancy.get_location_state("area_test")["occupied"] is True
+
+    bus.publish(
+        Event(
+            type="occupancy.signal",
+            source="ha",
+            entity_id="binary_sensor.presence",
+            location_id="area_test",
+            payload={
+                "event_type": "clear",
+                "source_id": "presence",
+                "timeout": 0,
+            },
+            timestamp=base + timedelta(seconds=10),
+        )
+    )
+
+    state = occupancy.get_location_state("area_test")
+    assert state is not None
+    assert state["occupied"] is True
+    assert {row["source_id"] for row in state["contributions"]} == {"motion"}
+
+
 def test_occupancy_signal_authoritative_vacant_vacates_entire_location() -> None:
-    """Mirrors HA bridge: authoritative_vacant + clear timeout 0 vacates the whole location."""
+    """An explicit authoritative_vacant signal still vacates every contribution."""
     occupancy, bus = _build_occupancy_module()
     base = datetime(2026, 4, 11, 15, 0, tzinfo=UTC)
 

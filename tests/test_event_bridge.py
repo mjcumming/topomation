@@ -581,12 +581,12 @@ async def test_subarea_source_updates_when_entity_stays_mapped_to_parent(
     assert cleared["occupied"] is False
 
 
-async def test_light_power_clear_with_zero_trailing_sets_authoritative_vacant(
+async def test_light_power_clear_with_zero_trailing_is_source_scoped(
     event_bridge: EventBridge,
     event_bus: Mock,
     location_manager: Mock,
 ) -> None:
-    """Configured off_event=clear with off_trailing=0 requests whole-room vacate (ADR-HA-075)."""
+    """Configured off_event=clear with off_trailing=0 clears only that source."""
     old_state = State("light.kitchen", STATE_ON, {"brightness": 200})
     new_state = State("light.kitchen", STATE_OFF, {"brightness": 0})
     ha_event = Mock()
@@ -607,7 +607,7 @@ async def test_light_power_clear_with_zero_trailing_sets_authoritative_vacant(
         if e.payload.get("source_id") == "light.kitchen::power"
     )
     assert power_clear.payload.get("timeout") == 0
-    assert power_clear.payload.get("authoritative_vacant") is True
+    assert power_clear.payload.get("authoritative_vacant") is not True
 
 
 async def test_state_held_source_clears_when_source_turns_off(
@@ -650,7 +650,7 @@ async def test_state_held_source_clears_when_source_turns_off(
     assert len(clear_events) == 1
     assert clear_events[0].payload["source_id"] == "binary_sensor.hot_tub_spa_in_use"
     assert clear_events[0].payload["timeout"] == 0
-    assert clear_events[0].payload["authoritative_vacant"] is True
+    assert clear_events[0].payload.get("authoritative_vacant") is not True
 
 
 async def test_state_change_publishes_adjacency_handoff_events(
@@ -807,6 +807,7 @@ async def test_media_paused_state_publishes_clear(
     published_event: Event = event_bus.publish.call_args[0][0]
     assert published_event.payload["event_type"] == "clear"
     assert published_event.payload["timeout"] == 0
+    assert published_event.payload.get("authoritative_vacant") is not True
     assert published_event.payload["signal_key"] == "playback"
     assert published_event.payload["source_id"] == "media_player.living_room_tv::playback"
 

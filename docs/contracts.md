@@ -1,6 +1,6 @@
 # Contracts
 
-**Last reviewed**: 2026-08-22
+**Last reviewed**: 2026-10-14
 **Purpose**: canonical behavior contracts for Topomation runtime and panel actions.
 
 Use this file as the quick contract surface. Keep it synchronized with:
@@ -35,41 +35,38 @@ Use this file as the quick contract surface. Keep it synchronized with:
 ## C-003A Source-off clear contract
 
 - For occupancy sources configured with `off_event=clear`:
-  - `off_trailing <= 0` maps to `occupancy.signal` with `event_type=clear`, `timeout=0`,
-    and **`authoritative_vacant: true`**, which the kernel treats as a **location-wide
-    vacate** (all contributions cleared for that location). Operators who do not want
-    whole-room vacant on that entity’s OFF must set `off_event` to `none` or use a
-    non-zero `off_trailing` exit grace.
+  - `off_trailing <= 0` maps to `occupancy.signal` with `event_type=clear` and
+    `timeout=0`. The kernel removes only that `source_id`. Other contributions
+    keep the location occupied.
   - `off_trailing > 0` maps to trailing source release (`event_type=clear`, `timeout=off_trailing`).
     Those timed holds are **exit-grace** rows: any later **trigger** on that location
     cancels **all** exit-grace holds (see **C-003B** and ADR-HA-075).
-- Inspector "Test Off" mirrors this:
-  - always `service: topomation.clear(location_id, source_id, trailing_timeout)` (source-scoped;
-    use `topomation.vacate` when testing whole-room vacant explicitly).
-- Authoritative vacate from HA sources is limited to the configured **immediate off**
-  path above; other vacate entry points remain `topomation.vacate`, `topomation.vacate_area`,
-  or policy actions that call vacate.
+- Occupancy-source signals do not set `authoritative_vacant`. A sensor turning
+  off, or that sensor's hold expiring, releases only that sensor.
+- Whole-room vacant from a Home Assistant entity is an explicit policy
+  `vacate_area` action. A policy source can list target areas, so one entity
+  state can vacate several locations. Manual vacate remains `topomation.vacate`
+  and `topomation.vacate_area`.
+- Inspector "Test Off" is source-scoped:
+  - always `service: topomation.clear(location_id, source_id, trailing_timeout)`
+  - use `topomation.vacate` when testing whole-room vacant explicitly.
 - Lock directives remain authoritative (`block_vacant` may prevent transition to vacant).
 
 ## C-003B Mixed-source additive occupancy contract
 
-- Occupancy contributions are additive per `source_id`; there is no implicit
+- Occupancy contributions are additive per `source_id`. There is no implicit
   source-class precedence between motion, presence, occupancy, door, media,
-  light, or other configured sources **except** where **C-003A** defines an
-  explicit whole-room vacate or exit-grace cancellation.
+  light, or other configured sources. The cross-source effect is exit-grace
+  cancellation, which drops pending exit-grace holds when a new trigger arrives.
 - A **trailing** clear (`off_event=clear` with `off_trailing > 0`) keeps a timed
   **exit-grace** hold for that `source_id`. Any **`trigger`** on the same
   location cancels **all** exit-grace holds so new motion (or another source)
   can rescind a pending scheduled vacancy before it completes.
 - A configured **immediate** off clear (`off_event=clear`, `off_trailing == 0`)
-  vacates the **entire** location via **C-003A**; other sources do not keep the
-  room occupied past that signal.
-- For clears that are not “immediate authoritative off” and not exit-grace
-  (for example service `clear(..., 0)` without the HA authoritative path), a
-  source’s release still removes only that `source_id` unless otherwise specified.
-- Configuring both presence and motion in one location remains a deliberate
-  fusion choice; use **immediate off** only on sources that should end the room,
-  and prefer **trailing off** when OFF is ambiguous (typical for motion).
+  removes only that `source_id`. The same is true of `topomation.clear`.
+- A location stays occupied while any contribution is still active. To make one
+  entity vacate one or more areas, configure a policy source with `vacate_area`
+  and explicit targets.
 
 ## C-004 Service surface contract
 
