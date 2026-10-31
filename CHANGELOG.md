@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.34] - 2026-10-31
+
+### Fixed
+
+- Ship `translations/en.json` for Home Assistant config/options flows and
+  fallback text when the selected language has no translation.
+
 ## [0.3.33] - 2026-10-14
 
 ### Fixed

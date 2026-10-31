@@ -36,7 +36,33 @@ Before release or live-validation claims, record:
 
 ## 3. Touched Workflow Inventory
 
-Use concrete workflow names, not broad labels.
+### 2026-10-31 - v0.3.34 English runtime translations gate
+
+1. Commit under test: `b6f96230a52fa602e2cb0e9f7ee7d7a0bf8bab58`;
+   the gate record itself is a subsequent documentation-only change.
+2. Frontend bundle rebuilt from that commit: yes; build and committed bundle
+   parity passed. No frontend runtime source changed.
+3. Touched workflows: integration setup and duplicate-setup abort; options form
+   and description placeholders; English fallback for an untranslated language;
+   release metadata; live release-test location selection and dialog checks.
+4. Commands and results (2026-10-31):
+   - `make test-production-shaped`: **PASS** on the v0.3.34 release candidate:
+     local checks, 7 live HA backend tests and 4 real-panel browser tests.
+   - `make test-release-live`: **PASS** after fixing the live test helpers:
+     backend 383 passed / 22 skipped, Vitest 278 passed, browser components
+     215 passed, mock/browser workflows 35 passed, live managed-action
+     contract 2 passed, real-panel browser workflows 7 passed.
+   - On isolated HA 2026.2.3, exercised setup, duplicate abort, options submit,
+     all description placeholders including version 0.3.34, and the English and
+     French fallback resources through the real HA flow and translation APIs:
+     **PASS**. A local-only `live_translation_check.py` drove these calls.
+   - Initial live browser runs exposed test-helper defects: the location picker
+     depended on preexisting rule rows, a collapsed room was not reopened after
+     reload, and an `ha-dialog` host was checked instead of the visible dialog.
+     The tests were corrected and the full release gate passed afterward.
+5. Environment: isolated local HA on port 18123 using the development auth
+   store. WSL used the matching cached Playwright Chromium, a user-local ALSA
+   library, and a writable XDG configuration directory.
 
 Good examples:
 
@@ -1282,3 +1308,36 @@ Notes:
   stopped before live tests because the default local HA endpoint was offline.
   The release gate was rerun with `TOPOMATION_PREFER_LOCAL_HA=0` against the
   configured dev HA instance and passed.
+
+### 2026-11-01 - English runtime fallback correction
+
+1. Commit under test: candidate worktree based on `4c2f546` (v0.3.33).
+2. Frontend bundle changed: no; translation packaging only.
+3. Touched workflows:
+   - Initial setup title/description and duplicate-setup abort message.
+   - Options title/description with version, panel, docs, and issue placeholders.
+   - English fallback when the selected language has no translation.
+4. Planned commands:
+   - `pytest tests/test_translations.py --no-cov`
+   - `./scripts/test-comprehensive.sh`
+   - `make test-release-live`
+   - Normal GitHub CI HACS and hassfest jobs before release.
+5. Outcomes:
+   - Translation regression: **PASS**, 5 tests on HA 2026.2.3. Removing only
+     `en.json` makes all 5 fail; restoring it passes. This tests the actual HA
+     loader and config/options flow managers, not mocked translation contents.
+   - Backend suite: **PASS**, 383 passed, 22 skipped, 79.43% coverage.
+   - Version sync, Ruff, docs consistency: **PASS**.
+   - Mypy: **PASS** with 1.19.1 (allowed by the existing dev dependency).
+     The environment's initially resolved 2.4.1 crashes in psutil process
+     detection; `mypy -n 0` also passes with 2.4.1.
+   - Frontend unit/build/bundle parity: **PASS**, 278 unit tests with `TZ=UTC`.
+     The existing occupancy time assertion requires UTC; the host default
+     timezone otherwise produces an unrelated failure.
+   - Comprehensive browser gate: **BLOCKED** by Chromium download failures
+     (invalid ZIP from CDN and HTTP 400 from the alternate download server).
+   - `make test-release-live`: **BLOCKED**, no `tests/ha-config.env` or local
+     authenticated HA instance configured in this environment.
+   - GitHub HACS/hassfest: pending PR CI.
+   - Delivery: **Implemented**. Do not bump/publish or re-request HACS review
+     until required release gates pass; minimum HA version remains out of scope.

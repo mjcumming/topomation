@@ -32,6 +32,13 @@ Status markers:
 - Recently completed: Tree DnD now uses explicit drop targets (before/inside/after/outdent) from pointer Y and optional outdent strip; zone-only resolver; heuristic x-offset logic removed. User order preserved by existing backend (`manual_order` + A-Z until first reorder).
 - Contract source set: `docs/working-agreement.md`, `docs/contracts.md`, `docs/automation-ui-guide.md`, `docs/architecture.md`, `docs/adr-log.md`.
 
+## English runtime fallback correction (2026-11-01)
+
+- Implemented `translations/en.json` from the existing `strings.json`, with
+  real HA translation-loader/config-flow regression coverage in English and French.
+- Release remains blocked pending the full local/browser and live HA gates.
+  No minimum Home Assistant version or unrelated functionality change is included.
+
 ## In-flight work (update per session)
 
 | Item | Owner | Execution | Delivery | Notes |
