@@ -916,3 +916,11 @@ ADR-HA-096 and is not an implementation or release claim.
   - expiring property activity does not vacate any location.
   - locks, occupancy groups, and occupancy source timers keep their existing
     semantics.
+
+## English config-flow translations
+
+- Custom integration runtime text is shipped in
+  `custom_components/topomation/translations/en.json`.
+- Keep it synchronized with `strings.json`, including config/options steps,
+  abort messages, and description placeholders. Home Assistant uses English
+  when the requested language has no translation file.

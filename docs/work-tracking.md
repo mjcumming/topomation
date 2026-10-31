@@ -105,3 +105,10 @@ the automation UX live gate only on the exact current main branch state.
 
 Historical, phase-by-phase, and long-form status logs are archived.
 See `docs/history/` for older implementation narratives.
+
+### 2026-11-01 — HACS English translation fallback
+
+- Implemented the runtime English fallback requested in hacs/default#11482.
+- Regression tests exercise setup, duplicate-setup abort, options placeholders,
+  and English fallback through Home Assistant itself. Release validation is
+  recorded in `docs/touched-workflow-release-gate.md`; delivery is Implemented.

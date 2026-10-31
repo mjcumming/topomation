@@ -1282,3 +1282,36 @@ Notes:
   stopped before live tests because the default local HA endpoint was offline.
   The release gate was rerun with `TOPOMATION_PREFER_LOCAL_HA=0` against the
   configured dev HA instance and passed.
+
+### 2026-11-01 - English runtime fallback correction
+
+1. Commit under test: candidate worktree based on `4c2f546` (v0.3.33).
+2. Frontend bundle changed: no; translation packaging only.
+3. Touched workflows:
+   - Initial setup title/description and duplicate-setup abort message.
+   - Options title/description with version, panel, docs, and issue placeholders.
+   - English fallback when the selected language has no translation.
+4. Planned commands:
+   - `pytest tests/test_translations.py --no-cov`
+   - `./scripts/test-comprehensive.sh`
+   - `make test-release-live`
+   - Normal GitHub CI HACS and hassfest jobs before release.
+5. Outcomes:
+   - Translation regression: **PASS**, 5 tests on HA 2026.2.3. Removing only
+     `en.json` makes all 5 fail; restoring it passes. This tests the actual HA
+     loader and config/options flow managers, not mocked translation contents.
+   - Backend suite: **PASS**, 383 passed, 22 skipped, 79.43% coverage.
+   - Version sync, Ruff, docs consistency: **PASS**.
+   - Mypy: **PASS** with 1.19.1 (allowed by the existing dev dependency).
+     The environment's initially resolved 2.4.1 crashes in psutil process
+     detection; `mypy -n 0` also passes with 2.4.1.
+   - Frontend unit/build/bundle parity: **PASS**, 278 unit tests with `TZ=UTC`.
+     The existing occupancy time assertion requires UTC; the host default
+     timezone otherwise produces an unrelated failure.
+   - Comprehensive browser gate: **BLOCKED** by Chromium download failures
+     (invalid ZIP from CDN and HTTP 400 from the alternate download server).
+   - `make test-release-live`: **BLOCKED**, no `tests/ha-config.env` or local
+     authenticated HA instance configured in this environment.
+   - GitHub HACS/hassfest: pending PR CI.
+   - Delivery: **Implemented**. Do not bump/publish or re-request HACS review
+     until required release gates pass; minimum HA version remains out of scope.
