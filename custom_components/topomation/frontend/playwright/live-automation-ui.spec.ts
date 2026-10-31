@@ -100,27 +100,17 @@ async function openLiveHarness(page: any): Promise<void> {
 async function selectLightingLocation(page: any): Promise<{ id: string; lightIds: string[] }> {
   if (isRealPanel()) {
     const tree = page.locator("ht-location-tree");
-    const inspector = page.locator("ht-location-inspector");
-    const items = tree.locator(".tree-item[data-id]");
-    const count = await items.count();
-    for (let i = 0; i < count; i++) {
-      const item = items.nth(i);
-      const dataId = await item.getAttribute("data-id");
-      if (!dataId) continue;
-      await item.click();
-      await inspector.getByRole("button", { name: "Lighting" }).click();
-      await expect(inspector.locator('[data-testid="actions-rules-section"]')).toBeVisible({ timeout: 3000 });
-      const lightRows = inspector.locator(".dusk-light-action-row");
-      const lightCount = await lightRows.count();
-      if (lightCount >= 2) {
-        const lightIds: string[] = [];
-        for (let j = 0; j < lightCount; j++) {
-          lightIds.push(`light.${j}`);
-        }
-        return { id: dataId, lightIds };
-      }
-    }
-    throw new Error("No location with at least two light entities was found in the tree");
+    const locations = await listLocations();
+    const location = locations.find((item) =>
+      (item.entity_ids || []).filter((id: string) => id.startsWith("light.")).length >= 2
+    );
+    if (!location) throw new Error("No location with at least two light entities was found");
+    await expandTreeAncestors(page, location.id);
+    await tree.locator(`.tree-item[data-id="${location.id}"]`).click();
+    return {
+      id: location.id,
+      lightIds: location.entity_ids.filter((id: string) => id.startsWith("light.")),
+    };
   }
 
   const selected = await page.evaluate(async () => {
@@ -160,16 +150,14 @@ async function expandTreeAncestors(page: any, locationId: string): Promise<void>
     ancestorIds.push(parentId);
     parentId = byId.get(parentId)?.parent_id ?? null;
   }
-  await page.evaluate((ids: string[]) => {
-    const panel = document.querySelector("topomation-panel") as any;
-    const tree = panel?.shadowRoot?.querySelector("ht-location-tree") as any;
-    if (!tree) throw new Error("ht-location-tree not found");
+  await page.locator("ht-location-tree").evaluate(async (tree: any, ids: string[]) => {
     const next = new Set<string>(Array.from(tree._expandedIds || []));
     for (const id of ids) {
       next.add(String(id));
     }
     tree._expandedIds = next;
     tree.requestUpdate?.();
+    await tree.updateComplete;
   }, ancestorIds);
 }
 
@@ -510,6 +498,7 @@ test("live automation lighting workflow matches contracted lifecycle controls", 
     await page.reload();
     if (isRealPanel()) {
       await expect(page.locator("topomation-panel")).toBeVisible({ timeout: 15000 });
+      await expandTreeAncestors(page, location.id);
       await page.locator(`ht-location-tree .tree-item[data-id="${location.id}"]`).click();
       await openLightingTab(page);
     } else {
@@ -695,7 +684,7 @@ test("live occupancy add-source dialog opens from the simplified inspector shell
   await addSourceButton.click();
 
   const dialog = page.getByTestId("external-source-dialog");
-  await expect(dialog).toBeVisible();
+  await expect(page.getByRole("alertdialog", { name: "Add Source" })).toBeVisible();
   await expect(dialog).toContainText("Add Source");
   await expect(dialog.getByTestId("external-source-area-select")).toBeVisible();
   await expect(dialog.getByTestId("external-source-entity-select")).toBeVisible();
