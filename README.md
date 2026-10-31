@@ -18,7 +18,9 @@
 [![GitHub Issues](https://img.shields.io/github/issues/mjcumming/topomation.svg)](https://github.com/mjcumming/topomation/issues)
 [![GitHub Pull Requests](https://img.shields.io/github/issues-pr/mjcumming/topomation.svg)](https://github.com/mjcumming/topomation/pulls)
 
-> Love this integration? Please star the [GitHub repo](https://github.com/mjcumming/topomation) if you use TopoMation. It helps other Home Assistant users discover the project and gives me a useful signal that the integration is worth continuing to polish.
+[![Open TopoMation in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=mjcumming&repository=topomation&category=integration)
+
+> If TopoMation is useful to you, please ⭐ this repository to help others find it.
 
 TopoMation is a Home Assistant integration for people whose occupancy automations have outgrown one-room-at-a-time logic.
 
@@ -168,13 +170,15 @@ The rules TopoMation generates are normal Home Assistant automations. They show 
 
 ## Installation
 
-Via HACS as a custom repository:
+With [HACS installed](https://hacs.xyz/docs/use/download/download/), open TopoMation in HACS:
 
-1. Open HACS in Home Assistant.
-2. Add `https://github.com/mjcumming/topomation` as a custom integration repository.
-3. Install **TopoMation**.
-4. Restart Home Assistant.
-5. Add the integration in **Settings → Devices & Services**.
+[![Open TopoMation in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=mjcumming&repository=topomation&category=integration)
+
+1. Follow the HACS prompts to add the repository if needed, then select **Download**.
+2. Restart Home Assistant.
+3. Add **TopoMation** in **Settings → Devices & Services**.
+
+Alternatively, in HACS, open **Custom repositories**, add `https://github.com/mjcumming/topomation` as an **Integration**, and download **TopoMation**.
 
 Full guide: [docs/installation.md](docs/installation.md).
 
