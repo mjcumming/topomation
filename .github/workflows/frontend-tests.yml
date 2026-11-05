@@ -102,7 +102,8 @@ jobs:
 
   comprehensive:
     name: Comprehensive gate (browser suites)
-    runs-on: ubuntu-latest
+    # Playwright 1.57 has no Chromium build for ubuntu-latest once that label is Ubuntu 26.
+    runs-on: ubuntu-24.04
     needs: [backend, frontend]
     timeout-minutes: 45
     defaults:
