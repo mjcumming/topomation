@@ -325,7 +325,6 @@ class SyncManager:
     async def _import_area(self, area: AreaEntry) -> None:
         """Import a single HA area as a location."""
         location_id = f"area_{area.id}"
-        self._ensure_area_icon(area, "area")
 
         # Determine parent based on floor assignment
         parent_id = None
@@ -489,7 +488,6 @@ class SyncManager:
         area = self.area_registry.async_get_area(area_id)
         if not area:
             return
-        self._ensure_area_icon(area, "area")
 
         # Schedule async import without blocking the event callback.
         async def _import_and_reconcile() -> None:
@@ -506,7 +504,8 @@ class SyncManager:
 
         if not area or not location:
             return
-        self._ensure_area_icon(area, _location_type(location))
+        if self._may_assign_guessed_area_icon(location):
+            self._ensure_area_icon(area, _location_type(location))
 
         if not self._can_sync_from_ha(location):
             _LOGGER.debug("Skipping HA area update for location %s due to sync policy", location_id)
@@ -1189,8 +1188,26 @@ class SyncManager:
         self.loc_mgr.set_module_config(location_id, "_meta", floor_meta)
         return location_id
 
+    def _may_assign_guessed_area_icon(self, location: Location) -> bool:
+        """Return True when Topomation created the HA area and may fill a blank icon.
+
+        User-owned areas imported from Home Assistant keep whatever icon the user
+        set, including a blank one. Guessed icons are limited to managed shadow
+        areas and areas created from the Topomation panel.
+        """
+        modules = getattr(location, "modules", {}) or {}
+        if not isinstance(modules, dict):
+            return False
+        meta = modules.get("_meta", {})
+        if not isinstance(meta, dict):
+            return False
+        role = str(meta.get(_META_ROLE_KEY, "")).strip().lower()
+        if role == _MANAGED_SHADOW_ROLE:
+            return True
+        return meta.get("sync_source") == "topology"
+
     def reconcile_location_icons(self) -> None:
-        """Fill blank/default icons on HA areas and topology-only locations."""
+        """Fill blank icons on Topomation-owned HA areas and topology-only rows."""
         for location in self.loc_mgr.all_locations():
             location_type = _location_type(location)
             meta = location.modules.get("_meta", {})
@@ -1199,10 +1216,11 @@ class SyncManager:
 
             ha_area_id = str(getattr(location, "ha_area_id", "") or meta.get("ha_area_id", "") or "").strip()
             if ha_area_id:
-                area = self.area_registry.async_get_area(ha_area_id)
-                if area is not None:
-                    self._ensure_area_icon(area, location_type, name=location.name)
-                    continue
+                if self._may_assign_guessed_area_icon(location):
+                    area = self.area_registry.async_get_area(ha_area_id)
+                    if area is not None:
+                        self._ensure_area_icon(area, location_type, name=location.name)
+                continue
 
             icon = infer_location_icon(location.name, location_type)
             current_icon = meta.get("icon")

@@ -663,6 +663,11 @@ loc_mgr.set_module_config(
 3. Name inference (name contains "kitchen" → kitchen icon)
 4. Type fallback marker (`floor`/`area`/`building`/`grounds`/`subarea`)
 
+Guessed icons are written to the Home Assistant area registry only for areas
+Topomation created: managed shadow areas, and areas added from the panel
+(`sync_source: topology`). Areas imported from Home Assistant keep their
+existing icons, including a blank icon.
+
 **Hierarchy Enforcement** (UI responsibility):
 
 - Root-only wrappers: `building`, `grounds`

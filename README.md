@@ -211,7 +211,10 @@ Lock workflows are explained in [docs/occupancy-lock-workflows.md](docs/occupanc
 ## Limitations
 
 - Lux sensor assignment is explicit. There is no v1 automatic ambient discovery workflow in the panel.
-- Admin access is required for the panel routes and managed-automation writes.
+- Admin access is required for the sidebar panel and for every Topomation websocket command, including reads.
+- The rules editor creates a Home Assistant system user named **Topomation** in the administrators group and keeps a refresh token for it. That user exists so Topomation can write managed automations through Home Assistant's automation config API. Removing the last Topomation config entry deletes the system user and its tokens.
+- TopoMation only overwrites, deletes, or enables automations that carry its `[topomation]` metadata. Other automations are left alone.
+- Guessed area icons are applied to areas Topomation creates (managed shadow areas and areas added from the panel). Areas you already created in Home Assistant keep their icons.
 - TopoMation-managed automations may be rebuilt by the integration. Treat the TopoMation panel as the owner of those rules.
 - The Appliance, Media, HVAC, Vacuum, and Scenes editors are intentionally narrower than full HA automation editing. If you need something more elaborate, write it as a normal HA automation against the location's occupancy entity.
 - Rich `climate.*` thermostat workflows are deferred for now.

@@ -1179,6 +1179,7 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
     _LOGGER.debug("Topomation WebSocket API registered")
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_LOCATIONS_LIST,
@@ -1224,6 +1225,7 @@ def handle_locations_list(
     )
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_OCCUPANCY_STATES_LIST,
@@ -1247,6 +1249,7 @@ def handle_occupancy_states_list(
     )
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_ADJACENCY_LIST,
@@ -1282,6 +1285,7 @@ def handle_adjacency_list(
     connection.send_result(msg["id"], {"adjacency_edges": edges})
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_ADJACENCY_CREATE,
@@ -1370,6 +1374,7 @@ def handle_adjacency_create(
         connection.send_error(msg["id"], "create_failed", str(err))
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_ADJACENCY_UPDATE,
@@ -1449,6 +1454,7 @@ def handle_adjacency_update(
         connection.send_error(msg["id"], "update_failed", str(err))
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_ADJACENCY_DELETE,
@@ -1495,6 +1501,7 @@ def handle_adjacency_delete(
         connection.send_error(msg["id"], "delete_failed", str(err))
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_LOCATIONS_CREATE,
@@ -1658,6 +1665,7 @@ def handle_locations_create(
         connection.send_error(msg["id"], "create_failed", str(err))
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_LOCATIONS_UPDATE,
@@ -1767,6 +1775,7 @@ def handle_locations_update(
         connection.send_error(msg["id"], "update_failed", str(err))
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_LOCATIONS_DELETE,
@@ -1919,6 +1928,7 @@ def handle_locations_delete(
         connection.send_error(msg["id"], "delete_failed", str(err))
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_LOCATIONS_REORDER,
@@ -2020,6 +2030,7 @@ def handle_locations_reorder(
         connection.send_error(msg["id"], "reorder_failed", str(e))
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_LOCATIONS_SET_MODULE_CONFIG,
@@ -2144,6 +2155,7 @@ def handle_locations_set_module_config(
         connection.send_error(msg["id"], "config_failed", str(e))
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_LOCATIONS_ASSIGN_ENTITY,
@@ -2259,6 +2271,7 @@ def handle_locations_assign_entity(
 # =============================================================================
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_ACTION_RULES_LIST,
@@ -2300,6 +2313,7 @@ async def handle_action_rules_list(
     connection.send_result(msg["id"], {"rules": rules})
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_ACTION_RULES_CREATE,
@@ -2498,6 +2512,7 @@ async def handle_action_rules_create(
     connection.send_result(msg["id"], {"rule": rule})
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_ACTION_RULES_DELETE,
@@ -2558,6 +2573,7 @@ async def handle_action_rules_delete(
     connection.send_result(msg["id"], {"success": True})
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_ACTION_RULES_SET_ENABLED,
@@ -2609,6 +2625,7 @@ async def handle_action_rules_set_enabled(
 # =============================================================================
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_AMBIENT_GET_READING,
@@ -2650,6 +2667,7 @@ def handle_ambient_get_reading(
         connection.send_error(msg["id"], "read_failed", str(e))
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_AMBIENT_SET_SENSOR,
@@ -2697,6 +2715,7 @@ def handle_ambient_set_sensor(
         connection.send_error(msg["id"], "set_sensor_failed", str(e))
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_AMBIENT_AUTO_DISCOVER,
@@ -2734,6 +2753,7 @@ def handle_ambient_auto_discover(
 # =============================================================================
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_SYNC_IMPORT,
@@ -2784,6 +2804,7 @@ async def handle_sync_import(
         connection.send_error(msg["id"], "import_failed", str(e))
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_SYNC_STATUS,
@@ -2862,6 +2883,7 @@ def handle_sync_status(
         )
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): WS_TYPE_SYNC_ENABLE,

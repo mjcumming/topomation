@@ -21,6 +21,16 @@
 
 ## Active Decisions
 
+### ADR-HA-100: HACS Review Boundaries (2026-11-05)
+
+**Status**: APPROVED
+**Full ADR**: [docs/adr/ADR-HA-100-hacs-review-boundaries.md](adr/ADR-HA-100-hacs-review-boundaries.md)
+
+**Decision summary**: Topomation websocket commands are admin-only. Managed-action
+writes only touch automations with `[topomation]` metadata. Guessed area icons
+are limited to areas Topomation created. The automation system user is removed
+with the last config entry.
+
 ### ADR-HA-099: Scene Action Tab (2026-09-28)
 
 **Status**: APPROVED

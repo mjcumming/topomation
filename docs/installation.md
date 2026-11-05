@@ -69,7 +69,9 @@ The main workspace is split into:
   - `Vacuum`
   - `Scenes`
 
-Admin access is required for panel use and managed automation writes.
+Admin access is required for the panel and for every Topomation websocket command.
+
+The rules editor creates a Home Assistant system user named Topomation in the administrators group, plus a refresh token, so managed automations can be written through Home Assistant's automation config API. Removing the last Topomation config entry deletes that system user and its tokens.
 
 ### 3. Build your topology
 

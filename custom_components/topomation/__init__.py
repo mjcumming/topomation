@@ -38,7 +38,10 @@ from .const import (
 )
 from .coordinator import TopomationCoordinator
 from .event_bridge import EventBridge
-from .managed_actions import TopomationManagedActions
+from .managed_actions import (
+    TopomationManagedActions,
+    async_remove_topomation_system_user,
+)
 from .panel import async_register_panel, async_unregister_panel
 from .recent_activity import (
     EVENT_RECENT_ACTIVITY_CHANGED,
@@ -905,6 +908,18 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             async_unregister_panel(hass)
 
     return unload_ok
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Remove the automation system user when the last Topomation entry is removed."""
+    remaining = [
+        existing.entry_id
+        for existing in hass.config_entries.async_entries(DOMAIN)
+        if existing.entry_id != entry.entry_id
+    ]
+    if remaining:
+        return
+    await async_remove_topomation_system_user(hass)
 
 
 # NOTE: _build_topology_from_ha has been replaced by SyncManager

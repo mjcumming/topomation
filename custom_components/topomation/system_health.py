@@ -18,11 +18,15 @@ def async_register(hass: HomeAssistant, register: system_health.SystemHealthRegi
     register.async_register_info(system_health_info)
 
 
-async def system_health_info(_hass: HomeAssistant) -> dict[str, Any]:
+async def system_health_info(hass: HomeAssistant) -> dict[str, Any]:
     """Return diagnostics surfaced in the integration info window."""
     installed_home_topology_version = "unknown"
     try:
-        installed_home_topology_version = metadata.version("home-topology")
+        # importlib.metadata reads distribution files from disk.
+        installed_home_topology_version = await hass.async_add_executor_job(
+            metadata.version,
+            "home-topology",
+        )
     except metadata.PackageNotFoundError:
         pass
 

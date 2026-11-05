@@ -80,8 +80,38 @@ _RECENT_RULE_SNAPSHOT_TTL_SECONDS = 30.0
 # knob (async_rebuild_stale_rules(min_version=...)) for forcing rebuilds the hash
 # cannot detect — e.g. a change in how rule inputs are reconstructed on rebuild.
 _AUTOMATION_METADATA_VERSION = 11
+_UNMANAGED_AUTOMATION_ERROR = (
+    "Refusing to change an automation that is not managed by Topomation"
+)
 
 _LOGGER = logging.getLogger(__name__)
+
+
+async def async_remove_topomation_system_user(hass: HomeAssistant) -> None:
+    """Remove the Topomation automation API system user and its refresh tokens."""
+    domain_data = hass.data.get(DOMAIN)
+    refresh_token = None
+    if isinstance(domain_data, dict):
+        refresh_token = domain_data.pop(_AUTOMATION_API_REFRESH_TOKEN_KEY, None)
+
+    removed_ids: set[str] = set()
+    for user in await hass.auth.async_get_users():
+        if not getattr(user, "system_generated", False):
+            continue
+        if getattr(user, "name", None) != _TOPOMATION_SYSTEM_USER_NAME:
+            continue
+        await hass.auth.async_remove_user(user)
+        removed_ids.add(user.id)
+
+    token_user = getattr(refresh_token, "user", None)
+    token_user_id = getattr(token_user, "id", None)
+    if (
+        token_user is not None
+        and getattr(token_user, "system_generated", False)
+        and isinstance(token_user_id, str)
+        and token_user_id not in removed_ids
+    ):
+        await hass.auth.async_remove_user(token_user)
 
 
 @dataclass(slots=True)
@@ -729,6 +759,11 @@ class TopomationManagedActions:
         effective_daily_gating = composed.effective_daily_gating
         compiled_rule = composed.compiled_rule
 
+        await self._reject_unmanaged_automation_target(
+            automation_id,
+            allow_absent=True,
+        )
+
         _LOGGER.info(
             "[managed_actions] Creating rule via REST API automation_id=%s location=%s",
             automation_id,
@@ -797,7 +832,9 @@ class TopomationManagedActions:
                 "(for example: automation: !include automations.yaml)."
             )
             try:
-                await self.async_delete_rule(automation_id=automation_id)
+                # This id was just written by Topomation. Delete it directly so a
+                # follow-up metadata lookup cannot skip the rollback.
+                await self._call_automation_config_api("DELETE", automation_id)
             except Exception as err:
                 _LOGGER.warning(
                     "Failed rollback after managed rule registration timeout for %s",
@@ -831,6 +868,161 @@ class TopomationManagedActions:
             "enabled": True,
         }
 
+    def _loaded_automation_config(
+        self,
+        *,
+        automation_id: str | None,
+        entity_id: str | None,
+    ) -> Mapping[str, Any] | None:
+        """Return raw config for a loaded automation matching id or entity id."""
+        target_id = str(automation_id or "").strip()
+        if target_id.startswith("automation."):
+            target_id = target_id.split(".", 1)[1].strip()
+        target_entity = str(entity_id or "").strip()
+        if not target_id and not target_entity:
+            return None
+
+        component = self.hass.data.get(AUTOMATION_DATA_COMPONENT)
+        entities = self._snapshot_automation_entities(component)
+        if not entities:
+            return None
+
+        entity_registry = er.async_get(self.hass)
+        for automation_entity in entities:
+            current_entity_id = getattr(automation_entity, "entity_id", None)
+            raw_config = getattr(automation_entity, "raw_config", None)
+            unique_id = getattr(automation_entity, "unique_id", None)
+            if not isinstance(current_entity_id, str) or not current_entity_id:
+                continue
+            if not isinstance(raw_config, Mapping):
+                continue
+            resolved_id = (
+                self._resolve_automation_id(
+                    entity_registry,
+                    current_entity_id,
+                    raw_config,
+                    unique_id,
+                )
+                or ""
+            )
+            if target_entity and current_entity_id == target_entity:
+                return raw_config
+            if target_id and resolved_id == target_id:
+                return raw_config
+            if target_id and current_entity_id == f"automation.{target_id}":
+                return raw_config
+        return None
+
+    @staticmethod
+    def _automation_config_from_payload(payload: Any) -> Mapping[str, Any] | None:
+        """Return an automation config mapping from a config API payload."""
+        if not isinstance(payload, Mapping) or not payload:
+            return None
+        nested = payload.get("config")
+        candidate: Mapping[str, Any] = nested if isinstance(nested, Mapping) else payload
+        identity_keys = (
+            "description",
+            "alias",
+            "triggers",
+            "trigger",
+            "actions",
+            "action",
+            CONF_ID,
+            "id",
+        )
+        if any(key in candidate for key in identity_keys):
+            return candidate
+        return None
+
+    def _fresh_snapshot_exists(self, automation_id: str) -> bool:
+        """Return True when this process just wrote the automation id."""
+        if not automation_id:
+            return False
+        snapshot = self._recent_rule_snapshots.get(automation_id)
+        if snapshot is None:
+            return False
+        if monotonic() - snapshot.saved_at_monotonic > _RECENT_RULE_SNAPSHOT_TTL_SECONDS:
+            self._recent_rule_snapshots.pop(automation_id, None)
+            return False
+        return True
+
+    def _config_id_for_mutation(
+        self,
+        automation_id: str | None,
+        entity_id: str | None,
+    ) -> str:
+        """Resolve the config id a mutation would send to the automation API."""
+        raw = str(automation_id or "").strip()
+        if raw.startswith("automation."):
+            raw = raw.split(".", 1)[1].strip()
+        if raw:
+            return raw
+        if entity_id:
+            return self._config_id_for_entity_id(entity_id)
+        return ""
+
+    async def _automation_ownership(
+        self,
+        *,
+        automation_id: str | None = None,
+        entity_id: str | None = None,
+    ) -> Literal["absent", "managed", "foreign"]:
+        """Classify an automation before overwrite, delete, or toggle.
+
+        Managed means the description carries a parseable ``[topomation]`` metadata
+        line, the same check ``async_list_rules`` uses. A config id with no
+        automation yet is absent and may be created. Anything else is foreign.
+        """
+        loaded = self._loaded_automation_config(
+            automation_id=automation_id,
+            entity_id=entity_id,
+        )
+        if loaded is not None:
+            if self._parse_metadata(loaded.get("description")) is not None:
+                return "managed"
+            return "foreign"
+
+        config_id = self._config_id_for_mutation(automation_id, entity_id)
+        if not config_id:
+            return "absent"
+
+        missing = False
+        payload: Any = None
+        try:
+            payload = await self._call_automation_config_api("GET", config_id)
+        except ValueError as err:
+            if not str(err).startswith("Automation API GET 404"):
+                raise
+            missing = True
+
+        if not missing:
+            config = self._automation_config_from_payload(payload)
+            if config is None or self._parse_metadata(config.get("description")) is None:
+                return "foreign"
+            return "managed"
+
+        if self._fresh_snapshot_exists(config_id):
+            return "managed"
+        return "absent"
+
+    async def _reject_unmanaged_automation_target(
+        self,
+        automation_id: str | None = None,
+        entity_id: str | None = None,
+        *,
+        allow_absent: bool,
+    ) -> None:
+        """Raise unless the target is a Topomation automation, or absent when allowed."""
+        ownership = await self._automation_ownership(
+            automation_id=automation_id,
+            entity_id=entity_id,
+        )
+        if ownership == "managed":
+            return
+        if ownership == "absent" and allow_absent:
+            return
+        raise ValueError(_UNMANAGED_AUTOMATION_ERROR)
+
     async def async_delete_rule(
         self,
         *,
@@ -839,17 +1031,34 @@ class TopomationManagedActions:
     ) -> None:
         """Delete a managed action automation via HA config REST API."""
         config_id = automation_id.strip()
+        if config_id.startswith("automation."):
+            config_id = config_id.split(".", 1)[1].strip()
         if not config_id and entity_id:
             config_id = self._config_id_for_entity_id(entity_id)
 
         if not config_id:
             raise ValueError("Automation id is required")
 
+        ownership = await self._automation_ownership(
+            automation_id=config_id,
+            entity_id=entity_id,
+        )
+        if ownership == "absent":
+            self._recent_rule_snapshots.pop(config_id, None)
+            _LOGGER.debug("Skipping delete for missing automation %s", config_id)
+            return
+        if ownership != "managed":
+            raise ValueError(_UNMANAGED_AUTOMATION_ERROR)
+
         await self._call_automation_config_api("DELETE", config_id)
         self._recent_rule_snapshots.pop(config_id, None)
 
     async def async_set_rule_enabled(self, *, entity_id: str, enabled: bool) -> None:
-        """Enable or disable one automation entity."""
+        """Enable or disable one Topomation-managed automation entity."""
+        await self._reject_unmanaged_automation_target(
+            entity_id=entity_id,
+            allow_absent=False,
+        )
         await self.hass.services.async_call(
             AUTOMATION_DOMAIN,
             "turn_on" if enabled else "turn_off",

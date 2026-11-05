@@ -200,6 +200,18 @@ Additional save points:
 ## C-010 Panel authorization contract
 
 - Topomation panel routes are admin-only (`require_admin=True`).
+- Every Topomation websocket command is admin-only (`@websocket_api.require_admin`),
+  including reads. The sidebar is admin-only, and these commands read or change
+  Home Assistant areas, floors, entity areas, and automations.
+- Managed-action create, delete, and enable/disable target an automation only when
+  its description contains a parseable `[topomation]` metadata line, the same check
+  used when listing rules. A new automation id that does not exist yet may be
+  created. Deleting an id that does not exist is a no-op. Any other automation is
+  left unchanged.
+- The rules editor creates a Home Assistant system user named `Topomation` in the
+  administrators group and keeps a refresh token so the integration can call the
+  automation config API. `async_remove_entry` removes that system user, which also
+  drops its refresh tokens, when the last Topomation config entry is removed.
 - Managed action create/update/delete depends on HA config APIs that require admin;
   non-admin sessions must not be routed into a write-capable panel state.
 
@@ -791,6 +803,12 @@ Additional save points:
   reconcile** topology wrappers so areas the user adds in HA appear in the tree
   according to existing sync rules (see `SyncManager._setup_ha_listeners` /
   `_handle_area_created`).
+- **HA area icons**: guessed icons are written only for areas Topomation created.
+  That is managed shadow areas, and areas whose topology row has
+  `sync_source: topology` (created from the panel). Import, startup
+  reconciliation, and HA area create/update events leave every other area icon
+  unchanged. An explicit icon choice in the panel is still written to the
+  selected area.
 - **Startup / restore drift healing for room rows**: when persisted topology contains
   a room-like row (`area` / `subarea`) that does **not** resolve to a valid HA area
   anchor, startup reconcile must repair it instead of leaving a topology-only room:

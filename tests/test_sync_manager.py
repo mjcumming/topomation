@@ -134,7 +134,7 @@ class TestInitialImport:
         assert location is not None
         assert location.name == "Kitchen"
         assert location.parent_id is None
-        assert area_reg.async_get_area(kitchen.id).icon == "mdi:silverware-fork-knife"
+        assert area_reg.async_get_area(kitchen.id).icon is None
 
         # Check metadata
         meta = location.modules.get("_meta", {})
@@ -144,21 +144,71 @@ class TestInitialImport:
         assert meta["sync_source"] == "homeassistant"
         assert meta["sync_enabled"] is True
 
-    async def test_import_replaces_default_area_icon_and_preserves_custom_icon(
+    async def test_import_leaves_user_area_icons_unchanged(
         self,
         hass: HomeAssistant,
         sync_manager: SyncManager,
+        loc_mgr: LocationManager,
         clean_registries,
     ):
-        """Startup icon reconciliation should only replace blanks/generic defaults."""
+        """Startup import must not guess icons onto areas the user already owns."""
         area_reg = ar.async_get(hass)
         kitchen = area_reg.async_create("Kitchen", icon="mdi:map-marker")
         office = area_reg.async_create("Office", icon="mdi:laptop")
+        blank = area_reg.async_create("Bathroom")
 
         await sync_manager.import_all_areas_and_floors()
 
-        assert area_reg.async_get_area(kitchen.id).icon == "mdi:silverware-fork-knife"
+        assert area_reg.async_get_area(kitchen.id).icon == "mdi:map-marker"
         assert area_reg.async_get_area(office.id).icon == "mdi:laptop"
+        assert area_reg.async_get_area(blank.id).icon is None
+
+        bath_id = f"area_{blank.id}"
+        loc_mgr.set_module_config(
+            bath_id,
+            "_meta",
+            {
+                "type": "area",
+                "ha_area_id": blank.id,
+                "sync_source": "topology",
+                "sync_enabled": True,
+            },
+        )
+        sync_manager.reconcile_location_icons()
+
+        assert area_reg.async_get_area(kitchen.id).icon == "mdi:map-marker"
+        assert area_reg.async_get_area(office.id).icon == "mdi:laptop"
+        assert area_reg.async_get_area(blank.id).icon == "mdi:shower"
+
+    async def test_area_update_guesses_icon_only_for_topomation_areas(
+        self,
+        hass: HomeAssistant,
+        sync_manager: SyncManager,
+        loc_mgr: LocationManager,
+        clean_registries,
+    ):
+        """HA area updates must not write guessed icons onto imported user areas."""
+        area_reg = ar.async_get(hass)
+        kitchen = area_reg.async_create("Kitchen")
+        bath = area_reg.async_create("Bathroom")
+
+        await sync_manager.import_all_areas_and_floors()
+        sync_manager._handle_area_updated(kitchen.id)
+        assert area_reg.async_get_area(kitchen.id).icon is None
+
+        loc_mgr.set_module_config(
+            f"area_{bath.id}",
+            "_meta",
+            {
+                "type": "area",
+                "ha_area_id": bath.id,
+                "sync_source": "topology",
+                "sync_enabled": True,
+            },
+        )
+        sync_manager._handle_area_updated(bath.id)
+        assert area_reg.async_get_area(kitchen.id).icon is None
+        assert area_reg.async_get_area(bath.id).icon == "mdi:shower"
 
     async def test_import_multiple_areas(
         self,

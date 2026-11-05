@@ -22,16 +22,27 @@ def test_async_register_registers_callback(hass: HomeAssistant) -> None:
 
 
 async def test_system_health_info_reports_versions(hass: HomeAssistant) -> None:
-    """Diagnostics should include integration and home-topology versions."""
-    with patch(
-        "custom_components.topomation.system_health.metadata.version",
-        return_value="1.0.2",
+    """Diagnostics should read package metadata off the event loop."""
+    executor_calls: list[tuple[object, tuple[object, ...]]] = []
+    original = hass.async_add_executor_job
+
+    def _spy(func: object, *args: object) -> object:
+        executor_calls.append((func, args))
+        return original(func, *args)
+
+    with (
+        patch.object(hass, "async_add_executor_job", _spy),
+        patch(
+            "custom_components.topomation.system_health.metadata.version",
+            return_value="1.0.2",
+        ) as version,
     ):
         info = await system_health_info(hass)
 
     assert info["integration_version"] == VERSION
     assert info["home_topology_runtime_version"] == home_topology_version
     assert info["home_topology_installed_version"] == "1.0.2"
+    assert executor_calls == [(version, ("home-topology",))]
 
 
 async def test_system_health_info_handles_missing_distribution(

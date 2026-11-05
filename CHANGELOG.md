@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.35] - 2026-11-05
+
+### Fixed
+
+- **Websocket authorization**: every Topomation websocket command requires an
+  admin user, including read commands.
+- **Managed automations**: create, delete, and enable/disable now act only on
+  automations whose description contains Topomation metadata. Other automations
+  are left unchanged.
+- **Area icons**: guessed icons are applied only to areas Topomation created
+  (managed shadow areas and areas added from the panel). Existing Home Assistant
+  areas keep their icons.
+- **System health**: the installed `home-topology` version is read off the
+  event loop.
+- **Uninstall**: removing the last Topomation config entry deletes the
+  Topomation administrator system user and its refresh tokens.
+
 ## [0.3.34] - 2026-10-31
 
 ### Fixed

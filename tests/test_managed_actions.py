@@ -519,6 +519,8 @@ async def test_async_create_rule_rolls_back_when_registration_does_not_converge(
         payload: dict[str, object] | None = None,
     ) -> dict[str, object]:
         api_calls.append((method, automation_id, payload))
+        if method == "GET":
+            raise ValueError("Automation API GET 404: Resource not found")
         return {}
 
     async def _never_resolve_entity_id(
@@ -553,11 +555,11 @@ async def test_async_create_rule_rolls_back_when_registration_does_not_converge(
             run_on_startup=True,
         )
 
-    assert len(api_calls) == 2
-    assert api_calls[0][0] == "POST"
-    assert api_calls[0][2] is not None
-    assert '"run_on_startup": true' in str(api_calls[0][2]["description"]).lower()
-    assert api_calls[1] == ("DELETE", api_calls[0][1], None)
+    assert [call[0] for call in api_calls] == ["GET", "POST", "DELETE"]
+    post_call = api_calls[1]
+    assert post_call[2] is not None
+    assert '"run_on_startup": true' in str(post_call[2]["description"]).lower()
+    assert api_calls[2] == ("DELETE", post_call[1], None)
     assert manager._recent_rule_snapshots == {}  # noqa: SLF001
 
 
@@ -584,6 +586,8 @@ async def test_async_create_rule_wraps_only_if_off_light_turn_on_action(
         payload: dict[str, object] | None = None,
     ) -> dict[str, object]:
         api_calls.append((method, automation_id, payload))
+        if method == "GET":
+            raise ValueError("Automation API GET 404: Resource not found")
         return {}
 
     async def _fake_resolve_entity_id(
@@ -639,9 +643,8 @@ async def test_async_create_rule_wraps_only_if_off_light_turn_on_action(
             "service": "turn_off",
         },
     ]
-    assert len(api_calls) == 1
-    assert api_calls[0][0] == "POST"
-    payload = cast(dict[str, object], api_calls[0][2])
+    assert [call[0] for call in api_calls] == ["GET", "POST"]
+    payload = cast(dict[str, object], api_calls[1][2])
     actions = cast(list[dict[str, object]], payload["actions"])
     assert actions[0] == {
         "choose": [
@@ -1541,3 +1544,173 @@ def test_find_occupancy_entity_id_returns_none_when_no_loc_mgr_and_no_direct_mat
     assert (
         manager._find_occupancy_entity_id("area_kitchen") == "binary_sensor.kitchen_occupancy"
     )  # noqa: SLF001
+
+
+def _managed_rule_description(location_id: str = "kitchen") -> str:
+    """Build a description carrying a parseable Topomation metadata line."""
+    metadata = {
+        "version": 3,
+        "location_id": location_id,
+        "trigger_type": "on_dark",
+        "ambient_condition": "any",
+        "time_condition_enabled": False,
+        "start_time": "18:00",
+        "end_time": "23:59",
+    }
+    return (
+        "Managed by Topomation.\n"
+        f"{TOPOMATION_AUTOMATION_METADATA_PREFIX} {json.dumps(metadata)}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_async_create_rule_refuses_to_overwrite_foreign_automation(
+    hass: HomeAssistant,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A caller-supplied id must not replace an automation Topomation does not own."""
+    manager = TopomationManagedActions(hass)
+    calls: list[str] = []
+
+    async def _fake_call(
+        method: str,
+        automation_id: str,
+        payload: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        calls.append(method)
+        assert automation_id == "porch_lights"
+        if method == "GET":
+            return {
+                "id": automation_id,
+                "alias": "Porch lights",
+                "description": "User-authored automation",
+                "triggers": [],
+                "actions": [],
+            }
+        raise AssertionError(method)
+
+    async def _validate(*_args: object, **_kwargs: object) -> dict[str, object]:
+        raise AssertionError("foreign automations must not be validated for overwrite")
+
+    monkeypatch.setattr(manager, "_call_automation_config_api", _fake_call)
+    monkeypatch.setattr(
+        "custom_components.topomation.managed_actions.async_validate_config_item",
+        _validate,
+    )
+    monkeypatch.setattr(manager, "_resolve_managed_rule_ha_area_id", lambda _location: "area_kitchen")
+    location = SimpleNamespace(id="kitchen", name="Kitchen", modules={})
+
+    with pytest.raises(ValueError, match="not managed by Topomation"):
+        await manager.async_create_rule(
+            location=location,
+            name="Kitchen dark safety",
+            trigger_type="on_dark",
+            actions=[{"entity_id": "light.kitchen_ceiling", "service": "turn_on"}],
+            automation_id="porch_lights",
+        )
+
+    assert calls == ["GET"]
+
+
+@pytest.mark.asyncio
+async def test_async_delete_rule_rejects_foreign_and_ignores_missing(
+    hass: HomeAssistant,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Delete may remove a Topomation rule and must leave every other automation alone."""
+    manager = TopomationManagedActions(hass)
+    stored = {
+        "porch_lights": {
+            "id": "porch_lights",
+            "alias": "Porch lights",
+            "description": "User-authored automation",
+            "triggers": [],
+            "actions": [],
+        },
+        "topomation_kitchen_dark": {
+            "id": "topomation_kitchen_dark",
+            "alias": "Kitchen dark",
+            "description": _managed_rule_description(),
+            "triggers": [],
+            "actions": [],
+        },
+    }
+    calls: list[tuple[str, str]] = []
+
+    async def _fake_call(
+        method: str,
+        automation_id: str,
+        payload: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        calls.append((method, automation_id))
+        if method == "GET":
+            config = stored.get(automation_id)
+            if config is None:
+                raise ValueError("Automation API GET 404: Resource not found")
+            return config
+        if method == "DELETE":
+            stored.pop(automation_id, None)
+            return {}
+        raise AssertionError(method)
+
+    monkeypatch.setattr(manager, "_call_automation_config_api", _fake_call)
+
+    with pytest.raises(ValueError, match="not managed by Topomation"):
+        await manager.async_delete_rule(automation_id="porch_lights")
+    assert "porch_lights" in stored
+
+    await manager.async_delete_rule(automation_id="already_gone")
+    await manager.async_delete_rule(automation_id="topomation_kitchen_dark")
+
+    assert "topomation_kitchen_dark" not in stored
+    assert [call[0] for call in calls] == ["GET", "GET", "GET", "DELETE"]
+
+
+@pytest.mark.asyncio
+async def test_async_set_rule_enabled_only_toggles_managed_automations(
+    hass: HomeAssistant,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Enable and disable must not call automation services for user automations."""
+    manager = TopomationManagedActions(hass)
+    foreign = SimpleNamespace(
+        entity_id="automation.porch",
+        raw_config={
+            CONF_ID: "porch",
+            "alias": "Porch",
+            "description": "User-authored automation",
+        },
+        unique_id="porch",
+    )
+    managed = SimpleNamespace(
+        entity_id="automation.kitchen_dark",
+        raw_config={
+            CONF_ID: "topomation_kitchen_dark",
+            "alias": "Kitchen dark",
+            "description": _managed_rule_description(),
+        },
+        unique_id="topomation_kitchen_dark",
+    )
+    hass.data[AUTOMATION_DATA_COMPONENT] = SimpleNamespace(entities=[foreign, managed])
+    service_calls: list[tuple[str, str, dict[str, object]]] = []
+
+    async def _record(call: object) -> None:
+        service_calls.append(
+            (
+                str(getattr(call, "domain", "")),
+                str(getattr(call, "service", "")),
+                dict(getattr(call, "data", {})),
+            )
+        )
+
+    hass.services.async_register("automation", "turn_on", _record)
+    hass.services.async_register("automation", "turn_off", _record)
+
+    with pytest.raises(ValueError, match="not managed by Topomation"):
+        await manager.async_set_rule_enabled(entity_id="automation.porch", enabled=False)
+
+    await manager.async_set_rule_enabled(entity_id="automation.kitchen_dark", enabled=True)
+
+    assert service_calls == [
+        ("automation", "turn_on", {"entity_id": "automation.kitchen_dark"})
+    ]
