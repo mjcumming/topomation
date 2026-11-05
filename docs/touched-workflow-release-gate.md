@@ -36,6 +36,29 @@ Before release or live-validation claims, record:
 
 ## 3. Touched Workflow Inventory
 
+### 2026-11-05 - v0.3.35 HACS review boundary gate
+
+1. Commit under test: `6512b6ebca1ca76ea86487ca9f4080c115d6002f`;
+   the gate record itself is a subsequent documentation-only change.
+2. Frontend bundle rebuilt from that commit: yes; build and committed bundle
+   parity passed. No frontend runtime source changed.
+3. Touched workflows: admin authorization on every websocket command; managed
+   automation create, delete, enable, and registration rollback; guessed area
+   icons on import and area update; system-health version lookup; removal of
+   the Topomation system user when the last config entry is removed; live
+   add-source dialog on the real panel.
+4. Commands and results (2026-11-05):
+   - `make test-release-live`: **PASS**. Backend 390 passed / 22 skipped,
+     Vitest 278 passed, browser components 215 passed, mock and browser
+     workflows 35 passed, live managed-action contract 2 passed, real-panel
+     browser workflows 7 passed.
+   - The local release gate opens the real `/topomation` panel. The static
+     harness does not register `ha-dialog`, so the add-source assertion
+     (visible alertdialog) failed there and passed on the real panel.
+5. Environment: local Home Assistant 2026.2.3 at `http://localhost:8123`
+   using the development configuration. WSL used the cached Playwright
+   Chromium.
+
 ### 2026-10-31 - v0.3.34 English runtime translations gate
 
 1. Commit under test: `b6f96230a52fa602e2cb0e9f7ee7d7a0bf8bab58`;
